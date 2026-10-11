@@ -11,6 +11,15 @@ documentation = "https://docs.rs/ripwire"
 keywords = ["static-analysis", "callgraph", "mcp", "code-intelligence", "pagerank"]
 categories = ["development-tools", "command-line-utilities"]
 default-run = "rw"
+include = [
+    "src/**/*",
+    "vendor/grammars/**/*.c",
+    "vendor/grammars/**/*.h",
+    "build.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE",
+]
 
 [[bin]]
 name = "rw"
