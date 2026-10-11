@@ -163,11 +163,13 @@ impl Lang {
         if self == other {
             return true;
         }
+        let is_c_family = |l| matches!(l, Self::C | Self::Cpp | Self::Cuda | Self::Metal);
+        if is_c_family(self) && is_c_family(other) {
+            return true;
+        }
         matches!(
             (self, other),
-            (Self::C, Self::Cpp)
-                | (Self::Cpp, Self::C)
-                | (Self::TypeScript, Self::JavaScript)
+            (Self::TypeScript, Self::JavaScript)
                 | (Self::JavaScript, Self::TypeScript)
                 | (Self::Java, Self::Kotlin)
                 | (Self::Kotlin, Self::Java)

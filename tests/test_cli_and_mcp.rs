@@ -120,9 +120,17 @@ fn test_mcp_stream_execution() {
 
 #[test]
 fn test_cli_execution_modes() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path().to_str().unwrap();
+    std::fs::write(
+        temp.path().join("lib.rs"),
+        "pub fn run_cli() { helper(); } fn helper() {}",
+    )
+    .unwrap();
+
     // 1. Default run
     assert!(run_cli_args(Cli {
-        path: Some(".".into()),
+        path: Some(root.into()),
         command: None,
     })
     .is_ok());
@@ -131,7 +139,7 @@ fn test_cli_execution_modes() {
     assert!(run_cli_args(Cli {
         path: None,
         command: Some(Commands::Orient(OrientArgs {
-            path: Some(".".into()),
+            path: Some(root.into()),
             for_task: Some("testing".into()),
         })),
     })
@@ -140,42 +148,42 @@ fn test_cli_execution_modes() {
     // 3. Navigate with callers, callees, impact, and standard
     let nav_modes = [
         NavigateArgs {
-            path: Some(".".into()),
+            path: Some(root.into()),
             symbol: Some("run_cli".into()),
             callers: true,
             callees: false,
             impact: false,
         },
         NavigateArgs {
-            path: Some(".".into()),
+            path: Some(root.into()),
             symbol: Some("run_cli".into()),
             callers: false,
             callees: true,
             impact: false,
         },
         NavigateArgs {
-            path: Some(".".into()),
+            path: Some(root.into()),
             symbol: Some("run_cli".into()),
             callers: false,
             callees: false,
             impact: true,
         },
         NavigateArgs {
-            path: Some(".".into()),
+            path: Some(root.into()),
             symbol: Some("run_cli".into()),
             callers: false,
             callees: false,
             impact: false,
         },
         NavigateArgs {
-            path: Some(".".into()),
+            path: Some(root.into()),
             symbol: None,
             callers: false,
             callees: false,
             impact: false,
         },
         NavigateArgs {
-            path: Some(".".into()),
+            path: Some(root.into()),
             symbol: Some("nonexistent_symbol_404".into()),
             callers: false,
             callees: false,

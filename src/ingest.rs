@@ -4,51 +4,103 @@ use crate::domain::{
 };
 use rayon::prelude::*;
 use std::fs;
+use std::sync::{Arc, LazyLock};
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Language, Parser, Query, QueryCursor};
 
+static GLOBAL_REGISTRY: LazyLock<Vec<(Lang, Language, Arc<Query>)>> = LazyLock::new(|| {
+    let configs: Vec<(Lang, Language, &str)> = vec![
+        (
+            Lang::Rust,
+            tree_sitter_rust::LANGUAGE.into(),
+            include_str!("queries/rust/tags.scm"),
+        ),
+        (
+            Lang::TypeScript,
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            include_str!("queries/typescript/tags.scm"),
+        ),
+        (
+            Lang::JavaScript,
+            tree_sitter_javascript::LANGUAGE.into(),
+            include_str!("queries/javascript/tags.scm"),
+        ),
+        (
+            Lang::Python,
+            tree_sitter_python::LANGUAGE.into(),
+            include_str!("queries/python/tags.scm"),
+        ),
+        (
+            Lang::Go,
+            tree_sitter_go::LANGUAGE.into(),
+            include_str!("queries/go/tags.scm"),
+        ),
+        (
+            Lang::C,
+            tree_sitter_c::LANGUAGE.into(),
+            include_str!("queries/c/tags.scm"),
+        ),
+        (
+            Lang::Cpp,
+            tree_sitter_cpp::LANGUAGE.into(),
+            include_str!("queries/cpp/tags.scm"),
+        ),
+        (
+            Lang::Cuda,
+            tree_sitter_cuda::LANGUAGE.into(),
+            include_str!("queries/cuda/tags.scm"),
+        ),
+        (
+            Lang::Metal,
+            tree_sitter_cpp::LANGUAGE.into(),
+            include_str!("queries/cpp/tags.scm"),
+        ),
+        (
+            Lang::Java,
+            tree_sitter_java::LANGUAGE.into(),
+            include_str!("queries/java/tags.scm"),
+        ),
+        (
+            Lang::CSharp,
+            tree_sitter_c_sharp::LANGUAGE.into(),
+            include_str!("queries/csharp/tags.scm"),
+        ),
+        (
+            Lang::Swift,
+            tree_sitter_swift::LANGUAGE.into(),
+            include_str!("queries/swift/tags.scm"),
+        ),
+        (
+            Lang::Bash,
+            tree_sitter_bash::LANGUAGE.into(),
+            include_str!("queries/bash/tags.scm"),
+        ),
+    ];
+
+    let mut languages = Vec::with_capacity(configs.len());
+    for (lang, ts_lang, query_src) in configs {
+        let query = Query::new(&ts_lang, query_src).expect("valid grammar query");
+        languages.push((lang, ts_lang, Arc::new(query)));
+    }
+    languages
+});
+
 /// Registry of supported Tree-Sitter languages and compiled queries.
 pub struct LanguageRegistry {
-    languages: Vec<(Lang, Language, Query)>,
+    languages: Vec<(Lang, Language, Arc<Query>)>,
 }
 
 impl LanguageRegistry {
-    /// Initialize registry with Tier-1 languages: Rust, TypeScript, JavaScript, Python, Go.
-    pub fn new_tier1() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let configs: [(Lang, Language, &str); 5] = [
-            (
-                Lang::Rust,
-                tree_sitter_rust::LANGUAGE.into(),
-                include_str!("queries/rust/tags.scm"),
-            ),
-            (
-                Lang::TypeScript,
-                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-                include_str!("queries/typescript/tags.scm"),
-            ),
-            (
-                Lang::JavaScript,
-                tree_sitter_javascript::LANGUAGE.into(),
-                include_str!("queries/javascript/tags.scm"),
-            ),
-            (
-                Lang::Python,
-                tree_sitter_python::LANGUAGE.into(),
-                include_str!("queries/python/tags.scm"),
-            ),
-            (
-                Lang::Go,
-                tree_sitter_go::LANGUAGE.into(),
-                include_str!("queries/go/tags.scm"),
-            ),
-        ];
+    /// Initialize registry with all supported languages across Tier-1 and Systems/Enterprise (Wave 1 & 2).
+    pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Self {
+            languages: GLOBAL_REGISTRY.clone(),
+        })
+    }
 
-        let mut languages = Vec::with_capacity(configs.len());
-        for (lang, ts_lang, query_src) in configs {
-            let query = Query::new(&ts_lang, query_src)?;
-            languages.push((lang, ts_lang, query));
-        }
-        Ok(Self { languages })
+    /// Initialize registry with Tier-1 languages.
+    pub fn new_tier1() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        Self::new()
     }
 
     /// Find compiled language and query for given Lang.
@@ -56,7 +108,7 @@ impl LanguageRegistry {
         self.languages
             .iter()
             .find(|(l, _, _)| *l == lang)
-            .map(|(_, l, q)| (l, q))
+            .map(|(_, l, q)| (l, q.as_ref()))
     }
 }
 
@@ -320,6 +372,54 @@ pub fn ingest_crawled_files(
         ingest.references.extend(file_refs);
         ingest.symbols.extend(file_symbols);
     }
+    ingest
+}
+/// Ingest in-memory source files directly without filesystem I/O.
+pub fn ingest_in_memory_files(
+    files: &[(&str, Lang, &[u8])],
+    registry: &LanguageRegistry,
+    interner: &Interner,
+) -> IngestResult {
+    let mut ingest = IngestResult::new();
+    let mut next_node_id: NodeId = 0;
+
+    for (file_id, &(rel_path, lang, source_bytes)) in files.iter().enumerate() {
+        let file_id = file_id as u32;
+        let file_spur = interner.intern(rel_path);
+
+        let parsed = registry
+            .get(lang)
+            .map(|(language, query)| parse_file_content(source_bytes, language, query));
+
+        let (line_count, byte_size, defs, refs) = match parsed {
+            Some(p) => (p.line_count, p.byte_size, p.defs, p.refs),
+            None => (0, source_bytes.len() as u64, Vec::new(), Vec::new()),
+        };
+
+        ingest.files.push(FileInfo {
+            id: file_id,
+            path: file_spur,
+            lang,
+            line_count,
+            byte_size,
+        });
+
+        let dummy_crawled = CrawledFile {
+            path: std::path::PathBuf::from(rel_path),
+            rel_path: rel_path.to_string(),
+            lang,
+            byte_size: source_bytes.len() as u64,
+        };
+
+        let file_symbols =
+            build_file_symbols(defs, &dummy_crawled, file_id, interner, &mut next_node_id);
+        let file_refs =
+            build_file_references(refs, &dummy_crawled, file_id, &file_symbols, interner);
+
+        ingest.references.extend(file_refs);
+        ingest.symbols.extend(file_symbols);
+    }
+
     ingest
 }
 

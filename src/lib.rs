@@ -17,7 +17,7 @@ pub use domain::{
     FileInfo, IngestResult, Interner, Lang, NodeId, RefRole, Reference, SymKind, Symbol, NO_NODE,
 };
 pub use graph::{CsrMatrix, Graph};
-pub use ingest::{ingest_crawled_files, LanguageRegistry};
+pub use ingest::{ingest_crawled_files, ingest_in_memory_files, LanguageRegistry};
 pub use mcp::{dispatch_json_rpc, run_mcp_stdio, run_mcp_stream, McpState};
 pub use navigate::{
     find_symbols_by_name, navigate_1hop, transitive_impact, ImpactNode, NavNeighborhood,
