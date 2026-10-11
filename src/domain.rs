@@ -8,9 +8,10 @@ pub type NodeId = u32;
 pub const NO_NODE: NodeId = u32::MAX;
 
 /// Symbol kind corresponding to the terse XML attribute `t="..."`.
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum SymKind {
-    Function,
+    Function = 0,
     Method,
     Class,
     Struct,
@@ -24,28 +25,20 @@ pub enum SymKind {
 }
 
 impl SymKind {
-    /// Return the stable short tag for minified XML and JSON output.
+    #[inline]
     pub const fn tag(self) -> &'static str {
-        match self {
-            Self::Function => "fn",
-            Self::Method => "method",
-            Self::Class => "cls",
-            Self::Struct => "struct",
-            Self::Interface => "iface",
-            Self::Var => "var",
-            Self::Section => "sec",
-            Self::Macro => "macro",
-            Self::Field => "field",
-            Self::Other => "other",
-            Self::ModuleScope => "modscope",
-        }
+        const TAGS: [&str; 11] = [
+            "fn", "method", "cls", "struct", "iface", "var", "sec", "macro", "field", "other",
+            "modscope",
+        ];
+        TAGS[self as usize]
     }
 }
 
-/// Use-site role for references (`role="..."`).
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RefRole {
-    Call,
+    Call = 0,
     Read,
     Write,
     Import,
@@ -57,26 +50,19 @@ pub enum RefRole {
 }
 
 impl RefRole {
-    /// Return the stable short tag for the reference role.
+    #[inline]
     pub const fn tag(self) -> &'static str {
-        match self {
-            Self::Call => "call",
-            Self::Read => "read",
-            Self::Write => "write",
-            Self::Import => "import",
-            Self::Extends => "extends",
-            Self::Macro => "macro",
-            Self::Type => "type",
-            Self::Value => "value",
-            Self::Through => "through",
-        }
+        const TAGS: [&str; 9] = [
+            "call", "read", "write", "import", "extends", "macro", "type", "value", "through",
+        ];
+        TAGS[self as usize]
     }
 }
 
-/// Supported programming, configuration, and documentation languages.
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Lang {
-    Rust,
+    Rust = 0,
     TypeScript,
     JavaScript,
     Python,
@@ -104,35 +90,13 @@ pub enum Lang {
 }
 
 impl Lang {
-    /// Return the stable short language label for XML and JSON.
+    #[inline]
     pub const fn tag(self) -> &'static str {
-        match self {
-            Self::Rust => "rs",
-            Self::TypeScript => "ts",
-            Self::JavaScript => "js",
-            Self::Python => "py",
-            Self::Go => "go",
-            Self::C => "c",
-            Self::Cpp => "cpp",
-            Self::Cuda => "cuda",
-            Self::Metal => "metal",
-            Self::Java => "java",
-            Self::CSharp => "cs",
-            Self::Swift => "swift",
-            Self::Bash => "sh",
-            Self::Ruby => "rb",
-            Self::Php => "php",
-            Self::Lua => "lua",
-            Self::Elixir => "ex",
-            Self::Dart => "dart",
-            Self::Kotlin => "kt",
-            Self::GDScript => "gd",
-            Self::Json => "json",
-            Self::Toml => "toml",
-            Self::Yaml => "yaml",
-            Self::Markdown => "md",
-            Self::Unknown => "?",
-        }
+        const TAGS: [&str; 25] = [
+            "rs", "ts", "js", "py", "go", "c", "cpp", "cuda", "metal", "java", "cs", "swift", "sh",
+            "rb", "php", "lua", "ex", "dart", "kt", "gd", "json", "toml", "yaml", "md", "?",
+        ];
+        TAGS[self as usize]
     }
 
     /// Map file extensions to their corresponding language.
