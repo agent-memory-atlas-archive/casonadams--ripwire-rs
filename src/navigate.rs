@@ -2,7 +2,7 @@ use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
 use serde::Serialize;
 use std::collections::{HashSet, VecDeque};
-
+use std::io::{self, Write};
 /// Detailed navigation information for a symbol.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct SymbolNavInfo {
@@ -170,6 +170,145 @@ pub fn transitive_impact(
 
     results.sort_by(|a, b| a.hops.cmp(&b.hops).then_with(|| b.rank.total_cmp(&a.rank)));
     results
+}
+
+fn write_nav_items<W: Write>(
+    tag: &'static str,
+    of: &str,
+    items: &[SymbolNavInfo],
+    out: &mut W,
+) -> io::Result<()> {
+    write!(
+        out,
+        "<{tag} schema=\"ripwire.{tag}/v1\" of=\"{of}\" defs=\"1\" count=\"{}\" root=\".\">",
+        items.len()
+    )?;
+    for it in items {
+        write!(
+            out,
+            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
+            it.kind, it.name, it.path, it.line
+        )?;
+    }
+    writeln!(out, "</{tag}>")
+}
+
+/// Serialize direct callers to Ripwire-compatible XML.
+pub fn serialize_callers_xml<W: Write>(
+    sym_name: &str,
+    callers: &[SymbolNavInfo],
+    out: &mut W,
+) -> io::Result<()> {
+    write_nav_items("callers", sym_name, callers, out)
+}
+
+/// Serialize direct callees to Ripwire-compatible XML.
+pub fn serialize_callees_xml<W: Write>(
+    sym_name: &str,
+    callees: &[SymbolNavInfo],
+    out: &mut W,
+) -> io::Result<()> {
+    write_nav_items("callees", sym_name, callees, out)
+}
+
+/// Serialize transitive impact blast radius to Ripwire-compatible XML.
+pub fn serialize_impact_xml<W: Write>(
+    sym_name: &str,
+    nodes: &[ImpactNode],
+    out: &mut W,
+) -> io::Result<()> {
+    write!(
+        out,
+        "<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{}\" root=\".\">",
+        nodes.len()
+    )?;
+    nodes.iter().try_for_each(|n| {
+        write!(
+            out,
+            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\" dist=\"{}\"/>",
+            n.kind, n.name, n.path, n.line, n.hops
+        )
+    })?;
+    writeln!(out, "</impact>")
+}
+
+/// Serialize symbol neighborhood to Ripwire-compatible XML.
+pub fn serialize_find_symbol_xml<W: Write>(nav: &NavNeighborhood, out: &mut W) -> io::Result<()> {
+    writeln!(
+        out,
+        "<find-symbol schema=\"ripwire.find-symbol/v1\" of=\"{}\" p=\"{}:{}\" callers=\"{}\" callees=\"{}\">",
+        nav.target.name,
+        nav.target.path,
+        nav.target.line,
+        nav.callers.len(),
+        nav.callees.len()
+    )?;
+    writeln!(out, "  <callers>")?;
+    for c in &nav.callers {
+        writeln!(
+            out,
+            "    <s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
+            c.kind, c.name, c.path, c.line
+        )?;
+    }
+    writeln!(out, "  </callers>")?;
+    writeln!(out, "  <callees>")?;
+    for c in &nav.callees {
+        writeln!(
+            out,
+            "    <s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
+            c.kind, c.name, c.path, c.line
+        )?;
+    }
+    writeln!(out, "  </callees>")?;
+    writeln!(out, "</find-symbol>")
+}
+
+/// Serialize static use-sites to Ripwire-compatible XML.
+pub fn serialize_uses_xml<W: Write>(
+    sym_name: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut sites = Vec::new();
+    for r in &ingest.references {
+        if interner.resolve(&r.callee_name) == sym_name {
+            let file_path = ingest
+                .files
+                .get(r.file_id as usize)
+                .map(|f| interner.resolve(&f.path))
+                .unwrap_or("");
+            let enclosing = if r.from_symbol != crate::domain::NO_NODE {
+                ingest
+                    .symbols
+                    .get(r.from_symbol as usize)
+                    .map(|s| interner.resolve(&s.name))
+                    .unwrap_or("")
+            } else {
+                ""
+            };
+            sites.push((r.role.tag(), file_path, r.line, enclosing));
+        }
+    }
+    writeln!(
+        out,
+        "<uses schema=\"ripwire.uses/v1\" of=\"{}\" defs=\"1\" count=\"{}\" root=\".\">",
+        sym_name,
+        sites.len()
+    )?;
+    for (role, file, line, enc) in sites {
+        if enc.is_empty() {
+            writeln!(out, "  <u role=\"{}\" p=\"{}:{}\"/>", role, file, line)?;
+        } else {
+            writeln!(
+                out,
+                "  <u role=\"{}\" p=\"{}:{}\" in_id=\"{}\"/>",
+                role, file, line, enc
+            )?;
+        }
+    }
+    writeln!(out, "</uses>")
 }
 
 #[cfg(test)]

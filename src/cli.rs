@@ -325,56 +325,18 @@ pub fn print_symbol_nav_to<W: io::Write>(
 ) -> io::Result<()> {
     if args.impact {
         let impact = transitive_impact(id, ctx.ingest, ctx.graph, ctx.ranks, ctx.interner, None);
-        writeln!(
-            out,
-            "Impacted callers for '{}' ({}):",
-            sym_name,
-            impact.len()
-        )?;
-        for node in impact {
-            writeln!(
-                out,
-                "  [{}] {} ({}:{})",
-                node.hops, node.name, node.path, node.line
-            )?;
-        }
-        return Ok(());
+        return crate::navigate::serialize_impact_xml(sym_name, &impact, out);
     }
     let Some(nav) = navigate_1hop(id, ctx.ingest, ctx.graph, ctx.ranks, ctx.interner) else {
         return Ok(());
     };
     if args.callers {
-        writeln!(
-            out,
-            "Direct callers of '{}' ({}):",
-            sym_name,
-            nav.callers.len()
-        )?;
-        for c in nav.callers {
-            writeln!(out, "  {} ({}:{})", c.name, c.path, c.line)?;
-        }
+        crate::navigate::serialize_callers_xml(sym_name, &nav.callers, out)
     } else if args.callees {
-        writeln!(
-            out,
-            "Direct callees of '{}' ({}):",
-            sym_name,
-            nav.callees.len()
-        )?;
-        for c in nav.callees {
-            writeln!(out, "  {} ({}:{})", c.name, c.path, c.line)?;
-        }
+        crate::navigate::serialize_callees_xml(sym_name, &nav.callees, out)
     } else {
-        writeln!(
-            out,
-            "Symbol '{}' ({}:{}): {} callers, {} callees",
-            nav.target.name,
-            nav.target.path,
-            nav.target.line,
-            nav.callers.len(),
-            nav.callees.len()
-        )?;
+        crate::navigate::serialize_find_symbol_xml(&nav, out)
     }
-    Ok(())
 }
 
 pub fn execute_navigate_with<W: io::Write>(

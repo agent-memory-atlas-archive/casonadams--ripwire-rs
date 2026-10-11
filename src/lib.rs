@@ -50,8 +50,9 @@ pub use metrics::{
     compute_complexity, compute_hotspots, compute_readability, posnett_score,
 };
 pub use navigate::{
-    ImpactNode, NavNeighborhood, SymbolNavInfo, find_symbols_by_name, navigate_1hop,
-    transitive_impact,
+    ImpactNode, NavNeighborhood, SymbolNavInfo, find_symbols_by_name, get_symbol_nav_info,
+    navigate_1hop, serialize_callees_xml, serialize_callers_xml, serialize_find_symbol_xml,
+    serialize_impact_xml, serialize_uses_xml, transitive_impact,
 };
 pub use rank::{
     HitsConfig, HitsResult, PageRankConfig, PageRankResult, biased_teleport, compute_hits,

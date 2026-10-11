@@ -212,10 +212,35 @@ fn test_cli_execution_modes() {
         interner: &interner,
     };
 
-    for args in nav_modes {
+    for args in &nav_modes {
         let mut nav_out = Vec::new();
-        assert!(execute_navigate_with(&args, &ctx, &mut nav_out).is_ok());
+        assert!(execute_navigate_with(args, &ctx, &mut nav_out).is_ok());
     }
+
+    let mut callers_buf = Vec::new();
+    execute_navigate_with(&nav_modes[0], &ctx, &mut callers_buf).unwrap();
+    let callers_xml = String::from_utf8(callers_buf).unwrap();
+    assert!(callers_xml.contains("<callers schema=\"ripwire.callers/v1\" of=\"run_cli\""));
+
+    let mut callees_buf = Vec::new();
+    execute_navigate_with(&nav_modes[1], &ctx, &mut callees_buf).unwrap();
+    let callees_xml = String::from_utf8(callees_buf).unwrap();
+    assert!(callees_xml.contains("<callees schema=\"ripwire.callees/v1\" of=\"run_cli\""));
+
+    let mut impact_buf = Vec::new();
+    execute_navigate_with(&nav_modes[2], &ctx, &mut impact_buf).unwrap();
+    let impact_xml = String::from_utf8(impact_buf).unwrap();
+    assert!(impact_xml.contains("<impact schema=\"ripwire.impact/v1\" of=\"run_cli\""));
+
+    let mut sym_buf = Vec::new();
+    execute_navigate_with(&nav_modes[3], &ctx, &mut sym_buf).unwrap();
+    let sym_xml = String::from_utf8(sym_buf).unwrap();
+    assert!(sym_xml.contains("<find-symbol schema=\"ripwire.find-symbol/v1\" of=\"run_cli\""));
+
+    let mut uses_buf = Vec::new();
+    ripwire::serialize_uses_xml("helper", &ingest, &interner, &mut uses_buf).unwrap();
+    let uses_xml = String::from_utf8(uses_buf).unwrap();
+    assert!(uses_xml.contains("<uses schema=\"ripwire.uses/v1\" of=\"helper\""));
 
     // 3. Subcommand stubs
     assert!(

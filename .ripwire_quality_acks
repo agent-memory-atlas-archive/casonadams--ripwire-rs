@@ -4,6 +4,7 @@
 ack dead-code:new-symbol 02107e7a94d4e0b1 0 cid=c2775e3b91fa030d now=0 was=0 p=tests/test_edit_check_arity_break.rs:158 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 03e1e8ac408c0bb8 0 cid=89f4caf669115726 now=0 was=0 p=tests/test_edit_check_arity_break.rs:201 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 158549e63da54ccf 0 cid=5482b5a9f78fded4 now=0 was=0 p=src/mcp/retrieval.rs:344 feat(mcp): complete 33 mcp tools suite
+ack dead-code:new-symbol 15e9fb3d8a45ac9b 0 cid=38704af3874df56d now=0 was=0 p=src/navigate.rs:268 feat(navigate): format navigation commands as canonical XML
 ack dead-code:new-symbol 1b66e3d84625ec99 0 cid=d7f0f7a8120d3123 now=0 was=0 p=src/metrics/readability.rs:238 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 1c8671734e52adf1 0 cid=f97e8d0ab3e8ed75 now=0 was=0 p=src/gate/edit_check.rs:39 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 21c952917f59fdf2 0 cid=082a96c2f7393aa8 now=0 was=0 p=src/mcp/schema.rs:5 feat(mcp): complete 33 mcp tools suite
@@ -74,6 +75,7 @@ ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 face
 ack short-horizon-churn 03e609981e51a079 5 cid=1a77de16da933882 now=5 was=0 facet=ambient p=src/cli.rs:17 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 0dbcc2ebfc642340 7 cid=f7161ab1dbd67c20 now=7 was=0 facet=ambient p=src/ingest.rs:130 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 1171f6ae61619ff2 10 cid=9a6b7e675249426e now=10 was=0 facet=self p=src/cli.rs:836 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 170dabfb4d6abeed 12 cid=60632a1424bae51d now=12 was=0 facet=self p=src/cli.rs:319 feat(navigate): format navigation commands as canonical XML
 ack short-horizon-churn 1a5e8bf9afe9ee39 7 cid=edfff520d79813ba now=7 was=0 facet=ambient p=src/ingest.rs:339 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 1e3db6601ccd19d9 5 cid=6d4c472b01a08e40 now=5 was=0 facet=self p=src/mcp/mod.rs:174 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 27df363ae0c450b3 5 cid=80b8cd85a4844728 now=5 was=0 facet=self p=src/mcp/mod.rs:318 feat(mcp): complete 33 mcp tools suite
@@ -109,7 +111,7 @@ ack short-horizon-churn c0300ca9ffbbc65c 2 cid=f08fb1b472f9d474 now=2 was=0 face
 ack short-horizon-churn c0877650b51b994a 2 cid=5ae3bc85466baf17 now=2 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:42 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn c28be696f55888fe 5 cid=391a26a2b3b563e2 now=5 was=0 facet=self p=src/mcp/mod.rs:203 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn d3eebdef7a909404 7 cid=13afc9c65d43e4da now=7 was=0 facet=ambient p=src/ingest.rs:565 feat(gate): pre-commit contract gate and affected test reachability
-ack short-horizon-churn dbf9873eb051deef 6 cid=2f36ae8569b58490 now=6 was=0 facet=self p=tests/test_cli_and_mcp.rs:143 refactor(distribution): rename crate to ripwire and binary to rw | prior: migrate to in-memory fixtures for zero-IO testing
+ack short-horizon-churn dbf9873eb051deef 7 cid=f6f66f92d6091196 now=7 was=0 facet=self p=tests/test_cli_and_mcp.rs:143 feat(navigate): format navigation commands as canonical XML | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn df3364bea9738161 5 cid=b6a09e2e51877ccc now=5 was=0 facet=self p=src/mcp/mod.rs:30 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn eb913f807b07fad8 3 cid=bd0dd9ade9a75003 now=3 was=0 facet=self p=src/gate/contract.rs:187 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn ec25e04d7a1c792d 5 cid=e4e99ae69f86c7ae now=5 was=0 facet=ambient p=src/mcp/mod.rs:700 feat(mcp): complete 33 mcp tools suite
@@ -130,6 +132,6 @@ ack verbosity a8b62b30beb02329 117 cid=a0d26211732eaa15 now=117 was=101 p=src/mc
 ack verbosity b5a40f34ce7656a9 80 cid=f92ea050828bbe61 now=80 was=78 p=tests/test_cli_and_mcp.rs:28 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
 ack verbosity c0877650b51b994a 89 cid=5ae3bc85466baf17 now=89 was=86 p=tests/test_streaming_xml_serializer.rs:42 refactor(distribution): rename crate to ripwire and binary to rw
 ack verbosity c7651463abe73266 185 cid=0a1e9a3c96ea5a06 now=185 was=0 p=src/mcp/mod.rs:425 feat(mcp): complete 33 mcp tools suite
-ack verbosity dbf9873eb051deef 90 cid=2f36ae8569b58490 now=90 was=84 p=tests/test_cli_and_mcp.rs:143 refactor(distribution): rename crate to ripwire and binary to rw
+ack verbosity dbf9873eb051deef 110 cid=f6f66f92d6091196 now=110 was=90 p=tests/test_cli_and_mcp.rs:143 feat(navigate): format navigation commands as canonical XML | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack verbosity e0ab848c5d67d7ae 72 cid=510934f45e78e30e now=72 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity ef626e7fbdac48cf 83 cid=c560a4919f395ede now=83 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability
