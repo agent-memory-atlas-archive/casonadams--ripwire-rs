@@ -1,8 +1,7 @@
 use crate::crawler::CrawledFile;
 use crate::domain::{
-    FileInfo, IngestResult, Lang, NodeId, RefRole, Reference, SymKind, Symbol, NO_NODE,
+    FileInfo, IngestResult, Interner, Lang, NodeId, RefRole, Reference, SymKind, Symbol, NO_NODE,
 };
-use crate::interner::Interner;
 use rayon::prelude::*;
 use std::fs;
 use streaming_iterator::StreamingIterator;

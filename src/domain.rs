@@ -1,11 +1,39 @@
-use lasso::Spur;
+use lasso::{Spur, ThreadedRodeo};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 /// 32-bit index into symbol tables. Not a pointer.
 pub type NodeId = u32;
 
 /// Sentinel value indicating no node (e.g., file-scope references).
 pub const NO_NODE: NodeId = u32::MAX;
+/// Thread-safe string interner backed by `lasso::ThreadedRodeo`.
+#[derive(Debug, Clone, Default)]
+pub struct Interner(Arc<ThreadedRodeo>);
+
+impl Interner {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    #[inline]
+    pub fn intern(&self, s: &str) -> Spur {
+        self.0.get_or_intern(s)
+    }
+    #[inline]
+    pub fn resolve<'a>(&'a self, spur: &Spur) -> &'a str {
+        self.0.resolve(spur)
+    }
+    #[inline]
+    pub fn try_resolve<'a>(&'a self, spur: &Spur) -> Option<&'a str> {
+        self.0.try_resolve(spur)
+    }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 /// Symbol kind corresponding to the terse XML attribute `t="..."`.
 #[repr(u8)]
@@ -284,5 +312,15 @@ mod tests {
         assert!(Lang::Rust.is_compatible(Lang::Rust));
         assert!(Lang::C.is_compatible(Lang::Cpp));
         assert!(!Lang::Rust.is_compatible(Lang::Python));
+    }
+
+    #[test]
+    fn test_interner() {
+        let interner = Interner::new();
+        let s1 = interner.intern("foo");
+        let s2 = interner.intern("bar");
+        assert_eq!(s1, interner.intern("foo"));
+        assert_eq!(interner.resolve(&s1), "foo");
+        assert_eq!(interner.resolve(&s2), "bar");
     }
 }
