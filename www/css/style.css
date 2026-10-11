@@ -566,6 +566,85 @@ a:hover, a:focus-visible {
   font-size: 0.95rem;
   color: var(--text-primary);
 }
+/* Command Card */
+.cmd-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 24px;
+  margin-bottom: 20px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cmd-card:hover {
+  border-color: var(--border-focus);
+}
+
+.cmd-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.cmd-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cmd-title code {
+  font-size: 1.05rem;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.cmd-badge {
+  font-size: 0.72rem;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.cmd-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cmd-field {
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.cmd-label {
+  font-weight: 700;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 2px;
+}
+
+.cmd-desc {
+  color: var(--text-secondary);
+  margin-bottom: 0 !important;
+}
 
 /* Tool Card */
 .tool-card {

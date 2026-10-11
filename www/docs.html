@@ -7,7 +7,7 @@
   <meta name="description" content="Reference documentation for ripwire: rw CLI commands, 33 Model Context Protocol (MCP) context routing tools, pre-commit gates, and Rust library integration.">
 
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/style.css?v=2">
 
   <script>
     (function() {
@@ -119,47 +119,386 @@
       <h2 id="cli">rw CLI Reference</h2>
       <p>The <code>rw</code> binary offers both direct flag-based execution and structured workflow subcommands.</p>
 
-      <pre><code># General repository call graph map and PageRank ranking
-rw .
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw [PATH]</code></div>
+          <span class="cmd-badge">Architecture</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Parses the repository at <code>PATH</code> (defaults to current directory), builds the workspace call graph across 24 languages, executes Personalized PageRank, and streams ranked symbol definitions with incoming callers as canonical XML.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Runs Tree-Sitter syntax queries in parallel via Rayon, interns symbols with Lasso, resolves call references through a multi-tier precedence ladder, and executes power iteration over a compressed sparse row (CSR) transpose in-edge matrix with dangling mass redistribution within a fixed token/byte budget.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">When first landing in an unfamiliar codebase, retrieving high-level architectural anchors, or packing dense, budget-bounded context into LLM prompts without hallucinated dependencies.</p>
+          </div>
+        </div>
+      </div>
 
-# Top maintenance hotspots (code churn * cognitive complexity)
-rw --hotspots
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --quality-delta</code></div>
+          <span class="cmd-badge">Safety Gate</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Compares uncommitted working tree changes against git <code>HEAD</code> (or a pinned baseline) and reports code quality regressions across complexity, duplication, dead code, and contract breaks. Exits non-zero if gating regressions are detected.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Computes multi-vector quality snapshots (Campbell cognitive complexity via <code>cccc</code>, cyclomatic complexity, Type-1/2/3 AST clones, arity changes) on both revisions and diffs the findings, filtering out expected churn and self-registering test macros.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">In pre-commit hooks, local developer validation before <code>git push</code>, or automated CI/CD merge-safety pull request checks.</p>
+          </div>
+        </div>
+      </div>
 
-# Shotgun Surgery co-change mining
-rw --cochange [FILE]
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --edit-check &lt;SYM&gt;</code></div>
+          <span class="cmd-badge">Safety Gate</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Verifies whether recent modifications to symbol <code>&lt;SYM&gt;</code> altered its parameter count or visibility, identifying all direct callers in the codebase that become incompatible with the new signature.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Extracts parameter counts and visibility modifiers from the AST at both revisions. Traverses 1-hop reverse call graph edges to check if existing call sites pass matching argument arity.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Immediately after refactoring or modifying a public function, method, or constructor signature, before executing full workspace test suites.</p>
+          </div>
+        </div>
+      </div>
 
-# Caller compatibility check after symbol edit
-rw --edit-check "symbol_name"
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --affected &lt;PATH&gt;</code></div>
+          <span class="cmd-badge">Safety Gate</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Identifies exactly which test files transitively reach the changed file or symbol <code>&lt;PATH&gt;</code>, ranking them by evidence tier (edited tests, partner-named tests, call hop distance).</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Computes transitive reachability over reverse call graph edges from the target node, filtering candidate nodes matching test path conventions (<code>tests/</code>, <code>*_test.*</code>, <code>*Spec.*</code>).</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">To run a surgical, high-confidence subset of fast regression tests instead of running the entire multi-minute test suite during tight TDD loops.</p>
+          </div>
+        </div>
+      </div>
 
-# Map affected test files for changed symbols
-rw --affected "src/lib.rs"
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --hotspots</code></div>
+          <span class="cmd-badge">Metrics</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Ranks repository files by maintenance risk score, combining commit churn with cognitive complexity to highlight fragile, high-risk code hotspots.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Mines git commit history with exponential half-life time decay (weighting recent revisions higher) and multiplies file commit frequency by average McCabe and Campbell cognitive complexity.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Prior to architectural refactoring, when scoping technical debt, or when allocating code review attention to the most defect-prone files in a repository.</p>
+          </div>
+        </div>
+      </div>
 
-# Measure code quality delta regressions against git HEAD
-rw --quality-delta
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --cochange [&lt;FILE&gt;]</code></div>
+          <span class="cmd-badge">Git Analytics</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Surfaces companion files that historically change together with <code>&lt;FILE&gt;</code>, detecting hidden Fowler's Shotgun Surgery coupling.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Scans multi-file commit transactions across git history, filters out repository-wide merge-bombs (>100 files), and calculates co-change support, confidence, and surprise ratios.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Before editing an interface, schema, or configuration file, to guarantee that all implicit partner files (docs, test fixtures, downstream consumers) are updated in the same change.</p>
+          </div>
+        </div>
+      </div>
 
-# ARISE variable dataflow slicing (forward, backward, both)
-rw --slice "function_name:var_name" --slice-flow fwd
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --slice &lt;SYM[:VAR]&gt; [--slice-flow &lt;fwd|back|both&gt;]</code></div>
+          <span class="cmd-badge">Slicing</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Traces intra-procedural def-use variable occurrences inside function <code>&lt;SYM&gt;</code>, mapping how variable <code>&lt;VAR&gt;</code> is initialized, assigned, and consumed.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Implements the ARISE slicing algorithm (arXiv:2605.03117) over Tree-sitter AST nodes to build localized def-use chains, control dependencies, and reaching definitions in forward, backward, or bidirectional flow.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">When debugging variable corruption, auditing taint propagation or untrusted user input, or tracing complex state mutations without stepping through a live debugger.</p>
+          </div>
+        </div>
+      </div>
 
-# Export interactive HTML call graph visualization
-rw . --html callgraph.html</code></pre>
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --clones [--min-tokens &lt;N&gt;]</code></div>
+          <span class="cmd-badge">Hygiene</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Scans the codebase for duplicate logic, grouping candidate functions into exact (Type-1), renamed identifier (Type-2), and near-miss gapped (Type-3) clone groups.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Tokenizes function bodies while skipping comments and string literals, computes $k$-gram token window hashes with in-place sort-dedup, evaluates Jaccard similarity, and validates near-misses via Longest Common Subsequence (LCS).</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">During code audits to consolidate duplicate utility routines into shared helpers, or to prevent boilerplate copy-pasting in team workflows.</p>
+          </div>
+        </div>
+      </div>
 
-      <h2 id="subcommands">Subcommands</h2>
-      <p>Categorized workflow groups for targeted developer investigations:</p>
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --callers &lt;SYM&gt; / --callees &lt;SYM&gt; / --find-symbol &lt;SYM&gt;</code></div>
+          <span class="cmd-badge">Navigation</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Emits the 1-hop neighborhood of a symbol: all direct incoming callers, outgoing callees, definitions, and ambiguity metrics formatted as XML.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Interns <code>&lt;SYM&gt;</code> in $O(1)$ to find matching graph node IDs and directly indexes the CSR row offsets and target vectors without iterator allocations.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">When tracing call hierarchies, checking who invokes a utility function, or inspecting the dependencies invoked by a given method.</p>
+          </div>
+        </div>
+      </div>
 
-      <pre><code># Exploration and task-scoped orientation
-rw orient [PATH] --for &lt;TASK&gt;
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --impact &lt;SYM&gt;</code></div>
+          <span class="cmd-badge">Navigation</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Computes the full transitive downstream blast radius of modifying <code>&lt;SYM&gt;</code>, ranking all dependent symbols by PageRank influence.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Seeds Personalized PageRank with mass focused on <code>&lt;SYM&gt;</code> and runs power iteration across outgoing call edges to measure relative dependency concentration.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Before deprecating, modifying, or removing a core interface, data structure, or shared utility function to determine the full scope of downstream impact.</p>
+          </div>
+        </div>
+      </div>
 
-# Call graph navigation (callers, callees, transitive impact)
-rw navigate [PATH] --symbol &lt;NAME&gt; --impact
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --path-between &lt;A:B&gt;</code></div>
+          <span class="cmd-badge">Architecture</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Finds the shortest directed call chain connecting symbol <code>A</code> to symbol <code>B</code>, returning the exact hop-by-hop sequence of intermediate functions.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Executes bidirectional breadth-first search (BFS) over the resolved directed CSR call graph edges, returning reachability and hop count.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Investigating how an API controller reaches a database query, or checking for unintended architectural layer breaches between disparate modules.</p>
+          </div>
+        </div>
+      </div>
 
-# Pre-commit verification gates
-rw gate [PATH] --edit-check &lt;SYM&gt; --affected &lt;PATH&gt; --quality-delta
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw . --html [&lt;FILE&gt;] [--color-by &lt;MODE&gt;]</code></div>
+          <span class="cmd-badge">Visualization</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Exports a standalone, interactive HTML visualization of the call graph with pan-zoom canvas, node search, and configurable coloring modes.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Embeds graph topology and metadata into an SVG canvas with interactive controls, supporting coloring by language, Louvain community clusters, cognitive complexity, or churn.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Architecture reviews, developer onboarding, and visually communicating system structure to non-technical stakeholders.</p>
+          </div>
+        </div>
+      </div>
 
-# Maintenance hotspots and code complexity metrics
-rw metrics [PATH] --hotspots
+      <h2 id="subcommands">Structured Subcommands</h2>
+      <p>Categorized workflow groups providing focused subcommands for developer and agent workflows:</p>
 
-# Launch stdio Model Context Protocol (MCP) server
-rw mcp</code></pre>
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw orient [PATH] --for &lt;TASK&gt;</code></div>
+          <span class="cmd-badge">Exploration</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Returns a task-lens ranked inventory of building block symbols, signatures, and callers most relevant to a natural language task description.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Combines BM25 lexical token matching with Personalized PageRank proximity to score and rank symbol definitions under a deterministic byte or token ceiling.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">The entry point for starting any multi-symbol feature, bug fix, or agent task in an unfamiliar repository.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw navigate [PATH] --symbol &lt;SYM&gt; [--callers | --callees | --impact]</code></div>
+          <span class="cmd-badge">Navigation</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Navigates symbol neighborhoods and downstream impact trees with explicit command options.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Direct CSR index traversals yielding file paths, line bounds, and call hierarchy rankings.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Scripted agent tools or editor extensions requiring structured subcommands rather than top-level flags.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw gate [PATH] [--edit-check &lt;SYM&gt;] [--affected &lt;PATH&gt;] [--quality-delta]</code></div>
+          <span class="cmd-badge">Safety Gate</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Runs pre-commit verification checks in a unified batch, outputting structured pass/fail results for CI runners and git hooks.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Dispatches contract comparison, test reachability, and quality delta regression evaluation concurrently.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">In <code>.pre-commit-config.yaml</code>, GitHub Actions PR workflows, or local git hook scripts before committing.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw metrics [PATH] [--hotspots]</code></div>
+          <span class="cmd-badge">Metrics</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Analyzes repository codebase health, reporting cognitive complexity, Halstead volume, Posnett readability, and historical commit churn.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Parses AST control structures for McCabe and Campbell complexity alongside information-theoretic readability entropy models.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">During sprint retrospectives, technical debt triage, and code quality audits.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw slice [PATH] --symbol &lt;SYM:VAR&gt; [--slice-flow &lt;fwd|back|both&gt;]</code></div>
+          <span class="cmd-badge">Slicing</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Dedicated subcommand interface for intra-procedural def-use variable slicing with step-by-step dataflow tracing.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">AST dataflow engine traversing intra-procedural expression trees and control statements.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Vulnerability auditing, finding dead variable assignments, and validating functional state immutability.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw mcp</code></div>
+          <span class="cmd-badge">Integration</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Starts a persistent stdio JSON-RPC server implementing the Model Context Protocol (MCP) with 33 tools for AI coding assistants.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Streams JSON-RPC 2.0 frames over standard I/O, executing cached in-memory graph, slicing, and git queries in sub-millisecond response times.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">In Claude Desktop (<code>claude_desktop_config.json</code>), OpenCode, Cursor, or Omp to equip AI agents with native code intelligence tools.</p>
+          </div>
+        </div>
+      </div>
 
       <h2 id="gates">Pre-Commit Verification Gates</h2>
       <p>
