@@ -2,6 +2,7 @@ pub mod crawler;
 pub mod domain;
 pub mod graph;
 pub mod ingest;
+pub mod rank;
 pub mod resolve;
 
 pub use crawler::{
@@ -12,6 +13,7 @@ pub use domain::{
 };
 pub use graph::{CsrMatrix, Graph};
 pub use ingest::{ingest_crawled_files, LanguageRegistry};
+pub use rank::{biased_teleport, page_rank, uniform_teleport, PageRankConfig, PageRankResult};
 pub use resolve::{
     resolve_all_references, resolve_call_reference, EdgeAcc, ResolutionResult, ResolvedRef,
 };

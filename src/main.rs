@@ -1,5 +1,6 @@
 use rwire::{
     crawl_directory, ingest_crawled_files, CrawlerOptions, Graph, Interner, LanguageRegistry,
+    PageRankConfig,
 };
 use std::{env, path::Path, time::Instant};
 
@@ -12,13 +13,15 @@ fn main() {
     let interner = Interner::new();
     let ingest = ingest_crawled_files(&files, &registry, &interner);
     let graph = Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&PageRankConfig::default());
 
     println!(
-        "rwire v0.1.0 — crawled {} files, indexed {} symbols, {} references, resolved {} edges in {:.2?}",
+        "rwire v0.1.0 — crawled {} files, indexed {} symbols, {} references, resolved {} edges, PageRank converged in {} iters in {:.2?}",
         ingest.file_count(),
         ingest.symbol_count(),
         ingest.reference_count(),
         graph.edge_count(),
+        pr.iterations,
         start.elapsed()
     );
 }

@@ -1,4 +1,5 @@
 use crate::domain::{IngestResult, Interner, NodeId};
+use crate::rank::{page_rank, uniform_teleport, PageRankConfig, PageRankResult};
 use crate::resolve::{resolve_all_references, ResolutionResult};
 use std::ops::Range;
 
@@ -147,6 +148,17 @@ impl Graph {
     #[must_use]
     pub fn ambiguity(&self, node: NodeId) -> u32 {
         self.amb_out[node as usize]
+    }
+
+    #[must_use]
+    pub fn page_rank(&self, config: &PageRankConfig) -> PageRankResult {
+        let teleport = uniform_teleport(self.node_count());
+        self.page_rank_custom(config, &teleport)
+    }
+
+    #[must_use]
+    pub fn page_rank_custom(&self, config: &PageRankConfig, teleport: &[f64]) -> PageRankResult {
+        page_rank(&self.in_edges, &self.w_out_deg, teleport, config)
     }
 
     #[must_use]
