@@ -1,7 +1,5 @@
 use crate::domain::Lang;
 use ignore::WalkBuilder;
-use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_MAX_FILE_SIZE: u64 = 4 * 1024 * 1024;
@@ -54,52 +52,80 @@ impl Default for CrawlerOptions {
     }
 }
 
-pub fn crawl_directory(root: &Path, options: &CrawlerOptions) -> Vec<CrawledFile> {
-    let mut files = Vec::new();
-    for entry in WalkBuilder::new(root)
+fn build_walker(root: &Path, options: &CrawlerOptions) -> ignore::Walk {
+    let custom_excludes = options.custom_excludes.clone();
+    let mut builder = WalkBuilder::new(root);
+    builder
         .git_ignore(options.honor_gitignore)
         .git_global(options.honor_gitignore)
         .git_exclude(options.honor_gitignore)
         .hidden(false)
         .follow_links(false)
+        .filter_entry(move |entry| {
+            let Some(name) = entry.file_name().to_str() else {
+                return true;
+            };
+            let is_dir = entry.file_type().is_some_and(|ft| ft.is_dir());
+            !is_entry_denylisted(name, is_dir, &custom_excludes)
+        })
         .build()
-        .flatten()
-    {
-        let path = entry.path();
-        if path.is_dir() {
-            continue;
-        }
+}
 
-        if is_path_denylisted(path, &options.custom_excludes) {
-            continue;
-        }
-
-        let lang = Lang::from_extension(path.extension().and_then(|e| e.to_str()).unwrap_or(""));
-        if lang == Lang::Unknown {
-            continue;
-        }
-
-        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-        if size == 0 || size > options.max_file_size || is_binary_file(path) {
-            continue;
-        }
-
-        let rel_path = path
-            .strip_prefix(root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .replace('\\', "/");
-
-        files.push(CrawledFile {
-            path: path.to_path_buf(),
-            rel_path,
-            lang,
-            byte_size: size,
-        });
+fn process_crawl_entry(
+    entry: &ignore::DirEntry,
+    root: &Path,
+    options: &CrawlerOptions,
+) -> Option<CrawledFile> {
+    let path = entry.path();
+    if path.is_dir() || is_path_denylisted(path, &options.custom_excludes) {
+        return None;
     }
 
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let lang = Lang::from_extension(ext);
+    if lang == Lang::Unknown {
+        return None;
+    }
+
+    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+    if size == 0 || size > options.max_file_size {
+        return None;
+    }
+
+    let rel_path = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    Some(CrawledFile {
+        path: path.to_path_buf(),
+        rel_path,
+        lang,
+        byte_size: size,
+    })
+}
+
+pub fn crawl_directory(root: &Path, options: &CrawlerOptions) -> Vec<CrawledFile> {
+    let mut files = Vec::new();
+    for entry in build_walker(root, options).flatten() {
+        if let Some(file) = process_crawl_entry(&entry, root, options) {
+            files.push(file);
+        }
+    }
     files.sort_by(|a, b| a.rel_path.as_bytes().cmp(b.rel_path.as_bytes()));
     files
+}
+
+#[inline]
+fn is_entry_denylisted(name: &str, is_dir: bool, custom_excludes: &[String]) -> bool {
+    if is_dir {
+        DENYLIST_DIRS.contains(&name)
+            || name.starts_with("cmake-build-")
+            || custom_excludes.iter().any(|ex| name.contains(ex))
+    } else {
+        custom_excludes.iter().any(|ex| name.contains(ex))
+    }
 }
 
 /// Check if a path component is in the default or custom denylist.
@@ -144,14 +170,6 @@ pub fn evaluate_candidate(
         lang,
         byte_size,
     })
-}
-
-fn is_binary_file(path: &Path) -> bool {
-    let mut buf = [0u8; 4096];
-    File::open(path)
-        .and_then(|mut f| f.read(&mut buf))
-        .map(|n| is_binary_buffer(&buf[..n]))
-        .unwrap_or(false)
 }
 
 #[cfg(test)]

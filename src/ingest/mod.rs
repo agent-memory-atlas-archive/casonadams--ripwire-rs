@@ -7,6 +7,7 @@ use crate::domain::{
     FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, RefRole, Reference, SymKind, Symbol,
 };
 use rayon::prelude::*;
+use std::cell::RefCell;
 use std::fs;
 use std::sync::{Arc, LazyLock};
 use streaming_iterator::StreamingIterator;
@@ -34,6 +35,12 @@ macro_rules! lang_entry {
             (ts, Arc::new(q))
         })
     };
+}
+thread_local! {
+    static PARSER_STATE: RefCell<(Parser, QueryCursor)> = RefCell::new((
+        Parser::new(),
+        QueryCursor::new(),
+    ));
 }
 
 static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 24] = [
@@ -578,41 +585,44 @@ fn parse_file_tree(
     query: &Query,
     lang: Lang,
 ) -> FileParseResult {
-    let mut parser = Parser::new();
-    if parser.set_language(language).is_err() {
-        return FileParseResult::default();
-    }
+    PARSER_STATE.with(|state| {
+        let mut borrowed = state.borrow_mut();
+        let (parser, cursor) = &mut *borrowed;
+        if parser.set_language(language).is_err() {
+            return FileParseResult::default();
+        }
 
-    let tree = match parser.parse(source_bytes, None) {
-        Some(t) => t,
-        None => return FileParseResult::default(),
-    };
+        let tree = match parser.parse(source_bytes, None) {
+            Some(t) => t,
+            None => return FileParseResult::default(),
+        };
 
-    let line_count = source_bytes.iter().filter(|&&b| b == b'\n').count() as u32 + 1;
-    let mut cursor = QueryCursor::new();
-    let mut matches = cursor.matches(query, tree.root_node(), source_bytes);
+        let line_count = source_bytes.iter().filter(|&&b| b == b'\n').count() as u32 + 1;
+        let mut defs = Vec::new();
+        let mut refs = Vec::new();
 
-    let mut defs = Vec::new();
-    let mut refs = Vec::new();
+        {
+            let mut matches = cursor.matches(query, tree.root_node(), source_bytes);
+            while let Some(m) = matches.next() {
+                let ext = extract_match_captures(m, query, source_bytes);
+                record_extracted_item(ext, source_bytes, lang, &mut defs, &mut refs);
+            }
+        }
 
-    while let Some(m) = matches.next() {
-        let ext = extract_match_captures(m, query, source_bytes);
-        record_extracted_item(ext, source_bytes, lang, &mut defs, &mut refs);
-    }
+        defs.sort_by(|a, b| {
+            a.start_byte
+                .cmp(&b.start_byte)
+                .then_with(|| a.name.cmp(&b.name))
+        });
+        defs.dedup_by(|a, b| a.start_byte == b.start_byte && a.name == b.name);
 
-    defs.sort_by(|a, b| {
-        a.start_byte
-            .cmp(&b.start_byte)
-            .then_with(|| a.name.cmp(&b.name))
-    });
-    defs.dedup_by(|a, b| a.start_byte == b.start_byte && a.name == b.name);
-
-    FileParseResult {
-        line_count,
-        byte_size: source_bytes.len() as u64,
-        defs,
-        refs,
-    }
+        FileParseResult {
+            line_count,
+            byte_size: source_bytes.len() as u64,
+            defs,
+            refs,
+        }
+    })
 }
 
 /// Parse a single file content with a compiled grammar and query.
@@ -671,6 +681,9 @@ pub fn ingest_crawled_files(
         .map(|file| {
             let (language, query) = registry.get(file.lang)?;
             let source_bytes = fs::read(&file.path).ok()?;
+            if crate::crawler::is_binary_buffer(&source_bytes) {
+                return None;
+            }
             Some(parse_file_content(
                 &source_bytes,
                 language,
@@ -792,6 +805,28 @@ fn build_file_symbols(
     file_symbols
 }
 
+fn find_enclosing_symbol(file_symbols: &[Symbol], start_byte: usize) -> NodeId {
+    let upper = file_symbols.partition_point(|s| (s.sig_start_byte as usize) <= start_byte);
+    let mut best_id = NO_NODE;
+    let mut best_span = u32::MAX;
+
+    for s in file_symbols[..upper].iter().rev() {
+        let sig_start = s.sig_start_byte as usize;
+        let dist = start_byte - sig_start;
+        if dist as u32 >= best_span {
+            break;
+        }
+        if start_byte <= (s.end_byte as usize) {
+            let span = s.end_byte - s.sig_start_byte;
+            if span < best_span {
+                best_span = span;
+                best_id = s.id;
+            }
+        }
+    }
+    best_id
+}
+
 fn build_file_references(
     refs: Vec<RawRef>,
     file: &CrawledFile,
@@ -801,15 +836,7 @@ fn build_file_references(
 ) -> Vec<Reference> {
     refs.into_iter()
         .map(|r| {
-            let from_symbol = file_symbols
-                .iter()
-                .filter(|s| {
-                    (s.sig_start_byte as usize) <= r.start_byte
-                        && r.start_byte <= (s.end_byte as usize)
-                })
-                .min_by_key(|s| s.end_byte - s.sig_start_byte)
-                .map(|s| s.id)
-                .unwrap_or(NO_NODE);
+            let from_symbol = find_enclosing_symbol(file_symbols, r.start_byte);
 
             let callee_spur = interner.intern(&r.callee_name);
             let mut reference =
