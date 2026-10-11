@@ -2,6 +2,7 @@ use super::token_stream::{
     compute_jaccard, compute_kgrams, compute_lcs_len, hash_tokens, tokenize_body,
 };
 use crate::domain::{IngestResult, Interner, NodeId, SymKind};
+use rayon::prelude::*;
 use std::collections::HashMap;
 
 /// Classification of clone match type.
@@ -278,17 +279,15 @@ fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGrou
     }
 }
 
-fn find_type3_pairs(
+fn find_type3_pairs_seq(
     candidates: &[BodyTokens],
     exact_matched: &HashMap<NodeId, ()>,
 ) -> Vec<CloneGroup> {
     let mut gapped = Vec::new();
-
     for (i, ca) in candidates.iter().enumerate() {
         if exact_matched.contains_key(&ca.id) {
             continue;
         }
-
         for cb in &candidates[i + 1..] {
             if exact_matched.contains_key(&cb.id) {
                 continue;
@@ -298,8 +297,29 @@ fn find_type3_pairs(
             }
         }
     }
-
     gapped
+}
+
+fn find_type3_pairs(
+    candidates: &[BodyTokens],
+    exact_matched: &HashMap<NodeId, ()>,
+) -> Vec<CloneGroup> {
+    if candidates.len() < 32 {
+        return find_type3_pairs_seq(candidates, exact_matched);
+    }
+
+    candidates
+        .par_iter()
+        .enumerate()
+        .filter(|(_, ca)| !exact_matched.contains_key(&ca.id))
+        .flat_map(|(i, ca)| {
+            candidates[i + 1..]
+                .iter()
+                .filter(|cb| !exact_matched.contains_key(&cb.id))
+                .filter_map(|cb| evaluate_candidate_pair(ca, cb))
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// Detect all Type-1, Type-2, and Type-3 clones across the codebase.

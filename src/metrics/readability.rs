@@ -80,75 +80,85 @@ fn is_keyword(s: &str) -> bool {
     )
 }
 
-fn scan_string_literal(chars: &[char], i: &mut usize) -> String {
-    let quote = chars[*i];
-    let mut s = String::new();
-    s.push(quote);
+fn scan_readability_string(bytes: &[u8], i: &mut usize) -> String {
+    let quote = bytes[*i];
+    let start = *i;
     *i += 1;
-    while *i < chars.len() {
-        let c = chars[*i];
-        s.push(c);
+    let mut escaped = false;
+    for &b in &bytes[*i..] {
         *i += 1;
-        if c == '\\' && *i < chars.len() {
-            s.push(chars[*i]);
-            *i += 1;
-        } else if c == quote {
+        if escaped {
+            escaped = false;
+        } else if b == b'\\' {
+            escaped = true;
+        } else if b == quote {
             break;
         }
     }
-    s
+    String::from_utf8_lossy(&bytes[start..*i]).into_owned()
 }
 
-fn scan_word(chars: &[char], i: &mut usize) -> String {
-    let mut s = String::new();
-    while *i < chars.len() && (chars[*i].is_alphanumeric() || chars[*i] == '_') {
-        s.push(chars[*i]);
-        *i += 1;
-    }
-    s
+fn scan_readability_word(bytes: &[u8], i: &mut usize) -> String {
+    let start = *i;
+    let len = bytes[*i..]
+        .iter()
+        .take_while(|&&b| b.is_ascii_alphanumeric() || b == b'_')
+        .count();
+    *i += len;
+    String::from_utf8_lossy(&bytes[start..*i]).into_owned()
 }
 
-fn scan_symbol_token(chars: &[char], i: &mut usize) -> String {
-    let multi_ops = [
-        "==", "!=", "<=", ">=", "&&", "||", "::", "->", "=>", "+=", "-=",
-    ];
-    if *i + 1 < chars.len() {
-        let pair: String = chars[*i..=*i + 1].iter().collect();
-        if multi_ops.contains(&pair.as_str()) {
+fn scan_readability_symbol(bytes: &[u8], i: &mut usize) -> String {
+    if *i + 1 < bytes.len() {
+        let op = match &bytes[*i..*i + 2] {
+            b"==" => "==",
+            b"!=" => "!=",
+            b"<=" => "<=",
+            b">=" => ">=",
+            b"&&" => "&&",
+            b"||" => "||",
+            b"::" => "::",
+            b"->" => "->",
+            b"=>" => "=>",
+            b"+=" => "+=",
+            b"-=" => "-=",
+            _ => "",
+        };
+        if !op.is_empty() {
             *i += 2;
-            return pair;
+            return op.to_string();
         }
     }
-    let s = chars[*i].to_string();
+    let start = *i;
     *i += 1;
-    s
+    String::from_utf8_lossy(&bytes[start..*i]).into_owned()
 }
 
 fn tokenize_code(code: &str) -> Vec<(String, TokenKind)> {
-    let chars: Vec<char> = code.chars().collect();
+    let bytes = code.as_bytes();
     let mut tokens = Vec::new();
     let mut i = 0;
 
-    while i < chars.len() {
-        let c = chars[i];
-        if c.is_whitespace() {
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b.is_ascii_whitespace() {
             i += 1;
-        } else if c == '"' || c == '\'' {
-            let lit = scan_string_literal(&chars, &mut i);
+        } else if b == b'"' || b == b'\'' {
+            let lit = scan_readability_string(bytes, &mut i);
             tokens.push((lit, TokenKind::Operand));
-        } else if c.is_alphabetic() || c == '_' {
-            let word = scan_word(&chars, &mut i);
+        } else if b.is_ascii_alphabetic() || b == b'_' {
+            let word = scan_readability_word(bytes, &mut i);
             let kind = if is_keyword(&word) {
                 TokenKind::Operator
             } else {
                 TokenKind::Operand
             };
             tokens.push((word, kind));
-        } else if c.is_ascii_digit() {
-            let num = scan_word(&chars, &mut i);
+        } else if b.is_ascii_digit() {
+            let num = scan_readability_word(bytes, &mut i);
             tokens.push((num, TokenKind::Operand));
         } else {
-            let sym = scan_symbol_token(&chars, &mut i);
+            let sym = scan_readability_symbol(bytes, &mut i);
             tokens.push((sym, TokenKind::Operator));
         }
     }
