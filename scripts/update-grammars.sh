@@ -58,6 +58,9 @@ update_grammar() {
         if [ -d "${src_dir}/tree_sitter" ]; then
             cp -R "${src_dir}/tree_sitter/"* "${dest_dir}/tree_sitter/"
         fi
+        if [ "${name}" = "gdscript" ] && [ -f "${dest_dir}/scanner.c" ]; then
+            sed -i.bak 's/return (Delimiter){0};/Delimiter d; d.flags = 0; return d;/' "${dest_dir}/scanner.c" && rm -f "${dest_dir}/scanner.c.bak"
+        fi
     fi
 
     echo "    Updated ${name} in ${VENDOR_DIR}/${name}"

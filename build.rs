@@ -18,6 +18,8 @@ fn compile_grammar(name: &str, files: &[&str], extra_includes: &[&str]) {
         build.file(path);
     }
     build.warnings(false);
+    build.flag_if_supported("/std:c11");
+    build.flag_if_supported("-std=c11");
     build.compile(&format!("tree_sitter_{name}"));
 }
 
