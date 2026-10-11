@@ -28,7 +28,7 @@ impl crate::serialize::ToXmlString for HotspotsReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         writeln!(
             out,
-            "<hotspots files=\"{}\" ranked=\"{}\" unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\">",
+            "<hotspots schema=\"ripwire.hotspots/v1\" window=\"12mo@HEAD\" files=\"{}\" ranked=\"{}\" unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\">",
             self.total_files,
             self.ranked_count,
             self.unranked_no_churn,
@@ -221,7 +221,9 @@ mod tests {
         assert_eq!(report.files[1].score, 150);
 
         let xml = report.to_xml_string();
-        assert!(xml.contains("<hotspots files=\"3\" ranked=\"2\""));
+        assert!(xml.contains(
+            "<hotspots schema=\"ripwire.hotspots/v1\" window=\"12mo@HEAD\" files=\"3\" ranked=\"2\""
+        ));
         assert!(xml.contains("<f p=\"src/auth.rs\" churn=\"10\" ccx=\"20\" score=\"200\" top=\"login\" top_ccx=\"20\" top_l=\"10\"/>"));
     }
 }

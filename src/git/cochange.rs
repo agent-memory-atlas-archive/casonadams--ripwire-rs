@@ -195,6 +195,9 @@ fn compute_transitive_closure(direct_adj: &[HashSet<u32>]) -> Vec<HashSet<u32>> 
         .map(|i| forward_reachable(i as u32, direct_adj))
         .collect()
 }
+fn is_file_path(p: &str) -> bool {
+    Path::new(p).extension().is_some()
+}
 
 /// Determine whether two file paths are capable of depending on each other.
 #[must_use]
@@ -312,6 +315,9 @@ where
 
     let mut partners = Vec::new();
     for (partner_path, stats) in tally.partners {
+        if !is_file_path(partner_path) {
+            continue;
+        }
         if stats.together >= opts.min_support {
             let total = tally
                 .other_total
@@ -407,6 +413,9 @@ where
 
     let mut pairs = Vec::new();
     for ((fa, fb), stats) in tally.pairs {
+        if !is_file_path(fa) || !is_file_path(fb) {
+            continue;
+        }
         if stats.together >= opts.min_support {
             let total_a = tally.file_counts.get(fa).copied().unwrap_or(stats.together);
             let total_b = tally.file_counts.get(fb).copied().unwrap_or(stats.together);

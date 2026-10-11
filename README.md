@@ -1,13 +1,12 @@
-# ripwire
+# rwire
 
 High-throughput agent context router and deterministic static analysis engine.
 
-`ripwire` analyzes source code across 24 languages to construct precise call
-graphs, calculate symbol impact via PageRank, mine co-change patterns, slice
+`rwire` analyzes source code across 24 languages to construct precise call
+graphs, calculate symbol impact via PageRank and HITS, mine co-change patterns, slice
 intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a
 standalone CLI (`rw`) or as a Model Context Protocol (MCP) server over stdio for
 AI coding agents.
-
 ---
 
 ## Features
@@ -32,6 +31,15 @@ AI coding agents.
 
 ---
 
+## Documentation
+
+- [Architecture & Ingestion Pipeline](docs/ARCHITECTURE.md) - Pipeline design, Tree-Sitter grammars, lock-free interning, CSR in-edge graph, and streaming XML.
+- [CLI Reference](docs/CLI.md) - Workflow groups, top-level flags, streaming budgets, and interactive visualizer.
+- [Pre-Commit Safety Gates](docs/GATES.md) - Contract checking (`--edit-check`), test reachability (`--affected`), and quality delta (`--quality-delta`).
+- [Model Context Protocol (MCP)](docs/MCP.md) - Complete reference for all 33 MCP tools and agent configuration.
+- [Algorithms & Academic Lenses](docs/ALGORITHMS.md) - PageRank, HITS, Louvain modularity, clone detector, and dataflow slicing.
+
+---
 ## Installation
 
 ### Homebrew (macOS & Linux)

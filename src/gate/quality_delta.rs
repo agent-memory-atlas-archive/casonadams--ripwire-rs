@@ -19,27 +19,31 @@ pub struct QualityRegression {
 }
 
 /// Comprehensive delta report across all quality dimensions.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct QualityDeltaReport {
     pub baseline_source: String,
     pub head_sha: String,
+    pub at_stamp: String,
     pub regressions: Vec<QualityRegression>,
     pub gating_count: usize,
     pub preexisting_worse_count: usize,
     pub new_symbol_count: usize,
+    pub minor_count: usize,
+    pub api_new_surface: usize,
 }
 
 impl crate::serialize::ToXmlString for QualityDeltaReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         writeln!(
             out,
-            "<quality-delta baseline=\"{}\" head=\"{}\" regressions=\"{}\" gating=\"{}\" preexisting_worse=\"{}\" new_symbols=\"{}\">",
+            "<quality-delta schema=\"ripwire.quality-delta/v1\" baseline=\"{}\" regressions=\"{}\" minor=\"{}\" acked=\"0\" stale=\"0\" preexisting-worse=\"{}\" new-symbol=\"{}\" gating=\"{}\" register-macro-excluded=\"0\" api-new-surface=\"{}\" at=\"{}\">",
             self.baseline_source,
-            self.head_sha,
             self.regressions.len(),
-            self.gating_count,
+            self.minor_count,
             self.preexisting_worse_count,
-            self.new_symbol_count
+            self.new_symbol_count,
+            self.gating_count,
+            self.api_new_surface,
+            self.at_stamp
         )?;
         for r in &self.regressions {
             let origin_attr = if r.is_new_symbol {
@@ -47,18 +51,18 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
             } else {
                 ""
             };
-            let gating_attr = if r.is_gating { " gating=\"1\"" } else { "" };
+            let gating_val = if r.is_gating { 1 } else { 0 };
             writeln!(
                 out,
-                "  <r kind=\"{}\" sym=\"{}\" p=\"{}:{}\" was=\"{}\" now=\"{}\"{}{}/>",
+                "  <r kind=\"{}\" sym=\"{}\" p=\"{}:{}\" was=\"{}\" now=\"{}\" gating=\"{}\"{}/>",
                 r.kind,
                 r.sym_name,
                 r.file_path,
                 r.line,
                 r.was_val,
                 r.now_val,
-                origin_attr,
-                gating_attr
+                gating_val,
+                origin_attr
             )?;
         }
         writeln!(out, "</quality-delta>")
@@ -182,14 +186,29 @@ pub fn compute_quality_delta(
             preexisting_worse_count += 1;
         }
     }
+    let minor_count = regressions.len().saturating_sub(gating_count);
+    let api_new_surface = working.public_api.difference(&baseline.public_api).count();
+    let short_sha = if working.head_sha.len() >= 8 {
+        &working.head_sha[..8]
+    } else {
+        &working.head_sha
+    };
+    let at_stamp = if working.dirty {
+        format!("{short_sha}+dirty")
+    } else {
+        short_sha.to_string()
+    };
 
     QualityDeltaReport {
         baseline_source: baseline_source.to_string(),
         head_sha: working.head_sha.clone(),
+        at_stamp,
         regressions,
         gating_count,
         preexisting_worse_count,
         new_symbol_count,
+        minor_count,
+        api_new_surface,
     }
 }
 

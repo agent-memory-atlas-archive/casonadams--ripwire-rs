@@ -149,12 +149,12 @@ fn test_edit_check_arity_break() {
 
     // Verify XML formatting
     let xml = report.to_xml_string();
-    assert!(xml.contains("<edit-check sym=\"compute\" p=\"src/service.rs\" status=\"contract-change\" callers=\"2\" incompatible=\"1\">"));
-    assert!(xml.contains(
-        "<caller sym=\"legacy_worker\" p=\"src/legacy_caller.rs:15\" incompatible=\"1\">"
-    ));
+    assert!(xml.contains("<edit-check schema=\"ripwire.edit-check/v1\" sym=\"compute\" p=\"src/service.rs\" status=\"contract-change\" callers=\"2\" incompatible=\"1\">"));
+    assert!(
+        xml.contains("<c n=\"legacy_worker\" p=\"src/legacy_caller.rs:15\" incompatible=\"1\">")
+    );
     assert!(xml.contains("<site line=\"18\" args=\"2\" required=\"3\"/>"));
-    assert!(xml.contains("<caller sym=\"modern_worker\" p=\"src/modern_caller.rs:20\"/>"));
+    assert!(xml.contains("<c n=\"modern_worker\" p=\"src/modern_caller.rs:20\"/>"));
 }
 
 #[test]
@@ -176,8 +176,8 @@ fn test_affected_tests_transitive_reachability() {
 
     assert_eq!(report.reached_symbols, 4);
     let xml = report.to_xml_string();
-    assert!(xml.contains("<affected changed=\"src/service.rs\" seeds=\"1\" seed_test_files=\"0\" tests=\"1\" reached=\"4\">"));
-    assert!(xml.contains("<test path=\"tests/test_service.rs\" hops=\"2\"/>"));
+    assert!(xml.contains("<affected schema=\"ripwire.affected/v1\" files=\"src/service.rs\""));
+    assert!(xml.contains("<test p=\"tests/test_service.rs\" hops=\"2\"/>"));
 }
 
 #[test]
@@ -190,14 +190,13 @@ fn test_cli_gate_execution_and_xml_output() {
     let mut out_edit = Cursor::new(Vec::new());
     execute_edit_check_with("compute", &state, &mut out_edit).expect("execute edit-check");
     let xml_edit = String::from_utf8(out_edit.into_inner()).unwrap();
-    assert!(xml_edit.contains("<edit-check sym=\"compute\""));
-
+    assert!(xml_edit.contains("<edit-check schema=\"ripwire.edit-check/v1\" sym=\"compute\""));
     // 2. Test CLI affected
     let mut out_aff = Cursor::new(Vec::new());
     execute_affected_with("src/service.rs", &state, &mut out_aff).expect("execute affected");
     let xml_aff = String::from_utf8(out_aff.into_inner()).unwrap();
-    assert!(xml_aff.contains("<affected changed=\"src/service.rs\""));
-    assert!(xml_aff.contains("<test path=\"tests/test_service.rs\""));
+    assert!(xml_aff.contains("<affected schema=\"ripwire.affected/v1\" files=\"src/service.rs\""));
+    assert!(xml_aff.contains("<test p=\"tests/test_service.rs\""));
 }
 
 #[test]

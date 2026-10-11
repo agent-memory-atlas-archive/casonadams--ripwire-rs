@@ -444,7 +444,11 @@ fn print_cochange_pairs<W: io::Write>(
     pairs: &[crate::git::cochange::CoPair],
     out: &mut W,
 ) -> io::Result<()> {
-    writeln!(out, "<cochange pairs=\"{}\">", pairs.len())?;
+    writeln!(
+        out,
+        "<cochange schema=\"ripwire.cochange/v1\" pairs=\"{}\">",
+        pairs.len()
+    )?;
     for p in pairs {
         let attr = if !p.dep_capable {
             " dep_capable=\"0\""

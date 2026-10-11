@@ -318,7 +318,7 @@ pub fn render_clones_xml(
 ) -> String {
     let total_saved: usize = groups.iter().map(|g| g.tokens_saved).sum();
     let mut out = format!(
-        "<clones schema=\"rwire.clones/v1\" groups=\"{}\" tokens_saved=\"{total_saved}\">\n",
+        "<clones schema=\"ripwire.clones/v1\" groups=\"{}\" tokens_saved=\"{total_saved}\">\n",
         groups.len()
     );
 
@@ -344,7 +344,7 @@ pub fn render_clones_xml(
                 } else {
                     format!("line:{}", sym.line)
                 };
-                out.push_str(&format!("    <sym id=\"{id}\" n=\"{name}\" p=\"{p}\" />\n"));
+                out.push_str(&format!("    <f n=\"{name}\" p=\"{p}\" />\n"));
             }
         }
         out.push_str("  </group>\n");
@@ -390,7 +390,8 @@ mod tests {
         assert_eq!(clones[0].members.len(), 3);
         assert_eq!(clones[0].clone_type, CloneType::Type2);
         let xml = render_clones_xml(&clones, &ingest, &interner);
-        assert!(xml.contains("<clones schema=\"rwire.clones/v1\""));
+        assert!(xml.contains("<clones schema=\"ripwire.clones/v1\""));
+        assert!(xml.contains("<f n=\"func_one\""));
         assert!(xml.contains("<group type=\"2\""));
         assert_eq!(CloneIdiom::None.as_str(), None);
         assert_eq!(

@@ -43,8 +43,9 @@ fn find_node_at_span<'a>(root: Node<'a>, start_byte: usize, end_byte: usize) -> 
 
 /// Render XML for sliceable locals inventory when no variable was given.
 fn render_locals_xml(sym_name: &str, path_line: &str, locals: &[(String, u32, OccRole)]) -> String {
-    let mut out =
-        format!("<slice sym=\"{sym_name}\" p=\"{path_line}\" counts=\"as-classified\">\n");
+    let mut out = format!(
+        "<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" counts=\"as-classified\">\n"
+    );
     for (name, line, role) in locals {
         out.push_str(&format!(
             "  <v n=\"{name}\" l=\"{line}\" t=\"{}\" />\n",
@@ -65,26 +66,26 @@ fn render_flow_xml(
     steps: &[SliceStep],
 ) -> String {
     let mut out = format!(
-        "<slice sym=\"{sym_name}\" var=\"{var_name}\" p=\"{path_line}\" flow=\"{}\" depth=\"{depth}\" steps=\"{}\" counts=\"as-classified\">\n",
+        "<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" var=\"{var_name}\" p=\"{path_line}\" flow=\"{}\" depth=\"{depth}\" steps=\"{}\" counts=\"as-classified\">\n",
         dir.as_str(),
         steps.len()
     );
     for s in steps {
         if s.from_line > 0 {
             out.push_str(&format!(
-                "  <row l=\"{}\" v=\"{}\" t=\"{}\" d=\"{}\" from=\"{}\" />\n",
+                "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\" from=\"{}\" />\n",
                 s.line,
-                s.var_name,
                 s.role.as_str(),
+                s.var_name,
                 s.depth,
                 s.from_line
             ));
         } else {
             out.push_str(&format!(
-                "  <row l=\"{}\" v=\"{}\" t=\"{}\" d=\"{}\" />\n",
+                "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\" />\n",
                 s.line,
-                s.var_name,
                 s.role.as_str(),
+                s.var_name,
                 s.depth
             ));
         }
@@ -235,7 +236,7 @@ mod tests {
             Some(code),
         )
         .unwrap();
-        assert!(locals_res.contains("<slice sym=\"compute\""));
+        assert!(locals_res.contains("<slice schema=\"ripwire.slice/v1\" sym=\"compute\""));
         assert!(locals_res.contains("<v n=\"x\""));
         assert!(locals_res.contains("<v n=\"y\""));
 
@@ -251,9 +252,9 @@ mod tests {
         )
         .unwrap();
         assert!(fwd_res.contains("flow=\"fwd\""));
-        assert!(fwd_res.contains("<row l=\"1\" v=\"x\" t=\"param\""));
-        assert!(fwd_res.contains("<row l=\"2\" v=\"x\" t=\"read\" d=\"1\" from=\"1\""));
-        assert!(fwd_res.contains("<row l=\"3\" v=\"y\" t=\"read\" d=\"2\" from=\"2\""));
-        assert!(fwd_res.contains("<row l=\"4\" v=\"z\" t=\"read\" d=\"3\" from=\"3\""));
+        assert!(fwd_res.contains("<s l=\"1\" k=\"param\" v=\"x\""));
+        assert!(fwd_res.contains("<s l=\"2\" k=\"read\" v=\"x\" d=\"1\" from=\"1\""));
+        assert!(fwd_res.contains("<s l=\"3\" k=\"read\" v=\"y\" d=\"2\" from=\"2\""));
+        assert!(fwd_res.contains("<s l=\"4\" k=\"read\" v=\"z\" d=\"3\" from=\"3\""));
     }
 }

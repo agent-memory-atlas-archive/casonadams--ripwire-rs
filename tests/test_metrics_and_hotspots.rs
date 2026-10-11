@@ -196,7 +196,9 @@ fn test_hotspots_computation_and_ranking() {
     assert_eq!(report.files[2].score, 60);
 
     let xml = report.to_xml_string();
-    assert!(xml.contains("<hotspots files=\"4\" ranked=\"3\""));
+    assert!(xml.contains(
+        "<hotspots schema=\"ripwire.hotspots/v1\" window=\"12mo@HEAD\" files=\"4\" ranked=\"3\""
+    ));
     assert!(xml.contains("<f p=\"src/high_churn_high_ccx.rs\" churn=\"25\" ccx=\"40\" score=\"1000\" top=\"monster_fn\" top_ccx=\"40\" top_l=\"15\"/>"));
 }
 
@@ -249,6 +251,8 @@ fn test_cli_hotspots_execution_xml_output() {
     execute_hotspots_with(None, &commits, &state, &mut out).expect("execute hotspots succeeds");
 
     let xml = String::from_utf8(out.into_inner()).unwrap();
-    assert!(xml.contains("<hotspots files=\"1\" ranked=\"1\""));
+    assert!(xml.contains(
+        "<hotspots schema=\"ripwire.hotspots/v1\" window=\"12mo@HEAD\" files=\"1\" ranked=\"1\""
+    ));
     assert!(xml.contains("<f p=\"src/core.rs\" churn=\"3\" ccx=\"15\" score=\"45\" top=\"process_data\" top_ccx=\"15\" top_l=\"12\"/>"));
 }

@@ -37,7 +37,7 @@ impl crate::serialize::ToXmlString for EditCheckReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         writeln!(
             out,
-            "<edit-check sym=\"{}\" p=\"{}\" status=\"{}\" callers=\"{}\" incompatible=\"{}\">",
+            "<edit-check schema=\"ripwire.edit-check/v1\" sym=\"{}\" p=\"{}\" status=\"{}\" callers=\"{}\" incompatible=\"{}\">",
             self.symbol_name,
             self.file_path,
             self.status,
@@ -53,13 +53,13 @@ impl crate::serialize::ToXmlString for EditCheckReport {
             if c.sites.is_empty() {
                 writeln!(
                     out,
-                    "  <caller sym=\"{}\" p=\"{}:{}\"{}/>",
+                    "  <c n=\"{}\" p=\"{}:{}\"{}/>",
                     c.caller_name, c.file_path, c.line, incomp_attr
                 )?;
             } else {
                 writeln!(
                     out,
-                    "  <caller sym=\"{}\" p=\"{}:{}\"{}>",
+                    "  <c n=\"{}\" p=\"{}:{}\"{}>",
                     c.caller_name, c.file_path, c.line, incomp_attr
                 )?;
                 for s in &c.sites {
@@ -69,7 +69,7 @@ impl crate::serialize::ToXmlString for EditCheckReport {
                         s.line, s.arg_count, s.required_params
                     )?;
                 }
-                writeln!(out, "  </caller>")?;
+                writeln!(out, "  </c>")?;
             }
         }
         writeln!(out, "</edit-check>")

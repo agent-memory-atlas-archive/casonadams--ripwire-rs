@@ -27,7 +27,7 @@ impl crate::serialize::ToXmlString for AffectedReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         writeln!(
             out,
-            "<affected changed=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\">",
+            "<affected schema=\"ripwire.affected/v1\" files=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\">",
             self.changed_spec,
             self.seed_count,
             self.seed_test_files.len(),
@@ -42,7 +42,7 @@ impl crate::serialize::ToXmlString for AffectedReport {
             };
             writeln!(
                 out,
-                "  <test path=\"{}\" hops=\"{}\"{}/>",
+                "  <test p=\"{}\" hops=\"{}\"{}/>",
                 t.path, t.hops, direct_attr
             )?;
         }
@@ -349,7 +349,9 @@ mod tests {
         assert_eq!(report.tests[0].hops, 2); // core_fn <- service_fn <- test_fn
 
         let xml = report.to_xml_string();
-        assert!(xml.contains("<affected changed=\"src/core.rs\" seeds=\"1\""));
-        assert!(xml.contains("<test path=\"tests/test_service.rs\" hops=\"2\"/>"));
+        assert!(xml.contains(
+            "<affected schema=\"ripwire.affected/v1\" files=\"src/core.rs\" seeds=\"1\""
+        ));
+        assert!(xml.contains("<test p=\"tests/test_service.rs\" hops=\"2\"/>"));
     }
 }
