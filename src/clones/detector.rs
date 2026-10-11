@@ -358,7 +358,7 @@ pub fn render_clones_xml(
 mod tests {
     use super::*;
     use crate::domain::Lang;
-    use crate::ingest::{ingest_in_memory_files, LanguageRegistry};
+    use crate::ingest::{LanguageRegistry, ingest_in_memory_files};
 
     #[test]
     fn test_clone_type1_and_type2_detection() {

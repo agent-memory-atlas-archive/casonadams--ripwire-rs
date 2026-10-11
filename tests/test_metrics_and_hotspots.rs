@@ -1,11 +1,11 @@
-use rwire::cli::execute_hotspots_with;
-use rwire::domain::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
-use rwire::git::history::CommitInfo;
-use rwire::mcp::McpState;
-use rwire::metrics::{
-    compute_complexity, compute_hotspots, compute_readability, posnett_score, NESTING_BAR,
+use ripwire::ToXmlString;
+use ripwire::cli::execute_hotspots_with;
+use ripwire::domain::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
+use ripwire::git::history::CommitInfo;
+use ripwire::mcp::McpState;
+use ripwire::metrics::{
+    NESTING_BAR, compute_complexity, compute_hotspots, compute_readability, posnett_score,
 };
-use rwire::ToXmlString;
 use std::collections::HashMap;
 use std::io::Cursor;
 

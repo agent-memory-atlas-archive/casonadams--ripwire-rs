@@ -4,7 +4,7 @@ pub mod yaml_guard;
 
 use crate::crawler::CrawledFile;
 use crate::domain::{
-    FileInfo, IngestResult, Interner, Lang, NodeId, RefRole, Reference, SymKind, Symbol, NO_NODE,
+    FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, RefRole, Reference, SymKind, Symbol,
 };
 use rayon::prelude::*;
 use std::fs;
@@ -12,7 +12,7 @@ use std::sync::{Arc, LazyLock};
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Language, Parser, Query, QueryCursor};
 
-extern "C" {
+unsafe extern "C" {
     fn tree_sitter_elixir() -> *const tree_sitter::ffi::TSLanguage;
     fn tree_sitter_dart() -> *const tree_sitter::ffi::TSLanguage;
     fn tree_sitter_kotlin() -> *const tree_sitter::ffi::TSLanguage;
@@ -307,15 +307,14 @@ fn find_enclosing_scope(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -
 
 fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
     let parent = name_node.parent()?;
-    if parent.kind() == "scoped_identifier" {
-        if let Some(path_node) = parent.child_by_field_name("path") {
-            if let Ok(text) = path_node.utf8_text(source_bytes) {
-                let last = text.rsplit("::").next().unwrap_or(text);
-                let base = last.split('<').next().unwrap_or(last).trim();
-                if !base.is_empty() {
-                    return Some(base.to_string());
-                }
-            }
+    if parent.kind() == "scoped_identifier"
+        && let Some(path_node) = parent.child_by_field_name("path")
+        && let Ok(text) = path_node.utf8_text(source_bytes)
+    {
+        let last = text.rsplit("::").next().unwrap_or(text);
+        let base = last.split('<').next().unwrap_or(last).trim();
+        if !base.is_empty() {
+            return Some(base.to_string());
         }
     }
     None
@@ -324,10 +323,10 @@ fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) ->
 fn count_arguments_in_list(child: tree_sitter::Node<'_>) -> u16 {
     let mut count = 0u16;
     for j in 0..child.named_child_count() {
-        if let Some(arg) = child.named_child(j) {
-            if !arg.kind().contains("comment") {
-                count = count.saturating_add(1);
-            }
+        if let Some(arg) = child.named_child(j)
+            && !arg.kind().contains("comment")
+        {
+            count = count.saturating_add(1);
         }
     }
     count
@@ -406,10 +405,10 @@ fn unwrap_when_guard<'a>(
 fn count_non_comment_args(args: tree_sitter::Node<'_>) -> u16 {
     let mut count = 0u16;
     for i in 0..args.named_child_count() {
-        if let Some(c) = args.named_child(i) {
-            if c.kind() != "comment" {
-                count = count.saturating_add(1);
-            }
+        if let Some(c) = args.named_child(i)
+            && c.kind() != "comment"
+        {
+            count = count.saturating_add(1);
         }
     }
     count
@@ -492,13 +491,12 @@ fn record_def_item(
         .and_then(|n| find_enclosing_scope(n, source_bytes));
 
     let mut body_node = ext.def_node;
-    if lang == Lang::Dart {
-        if let Some(dn) = ext.def_node {
-            if let Some(body) = dart_following_body(dn) {
-                end = body.end_byte();
-                body_node = Some(body);
-            }
-        }
+    if lang == Lang::Dart
+        && let Some(dn) = ext.def_node
+        && let Some(body) = dart_following_body(dn)
+    {
+        end = body.end_byte();
+        body_node = Some(body);
     }
 
     let metrics = if kind == SymKind::Function || kind == SymKind::Method {

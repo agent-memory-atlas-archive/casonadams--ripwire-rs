@@ -130,14 +130,14 @@ pub fn load_head_symbol_contract(
 
     while let Some(m) = matches.next() {
         let (name, params, is_public) = parse_head_signature_match(m, query, &bytes, lang);
-        if let Some(n) = name {
-            if n == sym_name {
-                return Ok(Some(SignatureContract {
-                    name: n,
-                    params,
-                    is_public,
-                }));
-            }
+        if let Some(n) = name
+            && n == sym_name
+        {
+            return Ok(Some(SignatureContract {
+                name: n,
+                params,
+                is_public,
+            }));
         }
     }
 
@@ -186,20 +186,20 @@ fn is_go_public(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
 
 fn has_visibility_modifier(child: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
     let kind = child.kind();
-    if kind == "visibility_modifier" || kind == "accessibility_modifier" {
-        if let Ok(text) = child.utf8_text(source_bytes) {
-            return text.contains("pub") || text.contains("public");
-        }
+    if (kind == "visibility_modifier" || kind == "accessibility_modifier")
+        && let Ok(text) = child.utf8_text(source_bytes)
+    {
+        return text.contains("pub") || text.contains("public");
     }
     false
 }
 
 fn has_any_visibility_modifier(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
     for i in 0..def_node.child_count() {
-        if let Some(child) = def_node.child(i) {
-            if has_visibility_modifier(child, source_bytes) {
-                return true;
-            }
+        if let Some(child) = def_node.child(i)
+            && has_visibility_modifier(child, source_bytes)
+        {
+            return true;
         }
     }
     false

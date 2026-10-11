@@ -1,6 +1,6 @@
-use rwire::mcp::{dispatch_json_rpc, handle_tools_list, McpState};
-use rwire::{IngestResult, Interner};
-use serde_json::{json, Value};
+use ripwire::mcp::{McpState, dispatch_json_rpc, handle_tools_list};
+use ripwire::{IngestResult, Interner};
+use serde_json::{Value, json};
 
 #[test]
 fn test_all_33_mcp_tools_invocable() {
@@ -92,4 +92,5 @@ fn test_all_33_mcp_tools_invocable() {
             resp
         );
     }
+    let _ = std::fs::remove_file(".rwire_quality_baseline");
 }

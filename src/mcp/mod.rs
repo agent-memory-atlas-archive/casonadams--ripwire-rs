@@ -4,13 +4,13 @@ pub mod graph_tools;
 pub mod retrieval;
 pub mod schema;
 
-use crate::crawler::{crawl_directory, CrawlerOptions};
+use crate::crawler::{CrawlerOptions, crawl_directory};
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
-use crate::ingest::{ingest_crawled_files, LanguageRegistry};
+use crate::ingest::{LanguageRegistry, ingest_crawled_files};
 use crate::navigate::{find_symbols_by_name, navigate_1hop, transitive_impact};
 use crate::rank::{PageRankConfig, PageRankResult};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 use std::path::Path;
 

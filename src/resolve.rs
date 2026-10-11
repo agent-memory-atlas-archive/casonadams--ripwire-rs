@@ -1,5 +1,5 @@
 use crate::domain::{
-    FileInfo, IngestResult, Interner, NodeId, RefRole, Reference, Symbol, NO_NODE,
+    FileInfo, IngestResult, Interner, NO_NODE, NodeId, RefRole, Reference, Symbol,
 };
 use lasso::Spur;
 use std::collections::HashMap;

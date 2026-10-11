@@ -14,59 +14,58 @@ pub mod resolve;
 pub mod serialize;
 pub mod slice;
 
-pub use cli::{run_cli, run_cli_args, Cli, Commands};
+pub use cli::{Cli, Commands, run_cli, run_cli_args};
 pub use clones::{
-    execute_clones_command, find_clones, render_clones_xml, CloneGroup, CloneIdiom, CloneType,
-    DEFAULT_MIN_CLONE_TOKENS,
+    CloneGroup, CloneIdiom, CloneType, DEFAULT_MIN_CLONE_TOKENS, execute_clones_command,
+    find_clones, render_clones_xml,
 };
 pub use crawler::{
-    crawl_directory, CrawledFile, CrawlerOptions, DEFAULT_MAX_FILE_SIZE, DENYLIST_DIRS,
+    CrawledFile, CrawlerOptions, DEFAULT_MAX_FILE_SIZE, DENYLIST_DIRS, crawl_directory,
 };
 pub use domain::{
-    FileInfo, IngestResult, Interner, Lang, NodeId, RefRole, Reference, SymKind, Symbol, NO_NODE,
+    FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, RefRole, Reference, SymKind, Symbol,
 };
 pub use gate::{
-    check_symbol_contract, compare_contracts, compute_quality_delta, compute_snapshot,
-    evaluate_quality_delta, find_affected_tests, is_test_path, load_head_symbol_contract,
-    read_baseline_file, write_baseline_file, AffectedReport, AffectedTest, CallerCheckResult,
-    ContractStatus, EditCheckReport, IncompatibleCallSite, QualityDeltaReport, QualityRegression,
-    QualitySnapshot, SignatureContract, DEFAULT_BASELINE_FILE,
+    AffectedReport, AffectedTest, CallerCheckResult, ContractStatus, DEFAULT_BASELINE_FILE,
+    EditCheckReport, IncompatibleCallSite, QualityDeltaReport, QualityRegression, QualitySnapshot,
+    SignatureContract, check_symbol_contract, compare_contracts, compute_quality_delta,
+    compute_snapshot, evaluate_quality_delta, find_affected_tests, is_test_path,
+    load_head_symbol_contract, read_baseline_file, write_baseline_file,
 };
 pub use git::cochange::{
-    check_pair_dependency_capability, mine_cochange_for_file, mine_repo_cochange_pairs, CoPair,
-    CoPartner, CochangeOptions, StaticCouplingMap,
+    CoPair, CoPartner, CochangeOptions, StaticCouplingMap, check_pair_dependency_capability,
+    mine_cochange_for_file, mine_repo_cochange_pairs,
 };
 pub use git::history::{
-    civil_from_days, compute_file_churn, days_from_civil, filter_commits_by_scope,
-    months_before_epoch, parse_since_scope, walk_repository_history, CommitInfo, FileChurn,
-    GitHistoryError, SinceScope, CHURN_DECAY_HALF_LIFE_DAYS, DEFAULT_CHURN_MONTHS,
-    DEFAULT_COCHANGE_MONTHS, MERGE_BOMB_MAX_FILES,
+    CHURN_DECAY_HALF_LIFE_DAYS, CommitInfo, DEFAULT_CHURN_MONTHS, DEFAULT_COCHANGE_MONTHS,
+    FileChurn, GitHistoryError, MERGE_BOMB_MAX_FILES, SinceScope, civil_from_days,
+    compute_file_churn, days_from_civil, filter_commits_by_scope, months_before_epoch,
+    parse_since_scope, walk_repository_history,
 };
 pub use graph::{CsrMatrix, Graph};
-pub use ingest::{ingest_crawled_files, ingest_in_memory_files, LanguageRegistry};
-pub use mcp::{dispatch_json_rpc, run_mcp_stdio, run_mcp_stream, McpState};
+pub use ingest::{LanguageRegistry, ingest_crawled_files, ingest_in_memory_files};
+pub use mcp::{McpState, dispatch_json_rpc, run_mcp_stdio, run_mcp_stream};
 pub use metrics::{
-    compute_complexity, compute_hotspots, compute_readability, posnett_score, ComplexityMetrics,
-    HotspotFile, HotspotsReport, ReadabilityMetrics, NESTING_BAR,
+    ComplexityMetrics, HotspotFile, HotspotsReport, NESTING_BAR, ReadabilityMetrics,
+    compute_complexity, compute_hotspots, compute_readability, posnett_score,
 };
 pub use navigate::{
-    find_symbols_by_name, navigate_1hop, transitive_impact, ImpactNode, NavNeighborhood,
-    SymbolNavInfo,
+    ImpactNode, NavNeighborhood, SymbolNavInfo, find_symbols_by_name, navigate_1hop,
+    transitive_impact,
 };
 pub use rank::{
-    biased_teleport, compute_hits, page_rank, uniform_teleport, HitsConfig, HitsResult,
-    PageRankConfig, PageRankResult,
+    HitsConfig, HitsResult, PageRankConfig, PageRankResult, biased_teleport, compute_hits,
+    page_rank, uniform_teleport,
 };
 pub use resolve::{
-    resolve_all_references, resolve_call_reference, EdgeAcc, ResolutionResult, ResolvedRef,
+    EdgeAcc, ResolutionResult, ResolvedRef, resolve_all_references, resolve_call_reference,
 };
 pub use serialize::{
-    escape_xml_str, escape_xml_write, generate_call_graph_html, serialize_xml,
-    serialize_xml_to_string, serialize_xml_with_ranks, write_call_graph_html, ColorBy,
-    CountingWriter, RootElementContext, SerializeOptions, StreamXmlContext, ToXmlString,
-    DEFAULT_PACK_BUDGET_BYTES,
+    ColorBy, CountingWriter, DEFAULT_PACK_BUDGET_BYTES, RootElementContext, SerializeOptions,
+    StreamXmlContext, ToXmlString, escape_xml_str, escape_xml_write, generate_call_graph_html,
+    serialize_xml, serialize_xml_to_string, serialize_xml_with_ranks, write_call_graph_html,
 };
 pub use slice::{
-    compute_dataflow_slice, execute_slice, parse_slice_target, OccRole, SliceFlowDir, SliceStep,
-    VariableOcc,
+    OccRole, SliceFlowDir, SliceStep, VariableOcc, compute_dataflow_slice, execute_slice,
+    parse_slice_target,
 };

@@ -1,12 +1,12 @@
-# rwire
+# ripwire
 
 High-throughput agent context router and deterministic static analysis engine.
 
-`rwire` analyzes source code across 24 languages to construct precise call
+`ripwire` analyzes source code across 24 languages to construct precise call
 graphs, calculate symbol impact via PageRank, mine co-change patterns, slice
 intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a
-standalone CLI or as a Model Context Protocol (MCP) server over stdio for AI
-coding agents.
+standalone CLI (`rw`) or as a Model Context Protocol (MCP) server over stdio for
+AI coding agents.
 
 ---
 
@@ -52,7 +52,7 @@ make update-grammars
 make build-release
 ```
 
-Binary will be located at `target/release/rwire`.
+Binary will be located at `target/release/rw`.
 
 ---
 
@@ -62,58 +62,58 @@ Binary will be located at `target/release/rwire`.
 
 ```bash
 # General repository overview and call graph map
-rwire .
+rw .
 
 # Show maintenance hotspots (churn * cognitive complexity)
-rwire --hotspots
+rw --hotspots
 
 # Fowler's Shotgun Surgery co-change coupling
-rwire --cochange [FILE]
+rw --cochange [FILE]
 
 # Check caller compatibility after editing a symbol
-rwire --edit-check "symbol_name"
+rw --edit-check "symbol_name"
 
 # Map affected test files for changed symbols or files
-rwire --affected "src/lib.rs"
+rw --affected "src/lib.rs"
 
 # Measure quality delta regressions against git HEAD
-rwire --quality-delta
+rw --quality-delta
 
 # ARISE variable dataflow slicing (fwd, back, both)
-rwire --slice "function_name:var_name" --slice-flow fwd
+rw --slice "function_name:var_name" --slice-flow fwd
 ```
 
 ### Subcommands
 
 ```bash
 # Exploration and task-scoped orientation
-rwire orient [PATH]
+rw orient [PATH]
 
 # Callers, callees, and transitive impact
-rwire navigate [PATH] --symbol <NAME> --impact
+rw navigate [PATH] --symbol <NAME> --impact
 
 # Pre-commit verification gates
-rwire gate [PATH] --edit-check <SYM> --affected <PATH> --quality-delta
+rw gate [PATH] --edit-check <SYM> --affected <PATH> --quality-delta
 
 # Complexity and maintenance hotspots
-rwire metrics [PATH] --hotspots
+rw metrics [PATH] --hotspots
 
 # Launch stdio Model Context Protocol (MCP) server
-rwire mcp
+rw mcp
 ```
 
 ---
 
 ## MCP Server Configuration
 
-To wire `rwire` into an MCP client (such as Claude Desktop, OpenCode, or Omp),
+To wire `ripwire` into an MCP client (such as Claude Desktop, OpenCode, or Omp),
 register the executable:
 
 ```json
 {
   "mcpServers": {
     "ripwire": {
-      "command": "/path/to/rwire",
+      "command": "/path/to/rw",
       "args": ["mcp"]
     }
   }

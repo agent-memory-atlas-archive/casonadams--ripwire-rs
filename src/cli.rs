@@ -10,7 +10,7 @@ use std::io;
 /// CLI command line options.
 #[derive(Parser, Debug, Default, PartialEq)]
 #[command(
-    name = "rwire",
+    name = "rw",
     version,
     about = "High-throughput agent context router and static analysis engine"
 )]
@@ -728,11 +728,11 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     if cli.clones {
         return crate::clones::execute_clones_command(root, cli.min_tokens);
     }
-    if let Some(Commands::Gate(gate_args)) = &cli.command {
-        if gate_args.clones {
-            let gate_root = gate_args.path.as_deref().unwrap_or(root);
-            return crate::clones::execute_clones_command(gate_root, gate_args.min_tokens);
-        }
+    if let Some(Commands::Gate(gate_args)) = &cli.command
+        && gate_args.clones
+    {
+        let gate_root = gate_args.path.as_deref().unwrap_or(root);
+        return crate::clones::execute_clones_command(gate_root, gate_args.min_tokens);
     }
 
     if let Some(html_opt) = cli.html {
@@ -838,24 +838,23 @@ mod tests {
 
     #[test]
     fn test_cli_parsing() {
-        let help = Cli::try_parse_from(["rwire", "--help"]);
+        let help = Cli::try_parse_from(["rw", "--help"]);
         assert!(help.is_err()); // --help exits with help message
 
-        let default_run = Cli::try_parse_from(["rwire", "."]).unwrap();
+        let default_run = Cli::try_parse_from(["rw", "."]).unwrap();
         assert_eq!(default_run.path, Some(".".into()));
         assert!(default_run.command.is_none());
 
-        let mcp_cmd = Cli::try_parse_from(["rwire", "mcp"]).unwrap();
+        let mcp_cmd = Cli::try_parse_from(["rw", "mcp"]).unwrap();
         assert_eq!(mcp_cmd.command, Some(Commands::Mcp(McpArgs::default())));
 
         let nav_cmd =
-            Cli::try_parse_from(["rwire", "navigate", "--symbol", "main", "--callers"]).unwrap();
+            Cli::try_parse_from(["rw", "navigate", "--symbol", "main", "--callers"]).unwrap();
         assert!(matches!(nav_cmd.command, Some(Commands::Navigate(_))));
 
-        let orient_cmd = Cli::try_parse_from(["rwire", "orient", "--for", "auth"]).unwrap();
+        let orient_cmd = Cli::try_parse_from(["rw", "orient", "--for", "auth"]).unwrap();
         assert!(matches!(orient_cmd.command, Some(Commands::Orient(_))));
     }
-
     #[test]
     fn test_gate_dispatch_args_is_active() {
         let empty = GateDispatchArgs::default();

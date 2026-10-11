@@ -1,8 +1,8 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 pub mod community;
 
-use crate::rank::{page_rank, uniform_teleport, PageRankConfig, PageRankResult};
-use crate::resolve::{resolve_all_references, ResolutionResult};
+use crate::rank::{PageRankConfig, PageRankResult, page_rank, uniform_teleport};
+use crate::resolve::{ResolutionResult, resolve_all_references};
 use std::ops::Range;
 
 /// Compressed Sparse Row (CSR) matrix representation.

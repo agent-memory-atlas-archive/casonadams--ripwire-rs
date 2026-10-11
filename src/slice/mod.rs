@@ -11,10 +11,12 @@ use tree_sitter::{Node, Parser};
 /// Split target selector such as `symbol:var` or `path::sym:var` into symbol and variable.
 #[must_use]
 pub fn parse_slice_target(target: &str) -> (&str, Option<&str>) {
-    if let Some((sym, var)) = target.rsplit_once(':') {
-        if !sym.is_empty() && !var.is_empty() && !sym.ends_with(':') {
-            return (sym, Some(var));
-        }
+    if let Some((sym, var)) = target.rsplit_once(':')
+        && !sym.is_empty()
+        && !var.is_empty()
+        && !sym.ends_with(':')
+    {
+        return (sym, Some(var));
     }
     (target, None)
 }
@@ -24,11 +26,12 @@ fn find_node_at_span<'a>(root: Node<'a>, start_byte: usize, end_byte: usize) -> 
     loop {
         let mut found_child = None;
         for i in 0..curr.child_count() {
-            if let Some(child) = curr.child(i) {
-                if child.start_byte() <= start_byte && child.end_byte() >= end_byte {
-                    found_child = Some(child);
-                    break;
-                }
+            if let Some(child) = curr.child(i)
+                && child.start_byte() <= start_byte
+                && child.end_byte() >= end_byte
+            {
+                found_child = Some(child);
+                break;
             }
         }
         match found_child {

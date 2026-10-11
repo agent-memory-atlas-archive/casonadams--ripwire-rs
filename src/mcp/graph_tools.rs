@@ -1,6 +1,6 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
 
 fn find_symbol_by_name(ingest: &IngestResult, interner: &Interner, name: &str) -> Option<NodeId> {

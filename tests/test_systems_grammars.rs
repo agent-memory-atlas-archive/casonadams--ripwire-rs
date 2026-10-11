@@ -1,4 +1,4 @@
-use rwire::{ingest_in_memory_files, Graph, IngestResult, Interner, Lang, LanguageRegistry};
+use ripwire::{Graph, IngestResult, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
 
 #[test]
 fn test_systems_grammars() {

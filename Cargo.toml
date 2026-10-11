@@ -1,11 +1,20 @@
 [package]
-name = "rwire"
+name = "ripwire"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Cason Adams"]
 description = "High-throughput agent context router and deterministic static analysis engine"
 readme = "README.md"
 license = "Apache-2.0"
+repository = "https://github.com/casonadams/rwire"
+documentation = "https://docs.rs/ripwire"
+keywords = ["static-analysis", "callgraph", "mcp", "code-intelligence", "pagerank"]
+categories = ["development-tools", "command-line-utilities"]
+default-run = "rw"
+
+[[bin]]
+name = "rw"
+path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive", "cargo"] }

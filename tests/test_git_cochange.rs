@@ -1,15 +1,17 @@
-use rwire::cli::execute_cochange_with;
-use rwire::domain::{FileInfo, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol};
-use rwire::git::cochange::{
-    check_pair_dependency_capability, mine_cochange_for_file, mine_repo_cochange_pairs,
-    CochangeOptions, StaticCouplingMap,
+use ripwire::cli::execute_cochange_with;
+use ripwire::domain::{
+    FileInfo, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
 };
-use rwire::git::history::{
-    civil_from_days, compute_file_churn, days_from_civil, filter_commits_by_scope,
-    months_before_epoch, parse_since_scope, CommitInfo, SinceScope,
+use ripwire::git::cochange::{
+    CochangeOptions, StaticCouplingMap, check_pair_dependency_capability, mine_cochange_for_file,
+    mine_repo_cochange_pairs,
 };
-use rwire::graph::Graph;
-use rwire::mcp::{dispatch_json_rpc, McpState};
+use ripwire::git::history::{
+    CommitInfo, SinceScope, civil_from_days, compute_file_churn, days_from_civil,
+    filter_commits_by_scope, months_before_epoch, parse_since_scope,
+};
+use ripwire::graph::Graph;
+use ripwire::mcp::{McpState, dispatch_json_rpc};
 use serde_json::Value;
 use std::io::Cursor;
 

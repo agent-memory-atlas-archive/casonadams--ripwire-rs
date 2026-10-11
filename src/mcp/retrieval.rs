@@ -1,5 +1,5 @@
 use crate::domain::{IngestResult, Interner, RefRole, SymKind};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs;
 
 /// Score a symbol against a set of search terms.
@@ -14,10 +14,10 @@ fn score_symbol_match(name: &str, scope: Option<&str>, terms: &[&str], rank: f64
             if lower_name == *term {
                 term_score += 20.0;
             }
-        } else if let Some(ref sc) = lower_scope {
-            if sc.contains(term) {
-                term_score += 5.0;
-            }
+        } else if let Some(ref sc) = lower_scope
+            && sc.contains(term)
+        {
+            term_score += 5.0;
         }
     }
 
@@ -94,10 +94,10 @@ pub fn call_fetch_body(
     let sym = ingest.symbols.iter().find(|s| {
         let n = interner.resolve(&s.name);
         if n == symbol_name {
-            if let Some(hint) = path_hint {
-                if let Some(fi) = ingest.files.get(s.file_id as usize) {
-                    return interner.resolve(&fi.path).contains(hint);
-                }
+            if let Some(hint) = path_hint
+                && let Some(fi) = ingest.files.get(s.file_id as usize)
+            {
+                return interner.resolve(&fi.path).contains(hint);
             }
             return true;
         }
@@ -216,21 +216,22 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
 
     let mut implementors = Vec::new();
     for r in &ingest.references {
-        if r.role == RefRole::Extends && interner.resolve(&r.callee_name) == interface_name {
-            if let Some(src_sym) = ingest.symbols.get(r.from_symbol as usize) {
-                let name = interner.resolve(&src_sym.name);
-                let path = ingest
-                    .files
-                    .get(src_sym.file_id as usize)
-                    .map(|f| interner.resolve(&f.path))
-                    .unwrap_or("");
-                implementors.push(json!({
-                    "name": name,
-                    "kind": src_sym.kind.tag(),
-                    "path": path,
-                    "line": src_sym.line
-                }));
-            }
+        if r.role == RefRole::Extends
+            && interner.resolve(&r.callee_name) == interface_name
+            && let Some(src_sym) = ingest.symbols.get(r.from_symbol as usize)
+        {
+            let name = interner.resolve(&src_sym.name);
+            let path = ingest
+                .files
+                .get(src_sym.file_id as usize)
+                .map(|f| interner.resolve(&f.path))
+                .unwrap_or("");
+            implementors.push(json!({
+                "name": name,
+                "kind": src_sym.kind.tag(),
+                "path": path,
+                "line": src_sym.line
+            }));
         }
     }
 
@@ -257,13 +258,13 @@ pub fn call_memory_recall(
     let mut matched_docs = Vec::new();
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
-        if path.ends_with(".md") || path.contains("doc") || path.contains("notes") {
-            if let Ok(content) = fs::read_to_string(path) {
-                let lower = content.to_ascii_lowercase();
-                let score = terms.iter().filter(|&t| lower.contains(t)).count();
-                if score > 0 {
-                    matched_docs.push((score, path, content));
-                }
+        if (path.ends_with(".md") || path.contains("doc") || path.contains("notes"))
+            && let Ok(content) = fs::read_to_string(path)
+        {
+            let lower = content.to_ascii_lowercase();
+            let score = terms.iter().filter(|&t| lower.contains(t)).count();
+            if score > 0 {
+                matched_docs.push((score, path, content));
             }
         }
     }
@@ -301,10 +302,10 @@ pub fn call_grep(
 
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
-        if let Some(pf) = path_filter {
-            if !path.contains(pf) {
-                continue;
-            }
+        if let Some(pf) = path_filter
+            && !path.contains(pf)
+        {
+            continue;
         }
 
         let Ok(bytes) = fs::read(path) else { continue };

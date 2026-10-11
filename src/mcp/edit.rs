@@ -1,5 +1,5 @@
 use crate::domain::IngestResult;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
@@ -16,13 +16,13 @@ pub enum EditOp {
 }
 
 fn check_symlink(path: &Path) -> Result<(), Value> {
-    if let Ok(meta) = fs::symlink_metadata(path) {
-        if meta.file_type().is_symlink() {
-            return Err(json!({
-                "applied": false,
-                "error": format!("refusing to edit '{}': target is a symlink", path.display())
-            }));
-        }
+    if let Ok(meta) = fs::symlink_metadata(path)
+        && meta.file_type().is_symlink()
+    {
+        return Err(json!({
+            "applied": false,
+            "error": format!("refusing to edit '{}': target is a symlink", path.display())
+        }));
     }
     Ok(())
 }
@@ -37,12 +37,12 @@ fn resolve_edit_target<'a>(
 
     for sym in &ingest.symbols {
         let name = interner.resolve(&sym.name);
-        if name == symbol_name {
-            if let Some(file_info) = ingest.files.get(sym.file_id as usize) {
-                let file_path = interner.resolve(&file_info.path);
-                if path_hint.is_none() || path_hint.is_some_and(|h| file_path.contains(h)) {
-                    matches.push((sym, file_path));
-                }
+        if name == symbol_name
+            && let Some(file_info) = ingest.files.get(sym.file_id as usize)
+        {
+            let file_path = interner.resolve(&file_info.path);
+            if path_hint.is_none() || path_hint.is_some_and(|h| file_path.contains(h)) {
+                matches.push((sym, file_path));
             }
         }
     }

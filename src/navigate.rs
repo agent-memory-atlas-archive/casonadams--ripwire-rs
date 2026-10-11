@@ -151,10 +151,10 @@ pub fn transitive_impact(
     queue.push_back((seed_id, 0u32));
 
     while let Some((curr, depth)) = queue.pop_front() {
-        if curr != seed_id {
-            if let Some(node) = create_impact_node(curr, depth, ingest, ranks, interner) {
-                results.push(node);
-            }
+        if curr != seed_id
+            && let Some(node) = create_impact_node(curr, depth, ingest, ranks, interner)
+        {
+            results.push(node);
         }
 
         if max_depth.is_some_and(|limit| depth >= limit) {

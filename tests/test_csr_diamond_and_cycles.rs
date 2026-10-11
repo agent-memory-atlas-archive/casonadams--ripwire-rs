@@ -1,4 +1,4 @@
-use rwire::{FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol};
+use ripwire::{FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol};
 
 #[test]
 fn test_csr_diamond_and_cycles() {

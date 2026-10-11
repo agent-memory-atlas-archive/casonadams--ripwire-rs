@@ -1,5 +1,5 @@
-use rwire::{
-    FileInfo, IngestResult, Interner, Lang, NodeId, RefRole, Reference, SymKind, Symbol, NO_NODE,
+use ripwire::{
+    FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, RefRole, Reference, SymKind, Symbol,
 };
 
 #[test]

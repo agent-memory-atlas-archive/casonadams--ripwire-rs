@@ -73,37 +73,48 @@ ack params 54e7136a347d0061 6 cid=abc12525642d7d06 now=6 was=0 p=src/mcp/graph_t
 ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 facet=ambient p=src/domain.rs:214 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 03e609981e51a079 5 cid=1a77de16da933882 now=5 was=0 facet=ambient p=src/cli.rs:17 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 0dbcc2ebfc642340 7 cid=f7161ab1dbd67c20 now=7 was=0 facet=ambient p=src/ingest.rs:130 feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn 1171f6ae61619ff2 10 cid=9a6b7e675249426e now=10 was=0 facet=self p=src/cli.rs:836 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 1a5e8bf9afe9ee39 7 cid=edfff520d79813ba now=7 was=0 facet=ambient p=src/ingest.rs:339 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 1e3db6601ccd19d9 5 cid=6d4c472b01a08e40 now=5 was=0 facet=self p=src/mcp/mod.rs:174 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 27df363ae0c450b3 5 cid=80b8cd85a4844728 now=5 was=0 facet=self p=src/mcp/mod.rs:318 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 2a74dc8296003db5 5 cid=3db9c4bc1085ab39 now=5 was=0 facet=self p=src/mcp/mod.rs:223 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 3837a3181097f8ac 3 cid=8596089df645328d now=3 was=0 facet=self p=src/gate/contract.rs:104 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 435a85119ba7ba3f 4 cid=20c93af3a794634c now=4 was=0 facet=self p=src/ingest/mod.rs:479 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 44a561ac8e5656a2 10 cid=d1d6e3ec8cf89e09 now=10 was=0 facet=self p=src/cli.rs:840 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 4a1230f1cfd095df 6 cid=1ffe7220eae6384a now=6 was=0 facet=self p=src/ingest.rs:430 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 5befe906674d1d04 5 cid=9cebc1cfcad1bd9b now=5 was=0 facet=self p=src/mcp/mod.rs:764 feat(mcp): complete 33 mcp tools suite
-ack short-horizon-churn 5d3030ce205bd4d9 5 cid=e08d7d68067ee5c0 now=5 was=0 facet=self p=src/cli.rs:576 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn 5d3030ce205bd4d9 10 cid=48e258ccfccd51d1 now=10 was=0 facet=self p=src/cli.rs:707 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn 5dd771c9def9da52 5 cid=9284006cc955fafb now=5 was=0 facet=ambient p=src/mcp/mod.rs:693 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 5e62941216009d7d 4 cid=029942f196f0d316 now=4 was=0 facet=self p=src/ingest/mod.rs:323 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 5e69f1155e343c23 5 cid=a62db5d0a8cce6d8 now=5 was=0 facet=ambient p=src/cli.rs:106 feat(gate): quality baseline and delta gate
 ack short-horizon-churn 6592ae6ffe2a9edc 2 now=2 was=0 facet=self p=tests/test_ingest_tier1_fixtures.rs:6 migrate to in-memory fixtures for zero-IO testing
 ack short-horizon-churn 6c9b4b9bca1c4eb1 5 cid=29a3c399aaac8a10 now=5 was=0 facet=self p=src/mcp/mod.rs:613 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn 6dcec957b21602d3 9 cid=97aeeecf8b5df765 now=9 was=0 facet=ambient p=src/domain.rs:237 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 7272cbefa18a4549 3 cid=82050217a190c19f now=3 was=0 facet=self p=src/gate/contract.rs:197 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 72c710eba4e4924e 7 cid=2b62c5d5dcaca3ff now=7 was=0 facet=ambient p=src/ingest.rs:117 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 73e3b4916fad8f15 5 cid=6e9ea3a239f75d03 now=5 was=0 facet=self p=src/cli.rs:543 feat(gate): quality baseline and delta gate
 ack short-horizon-churn 76568d93a351a68d 6 cid=7dcd61687d79d92a now=6 was=0 facet=self p=src/ingest.rs:547 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 7e9009f392dd32f9 5 cid=6f38348e5f690815 now=5 was=0 facet=self p=src/mcp/mod.rs:106 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 86d8fee5fe0cb9ed 4 cid=f7082dc07f519f35 now=4 was=0 facet=self p=src/ingest/mod.rs:308 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 88fd47ab6e8b22d3 5 cid=a5aec8c432c7d586 now=5 was=0 facet=self p=src/mcp/mod.rs:723 feat(mcp): complete 33 mcp tools suite
-ack short-horizon-churn 93c77c6f3702d249 6 cid=381f5e2d83524a67 now=6 was=0 facet=self p=src/main.rs:1 delegate main to rwire::run_cli | prior: stream XML output to stdout
+ack short-horizon-churn 93c77c6f3702d249 7 cid=59249848561ffa66 now=7 was=0 facet=self p=src/main.rs:1 refactor(distribution): rename crate to ripwire and binary to rw | prior: delegate main to rwire::run_cli
 ack short-horizon-churn 972f728745b11d45 6 cid=4b3c01ada5c9158b now=6 was=0 facet=self p=src/ingest.rs:339 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn a29bdbd875b3bb62 6 cid=b84620de9d471718 now=6 was=0 facet=self p=src/ingest.rs:383 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn a8b62b30beb02329 5 cid=4f50111421bfb6c6 now=5 was=0 facet=self p=src/mcp/mod.rs:96 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn a8d8a8c2b3c692bb 5 cid=8a850df30c972216 now=5 was=0 facet=self p=src/mcp/mod.rs:760 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn af8f8cdf2368bd78 5 cid=a44d1244512278d2 now=5 was=0 facet=self p=src/mcp/mod.rs:265 feat(mcp): complete 33 mcp tools suite
-ack short-horizon-churn b5a40f34ce7656a9 5 cid=d52b6241ca973147 now=5 was=0 facet=ambient p=tests/test_cli_and_mcp.rs:28 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn b5a40f34ce7656a9 6 cid=f92ea050828bbe61 now=6 was=0 facet=self p=tests/test_cli_and_mcp.rs:28 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn b88b1ea9b3cfaea8 6 cid=45bade1cbbda7009 now=6 was=0 facet=self p=src/ingest.rs:543 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn c0300ca9ffbbc65c 2 cid=f08fb1b472f9d474 now=2 was=0 facet=self p=src/metrics/hotspots.rs:28 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn c0877650b51b994a 2 cid=5ae3bc85466baf17 now=2 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:42 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn c28be696f55888fe 5 cid=391a26a2b3b563e2 now=5 was=0 facet=self p=src/mcp/mod.rs:203 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn d3eebdef7a909404 7 cid=13afc9c65d43e4da now=7 was=0 facet=ambient p=src/ingest.rs:565 feat(gate): pre-commit contract gate and affected test reachability
-ack short-horizon-churn dbf9873eb051deef 2 now=2 was=0 facet=self p=tests/test_cli_and_mcp.rs:136 migrate to in-memory fixtures for zero-IO testing
+ack short-horizon-churn dbf9873eb051deef 6 cid=2f36ae8569b58490 now=6 was=0 facet=self p=tests/test_cli_and_mcp.rs:143 refactor(distribution): rename crate to ripwire and binary to rw | prior: migrate to in-memory fixtures for zero-IO testing
 ack short-horizon-churn df3364bea9738161 5 cid=b6a09e2e51877ccc now=5 was=0 facet=self p=src/mcp/mod.rs:30 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn eb913f807b07fad8 3 cid=bd0dd9ade9a75003 now=3 was=0 facet=self p=src/gate/contract.rs:187 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn ec25e04d7a1c792d 5 cid=e4e99ae69f86c7ae now=5 was=0 facet=ambient p=src/mcp/mod.rs:700 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn f0ff33b16b71ee4b 7 cid=a2bdbce68e56d287 now=7 was=0 facet=ambient p=src/ingest.rs:531 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn f63ae9b95743e1a1 4 cid=c9ad26e8025e2684 now=4 was=0 facet=self p=src/ingest/mod.rs:405 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn facea9a26b6819c2 5 cid=428a31d751b879a1 now=5 was=0 facet=self p=src/mcp/mod.rs:152 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn faeda1a26b82bcb9 5 cid=029dba1e608c8d9f now=5 was=0 facet=self p=src/mcp/mod.rs:130 feat(mcp): complete 33 mcp tools suite
 ack verbosity 21c952917f59fdf2 374 cid=082a96c2f7393aa8 now=374 was=0 p=src/mcp/schema.rs:5 feat(mcp): complete 33 mcp tools suite
@@ -116,7 +127,9 @@ ack verbosity 6c9b4b9bca1c4eb1 74 cid=29a3c399aaac8a10 now=74 was=66 p=src/mcp/m
 ack verbosity 795c5808ab0ca979 90 cid=3f603d0498ec0654 now=90 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity 89cc6ea26e2c5dda 67 cid=9c3a3d5e89523184 now=67 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity a8b62b30beb02329 117 cid=a0d26211732eaa15 now=117 was=101 p=src/mcp/mod.rs:101 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
-ack verbosity b5a40f34ce7656a9 78 cid=d52b6241ca973147 now=78 was=76 p=tests/test_cli_and_mcp.rs:28 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
+ack verbosity b5a40f34ce7656a9 80 cid=f92ea050828bbe61 now=80 was=78 p=tests/test_cli_and_mcp.rs:28 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
+ack verbosity c0877650b51b994a 89 cid=5ae3bc85466baf17 now=89 was=86 p=tests/test_streaming_xml_serializer.rs:42 refactor(distribution): rename crate to ripwire and binary to rw
 ack verbosity c7651463abe73266 185 cid=0a1e9a3c96ea5a06 now=185 was=0 p=src/mcp/mod.rs:425 feat(mcp): complete 33 mcp tools suite
+ack verbosity dbf9873eb051deef 90 cid=2f36ae8569b58490 now=90 was=84 p=tests/test_cli_and_mcp.rs:143 refactor(distribution): rename crate to ripwire and binary to rw
 ack verbosity e0ab848c5d67d7ae 72 cid=510934f45e78e30e now=72 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity ef626e7fbdac48cf 83 cid=c560a4919f395ede now=83 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability

@@ -1,12 +1,12 @@
-use rwire::cli::execute_quality_delta_with;
-use rwire::domain::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
-use rwire::gate::baseline::{
-    compute_snapshot, parse_snapshot_from_str, serialize_snapshot_to_string, QualitySnapshot,
+use ripwire::ToXmlString;
+use ripwire::cli::execute_quality_delta_with;
+use ripwire::domain::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
+use ripwire::gate::baseline::{
+    QualitySnapshot, compute_snapshot, parse_snapshot_from_str, serialize_snapshot_to_string,
 };
-use rwire::gate::quality_delta::compute_quality_delta;
-use rwire::graph::Graph;
-use rwire::mcp::{dispatch_json_rpc, McpState};
-use rwire::ToXmlString;
+use ripwire::gate::quality_delta::compute_quality_delta;
+use ripwire::graph::Graph;
+use ripwire::mcp::{McpState, dispatch_json_rpc};
 use serde_json::Value;
 use std::io::Cursor;
 

@@ -1,9 +1,9 @@
-use rwire::cli::{
-    execute_navigate_with, execute_stream_xml_with, GateArgs, MetricsArgs, NavigateArgs, SliceArgs,
+use ripwire::cli::{
+    GateArgs, MetricsArgs, NavigateArgs, SliceArgs, execute_navigate_with, execute_stream_xml_with,
 };
-use rwire::{
-    dispatch_json_rpc, ingest_in_memory_files, run_cli_args, run_mcp_stream, Cli, Commands, Graph,
-    Interner, Lang, LanguageRegistry, McpState, PageRankConfig,
+use ripwire::{
+    Cli, Commands, Graph, Interner, Lang, LanguageRegistry, McpState, PageRankConfig,
+    dispatch_json_rpc, ingest_in_memory_files, run_cli_args, run_mcp_stream,
 };
 use serde_json::Value;
 use std::io::Cursor;
@@ -114,10 +114,12 @@ fn test_mcp_json_rpc_suite() {
         r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"unknown_tool"}}"#;
     let err_resp = dispatch_json_rpc(unknown_tool, &mut state, ".").expect("must reply error");
     let err_val: Value = serde_json::from_str(&err_resp).unwrap();
-    assert!(err_val["error"]["message"]
-        .as_str()
-        .unwrap()
-        .contains("unknown tool"));
+    assert!(
+        err_val["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("unknown tool")
+    );
 
     let unknown_method = r#"{"jsonrpc":"2.0","id":9,"method":"random_method"}"#;
     let method_err = dispatch_json_rpc(unknown_method, &mut state, ".").expect("must reply error");
@@ -203,7 +205,7 @@ fn test_cli_execution_modes() {
         },
     ];
 
-    let ctx = rwire::cli::NavContext {
+    let ctx = ripwire::cli::NavContext {
         ingest: &ingest,
         graph: &graph,
         ranks: &pr.ranks,
@@ -216,19 +218,25 @@ fn test_cli_execution_modes() {
     }
 
     // 3. Subcommand stubs
-    assert!(run_cli_args(Cli {
-        command: Some(Commands::Gate(GateArgs::default())),
-        ..Default::default()
-    })
-    .is_ok());
-    assert!(run_cli_args(Cli {
-        command: Some(Commands::Metrics(MetricsArgs::default())),
-        ..Default::default()
-    })
-    .is_ok());
-    assert!(run_cli_args(Cli {
-        command: Some(Commands::Slice(SliceArgs::default())),
-        ..Default::default()
-    })
-    .is_ok());
+    assert!(
+        run_cli_args(Cli {
+            command: Some(Commands::Gate(GateArgs::default())),
+            ..Default::default()
+        })
+        .is_ok()
+    );
+    assert!(
+        run_cli_args(Cli {
+            command: Some(Commands::Metrics(MetricsArgs::default())),
+            ..Default::default()
+        })
+        .is_ok()
+    );
+    assert!(
+        run_cli_args(Cli {
+            command: Some(Commands::Slice(SliceArgs::default())),
+            ..Default::default()
+        })
+        .is_ok()
+    );
 }

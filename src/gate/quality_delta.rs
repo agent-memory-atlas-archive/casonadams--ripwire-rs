@@ -1,5 +1,5 @@
 use crate::gate::baseline::{
-    compute_snapshot, read_baseline_file, QualitySnapshot, DEFAULT_BASELINE_FILE,
+    DEFAULT_BASELINE_FILE, QualitySnapshot, compute_snapshot, read_baseline_file,
 };
 use crate::mcp::McpState;
 use std::io::{self, Write};

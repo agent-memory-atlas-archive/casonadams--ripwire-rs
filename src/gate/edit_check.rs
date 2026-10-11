@@ -1,5 +1,5 @@
 use crate::domain::{IngestResult, Interner, NodeId, RefRole};
-use crate::gate::contract::{compare_contracts, ContractStatus, SignatureContract};
+use crate::gate::contract::{ContractStatus, SignatureContract, compare_contracts};
 use crate::graph::Graph;
 use std::io::{self, Write};
 

@@ -1,3 +1,3 @@
 fn main() -> std::io::Result<()> {
-    rwire::run_cli()
+    ripwire::run_cli()
 }

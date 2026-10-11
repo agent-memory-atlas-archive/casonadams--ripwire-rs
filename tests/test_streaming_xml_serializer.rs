@@ -1,6 +1,6 @@
-use rwire::{
-    escape_xml_str, serialize_xml_to_string, FileInfo, Graph, IngestResult, Interner, Lang,
-    PageRankResult, RefRole, Reference, SerializeOptions, SymKind, Symbol,
+use ripwire::{
+    FileInfo, Graph, IngestResult, Interner, Lang, PageRankResult, RefRole, Reference,
+    SerializeOptions, SymKind, Symbol, escape_xml_str, serialize_xml_to_string,
 };
 
 fn validate_xml_well_formed(xml: &str) {
@@ -119,8 +119,11 @@ fn test_streaming_xml_serializer() {
     );
 
     // ── 4. CALL EDGES ────────────────────────────────────────────────────────
-    assert!(xml
-        .contains("<s t=\"fn\" n=\"main\" k=\"0.2000\"><c n=\"compute&lt;T&gt; &amp; log\"/></s>"));
+    assert!(
+        xml.contains(
+            "<s t=\"fn\" n=\"main\" k=\"0.2000\"><c n=\"compute&lt;T&gt; &amp; log\"/></s>"
+        )
+    );
 
     // ── 5. NON-CONVERGENCE ATTRIBUTE ─────────────────────────────────────────
     let pr_unconverged = PageRankResult {

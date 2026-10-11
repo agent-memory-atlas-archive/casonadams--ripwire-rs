@@ -1,11 +1,13 @@
-use rwire::cli::{execute_affected_with, execute_edit_check_with};
-use rwire::domain::{FileInfo, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol};
-use rwire::gate::affected::find_affected_tests;
-use rwire::gate::contract::SignatureContract;
-use rwire::gate::edit_check::check_symbol_contract;
-use rwire::graph::Graph;
-use rwire::mcp::{dispatch_json_rpc, McpState};
-use rwire::ToXmlString;
+use ripwire::ToXmlString;
+use ripwire::cli::{execute_affected_with, execute_edit_check_with};
+use ripwire::domain::{
+    FileInfo, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
+};
+use ripwire::gate::affected::find_affected_tests;
+use ripwire::gate::contract::SignatureContract;
+use ripwire::gate::edit_check::check_symbol_contract;
+use ripwire::graph::Graph;
+use ripwire::mcp::{McpState, dispatch_json_rpc};
 use serde_json::Value;
 use std::io::Cursor;
 

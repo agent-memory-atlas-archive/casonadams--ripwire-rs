@@ -24,16 +24,16 @@ fn determine_atx_heading(node: Node<'_>, source_bytes: &[u8]) -> Option<(u32, St
             if let Ok(marker) = child.utf8_text(source_bytes) {
                 level = marker.chars().filter(|&c| c == '#').count() as u32;
             }
-        } else if ckind == "heading_content" {
-            if let Ok(content) = child.utf8_text(source_bytes) {
-                text = clean_heading_text(content);
-            }
+        } else if ckind == "heading_content"
+            && let Ok(content) = child.utf8_text(source_bytes)
+        {
+            text = clean_heading_text(content);
         }
     }
-    if text.is_empty() {
-        if let Ok(raw) = node.utf8_text(source_bytes) {
-            text = clean_heading_text(raw);
-        }
+    if text.is_empty()
+        && let Ok(raw) = node.utf8_text(source_bytes)
+    {
+        text = clean_heading_text(raw);
     }
     Some((level.clamp(1, 6), text))
 }
@@ -95,15 +95,15 @@ fn walk_markdown_tree<'a>(node: Node<'a>, source_bytes: &[u8], headings: &mut Ve
         return;
     }
 
-    if let Some((level, name)) = determine_heading_level(node, source_bytes) {
-        if !name.is_empty() {
-            headings.push(HeadingEntry {
-                level,
-                name,
-                line: node.start_position().row as u32 + 1,
-                start_byte: node.start_byte(),
-            });
-        }
+    if let Some((level, name)) = determine_heading_level(node, source_bytes)
+        && !name.is_empty()
+    {
+        headings.push(HeadingEntry {
+            level,
+            name,
+            line: node.start_position().row as u32 + 1,
+            start_byte: node.start_byte(),
+        });
     }
 
     for i in 0..node.child_count() {
@@ -129,25 +129,26 @@ fn scan_line_links(line: &str, line_num: u32, line_start: usize, refs: &mut Vec<
             break;
         };
         let close = b + 1 + close_rel;
-        if close + 1 < bytes.len() && bytes[close + 1] == b'(' {
-            if let Some(rp_rel) = bytes[close + 2..].iter().position(|&c| c == b')') {
-                let rp = close + 2 + rp_rel;
-                let target = line[close + 2..rp].trim();
-                let clean_target = target.trim_start_matches('#');
-                if !clean_target.is_empty() {
-                    refs.push(RawRef {
-                        callee_name: clean_target.to_string(),
-                        qualifier: None,
-                        line: line_num,
-                        start_byte: line_start + b,
-                        role: RefRole::Call,
-                        arg_count: 0,
-                        arg_count_known: false,
-                    });
-                }
-                b = rp + 1;
-                continue;
+        if close + 1 < bytes.len()
+            && bytes[close + 1] == b'('
+            && let Some(rp_rel) = bytes[close + 2..].iter().position(|&c| c == b')')
+        {
+            let rp = close + 2 + rp_rel;
+            let target = line[close + 2..rp].trim();
+            let clean_target = target.trim_start_matches('#');
+            if !clean_target.is_empty() {
+                refs.push(RawRef {
+                    callee_name: clean_target.to_string(),
+                    qualifier: None,
+                    line: line_num,
+                    start_byte: line_start + b,
+                    role: RefRole::Call,
+                    arg_count: 0,
+                    arg_count_known: false,
+                });
             }
+            b = rp + 1;
+            continue;
         }
         b = close + 1;
     }
@@ -254,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_markdown_setext_and_links() {
-        extern "C" {
+        unsafe extern "C" {
             fn tree_sitter_markdown() -> *const tree_sitter::ffi::TSLanguage;
         }
         let language = unsafe { Language::from_raw(tree_sitter_markdown()) };

@@ -1,5 +1,5 @@
 use crate::domain::{IngestResult, Interner};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 
@@ -10,15 +10,15 @@ pub fn call_mentions(ingest: &IngestResult, interner: &Interner, symbol_name: &s
 
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
-        if path.ends_with(".md") || path.contains("doc") {
-            if let Ok(content) = fs::read_to_string(path) {
-                let occurrences = content.matches(&backtick_target).count();
-                if occurrences > 0 {
-                    matching_docs.push(json!({
-                        "file": path,
-                        "mentions": occurrences
-                    }));
-                }
+        if (path.ends_with(".md") || path.contains("doc"))
+            && let Ok(content) = fs::read_to_string(path)
+        {
+            let occurrences = content.matches(&backtick_target).count();
+            if occurrences > 0 {
+                matching_docs.push(json!({
+                    "file": path,
+                    "mentions": occurrences
+                }));
             }
         }
     }

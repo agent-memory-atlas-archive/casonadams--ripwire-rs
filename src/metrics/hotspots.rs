@@ -29,13 +29,22 @@ impl crate::serialize::ToXmlString for HotspotsReport {
         writeln!(
             out,
             "<hotspots files=\"{}\" ranked=\"{}\" unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\">",
-            self.total_files, self.ranked_count, self.unranked_no_churn, self.unranked_no_complexity
+            self.total_files,
+            self.ranked_count,
+            self.unranked_no_churn,
+            self.unranked_no_complexity
         )?;
         for f in &self.files {
             writeln!(
                 out,
                 "  <f p=\"{}\" churn=\"{}\" ccx=\"{}\" score=\"{}\" top=\"{}\" top_ccx=\"{}\" top_l=\"{}\"/>",
-                f.file_path, f.churn, f.ccx_sum, f.score, f.top_fn_name, f.top_fn_ccx, f.top_fn_line
+                f.file_path,
+                f.churn,
+                f.ccx_sum,
+                f.score,
+                f.top_fn_name,
+                f.top_fn_ccx,
+                f.top_fn_line
             )?;
         }
         writeln!(out, "</hotspots>")

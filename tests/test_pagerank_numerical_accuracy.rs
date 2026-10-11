@@ -1,6 +1,6 @@
-use rwire::{
-    biased_teleport, page_rank, uniform_teleport, CsrMatrix, FileInfo, Graph, IngestResult,
-    Interner, Lang, PageRankConfig, RefRole, Reference, SymKind, Symbol,
+use ripwire::{
+    CsrMatrix, FileInfo, Graph, IngestResult, Interner, Lang, PageRankConfig, RefRole, Reference,
+    SymKind, Symbol, biased_teleport, page_rank, uniform_teleport,
 };
 
 #[test]

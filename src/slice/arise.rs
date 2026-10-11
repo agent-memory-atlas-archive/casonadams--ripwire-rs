@@ -143,22 +143,21 @@ fn collect_occurrences_recursive(
     out: &mut Vec<VariableOcc>,
 ) {
     let kind = node.kind();
-    if is_identifier_node(kind) {
-        if let Ok(name) = node.utf8_text(source_bytes) {
-            if target_var.is_none() || target_var == Some(name) {
-                let role = classify_node_role(node);
-                let line = node.start_position().row as u32 + 1;
-                let stmt_line = find_stmt_line(node);
-                out.push(VariableOcc {
-                    line,
-                    stmt_line,
-                    start_byte: node.start_byte(),
-                    end_byte: node.end_byte(),
-                    role,
-                    var_name: name.to_string(),
-                });
-            }
-        }
+    if is_identifier_node(kind)
+        && let Ok(name) = node.utf8_text(source_bytes)
+        && (target_var.is_none() || target_var == Some(name))
+    {
+        let role = classify_node_role(node);
+        let line = node.start_position().row as u32 + 1;
+        let stmt_line = find_stmt_line(node);
+        out.push(VariableOcc {
+            line,
+            stmt_line,
+            start_byte: node.start_byte(),
+            end_byte: node.end_byte(),
+            role,
+            var_name: name.to_string(),
+        });
     }
 
     for i in 0..node.child_count() {

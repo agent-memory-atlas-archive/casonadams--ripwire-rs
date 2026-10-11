@@ -1,5 +1,5 @@
-use rwire::{
-    ingest_in_memory_files, IngestResult, Interner, Lang, LanguageRegistry, RefRole, SymKind,
+use ripwire::{
+    IngestResult, Interner, Lang, LanguageRegistry, RefRole, SymKind, ingest_in_memory_files,
 };
 
 #[test]
