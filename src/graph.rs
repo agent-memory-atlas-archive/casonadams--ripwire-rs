@@ -1,0 +1,306 @@
+use crate::domain::{IngestResult, Interner, NodeId};
+use crate::resolve::{resolve_all_references, ResolutionResult};
+use std::ops::Range;
+
+/// Compressed Sparse Row (CSR) matrix representation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CsrMatrix {
+    pub rows: usize,
+    pub cols: usize,
+    pub row_offsets: Vec<u32>,
+    pub col_indices: Vec<u32>,
+    pub values: Vec<f32>,
+}
+
+impl CsrMatrix {
+    #[must_use]
+    pub fn new(
+        rows: usize,
+        cols: usize,
+        row_offsets: Vec<u32>,
+        col_indices: Vec<u32>,
+        values: Vec<f32>,
+    ) -> Self {
+        Self {
+            rows,
+            cols,
+            row_offsets,
+            col_indices,
+            values,
+        }
+    }
+
+    #[must_use]
+    pub fn empty(rows: usize, cols: usize) -> Self {
+        Self {
+            rows,
+            cols,
+            row_offsets: vec![0; rows + 1],
+            col_indices: Vec::new(),
+            values: Vec::new(),
+        }
+    }
+
+    #[must_use]
+    pub fn nnz(&self) -> usize {
+        self.values.len()
+    }
+
+    #[must_use]
+    pub fn row_range(&self, row: usize) -> Range<usize> {
+        let start = self.row_offsets[row] as usize;
+        let end = self.row_offsets[row + 1] as usize;
+        start..end
+    }
+
+    pub fn row_entries(&self, row: usize) -> impl Iterator<Item = (NodeId, f32)> + '_ {
+        let range = self.row_range(row);
+        range.map(move |i| (self.col_indices[i], self.values[i]))
+    }
+
+    fn verify_row(&self, start: usize, end: usize) -> bool {
+        if start > end || end > self.col_indices.len() {
+            return false;
+        }
+        let mut prev_col = None;
+        for i in start..end {
+            let col = self.col_indices[i];
+            let val = self.values[i];
+            if col as usize >= self.cols || !val.is_finite() || val < 0.0 {
+                return false;
+            }
+            if prev_col.is_some_and(|prev| col <= prev) {
+                return false;
+            }
+            prev_col = Some(col);
+        }
+        true
+    }
+
+    #[must_use]
+    pub fn verify(&self) -> bool {
+        if self.row_offsets.len() != self.rows + 1
+            || self.row_offsets[0] != 0
+            || self.row_offsets[self.rows] != self.nnz() as u32
+            || self.col_indices.len() != self.values.len()
+        {
+            return false;
+        }
+        (0..self.rows).all(|r| {
+            let start = self.row_offsets[r] as usize;
+            let end = self.row_offsets[r + 1] as usize;
+            self.verify_row(start, end)
+        })
+    }
+}
+
+/// The resolved repository call graph.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Graph {
+    pub in_edges: CsrMatrix,
+    pub w_out_deg: Vec<f64>,
+    pub out_offsets: Vec<u32>,
+    pub out_targets: Vec<NodeId>,
+    pub out_weights: Vec<f32>,
+    pub amb_out: Vec<u32>,
+}
+
+impl Graph {
+    #[must_use]
+    pub fn node_count(&self) -> usize {
+        self.in_edges.rows
+    }
+
+    #[must_use]
+    pub fn edge_count(&self) -> usize {
+        self.in_edges.nnz()
+    }
+
+    #[must_use]
+    pub fn is_dangling(&self, node: NodeId) -> bool {
+        self.w_out_deg[node as usize] == 0.0
+    }
+
+    #[must_use]
+    pub fn out_degree(&self, node: NodeId) -> usize {
+        let n = node as usize;
+        (self.out_offsets[n + 1] - self.out_offsets[n]) as usize
+    }
+
+    #[must_use]
+    pub fn in_degree(&self, node: NodeId) -> usize {
+        let n = node as usize;
+        (self.in_edges.row_offsets[n + 1] - self.in_edges.row_offsets[n]) as usize
+    }
+
+    pub fn callers(&self, node: NodeId) -> impl Iterator<Item = (NodeId, f32)> + '_ {
+        self.in_edges.row_entries(node as usize)
+    }
+
+    pub fn callees(&self, node: NodeId) -> impl Iterator<Item = (NodeId, f32)> + '_ {
+        let n = node as usize;
+        let start = self.out_offsets[n] as usize;
+        let end = self.out_offsets[n + 1] as usize;
+        (start..end).map(move |i| (self.out_targets[i], self.out_weights[i]))
+    }
+
+    #[must_use]
+    pub fn ambiguity(&self, node: NodeId) -> u32 {
+        self.amb_out[node as usize]
+    }
+
+    #[must_use]
+    pub fn build(ingest: &IngestResult, interner: &Interner) -> Self {
+        let resolution = resolve_all_references(ingest, interner);
+        Self::from_resolution(ingest.symbols.len(), resolution)
+    }
+
+    #[must_use]
+    pub fn from_resolution(node_count: usize, resolution: ResolutionResult) -> Self {
+        let mut edges: Vec<(NodeId, NodeId, f32)> = resolution
+            .edge_accumulators
+            .into_iter()
+            .map(|((from, to), acc)| {
+                let w = (acc.conf_sum / acc.n_ref as f32) * (acc.n_ref as f32).sqrt();
+                (from, to, w.min(8.0))
+            })
+            .collect();
+
+        edges.sort_by_key(|&(from, to, _)| (from, to));
+
+        let (out_offsets, out_targets, out_weights, w_out_deg) =
+            build_out_edges(node_count, &edges);
+        let in_edges = build_in_edges_csr(node_count, &edges);
+
+        Self {
+            in_edges,
+            w_out_deg,
+            out_offsets,
+            out_targets,
+            out_weights,
+            amb_out: resolution.amb_out,
+        }
+    }
+}
+
+fn build_out_edges(
+    node_count: usize,
+    edges: &[(NodeId, NodeId, f32)],
+) -> (Vec<u32>, Vec<NodeId>, Vec<f32>, Vec<f64>) {
+    let mut out_offsets = vec![0u32; node_count + 1];
+    for &(from, _, _) in edges {
+        out_offsets[from as usize + 1] += 1;
+    }
+    for i in 0..node_count {
+        out_offsets[i + 1] += out_offsets[i];
+    }
+
+    let mut out_targets = vec![0u32; edges.len()];
+    let mut out_weights = vec![0.0f32; edges.len()];
+    let mut w_out_deg = vec![0.0f64; node_count];
+    let mut cur = out_offsets[0..node_count].to_vec();
+
+    for &(from, to, w) in edges {
+        let pos = cur[from as usize] as usize;
+        cur[from as usize] += 1;
+        out_targets[pos] = to;
+        out_weights[pos] = w;
+        w_out_deg[from as usize] += w as f64;
+    }
+
+    (out_offsets, out_targets, out_weights, w_out_deg)
+}
+
+fn build_in_edges_csr(node_count: usize, edges: &[(NodeId, NodeId, f32)]) -> CsrMatrix {
+    let mut row_offsets = vec![0u32; node_count + 1];
+    for &(_, to, _) in edges {
+        row_offsets[to as usize + 1] += 1;
+    }
+    for i in 0..node_count {
+        row_offsets[i + 1] += row_offsets[i];
+    }
+
+    let mut col_indices = vec![0u32; edges.len()];
+    let mut values = vec![0.0f32; edges.len()];
+    let mut cur = row_offsets[0..node_count].to_vec();
+
+    for &(from, to, w) in edges {
+        let pos = cur[to as usize] as usize;
+        cur[to as usize] += 1;
+        col_indices[pos] = from;
+        values[pos] = w;
+    }
+
+    for t in 0..node_count {
+        let start = row_offsets[t] as usize;
+        let end = row_offsets[t + 1] as usize;
+        if end > start + 1 {
+            let mut pairs: Vec<(u32, f32)> =
+                (start..end).map(|i| (col_indices[i], values[i])).collect();
+            pairs.sort_by_key(|&(col, _)| col);
+            for (idx, (col, val)) in pairs.into_iter().enumerate() {
+                col_indices[start + idx] = col;
+                values[start + idx] = val;
+            }
+        }
+    }
+
+    CsrMatrix::new(node_count, node_count, row_offsets, col_indices, values)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_csr_matrix_empty_and_verify() {
+        let empty = CsrMatrix::empty(4, 4);
+        assert_eq!(empty.rows, 4);
+        assert_eq!(empty.cols, 4);
+        assert_eq!(empty.nnz(), 0);
+        assert!(empty.verify());
+    }
+
+    #[test]
+    fn test_graph_simple_chain() {
+        let mut resolution = ResolutionResult {
+            amb_out: vec![0, 0, 0],
+            ..Default::default()
+        };
+        resolution.edge_accumulators.insert(
+            (0, 1),
+            crate::resolve::EdgeAcc {
+                conf_sum: 1.0,
+                n_ref: 1,
+            },
+        );
+        resolution.edge_accumulators.insert(
+            (1, 2),
+            crate::resolve::EdgeAcc {
+                conf_sum: 1.0,
+                n_ref: 1,
+            },
+        );
+
+        let graph = Graph::from_resolution(3, resolution);
+        assert_eq!(graph.node_count(), 3);
+        assert_eq!(graph.edge_count(), 2);
+        assert!(graph.in_edges.verify());
+
+        assert_eq!(graph.out_degree(0), 1);
+        assert_eq!(graph.out_degree(1), 1);
+        assert_eq!(graph.out_degree(2), 0);
+        assert!(graph.is_dangling(2));
+        assert!(!graph.is_dangling(0));
+
+        assert_eq!(graph.in_degree(0), 0);
+        assert_eq!(graph.in_degree(1), 1);
+        assert_eq!(graph.in_degree(2), 1);
+
+        let callers_of_2: Vec<_> = graph.callers(2).collect();
+        assert_eq!(callers_of_2, vec![(1, 1.0)]);
+
+        let callees_of_0: Vec<_> = graph.callees(0).collect();
+        assert_eq!(callees_of_0, vec![(1, 1.0)]);
+    }
+}
