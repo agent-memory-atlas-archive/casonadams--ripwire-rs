@@ -30,3 +30,6 @@ tree-sitter-rust = "0.24.2"
 tree-sitter-swift = "0.7"
 tree-sitter-typescript = "0.23.2"
 
+[build-dependencies]
+cc = "1.7.0"
+

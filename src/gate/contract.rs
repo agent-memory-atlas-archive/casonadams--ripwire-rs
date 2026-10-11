@@ -145,10 +145,15 @@ pub fn load_head_symbol_contract(
 }
 
 fn count_param_children(child: tree_sitter::Node<'_>) -> u16 {
+    let is_kt = child.kind() == "function_value_parameters";
     let mut count = 0u16;
     for j in 0..child.named_child_count() {
         if let Some(param) = child.named_child(j) {
-            if !param.kind().contains("comment") {
+            if is_kt {
+                if param.kind() == "parameter" {
+                    count = count.saturating_add(1);
+                }
+            } else if !param.kind().contains("comment") {
                 count = count.saturating_add(1);
             }
         }
@@ -208,6 +213,15 @@ pub fn check_node_visibility(
 ) -> bool {
     if lang == Lang::Go {
         is_go_public(def_node, source_bytes)
+    } else if matches!(
+        lang,
+        Lang::Python | Lang::Ruby | Lang::Elixir | Lang::Lua | Lang::Bash | Lang::GDScript
+    ) {
+        let is_private = def_node
+            .child_by_field_name("name")
+            .and_then(|n| n.utf8_text(source_bytes).ok())
+            .is_some_and(|s| s.starts_with('_'));
+        !is_private
     } else {
         has_any_visibility_modifier(def_node, source_bytes)
     }

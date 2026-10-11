@@ -131,7 +131,7 @@ impl Lang {
     pub fn from_extension(ext: &str) -> Self {
         match ext {
             "rs" => Self::Rust,
-            "ts" | "tsx" | "mts" | "cts" => Self::TypeScript,
+            "ts" | "tsx" | "mts" | "cts" | "astro" => Self::TypeScript,
             "js" | "jsx" | "mjs" | "cjs" => Self::JavaScript,
             "py" | "pyi" => Self::Python,
             "go" => Self::Go,
@@ -153,7 +153,7 @@ impl Lang {
             "json" => Self::Json,
             "toml" => Self::Toml,
             "yml" | "yaml" => Self::Yaml,
-            "md" | "markdown" => Self::Markdown,
+            "md" | "markdown" | "rst" => Self::Markdown,
             _ => Self::Unknown,
         }
     }
@@ -198,6 +198,7 @@ impl Lang {
                 | Self::Php
                 | Self::Lua
                 | Self::Elixir
+                | Self::Dart
                 | Self::Kotlin
         )
     }
