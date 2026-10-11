@@ -77,6 +77,15 @@ pub fn write_symbol_row<W: Write>(
     escape_xml_write(w, ctx.sym_name)?;
     w.write_all(b"\"")?;
 
+    if let Some(sc_spur) = ctx.sym.scope {
+        let sc = interner.resolve(&sc_spur);
+        if !sc.is_empty() {
+            w.write_all(b" sc=\"")?;
+            escape_xml_write(w, sc)?;
+            w.write_all(b"\"")?;
+        }
+    }
+
     if ctx.include_pr {
         write!(w, " k=\"{:.4}\"", ctx.rank)?;
     }
@@ -85,14 +94,16 @@ pub fn write_symbol_row<W: Write>(
     }
     w.write_all(b">")?;
 
+    let mut seen_callees = std::collections::HashSet::new();
     for &(callee_id, _) in ctx.callees {
         let callee_sym = &symbols[callee_id as usize];
         let callee_name = interner.resolve(&callee_sym.name);
-        w.write_all(b"<c n=\"")?;
-        escape_xml_write(w, callee_name)?;
-        w.write_all(b"\"/>")?;
+        if seen_callees.insert(callee_name) {
+            w.write_all(b"<c n=\"")?;
+            escape_xml_write(w, callee_name)?;
+            w.write_all(b"\"/>")?;
+        }
     }
-
     w.write_all(b"</s>")
 }
 

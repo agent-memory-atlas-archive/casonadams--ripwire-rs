@@ -181,6 +181,7 @@ pub struct Symbol {
     pub id: NodeId,
     pub name: Spur,
     pub canonical_id: Spur,
+    pub scope: Option<Spur>,
     pub kind: SymKind,
     pub lang: Lang,
     pub file_id: u32,
@@ -209,6 +210,7 @@ impl Symbol {
             id,
             name,
             canonical_id,
+            scope: None,
             kind,
             lang,
             file_id,
@@ -223,6 +225,12 @@ impl Symbol {
             params: 0,
         }
     }
+
+    #[must_use]
+    pub fn with_scope(mut self, scope: Spur) -> Self {
+        self.scope = Some(scope);
+        self
+    }
 }
 
 /// Unresolved reference extracted from AST syntax.
@@ -230,6 +238,7 @@ impl Symbol {
 pub struct Reference {
     pub from_symbol: NodeId,
     pub callee_name: Spur,
+    pub qualifier: Option<Spur>,
     pub file_id: u32,
     pub line: u32,
     pub start_byte: u32,
@@ -251,6 +260,7 @@ impl Reference {
         Self {
             from_symbol,
             callee_name,
+            qualifier: None,
             file_id,
             line,
             start_byte: 0,
@@ -259,6 +269,12 @@ impl Reference {
             arg_count: 0,
             arg_count_known: false,
         }
+    }
+
+    #[must_use]
+    pub fn with_qualifier(mut self, qualifier: Spur) -> Self {
+        self.qualifier = Some(qualifier);
+        self
     }
 }
 

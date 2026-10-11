@@ -94,13 +94,24 @@ pub fn resolve_call_reference(
         return None;
     }
     let all_cands = by_name.get(&r.callee_name)?;
-    let cands: Vec<NodeId> = all_cands
+    let mut cands: Vec<NodeId> = all_cands
         .iter()
         .copied()
         .filter(|&id| symbols[id as usize].lang.is_compatible(r.lang))
         .collect();
     if cands.is_empty() {
         return None;
+    }
+
+    if let Some(q) = r.qualifier {
+        let qualified: Vec<NodeId> = cands
+            .iter()
+            .copied()
+            .filter(|&id| symbols[id as usize].scope == Some(q))
+            .collect();
+        if !qualified.is_empty() {
+            cands = qualified;
+        }
     }
 
     let caller_file_id = r.file_id;

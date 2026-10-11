@@ -64,6 +64,7 @@ impl LanguageRegistry {
 #[derive(Debug, Clone)]
 struct RawDef {
     name: String,
+    scope: Option<String>,
     kind: SymKind,
     line: u32,
     start_byte: usize,
@@ -74,6 +75,7 @@ struct RawDef {
 #[derive(Debug, Clone)]
 struct RawRef {
     callee_name: String,
+    qualifier: Option<String>,
     line: u32,
     start_byte: usize,
     role: RefRole,
@@ -126,6 +128,73 @@ fn classify_capture(name: &str) -> Option<Capture> {
         })
     })
 }
+fn extract_impl_scope(parent: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
+    let type_node = parent.child_by_field_name("type")?;
+    let text = type_node.utf8_text(source_bytes).ok()?;
+    let base = text.split('<').next().unwrap_or(text).trim();
+    if base.is_empty() {
+        None
+    } else {
+        Some(base.to_string())
+    }
+}
+
+fn extract_named_container_scope(
+    parent: tree_sitter::Node<'_>,
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+) -> Option<String> {
+    let name_child = parent.child_by_field_name("name")?;
+    if name_child == name_node {
+        return None;
+    }
+    let text = name_child.utf8_text(source_bytes).ok()?.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
+}
+
+fn extract_node_scope(
+    parent: tree_sitter::Node<'_>,
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+) -> Option<String> {
+    match parent.kind() {
+        "impl_item" => extract_impl_scope(parent, source_bytes),
+        "mod_item" | "trait_item" | "class_declaration" | "class_definition"
+        | "struct_specifier" => extract_named_container_scope(parent, name_node, source_bytes),
+        _ => None,
+    }
+}
+
+fn find_enclosing_scope(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
+    let mut curr = name_node.parent();
+    while let Some(parent) = curr {
+        if let Some(scope) = extract_node_scope(parent, name_node, source_bytes) {
+            return Some(scope);
+        }
+        curr = parent.parent();
+    }
+    None
+}
+
+fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
+    let parent = name_node.parent()?;
+    if parent.kind() == "scoped_identifier" {
+        if let Some(path_node) = parent.child_by_field_name("path") {
+            if let Ok(text) = path_node.utf8_text(source_bytes) {
+                let last = text.rsplit("::").next().unwrap_or(text);
+                let base = last.split('<').next().unwrap_or(last).trim();
+                if !base.is_empty() {
+                    return Some(base.to_string());
+                }
+            }
+        }
+    }
+    None
+}
 
 /// Parse a single file content with a compiled grammar and query.
 fn parse_file_content(source_bytes: &[u8], language: &Language, query: &Query) -> FileParseResult {
@@ -148,6 +217,7 @@ fn parse_file_content(source_bytes: &[u8], language: &Language, query: &Query) -
 
     while let Some(m) = matches.next() {
         let mut name: Option<String> = None;
+        let mut name_node: Option<tree_sitter::Node<'_>> = None;
         let mut def: Option<(SymKind, usize, usize, u32)> = None;
         let mut r#ref: Option<(RefRole, usize, u32)> = None;
 
@@ -158,6 +228,7 @@ fn parse_file_content(source_bytes: &[u8], language: &Language, query: &Query) -
                 Some(Capture::Name) => {
                     if let Ok(text) = node.utf8_text(source_bytes) {
                         name = Some(text.to_string());
+                        name_node = Some(node);
                     }
                 }
                 Some(Capture::Def(k)) => {
@@ -173,16 +244,20 @@ fn parse_file_content(source_bytes: &[u8], language: &Language, query: &Query) -
         }
 
         if let (Some(name), Some((kind, start, end, line))) = (name.as_ref(), def) {
+            let scope = name_node.and_then(|n| find_enclosing_scope(n, source_bytes));
             defs.push(RawDef {
                 name: name.clone(),
+                scope,
                 kind,
                 line,
                 start_byte: start,
                 end_byte: end,
             });
         } else if let (Some(name), Some((role, start, line))) = (name, r#ref) {
+            let qualifier = name_node.and_then(|n| find_call_qualifier(n, source_bytes));
             refs.push(RawRef {
                 callee_name: name,
+                qualifier,
                 line,
                 start_byte: start,
                 role,
@@ -239,19 +314,51 @@ pub fn ingest_crawled_files(
             byte_size,
         });
 
-        let mut file_symbols = Vec::with_capacity(defs.len());
-        for def in defs {
-            let id = next_node_id;
-            next_node_id += 1;
-            let name = interner.intern(&def.name);
-            let canon = interner.intern(&format!("{}::{}", file.rel_path, def.name));
-            let mut sym = Symbol::new(id, name, canon, def.kind, file.lang, file_id, def.line);
-            sym.sig_start_byte = def.start_byte as u32;
-            sym.end_byte = def.end_byte as u32;
-            file_symbols.push(sym);
-        }
+        let file_symbols = build_file_symbols(defs, file, file_id, interner, &mut next_node_id);
+        let file_refs = build_file_references(refs, file, file_id, &file_symbols, interner);
 
-        for r in refs {
+        ingest.references.extend(file_refs);
+        ingest.symbols.extend(file_symbols);
+    }
+    ingest
+}
+
+fn build_file_symbols(
+    defs: Vec<RawDef>,
+    file: &CrawledFile,
+    file_id: u32,
+    interner: &Interner,
+    next_node_id: &mut NodeId,
+) -> Vec<Symbol> {
+    let mut file_symbols = Vec::with_capacity(defs.len());
+    for def in defs {
+        let id = *next_node_id;
+        *next_node_id += 1;
+        let name = interner.intern(&def.name);
+        let canon = match &def.scope {
+            Some(sc) => interner.intern(&format!("{}::{}::{}", file.rel_path, sc, def.name)),
+            None => interner.intern(&format!("{}::{}", file.rel_path, def.name)),
+        };
+        let mut sym = Symbol::new(id, name, canon, def.kind, file.lang, file_id, def.line);
+        if let Some(sc) = &def.scope {
+            sym.scope = Some(interner.intern(sc));
+        }
+        sym.sig_start_byte = def.start_byte as u32;
+        sym.end_byte = def.end_byte as u32;
+        file_symbols.push(sym);
+    }
+    file_symbols
+}
+
+fn build_file_references(
+    refs: Vec<RawRef>,
+    file: &CrawledFile,
+    file_id: u32,
+    file_symbols: &[Symbol],
+    interner: &Interner,
+) -> Vec<Reference> {
+    refs.into_iter()
+        .map(|r| {
             let from_symbol = file_symbols
                 .iter()
                 .filter(|s| {
@@ -265,13 +372,13 @@ pub fn ingest_crawled_files(
             let callee_spur = interner.intern(&r.callee_name);
             let mut reference =
                 Reference::new(from_symbol, callee_spur, file_id, r.line, file.lang, r.role);
+            if let Some(q) = &r.qualifier {
+                reference.qualifier = Some(interner.intern(q));
+            }
             reference.start_byte = r.start_byte as u32;
-            ingest.references.push(reference);
-        }
-
-        ingest.symbols.extend(file_symbols);
-    }
-    ingest
+            reference
+        })
+        .collect()
 }
 
 #[cfg(test)]
