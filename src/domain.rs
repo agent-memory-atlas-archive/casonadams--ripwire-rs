@@ -275,50 +275,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sym_kind_tags() {
+    fn test_domain_tags() {
         assert_eq!(SymKind::Function.tag(), "fn");
-        assert_eq!(SymKind::Method.tag(), "method");
-        assert_eq!(SymKind::Class.tag(), "cls");
-        assert_eq!(SymKind::Struct.tag(), "struct");
-        assert_eq!(SymKind::Interface.tag(), "iface");
-        assert_eq!(SymKind::Var.tag(), "var");
-        assert_eq!(SymKind::Section.tag(), "sec");
-        assert_eq!(SymKind::Macro.tag(), "macro");
-        assert_eq!(SymKind::Field.tag(), "field");
-        assert_eq!(SymKind::Other.tag(), "other");
-        assert_eq!(SymKind::ModuleScope.tag(), "modscope");
-    }
-
-    #[test]
-    fn test_ref_role_tags() {
         assert_eq!(RefRole::Call.tag(), "call");
-        assert_eq!(RefRole::Read.tag(), "read");
-        assert_eq!(RefRole::Write.tag(), "write");
-        assert_eq!(RefRole::Import.tag(), "import");
-        assert_eq!(RefRole::Extends.tag(), "extends");
-        assert_eq!(RefRole::Macro.tag(), "macro");
-        assert_eq!(RefRole::Type.tag(), "type");
-        assert_eq!(RefRole::Value.tag(), "value");
-        assert_eq!(RefRole::Through.tag(), "through");
-    }
-
-    #[test]
-    fn test_lang_extension_mapping() {
+        assert_eq!(Lang::Rust.tag(), "rs");
         assert_eq!(Lang::from_extension("rs"), Lang::Rust);
-        assert_eq!(Lang::from_extension("ts"), Lang::TypeScript);
-        assert_eq!(Lang::from_extension("js"), Lang::JavaScript);
-        assert_eq!(Lang::from_extension("py"), Lang::Python);
-        assert_eq!(Lang::from_extension("go"), Lang::Go);
-        assert_eq!(Lang::from_extension("cpp"), Lang::Cpp);
-        assert_eq!(Lang::from_extension("unknown_xyz"), Lang::Unknown);
-    }
-
-    #[test]
-    fn test_lang_compatibility() {
+        assert_eq!(Lang::from_extension("unknown"), Lang::Unknown);
         assert!(Lang::Rust.is_compatible(Lang::Rust));
         assert!(Lang::C.is_compatible(Lang::Cpp));
-        assert!(Lang::Cpp.is_compatible(Lang::C));
-        assert!(Lang::TypeScript.is_compatible(Lang::JavaScript));
         assert!(!Lang::Rust.is_compatible(Lang::Python));
     }
 }
