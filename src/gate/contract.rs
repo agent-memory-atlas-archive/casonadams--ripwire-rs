@@ -27,15 +27,15 @@ pub enum ContractStatus {
     NoBaseline,
 }
 
-impl ContractStatus {
-    #[must_use]
-    pub fn as_str(&self) -> &'static str {
-        match self {
+impl std::fmt::Display for ContractStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
             Self::Unchanged => "unchanged",
             Self::ContractChange { .. } => "contract-change",
             Self::NewSymbol => "new-symbol",
             Self::NoBaseline => "no-baseline",
-        }
+        };
+        write!(f, "{s}")
     }
 }
 

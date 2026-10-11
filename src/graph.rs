@@ -1,4 +1,6 @@
 use crate::domain::{IngestResult, Interner, NodeId};
+pub mod community;
+
 use crate::rank::{page_rank, uniform_teleport, PageRankConfig, PageRankResult};
 use crate::resolve::{resolve_all_references, ResolutionResult};
 use std::ops::Range;
@@ -159,6 +161,11 @@ impl Graph {
     #[must_use]
     pub fn page_rank_custom(&self, config: &PageRankConfig, teleport: &[f64]) -> PageRankResult {
         page_rank(&self.in_edges, &self.w_out_deg, teleport, config)
+    }
+
+    #[must_use]
+    pub fn communities(&self) -> community::Communities {
+        community::detect_communities(self)
     }
 
     #[must_use]

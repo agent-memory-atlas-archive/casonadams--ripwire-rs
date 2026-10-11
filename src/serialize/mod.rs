@@ -1,5 +1,8 @@
 pub mod escape;
+pub mod html;
 pub mod xml;
+
+pub use html::{generate_call_graph_html, write_call_graph_html, ColorBy};
 
 pub use escape::{escape_xml_str, escape_xml_write, needs_escaping, xml_safe_byte};
 pub use xml::{

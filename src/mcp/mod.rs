@@ -296,7 +296,7 @@ fn call_edit_check(state: &McpState, args: &Value) -> Result<Value, String> {
     .ok_or_else(|| "failed to check symbol contract".to_string())?;
     Ok(json!({
         "symbol": sym_name,
-        "status": rep.status.as_str(),
+        "status": rep.status.to_string(),
         "total_callers": rep.total_callers,
         "incompatible_callers": rep.incompatible_callers,
         "callers_count": rep.total_callers,

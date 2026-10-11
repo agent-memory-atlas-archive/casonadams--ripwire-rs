@@ -62,6 +62,14 @@ pub struct Cli {
     #[arg(long, default_value = "fwd")]
     pub slice_flow: String,
 
+    /// Export interactive HTML call graph visualization to file
+    #[arg(long, value_name = "FILE")]
+    pub html: Option<Option<String>>,
+
+    /// Node coloring mode for --html: lang, community, cx, churn, tested
+    #[arg(long, default_value = "lang")]
+    pub color_by: String,
+
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -208,7 +216,14 @@ pub fn execute_stream_xml_with<W: io::Write>(
     )
 }
 
-fn execute_stream_xml(root: &str) -> io::Result<()> {
+fn load_repo_analysis(
+    root: &str,
+) -> io::Result<(
+    crate::domain::IngestResult,
+    Graph,
+    crate::rank::PageRankResult,
+    Interner,
+)> {
     let path = std::path::Path::new(root);
     let files = crate::crawler::crawl_directory(path, &crate::crawler::CrawlerOptions::default());
     let registry =
@@ -217,7 +232,11 @@ fn execute_stream_xml(root: &str) -> io::Result<()> {
     let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
     let graph = Graph::build(&ingest, &interner);
     let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
+    Ok((ingest, graph, pr, interner))
+}
 
+fn execute_stream_xml(root: &str) -> io::Result<()> {
+    let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
     let mut stdout = io::stdout().lock();
     execute_stream_xml_with(root, &ingest, &graph, &pr, &interner, &mut stdout)
 }
@@ -628,6 +647,11 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
         }
     }
 
+    if let Some(html_opt) = cli.html {
+        let out_file = html_opt.unwrap_or_else(|| "rwire.html".to_string());
+        return execute_html_export(root, &out_file, &cli.color_by);
+    }
+
     if let Some(Commands::Slice(slice_args)) = &cli.command {
         return crate::slice::execute_slice_command(
             root,
@@ -685,6 +709,17 @@ fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
             Ok(())
         }
     }
+}
+
+fn execute_html_export(root: &str, out_file: &str, color_by_str: &str) -> io::Result<()> {
+    let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+    let color_by = crate::serialize::html::ColorBy::from_str_opt(color_by_str).unwrap_or_default();
+    let mut file = std::fs::File::create(out_file)?;
+    crate::serialize::html::write_call_graph_html(
+        &mut file, &ingest, &graph, &pr.ranks, &interner, color_by, None,
+    )?;
+    println!("rwire: wrote interactive HTML call graph to {out_file}");
+    Ok(())
 }
 
 /// Main CLI entry point.

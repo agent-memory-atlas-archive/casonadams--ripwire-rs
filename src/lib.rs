@@ -58,8 +58,8 @@ pub use resolve::{
     resolve_all_references, resolve_call_reference, EdgeAcc, ResolutionResult, ResolvedRef,
 };
 pub use serialize::{
-    escape_xml_str, escape_xml_write, serialize_xml, serialize_xml_to_string, SerializeOptions,
-    ToXmlString,
+    escape_xml_str, escape_xml_write, generate_call_graph_html, serialize_xml,
+    serialize_xml_to_string, write_call_graph_html, ColorBy, SerializeOptions, ToXmlString,
 };
 pub use slice::{
     compute_dataflow_slice, execute_slice, parse_slice_target, OccRole, SliceFlowDir, SliceStep,

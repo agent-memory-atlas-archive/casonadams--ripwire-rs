@@ -40,7 +40,7 @@ impl crate::serialize::ToXmlString for EditCheckReport {
             "<edit-check sym=\"{}\" p=\"{}\" status=\"{}\" callers=\"{}\" incompatible=\"{}\">",
             self.symbol_name,
             self.file_path,
-            self.status.as_str(),
+            self.status,
             self.total_callers,
             self.incompatible_callers
         )?;
