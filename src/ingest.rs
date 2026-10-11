@@ -226,48 +226,32 @@ pub fn ingest_crawled_files(
     for (file_id, (file, parsed)) in files.iter().zip(parsed_files).enumerate() {
         let file_id = file_id as u32;
         let file_spur = interner.intern(&file.rel_path);
-
-        let parse_res = match parsed {
-            Some(res) => res,
-            None => {
-                ingest.files.push(FileInfo {
-                    id: file_id,
-                    path: file_spur,
-                    lang: file.lang,
-                    line_count: 0,
-                    byte_size: file.byte_size,
-                });
-                continue;
-            }
+        let (line_count, byte_size, defs, refs) = match parsed {
+            Some(p) => (p.line_count, p.byte_size, p.defs, p.refs),
+            None => (0, file.byte_size, Vec::new(), Vec::new()),
         };
 
         ingest.files.push(FileInfo {
             id: file_id,
             path: file_spur,
             lang: file.lang,
-            line_count: parse_res.line_count,
-            byte_size: parse_res.byte_size,
+            line_count,
+            byte_size,
         });
 
-        let mut file_symbols: Vec<Symbol> = Vec::with_capacity(parse_res.defs.len());
-
-        for def in &parse_res.defs {
+        let mut file_symbols = Vec::with_capacity(defs.len());
+        for def in defs {
             let id = next_node_id;
             next_node_id += 1;
-
-            let name_spur = interner.intern(&def.name);
-            let canon_str = format!("{}::{}", file.rel_path, def.name);
-            let canon_spur = interner.intern(&canon_str);
-
-            let mut sym = Symbol::new(
-                id, name_spur, canon_spur, def.kind, file.lang, file_id, def.line,
-            );
+            let name = interner.intern(&def.name);
+            let canon = interner.intern(&format!("{}::{}", file.rel_path, def.name));
+            let mut sym = Symbol::new(id, name, canon, def.kind, file.lang, file_id, def.line);
             sym.sig_start_byte = def.start_byte as u32;
             sym.end_byte = def.end_byte as u32;
             file_symbols.push(sym);
         }
 
-        for r in &parse_res.refs {
+        for r in refs {
             let from_symbol = file_symbols
                 .iter()
                 .filter(|s| {
@@ -287,7 +271,6 @@ pub fn ingest_crawled_files(
 
         ingest.symbols.extend(file_symbols);
     }
-
     ingest
 }
 
