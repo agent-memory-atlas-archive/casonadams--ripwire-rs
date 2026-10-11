@@ -29,8 +29,8 @@
 - Test duration limits: Individual unit tests must complete in milliseconds.
   No test may exceed 2.5 seconds (target < 500ms). The entire workspace
   test suite must finish in under 15 seconds.
-- Never contact external network services or third-party APIs in tests. Use
-  in-memory fakes or local test fixtures.
+- Never perform filesystem or disk I/O in tests (no temporary files, directories, or disk writes). Use in-memory slices and buffers.
+- Never contact external network services or third-party APIs in tests.
 - Write unit tests in in-file `#[cfg(test)] mod tests` blocks or integration tests
   in `tests/`, avoiding deep nested test module folders.
 
