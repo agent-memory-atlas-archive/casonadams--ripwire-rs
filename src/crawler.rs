@@ -5,7 +5,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_MAX_FILE_SIZE: u64 = 4 * 1024 * 1024;
-
 pub const DENYLIST_DIRS: &[&str] = &[
     ".git",
     ".claude",
@@ -56,41 +55,39 @@ impl Default for CrawlerOptions {
 }
 
 pub fn crawl_directory(root: &Path, options: &CrawlerOptions) -> Vec<CrawledFile> {
-    let mut builder = WalkBuilder::new(root);
-    builder
+    let mut files = Vec::new();
+    for entry in WalkBuilder::new(root)
         .git_ignore(options.honor_gitignore)
         .git_global(options.honor_gitignore)
         .git_exclude(options.honor_gitignore)
         .hidden(false)
-        .follow_links(false);
-
-    let mut files = Vec::new();
-
-    for entry in builder.build().flatten() {
+        .follow_links(false)
+        .build()
+        .flatten()
+    {
         let path = entry.path();
         if path.is_dir() {
             continue;
         }
 
-        let is_denylisted = path.components().any(|c| {
+        let is_denied = path.components().any(|c| {
             c.as_os_str().to_str().is_some_and(|name| {
                 DENYLIST_DIRS.contains(&name)
                     || name.starts_with("cmake-build-")
                     || options.custom_excludes.iter().any(|ex| name.contains(ex))
             })
         });
-        if is_denylisted {
+        if is_denied {
             continue;
         }
 
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let lang = Lang::from_extension(ext);
+        let lang = Lang::from_extension(path.extension().and_then(|e| e.to_str()).unwrap_or(""));
         if lang == Lang::Unknown {
             continue;
         }
 
-        let file_size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-        if file_size == 0 || file_size > options.max_file_size || is_binary_file(path) {
+        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        if size == 0 || size > options.max_file_size || is_binary_file(path) {
             continue;
         }
 
@@ -104,7 +101,7 @@ pub fn crawl_directory(root: &Path, options: &CrawlerOptions) -> Vec<CrawledFile
             path: path.to_path_buf(),
             rel_path,
             lang,
-            byte_size: file_size,
+            byte_size: size,
         });
     }
 
