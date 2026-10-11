@@ -1,13 +1,11 @@
 use rwire::{
-    crawl_directory, ingest_crawled_files, CrawlerOptions, Graph, Interner, LanguageRegistry,
-    PageRankConfig,
+    crawl_directory, ingest_crawled_files, serialize_xml, CrawlerOptions, Graph, Interner,
+    LanguageRegistry, PageRankConfig, SerializeOptions,
 };
-use std::{env, path::Path, time::Instant};
+use std::{env, io, path::Path};
 
-fn main() {
+fn main() -> io::Result<()> {
     let target = env::args().nth(1).unwrap_or_else(|| ".".into());
-    let start = Instant::now();
-
     let files = crawl_directory(Path::new(&target), &CrawlerOptions::default());
     let registry = LanguageRegistry::new_tier1().expect("failed to init language registry");
     let interner = Interner::new();
@@ -15,13 +13,17 @@ fn main() {
     let graph = Graph::build(&ingest, &interner);
     let pr = graph.page_rank(&PageRankConfig::default());
 
-    println!(
-        "rwire v0.1.0 — crawled {} files, indexed {} symbols, {} references, resolved {} edges, PageRank converged in {} iters in {:.2?}",
-        ingest.file_count(),
-        ingest.symbol_count(),
-        ingest.reference_count(),
-        graph.edge_count(),
-        pr.iterations,
-        start.elapsed()
-    );
+    let mut stdout = io::stdout().lock();
+    serialize_xml(
+        &ingest,
+        &graph,
+        &pr,
+        &interner,
+        &mut stdout,
+        &SerializeOptions {
+            root: target,
+            top_k: None,
+            include_pr: true,
+        },
+    )
 }

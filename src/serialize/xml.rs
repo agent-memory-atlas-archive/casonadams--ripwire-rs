@@ -1,0 +1,271 @@
+use crate::domain::{IngestResult, Interner, NodeId, Symbol};
+use crate::graph::Graph;
+use crate::rank::PageRankResult;
+use crate::serialize::escape::escape_xml_write;
+use std::io::{self, BufWriter, Write};
+
+pub const DEFAULT_STREAM_BUFFER_CAPACITY: usize = 64 * 1024;
+
+/// Configuration options for streaming XML serialization.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SerializeOptions {
+    pub root: String,
+    pub top_k: Option<usize>,
+    pub include_pr: bool,
+}
+
+impl Default for SerializeOptions {
+    fn default() -> Self {
+        Self {
+            root: ".".into(),
+            top_k: None,
+            include_pr: true,
+        }
+    }
+}
+
+/// Metadata and callee context for serializing a single symbol row.
+pub struct SymbolRowContext<'a> {
+    pub sym: &'a Symbol,
+    pub sym_name: &'a str,
+    pub rank: f64,
+    pub amb: u32,
+    pub callees: &'a [(NodeId, f32)],
+    pub include_pr: bool,
+}
+
+/// Write the root `<r ...>` opening element.
+pub fn write_root_open<W: Write>(
+    w: &mut W,
+    root: &str,
+    files: usize,
+    symbols: usize,
+    edges: usize,
+    pr_iters: u32,
+    converged: bool,
+) -> io::Result<()> {
+    w.write_all(b"<r schema=\"rwire.map/v1\" root=\"")?;
+    escape_xml_write(w, root)?;
+    write!(
+        w,
+        "\" files=\"{}\" symbols=\"{}\" edges=\"{}\" pr_iters=\"{}\"",
+        files, symbols, edges, pr_iters
+    )?;
+    if !converged {
+        w.write_all(b" pr_converged=\"0\"")?;
+    }
+    w.write_all(b">")
+}
+
+/// Write the file opening element `<f p="...">`.
+pub fn write_file_header<W: Write>(w: &mut W, path: &str) -> io::Result<()> {
+    w.write_all(b"<f p=\"")?;
+    escape_xml_write(w, path)?;
+    w.write_all(b"\">")
+}
+
+/// Write a single symbol row and its outgoing call edges.
+pub fn write_symbol_row<W: Write>(
+    w: &mut W,
+    ctx: &SymbolRowContext<'_>,
+    interner: &Interner,
+    symbols: &[Symbol],
+) -> io::Result<()> {
+    w.write_all(b"<s t=\"")?;
+    w.write_all(ctx.sym.kind.tag().as_bytes())?;
+    w.write_all(b"\" n=\"")?;
+    escape_xml_write(w, ctx.sym_name)?;
+    w.write_all(b"\"")?;
+
+    if ctx.include_pr {
+        write!(w, " k=\"{:.4}\"", ctx.rank)?;
+    }
+    if ctx.amb > 0 {
+        write!(w, " amb=\"{}\"", ctx.amb)?;
+    }
+    w.write_all(b">")?;
+
+    for &(callee_id, _) in ctx.callees {
+        let callee_sym = &symbols[callee_id as usize];
+        let callee_name = interner.resolve(&callee_sym.name);
+        w.write_all(b"<c n=\"")?;
+        escape_xml_write(w, callee_name)?;
+        w.write_all(b"\"/>")?;
+    }
+
+    w.write_all(b"</s>")
+}
+
+/// Compute symbol rank ordering and bucket symbols into files.
+pub fn bucket_symbols_by_rank(
+    symbols: &[Symbol],
+    files_len: usize,
+    ranks: &[f64],
+    top_k: Option<usize>,
+) -> (Vec<u32>, Vec<Vec<NodeId>>) {
+    let s = symbols.len();
+    let keep = top_k.unwrap_or(s).min(s);
+
+    let mut order: Vec<NodeId> = (0..s as NodeId).collect();
+    order.sort_by(|&a, &b| {
+        let ra = ranks.get(a as usize).copied().unwrap_or(0.0);
+        let rb = ranks.get(b as usize).copied().unwrap_or(0.0);
+        rb.total_cmp(&ra).then_with(|| a.cmp(&b))
+    });
+
+    let mut buckets: Vec<Vec<NodeId>> = vec![Vec::new(); files_len];
+    let mut file_order: Vec<u32> = Vec::new();
+    let mut seen_files = vec![false; files_len];
+
+    for &id in &order[..keep] {
+        let f = symbols[id as usize].file_id;
+        if (f as usize) < seen_files.len() && !seen_files[f as usize] {
+            seen_files[f as usize] = true;
+            file_order.push(f);
+        }
+        if (f as usize) < buckets.len() {
+            buckets[f as usize].push(id);
+        }
+    }
+
+    (file_order, buckets)
+}
+
+/// Stream minified, token-dense XML directly through a buffered writer to stdout or output.
+pub fn serialize_xml<W: Write>(
+    ingest: &IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    writer: &mut W,
+    options: &SerializeOptions,
+) -> io::Result<()> {
+    let mut buf = BufWriter::with_capacity(DEFAULT_STREAM_BUFFER_CAPACITY, writer);
+
+    write_root_open(
+        &mut buf,
+        &options.root,
+        ingest.file_count(),
+        ingest.symbol_count(),
+        graph.edge_count(),
+        pr.iterations,
+        pr.converged,
+    )?;
+
+    let (file_order, buckets) = bucket_symbols_by_rank(
+        &ingest.symbols,
+        ingest.files.len(),
+        &pr.ranks,
+        options.top_k,
+    );
+
+    for f in file_order {
+        let file_info = &ingest.files[f as usize];
+        let file_path = interner.resolve(&file_info.path);
+        write_file_header(&mut buf, file_path)?;
+
+        for &sym_id in &buckets[f as usize] {
+            let sym = &ingest.symbols[sym_id as usize];
+            let sym_name = interner.resolve(&sym.name);
+            let rank = pr.ranks.get(sym_id as usize).copied().unwrap_or(0.0);
+            let amb = graph.ambiguity(sym_id);
+            let callees: Vec<(NodeId, f32)> = graph.callees(sym_id).collect();
+
+            let ctx = SymbolRowContext {
+                sym,
+                sym_name,
+                rank,
+                amb,
+                callees: &callees,
+                include_pr: options.include_pr,
+            };
+
+            write_symbol_row(&mut buf, &ctx, interner, &ingest.symbols)?;
+        }
+
+        buf.write_all(b"</f>")?;
+    }
+
+    buf.write_all(b"</r>\n")?;
+    buf.flush()
+}
+
+/// Serialize to a minified XML string in memory (primarily for unit tests and inspection).
+#[must_use]
+pub fn serialize_xml_to_string(
+    ingest: &IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    options: &SerializeOptions,
+) -> String {
+    let mut out = Vec::new();
+    serialize_xml(ingest, graph, pr, interner, &mut out, options)
+        .expect("in-memory serialization should never fail");
+    String::from_utf8(out).expect("valid utf-8 xml")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::{FileInfo, Lang, RefRole, Reference, SymKind};
+
+    #[test]
+    fn test_serialize_xml_structure() {
+        let interner = Interner::new();
+        let f0 = FileInfo {
+            id: 0,
+            path: interner.intern("src/main.rs"),
+            lang: Lang::Rust,
+            line_count: 20,
+            byte_size: 200,
+        };
+
+        let sym_a = Symbol::new(
+            0,
+            interner.intern("start"),
+            interner.intern("c_start"),
+            SymKind::Function,
+            Lang::Rust,
+            0,
+            5,
+        );
+        let sym_b = Symbol::new(
+            1,
+            interner.intern("run"),
+            interner.intern("c_run"),
+            SymKind::Function,
+            Lang::Rust,
+            0,
+            10,
+        );
+
+        let ref_ab = Reference::new(0, interner.intern("run"), 0, 6, Lang::Rust, RefRole::Call);
+
+        let mut ingest = IngestResult::new();
+        ingest.files.push(f0);
+        ingest.symbols.extend_from_slice(&[sym_a, sym_b]);
+        ingest.references.push(ref_ab);
+
+        let graph = Graph::build(&ingest, &interner);
+        let pr = PageRankResult {
+            iterations: 12,
+            converged: true,
+            ranks: vec![0.35, 0.65],
+        };
+
+        let xml = serialize_xml_to_string(
+            &ingest,
+            &graph,
+            &pr,
+            &interner,
+            &SerializeOptions::default(),
+        );
+
+        assert!(xml.starts_with("<r schema=\"rwire.map/v1\" root=\".\" files=\"1\" symbols=\"2\" edges=\"1\" pr_iters=\"12\">"));
+        assert!(xml.contains("<f p=\"src/main.rs\">"));
+        assert!(xml.contains("<s t=\"fn\" n=\"run\" k=\"0.6500\"></s>"));
+        assert!(xml.contains("<s t=\"fn\" n=\"start\" k=\"0.3500\"><c n=\"run\"/></s>"));
+        assert!(xml.ends_with("</f></r>\n"));
+    }
+}
