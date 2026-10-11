@@ -46,6 +46,14 @@ pub struct Cli {
     #[arg(long)]
     pub quality_delta: bool,
 
+    /// Detect AST code duplication and clones (Type-1, Type-2, Type-3)
+    #[arg(long)]
+    pub clones: bool,
+
+    /// Minimum token length for clone detection
+    #[arg(long, default_value_t = 40)]
+    pub min_tokens: usize,
+
     /// ARISE intra-procedural def-use variable slice (SYM[:VAR])
     #[arg(long)]
     pub slice: Option<String>,
@@ -131,6 +139,14 @@ pub struct GateArgs {
     /// Show test files affected by changes
     #[arg(long)]
     pub affected: Option<String>,
+
+    /// Detect AST code duplication and clones (Type-1, Type-2, Type-3)
+    #[arg(long)]
+    pub clones: bool,
+
+    /// Minimum token length for clone detection
+    #[arg(long, default_value_t = 40)]
+    pub min_tokens: usize,
 }
 
 #[derive(Args, Debug, Default, PartialEq)]
@@ -193,17 +209,17 @@ pub fn execute_stream_xml_with<W: io::Write>(
 }
 
 fn execute_stream_xml(root: &str) -> io::Result<()> {
-    let state = crate::mcp::McpState::load(root)
-        .ok_or_else(|| io::Error::other("failed to load repository"))?;
+    let path = std::path::Path::new(root);
+    let files = crate::crawler::crawl_directory(path, &crate::crawler::CrawlerOptions::default());
+    let registry =
+        crate::ingest::LanguageRegistry::new().map_err(|e| io::Error::other(e.to_string()))?;
+    let interner = Interner::new();
+    let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
+
     let mut stdout = io::stdout().lock();
-    execute_stream_xml_with(
-        root,
-        &state.ingest,
-        &state.graph,
-        &state.pr,
-        &state.interner,
-        &mut stdout,
-    )
+    execute_stream_xml_with(root, &ingest, &graph, &pr, &interner, &mut stdout)
 }
 /// Context for symbol navigation queries.
 pub struct NavContext<'a> {
@@ -600,6 +616,16 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     };
     if let Some(res) = dispatch_gate_command(root, cli_gate) {
         return res;
+    }
+
+    if cli.clones {
+        return crate::clones::execute_clones_command(root, cli.min_tokens);
+    }
+    if let Some(Commands::Gate(gate_args)) = &cli.command {
+        if gate_args.clones {
+            let gate_root = gate_args.path.as_deref().unwrap_or(root);
+            return crate::clones::execute_clones_command(gate_root, gate_args.min_tokens);
+        }
     }
 
     if let Some(Commands::Slice(slice_args)) = &cli.command {

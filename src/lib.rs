@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod clones;
 pub mod crawler;
 pub mod domain;
 pub mod gate;
@@ -14,6 +15,10 @@ pub mod serialize;
 pub mod slice;
 
 pub use cli::{run_cli, run_cli_args, Cli, Commands};
+pub use clones::{
+    execute_clones_command, find_clones, render_clones_xml, CloneGroup, CloneIdiom, CloneType,
+    DEFAULT_MIN_CLONE_TOKENS,
+};
 pub use crawler::{
     crawl_directory, CrawledFile, CrawlerOptions, DEFAULT_MAX_FILE_SIZE, DENYLIST_DIRS,
 };
