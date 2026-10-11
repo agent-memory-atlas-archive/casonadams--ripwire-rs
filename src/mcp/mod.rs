@@ -1,0 +1,410 @@
+use crate::crawler::{crawl_directory, CrawlerOptions};
+use crate::domain::{IngestResult, Interner};
+use crate::graph::Graph;
+use crate::ingest::{ingest_crawled_files, LanguageRegistry};
+use crate::navigate::{find_symbols_by_name, navigate_1hop, transitive_impact};
+use crate::rank::{PageRankConfig, PageRankResult};
+use crate::serialize::{serialize_xml_to_string, SerializeOptions};
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::io::{self, BufRead, Write};
+use std::path::Path;
+
+/// In-memory repository index state for fast repeated tool queries.
+pub struct McpState {
+    pub root: String,
+    pub ingest: IngestResult,
+    pub graph: Graph,
+    pub ranks: Vec<f64>,
+    pub interner: Interner,
+    pub pr: PageRankResult,
+}
+
+impl McpState {
+    #[must_use]
+    pub fn load(root: &str) -> Option<Self> {
+        let path = Path::new(root);
+        let files = crawl_directory(path, &CrawlerOptions::default());
+        let registry = LanguageRegistry::new_tier1().ok()?;
+        let interner = Interner::new();
+        let ingest = ingest_crawled_files(&files, &registry, &interner);
+        let graph = Graph::build(&ingest, &interner);
+        let pr = graph.page_rank(&PageRankConfig::default());
+        let ranks = pr.ranks.clone();
+
+        Some(Self {
+            root: root.to_string(),
+            ingest,
+            graph,
+            ranks,
+            interner,
+            pr,
+        })
+    }
+}
+
+/// JSON-RPC 2.0 Request envelope.
+#[derive(Debug, Deserialize)]
+pub struct JsonRpcRequest {
+    pub jsonrpc: String,
+    pub id: Option<Value>,
+    pub method: String,
+    pub params: Option<Value>,
+}
+
+/// Handle `initialize` method.
+#[must_use]
+pub fn handle_initialize(id: &Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "protocolVersion": "2024-11-05",
+            "serverInfo": {
+                "name": "rwire",
+                "version": "0.1.0"
+            },
+            "capabilities": {
+                "tools": {}
+            }
+        }
+    })
+}
+
+/// Handle `tools/list` method.
+#[must_use]
+pub fn handle_tools_list(id: &Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": {
+            "tools": [
+                {
+                    "name": "explore",
+                    "description": "ONE-call task orientation: ranked symbols, files, and architecture map",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string", "description": "Repository path to explore" },
+                            "top_k": { "type": "integer", "description": "Maximum number of symbols to include" }
+                        }
+                    }
+                },
+                {
+                    "name": "find_symbol",
+                    "description": "A symbol's 1-hop neighborhood: the symbol plus direct callers and callees",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": { "type": "string", "description": "Symbol name to look up" }
+                        },
+                        "required": ["symbol"]
+                    }
+                },
+                {
+                    "name": "callers",
+                    "description": "Direct (1-hop) callers of a symbol",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": { "type": "string", "description": "Symbol name to look up" }
+                        },
+                        "required": ["symbol"]
+                    }
+                },
+                {
+                    "name": "callees",
+                    "description": "Direct (1-hop) callees of a symbol",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": { "type": "string", "description": "Symbol name to look up" }
+                        },
+                        "required": ["symbol"]
+                    }
+                },
+                {
+                    "name": "impact",
+                    "description": "Transitive blast radius of a symbol via calls, ranked by PageRank",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": { "type": "string", "description": "Symbol name to analyze blast radius for" },
+                            "max_depth": { "type": "integer", "description": "Maximum hop depth" }
+                        },
+                        "required": ["symbol"]
+                    }
+                }
+            ]
+        }
+    })
+}
+
+fn call_find_symbol(state: &McpState, args: &Value) -> Result<Value, String> {
+    let sym_name = args["symbol"]
+        .as_str()
+        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
+    let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
+    if ids.is_empty() {
+        return Ok(
+            json!({ "found": false, "message": format!("symbol '{}' not found", sym_name) }),
+        );
+    }
+
+    let neighborhoods: Vec<_> = ids
+        .into_iter()
+        .filter_map(|id| {
+            navigate_1hop(
+                id,
+                &state.ingest,
+                &state.graph,
+                &state.ranks,
+                &state.interner,
+            )
+        })
+        .collect();
+
+    Ok(json!({ "found": true, "matches": neighborhoods }))
+}
+
+fn call_callers(state: &McpState, args: &Value) -> Result<Value, String> {
+    let sym_name = args["symbol"]
+        .as_str()
+        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
+    let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
+
+    let mut callers = Vec::new();
+    for id in ids {
+        if let Some(nav) = navigate_1hop(
+            id,
+            &state.ingest,
+            &state.graph,
+            &state.ranks,
+            &state.interner,
+        ) {
+            callers.extend(nav.callers);
+        }
+    }
+    Ok(json!({ "symbol": sym_name, "callers": callers }))
+}
+
+fn call_callees(state: &McpState, args: &Value) -> Result<Value, String> {
+    let sym_name = args["symbol"]
+        .as_str()
+        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
+    let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
+
+    let mut callees = Vec::new();
+    for id in ids {
+        if let Some(nav) = navigate_1hop(
+            id,
+            &state.ingest,
+            &state.graph,
+            &state.ranks,
+            &state.interner,
+        ) {
+            callees.extend(nav.callees);
+        }
+    }
+    Ok(json!({ "symbol": sym_name, "callees": callees }))
+}
+
+fn call_impact(state: &McpState, args: &Value) -> Result<Value, String> {
+    let sym_name = args["symbol"]
+        .as_str()
+        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
+    let max_depth = args["max_depth"].as_u64().map(|d| d as u32);
+    let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
+
+    let mut impacts = Vec::new();
+    for id in ids {
+        let imp = transitive_impact(
+            id,
+            &state.ingest,
+            &state.graph,
+            &state.ranks,
+            &state.interner,
+            max_depth,
+        );
+        impacts.extend(imp);
+    }
+    Ok(json!({ "symbol": sym_name, "impact": impacts }))
+}
+
+fn call_explore(state: &McpState, args: &Value) -> Result<Value, String> {
+    let top_k = args["top_k"].as_u64().map(|k| k as usize);
+    let xml = serialize_xml_to_string(
+        &state.ingest,
+        &state.graph,
+        &state.pr,
+        &state.interner,
+        &SerializeOptions {
+            root: state.root.clone(),
+            top_k,
+            include_pr: true,
+        },
+    );
+    Ok(Value::String(xml))
+}
+
+/// Handle `tools/call` method.
+#[must_use]
+pub fn handle_tools_call(
+    id: &Value,
+    params: &Value,
+    state: &mut Option<McpState>,
+    default_root: &str,
+) -> Value {
+    let tool_name = match params["name"].as_str() {
+        Some(name) => name,
+        None => {
+            return json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "error": { "code": -32602, "message": "missing tool 'name'" }
+            });
+        }
+    };
+
+    if state.is_none() {
+        *state = McpState::load(default_root);
+    }
+    let Some(current_state) = state.as_mut() else {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32603, "message": "failed to index workspace root" }
+        });
+    };
+
+    let args = &params["arguments"];
+    let result = match tool_name {
+        "find_symbol" => call_find_symbol(current_state, args),
+        "callers" => call_callers(current_state, args),
+        "callees" => call_callees(current_state, args),
+        "impact" => call_impact(current_state, args),
+        "explore" => call_explore(current_state, args),
+        _ => Err(format!("unknown tool: {}", tool_name)),
+    };
+    match result {
+        Ok(val) => {
+            let text = match val {
+                Value::String(s) => s,
+                other => serde_json::to_string_pretty(&other).unwrap_or_default(),
+            };
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": text
+                        }
+                    ]
+                }
+            })
+        }
+        Err(err_msg) => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32602, "message": err_msg }
+        }),
+    }
+}
+
+/// Dispatch a single raw JSON-RPC line. Returns `None` for notifications.
+#[must_use]
+pub fn dispatch_json_rpc(
+    line: &str,
+    state: &mut Option<McpState>,
+    default_root: &str,
+) -> Option<String> {
+    let req: JsonRpcRequest = match serde_json::from_str(line) {
+        Ok(r) => r,
+        Err(_) => {
+            let err = json!({
+                "jsonrpc": "2.0",
+                "id": Value::Null,
+                "error": { "code": -32700, "message": "Parse error" }
+            });
+            return Some(err.to_string());
+        }
+    };
+
+    let id = req.id.as_ref()?;
+
+    let resp = match req.method.as_str() {
+        "initialize" => handle_initialize(id),
+        "tools/list" => handle_tools_list(id),
+        "tools/call" => {
+            let params = req.params.as_ref().unwrap_or(&Value::Null);
+            handle_tools_call(id, params, state, default_root)
+        }
+        _ => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32601, "message": format!("Method not found: {}", req.method) }
+        }),
+    };
+
+    Some(resp.to_string())
+}
+
+/// Run MCP JSON-RPC loop over any reader and writer.
+pub fn run_mcp_stream<R: BufRead, W: Write>(
+    reader: R,
+    writer: &mut W,
+    default_root: &str,
+) -> io::Result<()> {
+    let mut state = None;
+    for line_res in reader.lines() {
+        let line = line_res?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        if let Some(resp) = dispatch_json_rpc(&line, &mut state, default_root) {
+            writeln!(writer, "{}", resp)?;
+            writer.flush()?;
+        }
+    }
+    Ok(())
+}
+
+/// Run stdio MCP JSON-RPC loop.
+pub fn run_mcp_stdio(default_root: &str) -> io::Result<()> {
+    let stdin = io::stdin();
+    let mut stdout = io::stdout().lock();
+    run_mcp_stream(stdin.lock(), &mut stdout, default_root)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mcp_initialize_and_tools_list() {
+        let init_req = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
+        let mut state = None;
+        let resp = dispatch_json_rpc(init_req, &mut state, ".").expect("should reply");
+        let val: Value = serde_json::from_str(&resp).unwrap();
+        assert_eq!(val["id"], 1);
+        assert_eq!(val["result"]["serverInfo"]["name"], "rwire");
+
+        let list_req = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
+        let list_resp = dispatch_json_rpc(list_req, &mut state, ".").expect("should reply");
+        let list_val: Value = serde_json::from_str(&list_resp).unwrap();
+        assert_eq!(list_val["id"], 2);
+        let tools = list_val["result"]["tools"].as_array().unwrap();
+        let tool_names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert!(tool_names.contains(&"explore"));
+        assert!(tool_names.contains(&"find_symbol"));
+        assert!(tool_names.contains(&"callers"));
+        assert!(tool_names.contains(&"callees"));
+        assert!(tool_names.contains(&"impact"));
+
+        // Notifications have no id and should produce no response
+        let notif = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
+        assert!(dispatch_json_rpc(notif, &mut state, ".").is_none());
+    }
+}
