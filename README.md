@@ -50,8 +50,8 @@ cargo install ripwire
 
 ```bash
 # Fetch upstream Tree-Sitter grammars and build release binary
-git clone https://github.com/casonadams/rwire.git
-cd rwire
+git clone https://github.com/casonadams/ripwire.git
+cd ripwire
 make build-release
 ```
 
