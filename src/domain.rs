@@ -20,6 +20,10 @@ impl Interner {
         self.0.get_or_intern(s)
     }
     #[inline]
+    pub fn get(&self, s: &str) -> Option<Spur> {
+        self.0.get(s)
+    }
+    #[inline]
     pub fn resolve<'a>(&'a self, spur: &Spur) -> &'a str {
         self.0.resolve(spur)
     }

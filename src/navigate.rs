@@ -38,10 +38,13 @@ pub struct ImpactNode {
 /// Find symbol IDs by exact name match.
 #[must_use]
 pub fn find_symbols_by_name(name: &str, ingest: &IngestResult, interner: &Interner) -> Vec<NodeId> {
+    let Some(target_spur) = interner.get(name) else {
+        return Vec::new();
+    };
     ingest
         .symbols
         .iter()
-        .filter(|s| interner.resolve(&s.name) == name)
+        .filter(|s| s.name == target_spur)
         .map(|s| s.id)
         .collect()
 }

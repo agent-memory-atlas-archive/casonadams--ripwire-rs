@@ -2,8 +2,59 @@ use crate::domain::{
     FileInfo, IngestResult, Interner, NO_NODE, NodeId, RefRole, Reference, Symbol,
 };
 use lasso::Spur;
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::path::Path;
+
+#[derive(Debug, Clone)]
+struct CandBuffer {
+    inline: [NodeId; 8],
+    len: usize,
+    heap: Vec<NodeId>,
+}
+
+impl CandBuffer {
+    #[inline]
+    fn new() -> Self {
+        Self {
+            inline: [0; 8],
+            len: 0,
+            heap: Vec::new(),
+        }
+    }
+
+    #[inline]
+    fn push(&mut self, id: NodeId) {
+        if self.heap.is_empty() && self.len < 8 {
+            self.inline[self.len] = id;
+            self.len += 1;
+        } else {
+            if self.heap.is_empty() {
+                self.heap.reserve(self.len + 8);
+                self.heap.extend_from_slice(&self.inline[..self.len]);
+            }
+            self.heap.push(id);
+        }
+    }
+
+    #[inline]
+    fn as_slice(&self) -> &[NodeId] {
+        if self.heap.is_empty() {
+            &self.inline[..self.len]
+        } else {
+            &self.heap
+        }
+    }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        if self.heap.is_empty() {
+            self.len == 0
+        } else {
+            self.heap.is_empty()
+        }
+    }
+}
 
 /// Resolved reference outcome with target nodes and per-target confidence.
 #[derive(Debug, Clone, PartialEq)]
@@ -54,24 +105,30 @@ fn select_precedence_tier(
     symbols: &[Symbol],
     file_dirs: &[u32],
 ) -> Option<(Vec<NodeId>, f32)> {
-    let same_file: Vec<NodeId> = cands
+    if cands
         .iter()
-        .copied()
-        .filter(|&id| symbols[id as usize].file_id == caller_file_id)
-        .collect();
-    if !same_file.is_empty() {
+        .any(|&id| symbols[id as usize].file_id == caller_file_id)
+    {
+        let same_file: Vec<NodeId> = cands
+            .iter()
+            .copied()
+            .filter(|&id| symbols[id as usize].file_id == caller_file_id)
+            .collect();
         return Some((same_file, 1.0));
     }
 
-    let same_dir: Vec<NodeId> = cands
-        .iter()
-        .copied()
-        .filter(|&id| {
-            let fid = symbols[id as usize].file_id as usize;
-            file_dirs.get(fid).copied() == Some(caller_dir_id)
-        })
-        .collect();
-    if !same_dir.is_empty() {
+    if cands.iter().any(|&id| {
+        let fid = symbols[id as usize].file_id as usize;
+        file_dirs.get(fid).copied() == Some(caller_dir_id)
+    }) {
+        let same_dir: Vec<NodeId> = cands
+            .iter()
+            .copied()
+            .filter(|&id| {
+                let fid = symbols[id as usize].file_id as usize;
+                file_dirs.get(fid).copied() == Some(caller_dir_id)
+            })
+            .collect();
         return Some((same_dir, 0.5));
     }
 
@@ -84,6 +141,36 @@ fn select_precedence_tier(
 
 /// Resolve a single reference according to the precedence ladder.
 #[must_use]
+fn filter_candidates(
+    all_cands: &[NodeId],
+    r: &Reference,
+    symbols: &[Symbol],
+) -> Option<CandBuffer> {
+    let mut cands = CandBuffer::new();
+    for &id in all_cands {
+        if symbols[id as usize].lang.is_compatible(r.lang) {
+            cands.push(id);
+        }
+    }
+    if cands.is_empty() {
+        return None;
+    }
+
+    if let Some(q) = r.qualifier {
+        let mut qualified = CandBuffer::new();
+        for &id in cands.as_slice() {
+            if symbols[id as usize].scope == Some(q) {
+                qualified.push(id);
+            }
+        }
+        if !qualified.is_empty() {
+            cands = qualified;
+        }
+    }
+
+    Some(cands)
+}
+
 pub fn resolve_call_reference(
     r: &Reference,
     symbols: &[Symbol],
@@ -94,33 +181,20 @@ pub fn resolve_call_reference(
         return None;
     }
     let all_cands = by_name.get(&r.callee_name)?;
-    let mut cands: Vec<NodeId> = all_cands
-        .iter()
-        .copied()
-        .filter(|&id| symbols[id as usize].lang.is_compatible(r.lang))
-        .collect();
-    if cands.is_empty() {
-        return None;
-    }
-
-    if let Some(q) = r.qualifier {
-        let qualified: Vec<NodeId> = cands
-            .iter()
-            .copied()
-            .filter(|&id| symbols[id as usize].scope == Some(q))
-            .collect();
-        if !qualified.is_empty() {
-            cands = qualified;
-        }
-    }
+    let cands = filter_candidates(all_cands, r, symbols)?;
 
     let caller_file_id = r.file_id;
     let caller_dir_id = file_dirs
         .get(caller_file_id as usize)
         .copied()
         .unwrap_or(u32::MAX);
-    let (tier, conf) =
-        select_precedence_tier(&cands, caller_file_id, caller_dir_id, symbols, file_dirs)?;
+    let (tier, conf) = select_precedence_tier(
+        cands.as_slice(),
+        caller_file_id,
+        caller_dir_id,
+        symbols,
+        file_dirs,
+    )?;
 
     let real_targets: Vec<NodeId> = tier
         .into_iter()
@@ -156,14 +230,18 @@ pub struct ResolutionResult {
 
 /// Resolve all call references from an ingestion result into edge accumulators and ambiguity metrics.
 #[must_use]
-pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> ResolutionResult {
-    let file_dirs = compute_file_dirs(&ingest.files, interner);
-    let by_name = index_symbols_by_name(&ingest.symbols);
+fn resolve_reference_chunk(
+    chunk: &[Reference],
+    symbols: &[Symbol],
+    file_dirs: &[u32],
+    by_name: &HashMap<Spur, Vec<NodeId>>,
+    num_symbols: usize,
+) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>) {
     let mut edge_accumulators: HashMap<(NodeId, NodeId), EdgeAcc> = HashMap::new();
-    let mut amb_out = vec![0u32; ingest.symbols.len()];
+    let mut amb_out = vec![0u32; num_symbols];
 
-    for r in &ingest.references {
-        if let Some(resolved) = resolve_call_reference(r, &ingest.symbols, &file_dirs, &by_name) {
+    for r in chunk {
+        if let Some(resolved) = resolve_call_reference(r, symbols, file_dirs, by_name) {
             if resolved.is_ambiguous {
                 amb_out[resolved.from as usize] += 1;
             }
@@ -174,6 +252,50 @@ pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> Res
             }
         }
     }
+
+    (edge_accumulators, amb_out)
+}
+
+fn merge_resolutions(
+    mut a: (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>),
+    b: (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>),
+) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>) {
+    for (k, acc_b) in b.0 {
+        let acc_a = a.0.entry(k).or_default();
+        acc_a.conf_sum += acc_b.conf_sum;
+        acc_a.n_ref += acc_b.n_ref;
+    }
+    for (i, val) in b.1.into_iter().enumerate() {
+        a.1[i] += val;
+    }
+    a
+}
+
+pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> ResolutionResult {
+    let file_dirs = compute_file_dirs(&ingest.files, interner);
+    let by_name = index_symbols_by_name(&ingest.symbols);
+    let num_symbols = ingest.symbols.len();
+
+    let (edge_accumulators, amb_out) = if ingest.references.len() < 256 {
+        resolve_reference_chunk(
+            &ingest.references,
+            &ingest.symbols,
+            &file_dirs,
+            &by_name,
+            num_symbols,
+        )
+    } else {
+        ingest
+            .references
+            .par_chunks(512)
+            .map(|chunk| {
+                resolve_reference_chunk(chunk, &ingest.symbols, &file_dirs, &by_name, num_symbols)
+            })
+            .reduce(
+                || (HashMap::new(), vec![0u32; num_symbols]),
+                merge_resolutions,
+            )
+    };
 
     ResolutionResult {
         edge_accumulators,
