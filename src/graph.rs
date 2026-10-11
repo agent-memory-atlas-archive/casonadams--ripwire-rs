@@ -169,6 +169,11 @@ impl Graph {
     }
 
     #[must_use]
+    pub fn hits(&self) -> crate::rank::HitsResult {
+        crate::rank::compute_hits(self, &crate::rank::HitsConfig::default())
+    }
+
+    #[must_use]
     pub fn build(ingest: &IngestResult, interner: &Interner) -> Self {
         let resolution = resolve_all_references(ingest, interner);
         Self::from_resolution(ingest.symbols.len(), resolution)

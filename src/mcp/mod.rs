@@ -213,6 +213,7 @@ fn call_explore(state: &McpState, args: &Value) -> Result<Value, String> {
             root: state.root.clone(),
             top_k,
             include_pr: true,
+            ..Default::default()
         },
     )
     .map_err(|e| e.to_string())?;

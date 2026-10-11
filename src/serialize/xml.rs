@@ -5,6 +5,7 @@ use crate::serialize::escape::escape_xml_write;
 use std::io::{self, BufWriter, Write};
 
 pub const DEFAULT_STREAM_BUFFER_CAPACITY: usize = 64 * 1024;
+pub const DEFAULT_PACK_BUDGET_BYTES: usize = 64 * 1024;
 
 /// Configuration options for streaming XML serialization.
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +13,8 @@ pub struct SerializeOptions {
     pub root: String,
     pub top_k: Option<usize>,
     pub include_pr: bool,
+    pub pack_budget_bytes: Option<usize>,
+    pub rank_by: Option<String>,
 }
 
 impl Default for SerializeOptions {
@@ -20,6 +23,8 @@ impl Default for SerializeOptions {
             root: ".".into(),
             top_k: None,
             include_pr: true,
+            pack_budget_bytes: Some(DEFAULT_PACK_BUDGET_BYTES),
+            rank_by: None,
         }
     }
 }
@@ -35,6 +40,18 @@ pub struct SymbolRowContext<'a> {
 }
 
 /// Write the root `<r ...>` opening element.
+/// Metadata for writing root XML element.
+pub struct RootElementContext<'a> {
+    pub root: &'a str,
+    pub files: usize,
+    pub symbols: usize,
+    pub edges: usize,
+    pub pr_iters: u32,
+    pub converged: bool,
+    pub rank_by: Option<&'a str>,
+}
+
+/// Write the root `<r ...>` opening element.
 pub fn write_root_open<W: Write>(
     w: &mut W,
     root: &str,
@@ -44,17 +61,64 @@ pub fn write_root_open<W: Write>(
     pr_iters: u32,
     converged: bool,
 ) -> io::Result<()> {
+    write_root_open_with_rank_by(
+        w,
+        &RootElementContext {
+            root,
+            files,
+            symbols,
+            edges,
+            pr_iters,
+            converged,
+            rank_by: None,
+        },
+    )
+}
+
+pub fn write_root_open_with_rank_by<W: Write>(
+    w: &mut W,
+    ctx: &RootElementContext<'_>,
+) -> io::Result<()> {
     w.write_all(b"<r schema=\"rwire.map/v1\" root=\"")?;
-    escape_xml_write(w, root)?;
+    escape_xml_write(w, ctx.root)?;
     write!(
         w,
-        "\" files=\"{}\" symbols=\"{}\" edges=\"{}\" pr_iters=\"{}\"",
-        files, symbols, edges, pr_iters
+        "\" files=\"{}\" symbols=\"{}\" edges=\"{}\"",
+        ctx.files, ctx.symbols, ctx.edges
     )?;
-    if !converged {
-        w.write_all(b" pr_converged=\"0\"")?;
+    if let Some(rb) = ctx.rank_by {
+        write!(w, " rank_by=\"{}\"", rb)?;
+    } else {
+        write!(w, " pr_iters=\"{}\"", ctx.pr_iters)?;
+        if !ctx.converged {
+            w.write_all(b" pr_converged=\"0\"")?;
+        }
     }
     w.write_all(b">")
+}
+
+/// Counting writer to enforce streaming pack budgets.
+pub struct CountingWriter<W> {
+    inner: W,
+    pub count: usize,
+}
+
+impl<W: Write> CountingWriter<W> {
+    pub fn new(inner: W) -> Self {
+        Self { inner, count: 0 }
+    }
+}
+
+impl<W: Write> Write for CountingWriter<W> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let n = self.inner.write(buf)?;
+        self.count += n;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
 }
 
 /// Write the file opening element `<f p="...">`.
@@ -143,6 +207,16 @@ pub fn bucket_symbols_by_rank(
 }
 
 /// Stream minified, token-dense XML directly through a buffered writer to stdout or output.
+/// Context for streaming XML serialization with custom ranks.
+pub struct StreamXmlContext<'a> {
+    pub ingest: &'a IngestResult,
+    pub graph: &'a Graph,
+    pub ranks: &'a [f64],
+    pub pr_iters: u32,
+    pub pr_converged: bool,
+    pub interner: &'a Interner,
+}
+
 pub fn serialize_xml<W: Write>(
     ingest: &IngestResult,
     graph: &Graph,
@@ -151,38 +225,82 @@ pub fn serialize_xml<W: Write>(
     writer: &mut W,
     options: &SerializeOptions,
 ) -> io::Result<()> {
-    let mut buf = BufWriter::with_capacity(DEFAULT_STREAM_BUFFER_CAPACITY, writer);
+    serialize_xml_with_ranks(
+        &StreamXmlContext {
+            ingest,
+            graph,
+            ranks: &pr.ranks,
+            pr_iters: pr.iterations,
+            pr_converged: pr.converged,
+            interner,
+        },
+        writer,
+        options,
+    )
+}
 
-    write_root_open(
-        &mut buf,
-        &options.root,
-        ingest.file_count(),
-        ingest.symbol_count(),
-        graph.edge_count(),
-        pr.iterations,
-        pr.converged,
-    )?;
+/// Stream minified XML with custom ranks and budget enforcement.
+pub fn serialize_xml_with_ranks<W: Write>(
+    ctx: &StreamXmlContext<'_>,
+    writer: &mut W,
+    options: &SerializeOptions,
+) -> io::Result<()> {
+    let buf = BufWriter::with_capacity(DEFAULT_STREAM_BUFFER_CAPACITY, writer);
+    let mut counter = CountingWriter::new(buf);
+
+    if let Some(rb) = options.rank_by.as_deref() {
+        write_root_open_with_rank_by(
+            &mut counter,
+            &RootElementContext {
+                root: &options.root,
+                files: ctx.ingest.file_count(),
+                symbols: ctx.ingest.symbol_count(),
+                edges: ctx.graph.edge_count(),
+                pr_iters: ctx.pr_iters,
+                converged: ctx.pr_converged,
+                rank_by: Some(rb),
+            },
+        )?;
+    } else {
+        write_root_open(
+            &mut counter,
+            &options.root,
+            ctx.ingest.file_count(),
+            ctx.ingest.symbol_count(),
+            ctx.graph.edge_count(),
+            ctx.pr_iters,
+            ctx.pr_converged,
+        )?;
+    }
 
     let (file_order, buckets) = bucket_symbols_by_rank(
-        &ingest.symbols,
-        ingest.files.len(),
-        &pr.ranks,
+        &ctx.ingest.symbols,
+        ctx.ingest.files.len(),
+        ctx.ranks,
         options.top_k,
     );
 
+    let budget = options.pack_budget_bytes.unwrap_or(usize::MAX);
+
     for f in file_order {
-        let file_info = &ingest.files[f as usize];
-        let file_path = interner.resolve(&file_info.path);
-        write_file_header(&mut buf, file_path)?;
+        if counter.count >= budget {
+            break;
+        }
+        let file_info = &ctx.ingest.files[f as usize];
+        let file_path = ctx.interner.resolve(&file_info.path);
+        write_file_header(&mut counter, file_path)?;
 
         for &sym_id in &buckets[f as usize] {
-            let sym = &ingest.symbols[sym_id as usize];
-            let sym_name = interner.resolve(&sym.name);
-            let rank = pr.ranks.get(sym_id as usize).copied().unwrap_or(0.0);
-            let amb = graph.ambiguity(sym_id);
-            let callees: Vec<(NodeId, f32)> = graph.callees(sym_id).collect();
+            if counter.count >= budget {
+                break;
+            }
+            let sym = &ctx.ingest.symbols[sym_id as usize];
+            let sym_name = ctx.interner.resolve(&sym.name);
+            let rank = ctx.ranks.get(sym_id as usize).copied().unwrap_or(0.0);
+            let amb = ctx.graph.ambiguity(sym_id);
+            let callees: Vec<(NodeId, f32)> = ctx.graph.callees(sym_id).collect();
 
-            let ctx = SymbolRowContext {
+            let row_ctx = SymbolRowContext {
                 sym,
                 sym_name,
                 rank,
@@ -191,14 +309,14 @@ pub fn serialize_xml<W: Write>(
                 include_pr: options.include_pr,
             };
 
-            write_symbol_row(&mut buf, &ctx, interner, &ingest.symbols)?;
+            write_symbol_row(&mut counter, &row_ctx, ctx.interner, &ctx.ingest.symbols)?;
         }
 
-        buf.write_all(b"</f>")?;
+        counter.write_all(b"</f>")?;
     }
 
-    buf.write_all(b"</r>\n")?;
-    buf.flush()
+    counter.write_all(b"</r>\n")?;
+    counter.flush()
 }
 
 /// Serialize to a minified XML string in memory (primarily for unit tests and inspection).

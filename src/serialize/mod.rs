@@ -6,8 +6,10 @@ pub use html::{generate_call_graph_html, write_call_graph_html, ColorBy};
 
 pub use escape::{escape_xml_str, escape_xml_write, needs_escaping, xml_safe_byte};
 pub use xml::{
-    bucket_symbols_by_rank, serialize_xml, serialize_xml_to_string, write_file_header,
-    write_root_open, write_symbol_row, SerializeOptions, DEFAULT_STREAM_BUFFER_CAPACITY,
+    bucket_symbols_by_rank, serialize_xml, serialize_xml_to_string, serialize_xml_with_ranks,
+    write_file_header, write_root_open, write_root_open_with_rank_by, write_symbol_row,
+    CountingWriter, RootElementContext, SerializeOptions, StreamXmlContext,
+    DEFAULT_PACK_BUDGET_BYTES, DEFAULT_STREAM_BUFFER_CAPACITY,
 };
 
 /// Trait for types that can be serialized as XML and converted to a string.

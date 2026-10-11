@@ -89,6 +89,7 @@ fn test_streaming_xml_serializer() {
         root: ".".into(),
         top_k: None,
         include_pr: true,
+        ..Default::default()
     };
 
     let xml = serialize_xml_to_string(&ingest, &graph, &pr, &interner, &options);
@@ -136,6 +137,7 @@ fn test_streaming_xml_serializer() {
         root: ".".into(),
         top_k: Some(1),
         include_pr: true,
+        ..Default::default()
     };
     let xml_top1 = serialize_xml_to_string(&ingest, &graph, &pr, &interner, &top1_opts);
     assert!(xml_top1.contains("p=\"src/util.rs\""));

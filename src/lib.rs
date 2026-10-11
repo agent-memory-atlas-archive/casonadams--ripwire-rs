@@ -53,13 +53,18 @@ pub use navigate::{
     find_symbols_by_name, navigate_1hop, transitive_impact, ImpactNode, NavNeighborhood,
     SymbolNavInfo,
 };
-pub use rank::{biased_teleport, page_rank, uniform_teleport, PageRankConfig, PageRankResult};
+pub use rank::{
+    biased_teleport, compute_hits, page_rank, uniform_teleport, HitsConfig, HitsResult,
+    PageRankConfig, PageRankResult,
+};
 pub use resolve::{
     resolve_all_references, resolve_call_reference, EdgeAcc, ResolutionResult, ResolvedRef,
 };
 pub use serialize::{
     escape_xml_str, escape_xml_write, generate_call_graph_html, serialize_xml,
-    serialize_xml_to_string, write_call_graph_html, ColorBy, SerializeOptions, ToXmlString,
+    serialize_xml_to_string, serialize_xml_with_ranks, write_call_graph_html, ColorBy,
+    CountingWriter, RootElementContext, SerializeOptions, StreamXmlContext, ToXmlString,
+    DEFAULT_PACK_BUDGET_BYTES,
 };
 pub use slice::{
     compute_dataflow_slice, execute_slice, parse_slice_target, OccRole, SliceFlowDir, SliceStep,

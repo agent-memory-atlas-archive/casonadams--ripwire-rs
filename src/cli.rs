@@ -3,7 +3,7 @@ use crate::graph::Graph;
 use crate::mcp::run_mcp_stdio;
 use crate::navigate::{find_symbols_by_name, navigate_1hop, transitive_impact};
 use crate::rank::PageRankResult;
-use crate::serialize::{serialize_xml, SerializeOptions, ToXmlString};
+use crate::serialize::{SerializeOptions, ToXmlString};
 use clap::{Args, Parser, Subcommand};
 use std::io;
 
@@ -69,6 +69,18 @@ pub struct Cli {
     /// Node coloring mode for --html: lang, community, cx, churn, tested
     #[arg(long, default_value = "lang")]
     pub color_by: String,
+
+    /// Ranking signal: pagerank, authority, hub
+    #[arg(long, default_value = "pagerank")]
+    pub rank_by: String,
+
+    /// Streaming budget in bytes (default 65536)
+    #[arg(long)]
+    pub pack_budget: Option<usize>,
+
+    /// Token budget (~4 bytes per token, alternative to --pack-budget)
+    #[arg(long)]
+    pub token_budget: Option<usize>,
 
     /// Workflow subcommand group
     #[command(subcommand)]
@@ -194,6 +206,12 @@ pub struct McpArgs {
     pub path: Option<String>,
 }
 
+pub struct RankedStreamArgs<'a> {
+    pub root: &'a str,
+    pub rank_by: &'a str,
+    pub pack_budget: Option<usize>,
+}
+
 pub fn execute_stream_xml_with<W: io::Write>(
     root: &str,
     ingest: &crate::domain::IngestResult,
@@ -202,16 +220,55 @@ pub fn execute_stream_xml_with<W: io::Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    serialize_xml(
+    let args = RankedStreamArgs {
+        root,
+        rank_by: "pagerank",
+        pack_budget: None,
+    };
+    execute_stream_xml_ranked(&args, ingest, graph, pr, interner, out)
+}
+
+pub fn execute_stream_xml_ranked<W: io::Write>(
+    args: &RankedStreamArgs<'_>,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let budget_bytes = args
+        .pack_budget
+        .or(Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES));
+    let rank_mode = args.rank_by.to_ascii_lowercase();
+
+    let (ranks, rank_lbl) = if rank_mode == "authority" {
+        let hits = graph.hits();
+        (hits.authority, Some("authority".to_string()))
+    } else if rank_mode == "hub" {
+        let hits = graph.hits();
+        (hits.hub, Some("hub".to_string()))
+    } else {
+        (pr.ranks.clone(), None)
+    };
+
+    let stream_ctx = crate::serialize::StreamXmlContext {
         ingest,
         graph,
-        pr,
+        ranks: &ranks,
+        pr_iters: pr.iterations,
+        pr_converged: pr.converged,
         interner,
+    };
+
+    crate::serialize::serialize_xml_with_ranks(
+        &stream_ctx,
         out,
         &SerializeOptions {
-            root: root.to_string(),
+            root: args.root.to_string(),
             top_k: None,
             include_pr: true,
+            pack_budget_bytes: budget_bytes,
+            rank_by: rank_lbl,
         },
     )
 }
@@ -233,6 +290,17 @@ fn load_repo_analysis(
     let graph = Graph::build(&ingest, &interner);
     let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
     Ok((ingest, graph, pr, interner))
+}
+
+fn compute_effective_budget(
+    pack_budget: Option<usize>,
+    token_budget: Option<usize>,
+) -> Option<usize> {
+    if let Some(tb) = token_budget {
+        Some(tb.saturating_mul(4))
+    } else {
+        pack_budget.or(Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES))
+    }
 }
 
 fn execute_stream_xml(root: &str) -> io::Result<()> {
@@ -583,36 +651,56 @@ struct GateDispatchArgs<'a> {
     quality_delta: bool,
 }
 
+impl GateDispatchArgs<'_> {
+    fn is_active(&self) -> bool {
+        self.edit_check.is_some()
+            || self.affected.is_some()
+            || self.quality_baseline
+            || self.quality_delta
+    }
+}
+
+fn run_quality_delta_gate<W: io::Write>(
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
+    match execute_quality_delta_with(state, out) {
+        Ok(has_failures) if has_failures => Err(io::Error::other("quality regressions detected")),
+        Ok(_) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+fn execute_gate_action<W: io::Write>(
+    args: GateDispatchArgs<'_>,
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> Option<io::Result<()>> {
+    if let Some(sym) = args.edit_check {
+        return Some(execute_edit_check_with(sym, state, out));
+    }
+    if let Some(spec) = args.affected {
+        return Some(execute_affected_with(spec, state, out));
+    }
+    if args.quality_baseline {
+        return Some(execute_quality_baseline_with(state, out));
+    }
+    if args.quality_delta {
+        return Some(run_quality_delta_gate(state, out));
+    }
+    None
+}
+
 fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<io::Result<()>> {
+    if !args.is_active() {
+        return None;
+    }
     let state = match crate::mcp::McpState::load(root) {
         Some(s) => s,
         None => return Some(Err(io::Error::other("failed to load repository"))),
     };
     let mut stdout = io::stdout().lock();
-
-    if let Some(sym) = args.edit_check {
-        return Some(execute_edit_check_with(sym, &state, &mut stdout));
-    }
-    if let Some(spec) = args.affected {
-        return Some(execute_affected_with(spec, &state, &mut stdout));
-    }
-    if args.quality_baseline {
-        return Some(execute_quality_baseline_with(&state, &mut stdout));
-    }
-    if args.quality_delta {
-        let res = execute_quality_delta_with(&state, &mut stdout);
-        return match res {
-            Ok(has_failures) => {
-                if has_failures {
-                    Some(Err(io::Error::other("quality regressions detected")))
-                } else {
-                    Some(Ok(()))
-                }
-            }
-            Err(e) => Some(Err(e)),
-        };
-    }
-    None
+    execute_gate_action(args, &state, &mut stdout)
 }
 
 /// Execute CLI from parsed options.
@@ -664,9 +752,25 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
         return crate::slice::execute_slice_command(root, Some(target), &cli.slice_flow);
     }
 
+    let budget = compute_effective_budget(cli.pack_budget, cli.token_budget);
     match &cli.command {
         Some(cmd) => dispatch_subcommand(cmd),
-        None => execute_stream_xml(root),
+        None => dispatch_default_run(&cli, root, budget),
+    }
+}
+
+fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io::Result<()> {
+    if cli.rank_by == "pagerank" && budget == Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES) {
+        execute_stream_xml(root)
+    } else {
+        let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+        let mut stdout = io::stdout().lock();
+        let args = RankedStreamArgs {
+            root,
+            rank_by: &cli.rank_by,
+            pack_budget: budget,
+        };
+        execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)
     }
 }
 
@@ -750,5 +854,46 @@ mod tests {
 
         let orient_cmd = Cli::try_parse_from(["rwire", "orient", "--for", "auth"]).unwrap();
         assert!(matches!(orient_cmd.command, Some(Commands::Orient(_))));
+    }
+
+    #[test]
+    fn test_gate_dispatch_args_is_active() {
+        let empty = GateDispatchArgs::default();
+        assert!(!empty.is_active());
+        assert!(dispatch_gate_command(".", empty).is_none());
+
+        let with_ec = GateDispatchArgs {
+            edit_check: Some("main"),
+            ..Default::default()
+        };
+        assert!(with_ec.is_active());
+
+        let with_aff = GateDispatchArgs {
+            affected: Some("src/main.rs"),
+            ..Default::default()
+        };
+        assert!(with_aff.is_active());
+
+        let with_qb = GateDispatchArgs {
+            quality_baseline: true,
+            ..Default::default()
+        };
+        assert!(with_qb.is_active());
+
+        let with_qd = GateDispatchArgs {
+            quality_delta: true,
+            ..Default::default()
+        };
+        assert!(with_qd.is_active());
+    }
+
+    #[test]
+    fn test_compute_effective_budget() {
+        assert_eq!(compute_effective_budget(Some(1024), None), Some(1024));
+        assert_eq!(compute_effective_budget(None, Some(100)), Some(400));
+        assert_eq!(
+            compute_effective_budget(None, None),
+            Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES)
+        );
     }
 }
