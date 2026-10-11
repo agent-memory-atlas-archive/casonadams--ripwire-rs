@@ -7,6 +7,7 @@ graphs, calculate symbol impact via PageRank and HITS, mine co-change patterns, 
 intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a
 standalone CLI (`rw`) or as a Model Context Protocol (MCP) server over stdio for
 AI coding agents.
+
 ---
 
 ## Features
@@ -40,6 +41,7 @@ AI coding agents.
 - [Algorithms & Academic Lenses](docs/ALGORITHMS.md) - PageRank, HITS, Louvain modularity, clone detector, and dataflow slicing.
 
 ---
+
 ## Installation
 
 ### Homebrew (macOS & Linux)
@@ -64,6 +66,7 @@ make build-release
 ```
 
 Binary will be located at `target/release/rw`.
+
 ---
 
 ## Usage
