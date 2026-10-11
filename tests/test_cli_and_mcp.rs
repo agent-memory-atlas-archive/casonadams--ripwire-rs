@@ -1,5 +1,10 @@
-use rwire::cli::{GateArgs, MetricsArgs, NavigateArgs, OrientArgs, SliceArgs};
-use rwire::{dispatch_json_rpc, run_cli_args, run_mcp_stream, Cli, Commands};
+use rwire::cli::{
+    execute_navigate_with, execute_stream_xml_with, GateArgs, MetricsArgs, NavigateArgs, SliceArgs,
+};
+use rwire::{
+    dispatch_json_rpc, ingest_in_memory_files, run_cli_args, run_mcp_stream, Cli, Commands, Graph,
+    Interner, Lang, LanguageRegistry, McpState, PageRankConfig,
+};
 use serde_json::Value;
 use std::io::Cursor;
 
@@ -21,7 +26,16 @@ fn test_cli_help_categories() {
 
 #[test]
 fn test_mcp_json_rpc_suite() {
-    let mut state = None;
+    // 100% in-memory fixture: zero disk I/O, zero network
+    let fixtures: &[(&str, Lang, &[u8])] = &[(
+        "lib.rs",
+        Lang::Rust,
+        b"pub fn run_cli() { helper(); } fn helper() {}",
+    )];
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
+    let mut state = Some(McpState::from_ingest(".", ingest, interner));
 
     // ── 1. INITIALIZE ────────────────────────────────────────────────────────
     let init_req = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}"#;
@@ -120,70 +134,63 @@ fn test_mcp_stream_execution() {
 
 #[test]
 fn test_cli_execution_modes() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let root = temp.path().to_str().unwrap();
-    std::fs::write(
-        temp.path().join("lib.rs"),
-        "pub fn run_cli() { helper(); } fn helper() {}",
-    )
-    .unwrap();
+    // In-memory test fixture: zero disk I/O, zero network
+    let fixtures: &[(&str, Lang, &[u8])] = &[(
+        "lib.rs",
+        Lang::Rust,
+        b"pub fn run_cli() { helper(); } fn helper() {}",
+    )];
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&PageRankConfig::default());
 
-    // 1. Default run
-    assert!(run_cli_args(Cli {
-        path: Some(root.into()),
-        command: None,
-    })
-    .is_ok());
+    let mut out = Vec::new();
 
-    // 2. Orient
-    assert!(run_cli_args(Cli {
-        path: None,
-        command: Some(Commands::Orient(OrientArgs {
-            path: Some(root.into()),
-            for_task: Some("testing".into()),
-        })),
-    })
-    .is_ok());
+    // 1. Stream XML
+    assert!(execute_stream_xml_with(".", &ingest, &graph, &pr, &interner, &mut out).is_ok());
+    assert!(!out.is_empty());
 
-    // 3. Navigate with callers, callees, impact, and standard
+    // 2. Navigate with callers, callees, impact, and standard
     let nav_modes = [
         NavigateArgs {
-            path: Some(root.into()),
+            path: None,
             symbol: Some("run_cli".into()),
             callers: true,
             callees: false,
             impact: false,
         },
         NavigateArgs {
-            path: Some(root.into()),
+            path: None,
             symbol: Some("run_cli".into()),
             callers: false,
             callees: true,
             impact: false,
         },
         NavigateArgs {
-            path: Some(root.into()),
+            path: None,
             symbol: Some("run_cli".into()),
             callers: false,
             callees: false,
             impact: true,
         },
         NavigateArgs {
-            path: Some(root.into()),
+            path: None,
             symbol: Some("run_cli".into()),
             callers: false,
             callees: false,
             impact: false,
         },
         NavigateArgs {
-            path: Some(root.into()),
+            path: None,
             symbol: None,
             callers: false,
             callees: false,
             impact: false,
         },
         NavigateArgs {
-            path: Some(root.into()),
+            path: None,
             symbol: Some("nonexistent_symbol_404".into()),
             callers: false,
             callees: false,
@@ -191,15 +198,19 @@ fn test_cli_execution_modes() {
         },
     ];
 
+    let ctx = rwire::cli::NavContext {
+        ingest: &ingest,
+        graph: &graph,
+        ranks: &pr.ranks,
+        interner: &interner,
+    };
+
     for args in nav_modes {
-        assert!(run_cli_args(Cli {
-            path: None,
-            command: Some(Commands::Navigate(args)),
-        })
-        .is_ok());
+        let mut nav_out = Vec::new();
+        assert!(execute_navigate_with(&args, &ctx, &mut nav_out).is_ok());
     }
 
-    // 4. Stubs for future waves
+    // 3. Subcommand stubs
     assert!(run_cli_args(Cli {
         path: None,
         command: Some(Commands::Gate(GateArgs::default())),

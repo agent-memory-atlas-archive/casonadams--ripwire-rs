@@ -41,6 +41,21 @@ impl McpState {
             pr,
         })
     }
+
+    #[must_use]
+    pub fn from_ingest(root: &str, ingest: IngestResult, interner: Interner) -> Self {
+        let graph = Graph::build(&ingest, &interner);
+        let pr = graph.page_rank(&PageRankConfig::default());
+        let ranks = pr.ranks.clone();
+        Self {
+            root: root.to_string(),
+            ingest,
+            graph,
+            ranks,
+            interner,
+            pr,
+        }
+    }
 }
 
 /// JSON-RPC 2.0 Request envelope.

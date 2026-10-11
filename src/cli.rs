@@ -1,14 +1,11 @@
-use crate::crawler::{crawl_directory, CrawlerOptions};
 use crate::domain::Interner;
 use crate::graph::Graph;
-use crate::ingest::{ingest_crawled_files, LanguageRegistry};
 use crate::mcp::run_mcp_stdio;
 use crate::navigate::{find_symbols_by_name, navigate_1hop, transitive_impact};
-use crate::rank::PageRankConfig;
+use crate::rank::PageRankResult;
 use crate::serialize::{serialize_xml, SerializeOptions};
 use clap::{Args, Parser, Subcommand};
 use std::io;
-use std::path::Path;
 
 /// CLI command line options.
 #[derive(Parser, Debug)]
@@ -126,21 +123,20 @@ pub struct McpArgs {
     pub path: Option<String>,
 }
 
-fn execute_stream_xml(root: &str) -> io::Result<()> {
-    let files = crawl_directory(Path::new(root), &CrawlerOptions::default());
-    let registry = LanguageRegistry::new_tier1().map_err(|e| io::Error::other(e.to_string()))?;
-    let interner = Interner::new();
-    let ingest = ingest_crawled_files(&files, &registry, &interner);
-    let graph = Graph::build(&ingest, &interner);
-    let pr = graph.page_rank(&PageRankConfig::default());
-
-    let mut stdout = io::stdout().lock();
+pub fn execute_stream_xml_with<W: io::Write>(
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
     serialize_xml(
-        &ingest,
-        &graph,
-        &pr,
-        &interner,
-        &mut stdout,
+        ingest,
+        graph,
+        pr,
+        interner,
+        out,
         &SerializeOptions {
             root: root.to_string(),
             top_k: None,
@@ -149,80 +145,127 @@ fn execute_stream_xml(root: &str) -> io::Result<()> {
     )
 }
 
-fn print_symbol_nav(
+fn execute_stream_xml(root: &str) -> io::Result<()> {
+    let state = crate::mcp::McpState::load(root)
+        .ok_or_else(|| io::Error::other("failed to load repository"))?;
+    let mut stdout = io::stdout().lock();
+    execute_stream_xml_with(
+        root,
+        &state.ingest,
+        &state.graph,
+        &state.pr,
+        &state.interner,
+        &mut stdout,
+    )
+}
+/// Context for symbol navigation queries.
+pub struct NavContext<'a> {
+    pub ingest: &'a crate::domain::IngestResult,
+    pub graph: &'a Graph,
+    pub ranks: &'a [f64],
+    pub interner: &'a Interner,
+}
+
+pub fn print_symbol_nav_to<W: io::Write>(
     id: crate::domain::NodeId,
     args: &NavigateArgs,
     sym_name: &str,
-    ingest: &crate::domain::IngestResult,
-    graph: &Graph,
-    ranks: &[f64],
-    interner: &Interner,
-) {
+    ctx: &NavContext<'_>,
+    out: &mut W,
+) -> io::Result<()> {
     if args.impact {
-        let impact = transitive_impact(id, ingest, graph, ranks, interner, None);
-        println!("Impacted callers for '{}' ({}):", sym_name, impact.len());
+        let impact = transitive_impact(id, ctx.ingest, ctx.graph, ctx.ranks, ctx.interner, None);
+        writeln!(
+            out,
+            "Impacted callers for '{}' ({}):",
+            sym_name,
+            impact.len()
+        )?;
         for node in impact {
-            println!(
+            writeln!(
+                out,
                 "  [{}] {} ({}:{})",
                 node.hops, node.name, node.path, node.line
-            );
+            )?;
         }
-        return;
+        return Ok(());
     }
-    let Some(nav) = navigate_1hop(id, ingest, graph, ranks, interner) else {
-        return;
+    let Some(nav) = navigate_1hop(id, ctx.ingest, ctx.graph, ctx.ranks, ctx.interner) else {
+        return Ok(());
     };
     if args.callers {
-        println!("Direct callers of '{}' ({}):", sym_name, nav.callers.len());
+        writeln!(
+            out,
+            "Direct callers of '{}' ({}):",
+            sym_name,
+            nav.callers.len()
+        )?;
         for c in nav.callers {
-            println!("  {} ({}:{})", c.name, c.path, c.line);
+            writeln!(out, "  {} ({}:{})", c.name, c.path, c.line)?;
         }
     } else if args.callees {
-        println!("Direct callees of '{}' ({}):", sym_name, nav.callees.len());
+        writeln!(
+            out,
+            "Direct callees of '{}' ({}):",
+            sym_name,
+            nav.callees.len()
+        )?;
         for c in nav.callees {
-            println!("  {} ({}:{})", c.name, c.path, c.line);
+            writeln!(out, "  {} ({}:{})", c.name, c.path, c.line)?;
         }
     } else {
-        println!(
+        writeln!(
+            out,
             "Symbol '{}' ({}:{}): {} callers, {} callees",
             nav.target.name,
             nav.target.path,
             nav.target.line,
             nav.callers.len(),
             nav.callees.len()
-        );
-    }
-}
-
-fn execute_navigate(args: &NavigateArgs) -> io::Result<()> {
-    let root = args.path.as_deref().unwrap_or(".");
-    let files = crawl_directory(Path::new(root), &CrawlerOptions::default());
-    let registry = LanguageRegistry::new_tier1().map_err(|e| io::Error::other(e.to_string()))?;
-    let interner = Interner::new();
-    let ingest = ingest_crawled_files(&files, &registry, &interner);
-    let graph = Graph::build(&ingest, &interner);
-    let pr = graph.page_rank(&PageRankConfig::default());
-
-    let sym_name = match args.symbol.as_deref() {
-        Some(s) => s,
-        None => {
-            eprintln!("Error: --symbol is required for navigate commands");
-            return Ok(());
-        }
-    };
-
-    let ids = find_symbols_by_name(sym_name, &ingest, &interner);
-    if ids.is_empty() {
-        println!("Symbol '{}' not found", sym_name);
-        return Ok(());
-    }
-
-    for id in ids {
-        print_symbol_nav(id, args, sym_name, &ingest, &graph, &pr.ranks, &interner);
+        )?;
     }
     Ok(())
 }
 
+pub fn execute_navigate_with<W: io::Write>(
+    args: &NavigateArgs,
+    ctx: &NavContext<'_>,
+    out: &mut W,
+) -> io::Result<()> {
+    let sym_name = match args.symbol.as_deref() {
+        Some(s) => s,
+        None => {
+            writeln!(out, "Error: --symbol is required for navigate commands")?;
+            return Ok(());
+        }
+    };
+
+    let ids = find_symbols_by_name(sym_name, ctx.ingest, ctx.interner);
+    if ids.is_empty() {
+        writeln!(out, "Symbol '{}' not found", sym_name)?;
+        return Ok(());
+    }
+
+    for id in ids {
+        print_symbol_nav_to(id, args, sym_name, ctx, out)?;
+    }
+    Ok(())
+}
+
+fn execute_navigate(args: &NavigateArgs) -> io::Result<()> {
+    let root = args.path.as_deref().unwrap_or(".");
+    let state = crate::mcp::McpState::load(root)
+        .ok_or_else(|| io::Error::other("failed to load repository"))?;
+    let ctx = NavContext {
+        ingest: &state.ingest,
+        graph: &state.graph,
+        ranks: &state.ranks,
+        interner: &state.interner,
+    };
+
+    let mut stdout = io::stdout().lock();
+    execute_navigate_with(args, &ctx, &mut stdout)
+}
 /// Execute CLI from parsed options.
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     match &cli.command {

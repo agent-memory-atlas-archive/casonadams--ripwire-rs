@@ -1,54 +1,40 @@
 use rwire::{
-    crawl_directory, ingest_crawled_files, CrawlerOptions, IngestResult, Interner,
-    LanguageRegistry, RefRole, SymKind,
+    ingest_in_memory_files, IngestResult, Interner, Lang, LanguageRegistry, RefRole, SymKind,
 };
-use std::fs;
-use tempfile::tempdir;
 
 #[test]
 fn test_ingest_tier1_fixtures() {
-    let temp = tempdir().unwrap();
-    let root = temp.path();
-
-    let fixtures = [
+    let fixtures: &[(&str, Lang, &[u8])] = &[
         (
-            "db.rs",
-            "pub struct Database; impl Database { pub fn connect(&self) { log_info(); } } fn log_info() {}",
+            "auth.py",
+            Lang::Python,
+            b"class AuthManager:\n    def verify(self):\n        check_token()\ndef check_token():\n    pass\n",
         ),
         (
-            "server.ts",
-            "export interface Config {} export class Server { start() { handleRequest(); } } function handleRequest() {}",
+            "db.rs",
+            Lang::Rust,
+            b"pub struct Database; impl Database { pub fn connect(&self) { log_info(); } } fn log_info() {}",
         ),
         (
             "router.js",
-            "class Router { route() { dispatch(); } } function dispatch() {}",
+            Lang::JavaScript,
+            b"class Router { route() { dispatch(); } } function dispatch() {}",
         ),
         (
-            "auth.py",
-            "class AuthManager:\n    def verify(self):\n        check_token()\ndef check_token():\n    pass\n",
+            "server.ts",
+            Lang::TypeScript,
+            b"export interface Config {} export class Server { start() { handleRequest(); } } function handleRequest() {}",
         ),
         (
             "service.go",
-            "package main\ntype Service struct{}\nfunc (s *Service) Run() { helper() }\nfunc helper() {}\n",
+            Lang::Go,
+            b"package main\ntype Service struct{}\nfunc (s *Service) Run() { helper() }\nfunc helper() {}\n",
         ),
     ];
 
-    for (name, content) in fixtures {
-        fs::write(root.join(name), content).unwrap();
-    }
-
-    let crawled = crawl_directory(root, &CrawlerOptions::default());
-    assert_eq!(crawled.len(), 5);
-
-    let rel_paths: Vec<&str> = crawled.iter().map(|f| f.rel_path.as_str()).collect();
-    assert_eq!(
-        rel_paths,
-        ["auth.py", "db.rs", "router.js", "server.ts", "service.go"]
-    );
-
-    let reg = LanguageRegistry::new_tier1().unwrap();
+    let reg = LanguageRegistry::new().unwrap();
     let interner = Interner::new();
-    let ingest: IngestResult = ingest_crawled_files(&crawled, &reg, &interner);
+    let ingest: IngestResult = ingest_in_memory_files(fixtures, &reg, &interner);
     assert_eq!(ingest.file_count(), 5);
 
     let sym_names: Vec<&str> = ingest
