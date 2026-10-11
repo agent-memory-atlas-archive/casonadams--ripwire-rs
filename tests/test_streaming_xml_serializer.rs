@@ -1,7 +1,11 @@
 use ripwire::{
     FileInfo, Graph, IngestResult, Interner, Lang, PageRankResult, RefRole, Reference,
-    SerializeOptions, SymKind, Symbol, escape_xml_str, serialize_xml_to_string,
+    SerializeOptions, SymKind, Symbol, escape_xml_str, serialize_connect_xml,
+    serialize_doc_drift_xml, serialize_flags_xml, serialize_for_xml, serialize_grep_xml,
+    serialize_mentions_xml, serialize_owners_xml, serialize_path_between_xml,
+    serialize_stray_content_xml, serialize_whereis_xml, serialize_xml_to_string,
 };
+use serde_json::json;
 
 fn validate_xml_well_formed(xml: &str) {
     let mut tag_stack: Vec<&str> = Vec::new();
@@ -150,4 +154,109 @@ fn test_streaming_xml_serializer() {
     let clean = "clean_func_name";
     let cow = escape_xml_str(clean);
     assert!(matches!(cow, std::borrow::Cow::Borrowed(_)));
+}
+
+#[test]
+fn test_query_xml_retrieval_and_git() {
+    let mut buf = Vec::new();
+
+    let val_for = json!({
+        "task": "authenticate user",
+        "symbols": [{"name": "auth", "path": "src/auth.rs", "line": 10, "score": 2.0, "kind": "fn"}]
+    });
+    serialize_for_xml(&val_for, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.for/v1\""));
+    buf.clear();
+
+    let val_grep = json!({
+        "pattern": "login",
+        "count": 1,
+        "hits": [{"file": "src/main.rs", "line": 42, "enclosing": "main", "text": "login()"}]
+    });
+    serialize_grep_xml(&val_grep, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.grep/v1\""));
+    buf.clear();
+
+    let val_whereis = json!({
+        "symbol": "auth",
+        "hits": [{"path": "src/auth.rs", "line": 1, "kind": "def", "text": "fn auth()"}]
+    });
+    serialize_whereis_xml(&val_whereis, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.whereis/v1\""));
+    buf.clear();
+
+    let val_owners = json!({
+        "files": [{"path": "src/auth.rs", "authors": 1, "top_author": "Alice", "top_share": 1.0}]
+    });
+    serialize_owners_xml(&val_owners, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.owners/v1\""));
+    buf.clear();
+
+    let val_flags = json!({
+        "gates": [{"name": "FEATURE_X", "kind": "env", "file": "src/lib.rs", "line": 5}]
+    });
+    serialize_flags_xml(&val_flags, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.flags/v1\""));
+    buf.clear();
+
+    let val_doc = json!({
+        "drift": [{"doc": "docs/arch.md", "line": 12, "referenced": "old_api"}]
+    });
+    serialize_doc_drift_xml(&val_doc, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.doc-drift/v1\""));
+    buf.clear();
+
+    let val_stray = json!({
+        "branches": [{"branch": "feature", "unmerged_commits": 1}]
+    });
+    serialize_stray_content_xml(&val_stray, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.stray-content/v1\""));
+    buf.clear();
+
+    let val_mentions = json!({
+        "symbol": "auth",
+        "docs": [{"path": "README.md", "mentions": 3}]
+    });
+    serialize_mentions_xml(&val_mentions, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.mentions/v1\""));
+}
+
+#[test]
+fn test_query_xml_graph_paths() {
+    let mut buf = Vec::new();
+
+    let val_connect = json!({
+        "symbols": ["a", "b"],
+        "edges": [{"from": "a", "to": "b"}]
+    });
+    serialize_connect_xml(&val_connect, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.connect/v1\""));
+    buf.clear();
+
+    let val_path_reach = json!({
+        "from": "a",
+        "to": "b",
+        "reachable": true,
+        "hops": 1,
+        "path": ["a", "b"]
+    });
+    serialize_path_between_xml(&val_path_reach, &mut buf).unwrap();
+    let s = String::from_utf8_lossy(&buf);
+    assert!(s.contains(
+        "<path schema=\"ripwire.path/v1\" from=\"a\" to=\"b\" reachable=\"1\" hops=\"1\">"
+    ));
+    buf.clear();
+
+    let val_path_unreach = json!({
+        "from": "x",
+        "to": "y",
+        "reachable": false,
+        "hops": 0
+    });
+    serialize_path_between_xml(&val_path_unreach, &mut buf).unwrap();
+    let s_unreach = String::from_utf8_lossy(&buf);
+    assert!(s_unreach.contains(
+        "<path schema=\"ripwire.path/v1\" from=\"x\" to=\"y\" reachable=\"0\" hops=\"0\""
+    ));
+    assert!(s_unreach.contains("hint="));
 }

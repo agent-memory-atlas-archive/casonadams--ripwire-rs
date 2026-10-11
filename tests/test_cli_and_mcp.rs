@@ -1,5 +1,6 @@
 use ripwire::cli::{
-    GateArgs, MetricsArgs, NavigateArgs, SliceArgs, execute_navigate_with, execute_stream_xml_with,
+    GateArgs, MetricsArgs, NavMode, NavigateArgs, SliceArgs, execute_nav_symbol_query,
+    execute_navigate_with, execute_stream_xml_with,
 };
 use ripwire::{
     Cli, Commands, Graph, Interner, Lang, LanguageRegistry, McpState, PageRankConfig,
@@ -78,7 +79,7 @@ fn test_mcp_json_rpc_suite() {
     let text = explore_val["result"]["content"][0]["text"]
         .as_str()
         .unwrap();
-    assert!(text.contains("<r schema=\"rwire.map/v1\""));
+    assert!(text.contains("<r schema=\"ripwire.map/v1\""));
 
     // ── 5. TOOLS/CALL: find_symbol ───────────────────────────────────────────
     let find_call = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"find_symbol","arguments":{"symbol":"run_cli"}}}"#;
@@ -264,4 +265,64 @@ fn test_cli_execution_modes() {
         })
         .is_ok()
     );
+}
+
+#[test]
+fn test_top_nav_queries() {
+    let fixtures: &[(&str, Lang, &[u8])] = &[(
+        "lib.rs",
+        Lang::Rust,
+        b"pub fn run_cli() { helper(); } fn helper() {}",
+    )];
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&PageRankConfig::default());
+
+    let modes = [
+        (
+            NavMode::Callers,
+            "<callers schema=\"ripwire.callers/v1\" of=\"run_cli\"",
+        ),
+        (
+            NavMode::Callees,
+            "<callees schema=\"ripwire.callees/v1\" of=\"run_cli\"",
+        ),
+        (
+            NavMode::Impact,
+            "<impact schema=\"ripwire.impact/v1\" of=\"run_cli\"",
+        ),
+        (
+            NavMode::Uses,
+            "<uses schema=\"ripwire.uses/v1\" of=\"run_cli\"",
+        ),
+        (
+            NavMode::FindSymbol,
+            "<find-symbol schema=\"ripwire.find-symbol/v1\" of=\"run_cli\"",
+        ),
+    ];
+    for (mode, expected) in modes {
+        let mut buf = Vec::new();
+        execute_nav_symbol_query(
+            "run_cli", mode, &ingest, &graph, &pr.ranks, &interner, &mut buf,
+        )
+        .unwrap();
+        let xml = String::from_utf8(buf).unwrap();
+        assert!(xml.contains(expected));
+    }
+
+    let mut err_buf = Vec::new();
+    let err = execute_nav_symbol_query(
+        "missing_sym_404",
+        NavMode::Callers,
+        &ingest,
+        &graph,
+        &pr.ranks,
+        &interner,
+        &mut err_buf,
+    );
+    assert!(err.is_err());
+    let err_msg = err.unwrap_err().to_string();
+    assert!(err_msg.contains("rwire: --callers symbol not found: missing_sym_404"));
 }

@@ -146,8 +146,8 @@ impl Lang {
             "java" => Self::Java,
             "cs" => Self::CSharp,
             "swift" => Self::Swift,
-            "sh" | "bash" => Self::Bash,
-            "rb" => Self::Ruby,
+            "sh" | "bash" | "zsh" => Self::Bash,
+            "rb" | "rake" | "jbuilder" => Self::Ruby,
             "php" | "phtml" => Self::Php,
             "lua" => Self::Lua,
             "ex" | "exs" => Self::Elixir,
@@ -157,7 +157,7 @@ impl Lang {
             "json" => Self::Json,
             "toml" => Self::Toml,
             "yml" | "yaml" => Self::Yaml,
-            "md" | "markdown" | "rst" => Self::Markdown,
+            "md" | "markdown" | "rst" | "adoc" | "org" | "mdx" => Self::Markdown,
             _ => Self::Unknown,
         }
     }

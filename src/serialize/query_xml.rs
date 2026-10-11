@@ -191,21 +191,33 @@ pub fn serialize_connect_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
     writeln!(out, "</connect>")
 }
 
+fn write_path_step<W: Write>(step: &Value, out: &mut W) -> io::Result<()> {
+    let s = step.as_str().unwrap_or("");
+    writeln!(out, "  <s t=\"fn\" n=\"{s}\"/>")
+}
+
 /// Serialize `path_between` call path to Ripwire XML.
 pub fn serialize_path_between_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let from = val["from"].as_str().unwrap_or("");
     let to = val["to"].as_str().unwrap_or("");
-    let reachable = val["reachable"].as_bool().unwrap_or(false);
+    let is_reach = val["reachable"].as_bool().unwrap_or(false);
+    let reachable = if is_reach { "1" } else { "0" };
     let hops = val["hops"].as_u64().unwrap_or(0);
-    writeln!(
+    write!(
         out,
-        "<path-between schema=\"ripwire.path-between/v1\" from=\"{from}\" to=\"{to}\" reachable=\"{reachable}\" hops=\"{hops}\">"
+        "<path schema=\"ripwire.path/v1\" from=\"{from}\" to=\"{to}\" reachable=\"{reachable}\" hops=\"{hops}\""
     )?;
+    if !is_reach {
+        write!(
+            out,
+            " hint=\"no directed call path — try --connect={from},{to} (undirected: finds a shared caller), or --uses/--impact for non-call references\""
+        )?;
+    }
+    writeln!(out, ">")?;
     if let Some(path) = val["path"].as_array() {
         for step in path {
-            let s = step.as_str().unwrap_or("");
-            writeln!(out, "  <step sym=\"{s}\"/>")?;
+            write_path_step(step, out)?;
         }
     }
-    writeln!(out, "</path-between>")
+    writeln!(out, "</path>")
 }

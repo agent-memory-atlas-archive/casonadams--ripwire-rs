@@ -79,7 +79,7 @@ pub fn write_root_open_with_rank_by<W: Write>(
     w: &mut W,
     ctx: &RootElementContext<'_>,
 ) -> io::Result<()> {
-    w.write_all(b"<r schema=\"rwire.map/v1\" root=\"")?;
+    w.write_all(b"<r schema=\"ripwire.map/v1\" root=\"")?;
     escape_xml_write(w, ctx.root)?;
     write!(
         w,
@@ -391,7 +391,7 @@ mod tests {
             &SerializeOptions::default(),
         );
 
-        assert!(xml.starts_with("<r schema=\"rwire.map/v1\" root=\".\" files=\"1\" symbols=\"2\" edges=\"1\" pr_iters=\"12\">"));
+        assert!(xml.starts_with("<r schema=\"ripwire.map/v1\" root=\".\" files=\"1\" symbols=\"2\" edges=\"1\" pr_iters=\"12\">"));
         assert!(xml.contains("<f p=\"src/main.rs\">"));
         assert!(xml.contains("<s t=\"fn\" n=\"run\" k=\"0.6500\"></s>"));
         assert!(xml.contains("<s t=\"fn\" n=\"start\" k=\"0.3500\"><c n=\"run\"/></s>"));

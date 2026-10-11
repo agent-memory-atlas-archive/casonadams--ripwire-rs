@@ -66,14 +66,17 @@ pub fn call_path_between(
 
     let (Some(from), Some(to)) = (from_id, to_id) else {
         return json!({
+            "from": from_name,
+            "to": to_name,
             "reachable": false,
             "hops": 0,
             "error": "one or both symbols not found"
         });
     };
-
     if from == to {
         return json!({
+            "from": from_name,
+            "to": to_name,
             "reachable": true,
             "hops": 0,
             "path": [from_name]
@@ -82,6 +85,8 @@ pub fn call_path_between(
 
     let Some(path_ids) = bfs_directed_path(graph, from, to) else {
         return json!({
+            "from": from_name,
+            "to": to_name,
             "reachable": false,
             "hops": 0,
             "path": []
@@ -95,6 +100,8 @@ pub fn call_path_between(
         .collect();
 
     json!({
+        "from": from_name,
+        "to": to_name,
         "reachable": true,
         "hops": path.len().saturating_sub(1),
         "path": path

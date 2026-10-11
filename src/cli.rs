@@ -136,8 +136,8 @@ pub struct TopRetrievalArgs {
     #[arg(long, value_name = "A,B")]
     pub connect: Option<String>,
 
-    /// Shortest directed call path between two symbols (A:B)
-    #[arg(long = "path-between", value_name = "A:B")]
+    /// Shortest directed call path between two symbols (A:B or A,B)
+    #[arg(long = "path-between", visible_alias = "path", value_name = "A:B")]
     pub path_between: Option<String>,
 }
 
@@ -751,9 +751,32 @@ fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<io::R
     execute_gate_action(args, &state, &mut stdout)
 }
 
-fn execute_nav_symbol_query<W: io::Write>(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavMode {
+    Callers,
+    Callees,
+    Impact,
+    Uses,
+    FindSymbol,
+}
+
+fn serialize_1hop_mode<W: io::Write>(
     sym: &str,
-    nav_mode: u8,
+    mode: NavMode,
+    nav: &crate::navigate::NavNeighborhood,
+    out: &mut W,
+) -> io::Result<()> {
+    match mode {
+        NavMode::Callers => crate::navigate::serialize_callers_xml(sym, &nav.callers, out),
+        NavMode::Callees => crate::navigate::serialize_callees_xml(sym, &nav.callees, out),
+        NavMode::FindSymbol => crate::navigate::serialize_find_symbol_xml(nav, out),
+        _ => Ok(()),
+    }
+}
+
+pub fn execute_nav_symbol_query<W: io::Write>(
+    sym: &str,
+    mode: NavMode,
     ingest: &crate::domain::IngestResult,
     graph: &Graph,
     ranks: &[f64],
@@ -762,63 +785,45 @@ fn execute_nav_symbol_query<W: io::Write>(
 ) -> io::Result<()> {
     let ids = crate::navigate::find_symbols_by_name(sym, ingest, interner);
     let Some(&id) = ids.first() else {
-        let flag_name = match nav_mode {
-            0 => "--callers",
-            1 => "--callees",
-            2 => "--impact",
-            3 => "--uses",
-            _ => "--find-symbol",
+        let flag = match mode {
+            NavMode::Callers => "--callers",
+            NavMode::Callees => "--callees",
+            NavMode::Impact => "--impact",
+            NavMode::Uses => "--uses",
+            NavMode::FindSymbol => "--find-symbol",
         };
         return Err(io::Error::other(format!(
-            "rwire: {flag_name} symbol not found: {sym}"
+            "rwire: {flag} symbol not found: {sym}"
         )));
     };
-    if nav_mode == 3 {
-        return crate::navigate::serialize_uses_xml(sym, ingest, interner, out);
-    }
-    match nav_mode {
-        0 => {
-            let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner)
-            else {
-                return Ok(());
-            };
-            crate::navigate::serialize_callers_xml(sym, &nav.callers, out)
-        }
-        1 => {
-            let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner)
-            else {
-                return Ok(());
-            };
-            crate::navigate::serialize_callees_xml(sym, &nav.callees, out)
-        }
-        2 => {
+    match mode {
+        NavMode::Uses => crate::navigate::serialize_uses_xml(sym, ingest, interner, out),
+        NavMode::Impact => {
             let impact =
                 crate::navigate::transitive_impact(id, ingest, graph, ranks, interner, None);
             crate::navigate::serialize_impact_xml(sym, &impact, out)
         }
-        4 => {
-            let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner)
-            else {
-                return Ok(());
-            };
-            crate::navigate::serialize_find_symbol_xml(&nav, out)
+        NavMode::Callers | NavMode::Callees | NavMode::FindSymbol => {
+            if let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner) {
+                serialize_1hop_mode(sym, mode, &nav, out)?;
+            }
+            Ok(())
         }
-        _ => Ok(()),
     }
 }
 
 fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    let (sym, nav_mode) = if let Some(s) = cli.nav.callers.as_deref() {
-        (s, 0)
+    let (sym, mode) = if let Some(s) = cli.nav.callers.as_deref() {
+        (s, NavMode::Callers)
     } else if let Some(s) = cli.nav.callees.as_deref() {
-        (s, 1)
+        (s, NavMode::Callees)
     } else if let Some(s) = cli.nav.impact.as_deref() {
-        (s, 2)
+        (s, NavMode::Impact)
     } else if let Some(s) = cli.nav.uses.as_deref() {
-        (s, 3)
+        (s, NavMode::Uses)
     } else {
         let s = cli.nav.find_symbol.as_deref()?;
-        (s, 4)
+        (s, NavMode::FindSymbol)
     };
 
     Some((|| {
@@ -826,7 +831,7 @@ fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         let mut stdout = io::stdout().lock();
         execute_nav_symbol_query(
             sym,
-            nav_mode,
+            mode,
             &ingest,
             &graph,
             &pr.ranks,
@@ -846,20 +851,14 @@ fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         return None;
     }
     Some((|| {
-        let state = crate::mcp::McpState::load(root)
-            .ok_or_else(|| io::Error::other("failed to load repository"))?;
+        let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
         let mut stdout = io::stdout().lock();
         if let Some(task) = ret.task_for.as_deref() {
-            let val = crate::mcp::retrieval::call_for_task(
-                &state.ingest,
-                &state.interner,
-                &state.pr.ranks,
-                task,
-                None,
-            );
+            let val =
+                crate::mcp::retrieval::call_for_task(&ingest, &interner, &pr.ranks, task, None);
             crate::serialize::serialize_for_xml(&val, &mut stdout)?;
         } else if let Some(pat) = ret.grep.as_deref() {
-            let val = crate::mcp::retrieval::call_grep(&state.ingest, &state.interner, pat, None);
+            let val = crate::mcp::retrieval::call_grep(&ingest, &interner, pat, None);
             crate::serialize::serialize_grep_xml(&val, &mut stdout)?;
         } else if let Some(syms) = ret.connect.as_deref() {
             let sym_list: Vec<String> = syms
@@ -867,24 +866,14 @@ fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect();
-            let val = crate::mcp::graph_tools::call_connect(
-                &state.ingest,
-                &state.graph,
-                &state.interner,
-                &sym_list,
-            );
+            let val = crate::mcp::graph_tools::call_connect(&ingest, &graph, &interner, &sym_list);
             crate::serialize::serialize_connect_xml(&val, &mut stdout)?;
         } else if let Some(pair) = ret.path_between.as_deref() {
-            let parts: Vec<&str> = pair.split(':').collect();
+            let parts: Vec<&str> = pair.split([',', ':']).collect();
             let from = parts.first().copied().unwrap_or("");
             let to = parts.get(1).copied().unwrap_or("");
-            let val = crate::mcp::graph_tools::call_path_between(
-                &state.ingest,
-                &state.graph,
-                &state.interner,
-                from,
-                to,
-            );
+            let val =
+                crate::mcp::graph_tools::call_path_between(&ingest, &graph, &interner, from, to);
             crate::serialize::serialize_path_between_xml(&val, &mut stdout)?;
         }
         Ok(())
@@ -903,27 +892,32 @@ fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         return None;
     }
     Some((|| {
-        let state = crate::mcp::McpState::load(root)
-            .ok_or_else(|| io::Error::other("failed to load repository"))?;
         let mut stdout = io::stdout().lock();
-        if let Some(sym) = ws.whereis.as_deref() {
-            let val = crate::mcp::doc_tools::call_whereis(&state.ingest, &state.interner, sym);
-            crate::serialize::serialize_whereis_xml(&val, &mut stdout)?;
-        } else if ws.owners {
-            let val = crate::mcp::doc_tools::call_owners(state.commits.as_deref(), None);
+        if ws.owners {
+            let commits =
+                crate::git::history::walk_repository_history(std::path::Path::new(root)).ok();
+            let val = crate::mcp::doc_tools::call_owners(commits.as_deref(), None);
             crate::serialize::serialize_owners_xml(&val, &mut stdout)?;
-        } else if ws.doc_drift {
-            let val = crate::mcp::doc_tools::call_doc_drift(&state.ingest, &state.interner);
-            crate::serialize::serialize_doc_drift_xml(&val, &mut stdout)?;
-        } else if ws.flags {
-            let val = crate::mcp::doc_tools::call_flags(&state.ingest, &state.interner);
-            crate::serialize::serialize_flags_xml(&val, &mut stdout)?;
         } else if ws.stray_content {
-            let val = crate::mcp::doc_tools::call_stray_content(state.commits.as_deref());
+            let commits =
+                crate::git::history::walk_repository_history(std::path::Path::new(root)).ok();
+            let val = crate::mcp::doc_tools::call_stray_content(commits.as_deref());
             crate::serialize::serialize_stray_content_xml(&val, &mut stdout)?;
-        } else if let Some(sym) = ws.mentions.as_deref() {
-            let val = crate::mcp::doc_tools::call_mentions(&state.ingest, &state.interner, sym);
-            crate::serialize::serialize_mentions_xml(&val, &mut stdout)?;
+        } else {
+            let (ingest, _graph, _pr, interner) = load_repo_analysis(root)?;
+            if let Some(sym) = ws.whereis.as_deref() {
+                let val = crate::mcp::doc_tools::call_whereis(&ingest, &interner, sym);
+                crate::serialize::serialize_whereis_xml(&val, &mut stdout)?;
+            } else if ws.doc_drift {
+                let val = crate::mcp::doc_tools::call_doc_drift(&ingest, &interner);
+                crate::serialize::serialize_doc_drift_xml(&val, &mut stdout)?;
+            } else if ws.flags {
+                let val = crate::mcp::doc_tools::call_flags(&ingest, &interner);
+                crate::serialize::serialize_flags_xml(&val, &mut stdout)?;
+            } else if let Some(sym) = ws.mentions.as_deref() {
+                let val = crate::mcp::doc_tools::call_mentions(&ingest, &interner, sym);
+                crate::serialize::serialize_mentions_xml(&val, &mut stdout)?;
+            }
         }
         Ok(())
     })())
