@@ -41,23 +41,24 @@ fn normalize_vector_l2(vec: &mut [f64]) {
 }
 
 fn compute_authority_step(graph: &Graph, hub: &[f64], authority: &mut [f64]) {
+    let in_edges = &graph.in_edges;
     for (i, auth_val) in authority.iter_mut().enumerate() {
-        let mut sum = 0.0;
-        for (src, w) in graph.callers(i as u32) {
-            sum += (w as f64) * hub[src as usize];
-        }
-        *auth_val = sum;
+        let start = in_edges.row_offsets[i] as usize;
+        let end = in_edges.row_offsets[i + 1] as usize;
+        *auth_val = (start..end).fold(0.0, |acc, k| {
+            acc + (in_edges.values[k] as f64) * hub[in_edges.col_indices[k] as usize]
+        });
     }
     normalize_vector_l2(authority);
 }
 
 fn compute_hub_step(graph: &Graph, authority: &[f64], hub: &mut [f64]) {
     for (j, hub_val) in hub.iter_mut().enumerate() {
-        let mut sum = 0.0;
-        for (tgt, w) in graph.callees(j as u32) {
-            sum += (w as f64) * authority[tgt as usize];
-        }
-        *hub_val = sum;
+        let start = graph.out_offsets[j] as usize;
+        let end = graph.out_offsets[j + 1] as usize;
+        *hub_val = (start..end).fold(0.0, |acc, k| {
+            acc + (graph.out_weights[k] as f64) * authority[graph.out_targets[k] as usize]
+        });
     }
     normalize_vector_l2(hub);
 }
