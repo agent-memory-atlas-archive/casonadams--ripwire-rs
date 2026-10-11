@@ -9,19 +9,29 @@ export RUST_TEST_THREADS ?= $(CPUS)
 help: ## Display this help screen
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
+.PHONY: ensure-grammars
+ensure-grammars:
+	@if [ ! -d "vendor/grammars" ] || [ -z "$$(ls -A vendor/grammars 2>/dev/null)" ]; then \
+		echo "vendor/grammars missing, running update-grammars..."; \
+		./scripts/update-grammars.sh; \
+	fi
+
 .PHONY: all
 all: fmt-check clippy complexity quality crap ## Run all checks (format check, clippy, complexity, quality regressions, CRAP/tests)
 
 .PHONY: build
 build: ## Build the project in debug mode
+	@$(MAKE) ensure-grammars
 	$(CARGO) build
 
 .PHONY: build-release
 build-release: ## Build the project in release mode
+	@$(MAKE) ensure-grammars
 	$(CARGO) build --release
 
 .PHONY: check
 check: ## Type check all targets
+	@$(MAKE) ensure-grammars
 	$(CARGO) check --workspace --all-targets
 
 .PHONY: fmt
@@ -34,6 +44,7 @@ fmt-check: ## Check formatting of Rust source files
 
 .PHONY: clippy
 clippy: ## Run Clippy with warnings treated as errors
+	@$(MAKE) ensure-grammars
 	$(CARGO) clippy --workspace --all-targets -- -D warnings
 
 .PHONY: clippy-fix
@@ -46,6 +57,7 @@ clean: ## Clean cargo build artifacts
 
 .PHONY: coverage
 coverage: ## Generate LCOV test coverage trace (uses nextest when available)
+	@$(MAKE) ensure-grammars
 	@ulimit -n 10240 2>/dev/null || ulimit -n 4096 2>/dev/null || true; \
 	if $(CARGO) nextest --version >/dev/null 2>&1; then \
 		$(CARGO) llvm-cov nextest --workspace --no-report && $(CARGO) llvm-cov report --workspace --lcov --output-path target/lcov.info; \
@@ -55,7 +67,7 @@ coverage: ## Generate LCOV test coverage trace (uses nextest when available)
 
 .PHONY: crap
 crap: coverage ## Evaluate CRAP metrics and gate on functions exceeding threshold 30 (runs tests via coverage)
-	@$(CARGO) crap --path . --lcov target/lcov.info --threshold 30 --format json 2>/dev/null | jq -e '([.entries[] | select(.crap > 30) | {file, line, function, crap: (.crap * 10 | round / 10), cc: .cyclomatic, cov: (.coverage * 10 | round / 10)}]) as $$v | if ($$v | length) > 0 then ($$v | halt_error(1)) else $$v end'
+	@$(CARGO) crap --path . --lcov target/lcov.info --threshold 30 --format json 2>/dev/null | jq -e '([.entries[] | select(.crap > 30) | {file, line, function, crap: (.crap * 10 | round / 10), cc: .cyclomatic, cov: (((.coverage // 0) * 10) | round / 10)}]) as $$v | if ($$v | length) > 0 then ($$v | halt_error(1)) else $$v end'
 
 .PHONY: complexity
 complexity: ## Evaluate Cognitive and Cyclomatic complexity with cccc and gate on cognitive <= 15
@@ -66,3 +78,7 @@ complexity: ## Evaluate Cognitive and Cyclomatic complexity with cccc and gate o
 quality: ## Measure quality regressions against git HEAD with ripwire
 	@command -v ripwire >/dev/null 2>&1 || { echo "Error: ripwire not found"; exit 1; }
 	@ripwire . --quality-delta >/dev/null
+
+.PHONY: update-grammars
+update-grammars: ## Update vendored tree-sitter grammars from upstream repositories
+	@./scripts/update-grammars.sh $(GRAMMAR)

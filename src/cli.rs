@@ -46,6 +46,14 @@ pub struct Cli {
     #[arg(long)]
     pub quality_delta: bool,
 
+    /// ARISE intra-procedural def-use variable slice (SYM[:VAR])
+    #[arg(long)]
+    pub slice: Option<String>,
+
+    /// Dataflow direction for --slice (fwd, back, both)
+    #[arg(long, default_value = "fwd")]
+    pub slice_flow: String,
+
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -592,6 +600,18 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     };
     if let Some(res) = dispatch_gate_command(root, cli_gate) {
         return res;
+    }
+
+    if let Some(Commands::Slice(slice_args)) = &cli.command {
+        return crate::slice::execute_slice_command(
+            root,
+            slice_args.target.as_deref(),
+            &slice_args.flow,
+        );
+    }
+
+    if let Some(target) = cli.slice.as_deref() {
+        return crate::slice::execute_slice_command(root, Some(target), &cli.slice_flow);
     }
 
     match &cli.command {

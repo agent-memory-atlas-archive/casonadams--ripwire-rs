@@ -11,6 +11,7 @@ pub mod navigate;
 pub mod rank;
 pub mod resolve;
 pub mod serialize;
+pub mod slice;
 
 pub use cli::{run_cli, run_cli_args, Cli, Commands};
 pub use crawler::{
@@ -54,4 +55,8 @@ pub use resolve::{
 pub use serialize::{
     escape_xml_str, escape_xml_write, serialize_xml, serialize_xml_to_string, SerializeOptions,
     ToXmlString,
+};
+pub use slice::{
+    compute_dataflow_slice, execute_slice, parse_slice_target, OccRole, SliceFlowDir, SliceStep,
+    VariableOcc,
 };
