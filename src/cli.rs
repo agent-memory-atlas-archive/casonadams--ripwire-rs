@@ -26,6 +26,10 @@ pub struct Cli {
     #[arg(long)]
     pub since: Option<String>,
 
+    /// Show top maintenance hotspots (churn * ccx)
+    #[arg(long)]
+    pub hotspots: bool,
+
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -366,20 +370,73 @@ pub fn execute_cochange_with<W: io::Write>(
     }
 }
 
-fn execute_cochange(root: &str, probed_file: Option<&str>, since: Option<&str>) -> io::Result<()> {
+fn execute_with_git_state<F>(root: &str, runner: F) -> io::Result<()>
+where
+    F: FnOnce(
+        &[crate::git::history::CommitInfo],
+        &crate::mcp::McpState,
+        &mut io::StdoutLock<'_>,
+    ) -> io::Result<()>,
+{
     let state = crate::mcp::McpState::load(root)
         .ok_or_else(|| io::Error::other("failed to load repository"))?;
     let empty_commits = Vec::new();
     let commits = state.commits.as_ref().unwrap_or(&empty_commits);
     let mut stdout = io::stdout().lock();
-    execute_cochange_with(probed_file, since, commits, &state, &mut stdout)
+    runner(commits, &state, &mut stdout)
 }
+
+fn dispatch_git_metrics_command(
+    root: &str,
+    cochange: Option<Option<&str>>,
+    hotspots: bool,
+    since: Option<&str>,
+) -> Option<io::Result<()>> {
+    if let Some(probed) = cochange {
+        return Some(execute_with_git_state(root, |commits, state, out| {
+            execute_cochange_with(probed, since, commits, state, out)
+        }));
+    }
+    if hotspots {
+        return Some(execute_with_git_state(root, |commits, state, out| {
+            execute_hotspots_with(since, commits, state, out)
+        }));
+    }
+    None
+}
+
+pub fn execute_hotspots_with<W: io::Write>(
+    since_str: Option<&str>,
+    commits: &[crate::git::history::CommitInfo],
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
+    let anchor_epoch = commits.first().map(|c| c.timestamp).unwrap_or(0);
+    let scope = crate::git::history::parse_since_scope(since_str, anchor_epoch);
+    let filtered = crate::git::history::filter_commits_by_scope(commits, &scope);
+    let churn_map = crate::git::history::compute_file_churn(
+        filtered,
+        anchor_epoch,
+        crate::git::history::MERGE_BOMB_MAX_FILES,
+    );
+    let counts: std::collections::HashMap<String, u32> = churn_map
+        .into_iter()
+        .map(|(path, fc)| (path, fc.commits))
+        .collect();
+    let report = crate::metrics::compute_hotspots(&state.ingest, &state.interner, &counts);
+    report.write_xml(out)
+}
+
 /// Execute CLI from parsed options.
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
-    if let Some(co_opt) = &cli.cochange {
-        let root = cli.path.as_deref().unwrap_or(".");
-        let probed = co_opt.as_deref();
-        return execute_cochange(root, probed, cli.since.as_deref());
+    let root = cli.path.as_deref().unwrap_or(".");
+    if let Some(res) = dispatch_git_metrics_command(
+        root,
+        cli.cochange.as_ref().map(|o| o.as_deref()),
+        cli.hotspots,
+        cli.since.as_deref(),
+    ) {
+        return res;
     }
 
     match &cli.command {
@@ -397,10 +454,14 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
             Ok(())
         }
         Some(Commands::Metrics(metrics_args)) => {
-            if let Some(co_opt) = &metrics_args.cochange {
-                let root = metrics_args.path.as_deref().unwrap_or(".");
-                let probed = co_opt.as_deref();
-                return execute_cochange(root, probed, metrics_args.since.as_deref());
+            let root = metrics_args.path.as_deref().unwrap_or(".");
+            if let Some(res) = dispatch_git_metrics_command(
+                root,
+                metrics_args.cochange.as_ref().map(|o| o.as_deref()),
+                metrics_args.hotspots,
+                metrics_args.since.as_deref(),
+            ) {
+                return res;
             }
             println!("rwire metrics: code complexity and health metrics (Wave 2 feature)");
             Ok(())
@@ -409,10 +470,7 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
             println!("rwire slice: ARISE variable dataflow slicing (Wave 3 feature)");
             Ok(())
         }
-        None => {
-            let root = cli.path.as_deref().unwrap_or(".");
-            execute_stream_xml(root)
-        }
+        None => execute_stream_xml(root),
     }
 }
 

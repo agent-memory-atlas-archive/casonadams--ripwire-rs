@@ -121,6 +121,7 @@ struct RawDef {
     line: u32,
     start_byte: usize,
     end_byte: usize,
+    metrics: crate::metrics::ComplexityMetrics,
 }
 
 /// Raw reference extracted before enclosing symbol attribution.
@@ -248,8 +249,99 @@ fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) ->
     None
 }
 
+struct MatchExtract<'a> {
+    name: Option<String>,
+    name_node: Option<tree_sitter::Node<'a>>,
+    def: Option<(SymKind, usize, usize, u32)>,
+    def_node: Option<tree_sitter::Node<'a>>,
+    r#ref: Option<(RefRole, usize, u32)>,
+}
+
+fn extract_match_captures<'a>(
+    m: &tree_sitter::QueryMatch<'a, '_>,
+    query: &Query,
+    source_bytes: &[u8],
+) -> MatchExtract<'a> {
+    let mut ext = MatchExtract {
+        name: None,
+        name_node: None,
+        def: None,
+        def_node: None,
+        r#ref: None,
+    };
+    for capture in m.captures {
+        let cap_name = query.capture_names()[capture.index as usize];
+        let node = capture.node;
+        match classify_capture(cap_name) {
+            Some(Capture::Name) => {
+                if let Ok(text) = node.utf8_text(source_bytes) {
+                    ext.name = Some(text.to_string());
+                    ext.name_node = Some(node);
+                }
+            }
+            Some(Capture::Def(k)) => {
+                let line = node.start_position().row as u32 + 1;
+                ext.def = Some((k, node.start_byte(), node.end_byte(), line));
+                ext.def_node = Some(node);
+            }
+            Some(Capture::Ref(r)) => {
+                let line = node.start_position().row as u32 + 1;
+                ext.r#ref = Some((r, node.start_byte(), line));
+            }
+            None => {}
+        }
+    }
+    ext
+}
+
+fn record_extracted_item(
+    ext: MatchExtract<'_>,
+    source_bytes: &[u8],
+    lang: Lang,
+    defs: &mut Vec<RawDef>,
+    refs: &mut Vec<RawRef>,
+) {
+    if let (Some(name), Some((kind, start, end, line))) = (ext.name.as_ref(), ext.def) {
+        let scope = ext
+            .name_node
+            .and_then(|n| find_enclosing_scope(n, source_bytes));
+        let metrics = if kind == SymKind::Function || kind == SymKind::Method {
+            ext.def_node
+                .map(|n| crate::metrics::compute_complexity_from_node(n, source_bytes, lang))
+                .unwrap_or_default()
+        } else {
+            crate::metrics::ComplexityMetrics::default()
+        };
+        defs.push(RawDef {
+            name: name.clone(),
+            scope,
+            kind,
+            line,
+            start_byte: start,
+            end_byte: end,
+            metrics,
+        });
+    } else if let (Some(name), Some((role, start, line))) = (ext.name, ext.r#ref) {
+        let qualifier = ext
+            .name_node
+            .and_then(|n| find_call_qualifier(n, source_bytes));
+        refs.push(RawRef {
+            callee_name: name,
+            qualifier,
+            line,
+            start_byte: start,
+            role,
+        });
+    }
+}
+
 /// Parse a single file content with a compiled grammar and query.
-fn parse_file_content(source_bytes: &[u8], language: &Language, query: &Query) -> FileParseResult {
+fn parse_file_content(
+    source_bytes: &[u8],
+    language: &Language,
+    query: &Query,
+    lang: Lang,
+) -> FileParseResult {
     let mut parser = Parser::new();
     if parser.set_language(language).is_err() {
         return FileParseResult::default();
@@ -268,53 +360,8 @@ fn parse_file_content(source_bytes: &[u8], language: &Language, query: &Query) -
     let mut refs = Vec::new();
 
     while let Some(m) = matches.next() {
-        let mut name: Option<String> = None;
-        let mut name_node: Option<tree_sitter::Node<'_>> = None;
-        let mut def: Option<(SymKind, usize, usize, u32)> = None;
-        let mut r#ref: Option<(RefRole, usize, u32)> = None;
-
-        for capture in m.captures {
-            let cap_name = query.capture_names()[capture.index as usize];
-            let node = capture.node;
-            match classify_capture(cap_name) {
-                Some(Capture::Name) => {
-                    if let Ok(text) = node.utf8_text(source_bytes) {
-                        name = Some(text.to_string());
-                        name_node = Some(node);
-                    }
-                }
-                Some(Capture::Def(k)) => {
-                    let line = node.start_position().row as u32 + 1;
-                    def = Some((k, node.start_byte(), node.end_byte(), line));
-                }
-                Some(Capture::Ref(r)) => {
-                    let line = node.start_position().row as u32 + 1;
-                    r#ref = Some((r, node.start_byte(), line));
-                }
-                None => {}
-            }
-        }
-
-        if let (Some(name), Some((kind, start, end, line))) = (name.as_ref(), def) {
-            let scope = name_node.and_then(|n| find_enclosing_scope(n, source_bytes));
-            defs.push(RawDef {
-                name: name.clone(),
-                scope,
-                kind,
-                line,
-                start_byte: start,
-                end_byte: end,
-            });
-        } else if let (Some(name), Some((role, start, line))) = (name, r#ref) {
-            let qualifier = name_node.and_then(|n| find_call_qualifier(n, source_bytes));
-            refs.push(RawRef {
-                callee_name: name,
-                qualifier,
-                line,
-                start_byte: start,
-                role,
-            });
-        }
+        let ext = extract_match_captures(m, query, source_bytes);
+        record_extracted_item(ext, source_bytes, lang, &mut defs, &mut refs);
     }
 
     defs.sort_by(|a, b| {
@@ -343,7 +390,12 @@ pub fn ingest_crawled_files(
         .map(|file| {
             let (language, query) = registry.get(file.lang)?;
             let source_bytes = fs::read(&file.path).ok()?;
-            Some(parse_file_content(&source_bytes, language, query))
+            Some(parse_file_content(
+                &source_bytes,
+                language,
+                query,
+                file.lang,
+            ))
         })
         .collect();
 
@@ -389,7 +441,7 @@ pub fn ingest_in_memory_files(
 
         let parsed = registry
             .get(lang)
-            .map(|(language, query)| parse_file_content(source_bytes, language, query));
+            .map(|(language, query)| parse_file_content(source_bytes, language, query, lang));
 
         let (line_count, byte_size, defs, refs) = match parsed {
             Some(p) => (p.line_count, p.byte_size, p.defs, p.refs),
@@ -445,6 +497,12 @@ fn build_file_symbols(
         }
         sym.sig_start_byte = def.start_byte as u32;
         sym.end_byte = def.end_byte as u32;
+        sym.cx = def.metrics.cx;
+        sym.ccx = def.metrics.ccx;
+        sym.max_nest = def.metrics.max_nest;
+        sym.humps = def.metrics.humps;
+        sym.deep = def.metrics.deep;
+        sym.ev = def.metrics.ev;
         file_symbols.push(sym);
     }
     file_symbols
@@ -491,7 +549,7 @@ mod tests {
         assert!(reg.get(Lang::Rust).is_some() && reg.get(Lang::Python).is_some());
 
         let (lang, query) = reg.get(Lang::Rust).unwrap();
-        let res = parse_file_content(b"fn run() { log(); } fn log() {}", lang, query);
+        let res = parse_file_content(b"fn run() { log(); } fn log() {}", lang, query, Lang::Rust);
         assert_eq!(res.defs.len(), 2);
         assert_eq!(res.refs.len(), 1);
         assert_eq!(res.refs[0].callee_name, "log");

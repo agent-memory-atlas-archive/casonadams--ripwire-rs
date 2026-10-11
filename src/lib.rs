@@ -5,6 +5,7 @@ pub mod git;
 pub mod graph;
 pub mod ingest;
 pub mod mcp;
+pub mod metrics;
 pub mod navigate;
 pub mod rank;
 pub mod resolve;
@@ -30,6 +31,10 @@ pub use git::history::{
 pub use graph::{CsrMatrix, Graph};
 pub use ingest::{ingest_crawled_files, ingest_in_memory_files, LanguageRegistry};
 pub use mcp::{dispatch_json_rpc, run_mcp_stdio, run_mcp_stream, McpState};
+pub use metrics::{
+    compute_complexity, compute_hotspots, compute_readability, posnett_score, ComplexityMetrics,
+    HotspotFile, HotspotsReport, ReadabilityMetrics, NESTING_BAR,
+};
 pub use navigate::{
     find_symbols_by_name, navigate_1hop, transitive_impact, ImpactNode, NavNeighborhood,
     SymbolNavInfo,

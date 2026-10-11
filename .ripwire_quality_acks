@@ -1,6 +1,35 @@
 # ripwire quality acks v1 — written by --quality-ack; a finding stays suppressed until it worsens past its acked magnitude
 # format: ack <kind> <16-hex-key> <ackNow> [cid=<16-hex-content-id>] [by=<scope that acked it>] [now=<uint> was=<uint>] [prov=recon] [facet=<token>] [p=<path>:<line>] <reason to end of line> — one per line, kept SORTED by (kind,key) on every write (merge-friendly)
 # PROVENANCE: now=/was=/facet=/p= exist only on rows a provenance-aware binary WROTE OR REFRESHED (2026-09-22+); a legacy row heals FORWARD on its next --quality-ack. prov=recon marks a row a backfill RECONSTRUCTED from the CURRENT tree rather than measured when it was accepted: it answers 'would this be gating now', NOT 'was it gating then'. A recon row is a CACHE, not a dated record — every --quality-ack re-derives the ones whose clone group it can still find, so a checkable value is never older than the last ack; one whose group this run did NOT find is left untouched and counted as unverified on stderr, because not finding a group is a floor (scoped scan, capped file, different tree), never proof it is gone. Absent prov= means measured live, and a measurement is never overwritten by a reconstruction. Only the two clone kinds can be reconstructed (their key is a member-set hash, so today's idiom verdict is recomputable); a numeric row's was= still needs the commit that accepted it, which no field here records.
+ack dead-code:new-symbol 1b66e3d84625ec99 0 cid=d7f0f7a8120d3123 now=0 was=0 p=src/metrics/readability.rs:238 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 366edd43c80f037e 0 cid=fa46023247d62f19 now=0 was=0 p=src/metrics/complexity.rs:320 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 795c5808ab0ca979 0 cid=3f603d0498ec0654 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 89cc6ea26e2c5dda 0 cid=9c3a3d5e89523184 now=0 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 8b8653693bb10aa5 0 cid=df69e53dd4bd9c95 now=0 was=0 p=src/metrics/readability.rs:232 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 8fa8a0c576f5de1f 0 cid=d35b890630585bc1 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:12 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol a42a2dea2162a74f 0 cid=cfe358d269f24f9d now=0 was=0 p=src/metrics/complexity.rs:334 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol c361951a2462aeb4 0 cid=32834a6e840dec29 now=0 was=0 p=src/metrics/readability.rs:228 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol c77c4ed0ed9c52d2 0 cid=5158a14822f28702 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:67 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol dc541d00847aff4a 0 cid=128a9dc1b3f08bf2 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:203 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol ddbaca610a1f091c 0 cid=ecd165521dadd68a now=0 was=0 p=src/metrics/complexity.rs:324 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol e0ab848c5d67d7ae 0 cid=510934f45e78e30e now=0 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
+ack duplication 1336857542d3befe 641 now=641 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
+ack duplication 4568e39b8b97b662 146 now=146 was=0 p=src/metrics/readability.rs:238 feat(metrics): compute complexity, readability, and hotspots
+ack duplication a2302432e09510c7 85 now=85 was=0 p=src/metrics/complexity.rs:19 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 facet=ambient p=src/domain.rs:214 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 03e609981e51a079 3 cid=59ef31961699410f now=3 was=0 facet=ambient p=src/cli.rs:17 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 440c0e361021d0eb 6 cid=4b3c01ada5c9158b now=6 was=0 facet=self p=src/ingest.rs:339 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 4a1230f1cfd095df 6 cid=1ffe7220eae6384a now=6 was=0 facet=self p=src/ingest.rs:430 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 58c99c7de18a09a6 6 cid=f8d4e96dce00fb27 now=6 was=0 facet=ambient p=src/ingest.rs:478 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 5d3030ce205bd4d9 3 cid=eafea787cdacabbe now=3 was=0 facet=self p=src/cli.rs:431 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 6592ae6ffe2a9edc 2 now=2 was=0 facet=self p=tests/test_ingest_tier1_fixtures.rs:6 migrate to in-memory fixtures for zero-IO testing
+ack short-horizon-churn 6dcec957b21602d3 9 cid=97aeeecf8b5df765 now=9 was=0 facet=ambient p=src/domain.rs:237 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 72c710eba4e4924e 6 cid=185fb3b98c809dc5 now=6 was=0 facet=ambient p=src/ingest.rs:117 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 76568d93a351a68d 6 cid=7dcd61687d79d92a now=6 was=0 facet=self p=src/ingest.rs:547 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 93c77c6f3702d249 6 cid=381f5e2d83524a67 now=6 was=0 facet=self p=src/main.rs:1 delegate main to rwire::run_cli | prior: stream XML output to stdout
+ack short-horizon-churn a29bdbd875b3bb62 6 cid=b84620de9d471718 now=6 was=0 facet=self p=src/ingest.rs:383 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn b88b1ea9b3cfaea8 6 cid=45bade1cbbda7009 now=6 was=0 facet=self p=src/ingest.rs:543 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn dbf9873eb051deef 2 now=2 was=0 facet=self p=tests/test_cli_and_mcp.rs:136 migrate to in-memory fixtures for zero-IO testing
+ack verbosity 795c5808ab0ca979 90 cid=3f603d0498ec0654 now=90 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
+ack verbosity 89cc6ea26e2c5dda 67 cid=9c3a3d5e89523184 now=67 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
+ack verbosity e0ab848c5d67d7ae 72 cid=510934f45e78e30e now=72 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots

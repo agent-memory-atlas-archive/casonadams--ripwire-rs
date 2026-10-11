@@ -228,6 +228,9 @@ pub struct Symbol {
     pub loc: u32,
     pub max_nest: u16,
     pub params: u16,
+    pub humps: u16,
+    pub deep: u16,
+    pub ev: u16,
 }
 
 impl Symbol {
@@ -257,6 +260,9 @@ impl Symbol {
             loc: 1,
             max_nest: 0,
             params: 0,
+            humps: 0,
+            deep: 0,
+            ev: 1,
         }
     }
 
