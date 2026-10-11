@@ -207,32 +207,31 @@ pub fn check_pair_dependency_capability(
     ingest: Option<&IngestResult>,
     interner: Option<&Interner>,
 ) -> bool {
-    let (lang_a, lang_b) = match (ingest, interner) {
-        (Some(ing), Some(itr)) => {
-            let mut la = Lang::Unknown;
-            let mut lb = Lang::Unknown;
-            for f in &ing.files {
-                let p = itr.resolve(&f.path);
-                if p == path_a {
-                    la = f.lang;
-                } else if p == path_b {
-                    lb = f.lang;
-                }
+    let ext_a = Path::new(path_a)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let ext_b = Path::new(path_b)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let mut lang_a = Lang::from_extension(ext_a);
+    let mut lang_b = Lang::from_extension(ext_b);
+
+    if (lang_a == Lang::Unknown || lang_b == Lang::Unknown)
+        && let (Some(ing), Some(itr)) = (ingest, interner)
+    {
+        for f in &ing.files {
+            let p = itr.resolve(&f.path);
+            if lang_a == Lang::Unknown && p == path_a {
+                lang_a = f.lang;
             }
-            (la, lb)
+            if lang_b == Lang::Unknown && p == path_b {
+                lang_b = f.lang;
+            }
         }
-        _ => {
-            let ext_a = Path::new(path_a)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
-            let ext_b = Path::new(path_b)
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
-            (Lang::from_extension(ext_a), Lang::from_extension(ext_b))
-        }
-    };
+    }
+
     lang_a.is_pair_dependency_capable(lang_b)
 }
 

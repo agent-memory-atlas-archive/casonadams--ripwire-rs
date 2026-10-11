@@ -111,6 +111,26 @@ fn check_group_idiom(members: &[&BodyTokens]) -> CloneIdiom {
     first
 }
 
+fn get_or_load_file_bytes<'a>(
+    file_id: usize,
+    ingest: &IngestResult,
+    interner: &Interner,
+    sources: Option<&HashMap<String, Vec<u8>>>,
+    file_cache: &'a mut [Option<Vec<u8>>],
+) -> Option<&'a [u8]> {
+    if file_cache[file_id].is_none() {
+        let file_info = ingest.files.get(file_id)?;
+        let file_path = interner.resolve(&file_info.path);
+        let bytes = if let Some(map) = sources {
+            map.get(file_path).cloned()
+        } else {
+            std::fs::read(file_path).ok()
+        };
+        file_cache[file_id] = bytes;
+    }
+    file_cache[file_id].as_deref()
+}
+
 fn extract_candidate_bodies(
     ingest: &IngestResult,
     interner: &Interner,
@@ -118,6 +138,7 @@ fn extract_candidate_bodies(
     sources: Option<&HashMap<String, Vec<u8>>>,
 ) -> Vec<BodyTokens> {
     let mut candidates = Vec::new();
+    let mut file_cache: Vec<Option<Vec<u8>>> = vec![None; ingest.files.len()];
 
     for sym in &ingest.symbols {
         if (sym.kind != SymKind::Function && sym.kind != SymKind::Method)
@@ -126,18 +147,14 @@ fn extract_candidate_bodies(
             continue;
         }
 
-        let Some(file_info) = ingest.files.get(sym.file_id as usize) else {
+        let fid = sym.file_id as usize;
+        if fid >= file_cache.len() {
             continue;
-        };
-        let file_path = interner.resolve(&file_info.path);
+        }
 
-        let bytes = if let Some(map) = sources {
-            map.get(file_path).cloned()
-        } else {
-            std::fs::read(file_path).ok()
-        };
-
-        let Some(file_bytes) = bytes else {
+        let Some(file_bytes) =
+            get_or_load_file_bytes(fid, ingest, interner, sources, &mut file_cache)
+        else {
             continue;
         };
 
