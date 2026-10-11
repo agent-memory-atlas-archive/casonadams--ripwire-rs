@@ -81,7 +81,7 @@ pub fn handle_initialize(id: &Value) -> Value {
         "result": {
             "protocolVersion": "2024-11-05",
             "serverInfo": {
-                "name": "rwire",
+                "name": "ripwire",
                 "version": "0.1.0"
             },
             "capabilities": {
@@ -780,7 +780,7 @@ mod tests {
     fn test_mcp_initialize_and_tools_list() {
         let id = json!(1);
         let init_resp = handle_initialize(&id);
-        assert_eq!(init_resp["result"]["serverInfo"]["name"], "rwire");
+        assert_eq!(init_resp["result"]["serverInfo"]["name"], "ripwire");
 
         let list_resp = handle_tools_list(&id);
         let tools = list_resp["result"]["tools"].as_array().unwrap();

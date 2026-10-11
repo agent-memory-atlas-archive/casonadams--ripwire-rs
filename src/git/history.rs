@@ -421,7 +421,7 @@ mod tests {
 
     #[test]
     fn test_walk_repository_history_nonexistent() {
-        let res = walk_repository_history(Path::new("/nonexistent_rwire_path_test"));
+        let res = walk_repository_history(Path::new("/nonexistent_ripwire_path_test"));
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(format!("{err}").contains("failed to open repository"));

@@ -43,7 +43,7 @@ fn test_mcp_json_rpc_suite() {
     let init_resp = dispatch_json_rpc(init_req, &mut state, ".").expect("must reply to initialize");
     let init_val: Value = serde_json::from_str(&init_resp).unwrap();
     assert_eq!(init_val["id"], 1);
-    assert_eq!(init_val["result"]["serverInfo"]["name"], "rwire");
+    assert_eq!(init_val["result"]["serverInfo"]["name"], "ripwire");
     assert_eq!(init_val["result"]["protocolVersion"], "2024-11-05");
 
     // ── 2. NOTIFICATION: notifications/initialized (no reply) ────────────────
@@ -324,5 +324,70 @@ fn test_top_nav_queries() {
     );
     assert!(err.is_err());
     let err_msg = err.unwrap_err().to_string();
-    assert!(err_msg.contains("rwire: --callers symbol not found: missing_sym_404"));
+    assert!(err_msg.contains("ripwire: --callers symbol not found: missing_sym_404"));
+}
+
+#[test]
+fn test_top_retrieval_and_workspace_queries() {
+    use ripwire::cli::{
+        TopWorkspaceArgs, execute_connect_query, execute_path_query, execute_workspace_doc_query,
+    };
+
+    let fixtures: &[(&str, Lang, &[u8])] = &[(
+        "lib.rs",
+        Lang::Rust,
+        b"pub fn run_cli() { helper(); } fn helper() {}",
+    )];
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
+    let graph = Graph::build(&ingest, &interner);
+
+    let mut out = Vec::new();
+    assert!(execute_connect_query("run_cli,helper", &ingest, &graph, &interner, &mut out).is_ok());
+    assert!(execute_connect_query("missing_one", &ingest, &graph, &interner, &mut out).is_err());
+
+    let mut path_out = Vec::new();
+    assert!(
+        execute_path_query("run_cli,helper", &ingest, &graph, &interner, &mut path_out).is_ok()
+    );
+    assert!(
+        execute_path_query("missing,helper", &ingest, &graph, &interner, &mut path_out).is_err()
+    );
+    assert!(
+        execute_path_query("run_cli,missing", &ingest, &graph, &interner, &mut path_out).is_err()
+    );
+
+    let mut ws_out = Vec::new();
+    let ws_whereis = TopWorkspaceArgs {
+        whereis: Some("run_cli".into()),
+        ..Default::default()
+    };
+    assert!(execute_workspace_doc_query(&ws_whereis, &ingest, &interner, &mut ws_out).is_ok());
+
+    let ws_drift = TopWorkspaceArgs {
+        doc_drift: true,
+        ..Default::default()
+    };
+    assert!(execute_workspace_doc_query(&ws_drift, &ingest, &interner, &mut ws_out).is_ok());
+
+    let ws_flags = TopWorkspaceArgs {
+        flags: true,
+        ..Default::default()
+    };
+    assert!(execute_workspace_doc_query(&ws_flags, &ingest, &interner, &mut ws_out).is_ok());
+
+    let ws_mentions = TopWorkspaceArgs {
+        mentions: Some("run_cli".into()),
+        ..Default::default()
+    };
+    assert!(execute_workspace_doc_query(&ws_mentions, &ingest, &interner, &mut ws_out).is_ok());
+
+    let ws_mentions_missing = TopWorkspaceArgs {
+        mentions: Some("missing_404".into()),
+        ..Default::default()
+    };
+    assert!(
+        execute_workspace_doc_query(&ws_mentions_missing, &ingest, &interner, &mut ws_out).is_err()
+    );
 }

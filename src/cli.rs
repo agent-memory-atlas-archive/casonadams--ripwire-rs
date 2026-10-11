@@ -677,7 +677,7 @@ pub fn execute_quality_baseline_with<W: io::Write>(
     crate::gate::baseline::write_baseline_file(&snap, &baseline_path)?;
     writeln!(
         out,
-        "rwire: pinned quality baseline stamped at {head_sha} -> {}",
+        "ripwire: pinned quality baseline stamped at {head_sha} -> {}",
         baseline_path.display()
     )
 }
@@ -793,7 +793,7 @@ pub fn execute_nav_symbol_query<W: io::Write>(
             NavMode::FindSymbol => "--find-symbol",
         };
         return Err(io::Error::other(format!(
-            "rwire: {flag} symbol not found: {sym}"
+            "ripwire: {flag} symbol not found: {sym}"
         )));
     };
     match mode {
@@ -841,6 +841,80 @@ fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     })())
 }
 
+pub fn execute_connect_query<W: io::Write>(
+    syms: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let sym_list: Vec<String> = syms
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    for s in &sym_list {
+        if crate::navigate::find_symbols_by_name(s, ingest, interner).is_empty() {
+            return Err(io::Error::other(format!(
+                "ripwire: --connect symbol not found: {s}"
+            )));
+        }
+    }
+    let val = crate::mcp::graph_tools::call_connect(ingest, graph, interner, &sym_list);
+    crate::serialize::serialize_connect_xml(&val, out)
+}
+
+pub fn execute_path_query<W: io::Write>(
+    pair: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let parts: Vec<&str> = pair.split([',', ':']).collect();
+    let from = parts.first().copied().unwrap_or("");
+    let to = parts.get(1).copied().unwrap_or("");
+    if crate::navigate::find_symbols_by_name(from, ingest, interner).is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire: --path endpoint not found: {from}"
+        )));
+    }
+    if crate::navigate::find_symbols_by_name(to, ingest, interner).is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire: --path endpoint not found: {to}"
+        )));
+    }
+    let val = crate::mcp::graph_tools::call_path_between(ingest, graph, interner, from, to);
+    crate::serialize::serialize_path_between_xml(&val, out)
+}
+
+pub fn execute_workspace_doc_query<W: io::Write>(
+    ws: &TopWorkspaceArgs,
+    ingest: &crate::domain::IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    if let Some(sym) = ws.whereis.as_deref() {
+        let val = crate::mcp::doc_tools::call_whereis(ingest, interner, sym);
+        crate::serialize::serialize_whereis_xml(&val, out)?;
+    } else if ws.doc_drift {
+        let val = crate::mcp::doc_tools::call_doc_drift(ingest, interner);
+        crate::serialize::serialize_doc_drift_xml(&val, out)?;
+    } else if ws.flags {
+        let val = crate::mcp::doc_tools::call_flags(ingest, interner);
+        crate::serialize::serialize_flags_xml(&val, out)?;
+    } else if let Some(sym) = ws.mentions.as_deref() {
+        if crate::navigate::find_symbols_by_name(sym, ingest, interner).is_empty() {
+            return Err(io::Error::other(format!(
+                "ripwire: --mentions symbol not found: {sym}"
+            )));
+        }
+        let val = crate::mcp::doc_tools::call_mentions(ingest, interner, sym);
+        crate::serialize::serialize_mentions_xml(&val, out)?;
+    }
+    Ok(())
+}
+
 fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let ret = &cli.retrieval;
     if ret.task_for.is_none()
@@ -861,20 +935,9 @@ fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             let val = crate::mcp::retrieval::call_grep(&ingest, &interner, pat, None);
             crate::serialize::serialize_grep_xml(&val, &mut stdout)?;
         } else if let Some(syms) = ret.connect.as_deref() {
-            let sym_list: Vec<String> = syms
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-                .collect();
-            let val = crate::mcp::graph_tools::call_connect(&ingest, &graph, &interner, &sym_list);
-            crate::serialize::serialize_connect_xml(&val, &mut stdout)?;
+            execute_connect_query(syms, &ingest, &graph, &interner, &mut stdout)?;
         } else if let Some(pair) = ret.path_between.as_deref() {
-            let parts: Vec<&str> = pair.split([',', ':']).collect();
-            let from = parts.first().copied().unwrap_or("");
-            let to = parts.get(1).copied().unwrap_or("");
-            let val =
-                crate::mcp::graph_tools::call_path_between(&ingest, &graph, &interner, from, to);
-            crate::serialize::serialize_path_between_xml(&val, &mut stdout)?;
+            execute_path_query(pair, &ingest, &graph, &interner, &mut stdout)?;
         }
         Ok(())
     })())
@@ -905,19 +968,7 @@ fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             crate::serialize::serialize_stray_content_xml(&val, &mut stdout)?;
         } else {
             let (ingest, _graph, _pr, interner) = load_repo_analysis(root)?;
-            if let Some(sym) = ws.whereis.as_deref() {
-                let val = crate::mcp::doc_tools::call_whereis(&ingest, &interner, sym);
-                crate::serialize::serialize_whereis_xml(&val, &mut stdout)?;
-            } else if ws.doc_drift {
-                let val = crate::mcp::doc_tools::call_doc_drift(&ingest, &interner);
-                crate::serialize::serialize_doc_drift_xml(&val, &mut stdout)?;
-            } else if ws.flags {
-                let val = crate::mcp::doc_tools::call_flags(&ingest, &interner);
-                crate::serialize::serialize_flags_xml(&val, &mut stdout)?;
-            } else if let Some(sym) = ws.mentions.as_deref() {
-                let val = crate::mcp::doc_tools::call_mentions(&ingest, &interner, sym);
-                crate::serialize::serialize_mentions_xml(&val, &mut stdout)?;
-            }
+            execute_workspace_doc_query(ws, &ingest, &interner, &mut stdout)?;
         }
         Ok(())
     })())
@@ -965,7 +1016,7 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     }
 
     if let Some(html_opt) = cli.html {
-        let out_file = html_opt.unwrap_or_else(|| "rwire.html".to_string());
+        let out_file = html_opt.unwrap_or_else(|| "ripwire.html".to_string());
         return execute_html_export(root, &out_file, &cli.color_by);
     }
 
@@ -1021,7 +1072,7 @@ fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
             if let Some(res) = dispatch_gate_command(root, sub_gate) {
                 return res;
             }
-            println!("rwire gate: pre-commit verification gates (Wave 2 feature)");
+            println!("ripwire gate: pre-commit verification gates (Wave 2 feature)");
             Ok(())
         }
         Commands::Metrics(metrics_args) => {
@@ -1034,11 +1085,11 @@ fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
             ) {
                 return res;
             }
-            println!("rwire metrics: code complexity and health metrics (Wave 2 feature)");
+            println!("ripwire metrics: code complexity and health metrics (Wave 2 feature)");
             Ok(())
         }
         Commands::Slice(_) => {
-            println!("rwire slice: ARISE variable dataflow slicing (Wave 3 feature)");
+            println!("ripwire slice: ARISE variable dataflow slicing (Wave 3 feature)");
             Ok(())
         }
     }
@@ -1051,7 +1102,7 @@ fn execute_html_export(root: &str, out_file: &str, color_by_str: &str) -> io::Re
     crate::serialize::html::write_call_graph_html(
         &mut file, &ingest, &graph, &pr.ranks, &interner, color_by, None,
     )?;
-    println!("rwire: wrote interactive HTML call graph to {out_file}");
+    println!("ripwire: wrote interactive HTML call graph to {out_file}");
     Ok(())
 }
 

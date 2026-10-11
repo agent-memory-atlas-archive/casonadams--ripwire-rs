@@ -202,7 +202,7 @@ pub struct FileParseResult {
 
 enum Capture {
     Name,
-    Def(SymKind),
+    Def(SymKind, Option<&'static str>),
     Ref(RefRole),
 }
 
@@ -211,18 +211,21 @@ fn classify_capture(name: &str) -> Option<Capture> {
         return Some(Capture::Name);
     }
     if let Some(tail) = name.strip_prefix("definition.") {
-        return Some(Capture::Def(match tail {
-            "function" | "cjsexport" => SymKind::Function,
-            "method" | "protomethod" => SymKind::Method,
-            "class" | "object" => SymKind::Class,
-            "struct" => SymKind::Struct,
-            "interface" => SymKind::Interface,
-            "var" | "constant" | "attribute" | "property" => SymKind::Var,
-            "macro" => SymKind::Macro,
-            "module" | "section" | "yamlkey" => SymKind::Section,
-            "field" => SymKind::Field,
-            _ => SymKind::Other,
-        }));
+        let (kind, sub) = match tail {
+            "function" => (SymKind::Function, None),
+            "cjsexport" => (SymKind::Function, Some("cjsexport")),
+            "method" => (SymKind::Method, None),
+            "protomethod" => (SymKind::Method, Some("protomethod")),
+            "class" | "object" => (SymKind::Class, None),
+            "struct" => (SymKind::Struct, None),
+            "interface" => (SymKind::Interface, None),
+            "var" | "constant" | "attribute" | "property" => (SymKind::Var, None),
+            "macro" => (SymKind::Macro, None),
+            "module" | "section" | "yamlkey" => (SymKind::Section, None),
+            "field" => (SymKind::Field, None),
+            _ => (SymKind::Other, None),
+        };
+        return Some(Capture::Def(kind, sub));
     }
     name.strip_prefix("reference.").map(|tail| {
         Capture::Ref(match tail {
@@ -441,7 +444,7 @@ fn elixir_param_count(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> u
 struct MatchExtract<'a> {
     name: Option<String>,
     name_node: Option<tree_sitter::Node<'a>>,
-    def: Option<(SymKind, usize, usize, u32)>,
+    def: Option<(SymKind, Option<&'static str>, usize, usize, u32)>,
     def_node: Option<tree_sitter::Node<'a>>,
     r#ref: Option<(RefRole, usize, u32)>,
 }
@@ -468,9 +471,9 @@ fn extract_match_captures<'a>(
                     ext.name_node = Some(node);
                 }
             }
-            Some(Capture::Def(k)) => {
+            Some(Capture::Def(k, sub)) => {
                 let line = node.start_position().row as u32 + 1;
-                ext.def = Some((k, node.start_byte(), node.end_byte(), line));
+                ext.def = Some((k, sub, node.start_byte(), node.end_byte(), line));
                 ext.def_node = Some(node);
             }
             Some(Capture::Ref(r)) => {
@@ -483,16 +486,70 @@ fn extract_match_captures<'a>(
     ext
 }
 
+fn is_cjs_export_target(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
+    let Some(member) = name_node.parent() else {
+        return false;
+    };
+    let Some(obj) = member.child_by_field_name("object") else {
+        return false;
+    };
+    if obj.kind() == "identifier" {
+        return obj.utf8_text(source_bytes) == Ok("exports");
+    }
+    if obj.kind() == "member_expression" {
+        let Some(oo) = obj.child_by_field_name("object") else {
+            return false;
+        };
+        let Some(prop) = obj.child_by_field_name("property") else {
+            return false;
+        };
+        return oo.kind() == "identifier"
+            && oo.utf8_text(source_bytes) == Ok("module")
+            && prop.utf8_text(source_bytes) == Ok("exports");
+    }
+    false
+}
+
+fn is_prototype_member_target(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
+    let Some(member) = name_node.parent() else {
+        return false;
+    };
+    let Some(obj) = member.child_by_field_name("object") else {
+        return false;
+    };
+    if obj.kind() != "member_expression" {
+        return false;
+    }
+    let Some(prop) = obj.child_by_field_name("property") else {
+        return false;
+    };
+    prop.utf8_text(source_bytes) == Ok("prototype")
+}
+
+fn is_gated_def_allowed(
+    sub: Option<&str>,
+    node: Option<tree_sitter::Node<'_>>,
+    src: &[u8],
+) -> bool {
+    match sub {
+        Some("cjsexport") => node.is_some_and(|nn| is_cjs_export_target(nn, src)),
+        Some("protomethod") => node.is_some_and(|nn| is_prototype_member_target(nn, src)),
+        _ => true,
+    }
+}
+
 fn record_def_item(
     ext: &MatchExtract<'_>,
     source_bytes: &[u8],
     lang: Lang,
     defs: &mut Vec<RawDef>,
 ) {
-    let (Some(orig_name), Some((kind, start, mut end, line))) = (&ext.name, ext.def) else {
+    let (Some(orig_name), Some((kind, sub, start, mut end, line))) = (&ext.name, ext.def) else {
         return;
     };
-
+    if !is_gated_def_allowed(sub, ext.name_node, source_bytes) {
+        return;
+    }
     let scope = ext
         .name_node
         .and_then(|n| find_enclosing_scope(n, source_bytes));
@@ -1047,14 +1104,14 @@ mod tests {
             (
                 "package.json",
                 Lang::Json,
-                "{\n  \"name\": \"rwire\",\n  \"scripts\": { \"test\": \"cargo test\" }\n}",
+                "{\n  \"name\": \"ripwire\",\n  \"scripts\": { \"test\": \"cargo test\" }\n}",
                 2,
                 0,
             ),
             (
                 "Cargo.toml",
                 Lang::Toml,
-                "[package]\nname = \"rwire\"\nversion = \"0.1.0\"",
+                "[package]\nname = \"ripwire\"\nversion = \"0.1.0\"",
                 2,
                 0,
             ),

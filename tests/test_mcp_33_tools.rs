@@ -92,5 +92,5 @@ fn test_all_33_mcp_tools_invocable() {
             resp
         );
     }
-    let _ = std::fs::remove_file(".rwire_quality_baseline");
+    let _ = std::fs::remove_file(".ripwire_quality_baseline");
 }

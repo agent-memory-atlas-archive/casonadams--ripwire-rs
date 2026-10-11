@@ -248,7 +248,7 @@ pub fn generate_call_graph_html(
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>rwire Call Graph</title>
+<title>ripwire Call Graph</title>
 <style>
   body {{ margin: 0; background: #121212; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; overflow: hidden; }}
   header {{ display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #1e1e1e; border-bottom: 1px solid #333; }}
@@ -261,7 +261,7 @@ pub fn generate_call_graph_html(
 </head>
 <body>
 <header>
-  <strong>rwire</strong>
+  <strong>ripwire</strong>
   <label>Color by:
     <select id="colorMode">
       <option value="lang">Language</option>

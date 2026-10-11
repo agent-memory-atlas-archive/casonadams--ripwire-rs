@@ -269,7 +269,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
         }),
         json!({
             "name": "quality_baseline",
-            "description": "PIN the quality floor: writes .rwire_quality_baseline stamped with git HEAD sha",
+            "description": "PIN the quality floor: writes .ripwire_quality_baseline stamped with git HEAD sha",
             "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({

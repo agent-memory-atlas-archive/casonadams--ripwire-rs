@@ -1,8 +1,8 @@
-# rwire
+# ripwire
 
 High-throughput agent context router and deterministic static analysis engine.
 
-`rwire` analyzes source code across 24 languages to construct precise call
+`ripwire` analyzes source code across 24 languages to construct precise call
 graphs, calculate symbol impact via PageRank and HITS, mine co-change patterns, slice
 intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a
 standalone CLI (`rw`) or as a Model Context Protocol (MCP) server over stdio for

@@ -173,7 +173,7 @@ pub fn execute_slice_command(
     flow_str: &str,
 ) -> std::io::Result<()> {
     let Some(target) = target else {
-        eprintln!("rwire: target required (e.g. rwire slice sym:var)");
+        eprintln!("ripwire: target required (e.g. ripwire slice sym:var)");
         return Ok(());
     };
 
@@ -193,7 +193,7 @@ pub fn execute_slice_command(
             Ok(())
         }
         Err(e) => {
-            eprintln!("rwire: {e}");
+            eprintln!("ripwire: {e}");
             Ok(())
         }
     }
