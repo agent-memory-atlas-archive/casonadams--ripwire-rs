@@ -64,6 +64,8 @@ fn test_mcp_json_rpc_suite() {
     assert!(tool_names.contains(&"callers"));
     assert!(tool_names.contains(&"callees"));
     assert!(tool_names.contains(&"cochange"));
+    assert!(tool_names.contains(&"edit_check"));
+    assert!(tool_names.contains(&"affected"));
 
     // ── 4. TOOLS/CALL: explore ───────────────────────────────────────────────
     let explore_call = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"explore","arguments":{"top_k":5}}}"#;

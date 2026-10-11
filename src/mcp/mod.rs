@@ -172,6 +172,28 @@ pub fn handle_tools_list(id: &Value) -> Value {
                         },
                         "required": ["path"]
                     }
+                },
+                {
+                    "name": "edit_check",
+                    "description": "After an edit: did SYM's contract change, and which callers no longer fit?",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "symbol": { "type": "string", "description": "Symbol name to verify" }
+                        },
+                        "required": ["symbol"]
+                    }
+                },
+                {
+                    "name": "affected",
+                    "description": "WHICH TESTS TO RUN for a change — test files that transitively reach the changed files/symbols",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "files": { "type": "string", "description": "Changed files or symbols, comma-separated" }
+                        },
+                        "required": ["files"]
+                    }
                 }
             ]
         }
@@ -333,6 +355,88 @@ fn call_cochange(state: &McpState, args: &Value) -> Result<Value, String> {
     }))
 }
 
+fn call_edit_check(state: &McpState, args: &Value) -> Result<Value, String> {
+    let sym_name = args["symbol"]
+        .as_str()
+        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
+
+    let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
+    let Some(&sym_id) = ids.first() else {
+        return Ok(json!({
+            "found": false,
+            "message": format!("symbol '{}' not found", sym_name)
+        }));
+    };
+
+    let sym = &state.ingest.symbols[sym_id as usize];
+    let rel_path = state
+        .interner
+        .resolve(&state.ingest.files[sym.file_id as usize].path);
+    let head_contract = crate::gate::contract::load_head_symbol_contract(
+        Path::new(&state.root),
+        rel_path,
+        sym_name,
+        sym.lang,
+    )
+    .ok()
+    .flatten();
+
+    let report = crate::gate::edit_check::check_symbol_contract(
+        sym_id,
+        head_contract.as_ref(),
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+    );
+
+    let Some(rep) = report else {
+        return Ok(json!({ "found": false }));
+    };
+
+    Ok(json!({
+        "symbol": rep.symbol_name,
+        "file": rep.file_path,
+        "status": rep.status.as_str(),
+        "total_callers": rep.total_callers,
+        "incompatible_callers": rep.incompatible_callers,
+        "callers": rep.callers.into_iter().map(|c| {
+            json!({
+                "caller": c.caller_name,
+                "file": c.file_path,
+                "line": c.line,
+                "incompatible": c.is_incompatible,
+                "sites": c.sites.into_iter().map(|s| {
+                    json!({ "line": s.line, "args": s.arg_count, "required": s.required_params })
+                }).collect::<Vec<_>>()
+            })
+        }).collect::<Vec<_>>()
+    }))
+}
+
+fn call_affected(state: &McpState, args: &Value) -> Result<Value, String> {
+    let files_spec = args["files"]
+        .as_str()
+        .ok_or_else(|| "missing 'files' parameter".to_string())?;
+    let specs: Vec<&str> = files_spec.split(',').map(|s| s.trim()).collect();
+    let rep = crate::gate::affected::find_affected_tests(
+        &specs,
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+    );
+
+    Ok(json!({
+        "changed": rep.changed_spec,
+        "seed_count": rep.seed_count,
+        "seed_test_files": rep.seed_test_files,
+        "total_tests": rep.total_tests,
+        "reached_symbols": rep.reached_symbols,
+        "tests": rep.tests.into_iter().map(|t| {
+            json!({ "path": t.path, "hops": t.hops, "direct": t.is_direct_change })
+        }).collect::<Vec<_>>()
+    }))
+}
+
 /// Handle `tools/call` method.
 #[must_use]
 pub fn handle_tools_call(
@@ -371,6 +475,8 @@ pub fn handle_tools_call(
         "impact" => call_impact(current_state, args),
         "explore" => call_explore(current_state, args),
         "cochange" => call_cochange(current_state, args),
+        "edit_check" => call_edit_check(current_state, args),
+        "affected" => call_affected(current_state, args),
         _ => Err(format!("unknown tool: {}", tool_name)),
     };
     match result {

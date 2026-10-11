@@ -121,6 +121,7 @@ struct RawDef {
     line: u32,
     start_byte: usize,
     end_byte: usize,
+    params: u16,
     metrics: crate::metrics::ComplexityMetrics,
 }
 
@@ -132,6 +133,8 @@ struct RawRef {
     line: u32,
     start_byte: usize,
     role: RefRole,
+    arg_count: u16,
+    arg_count_known: bool,
 }
 
 /// Parsed facts from a single file.
@@ -249,6 +252,45 @@ fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) ->
     None
 }
 
+fn count_arguments_in_list(child: tree_sitter::Node<'_>) -> u16 {
+    let mut count = 0u16;
+    for j in 0..child.named_child_count() {
+        if let Some(arg) = child.named_child(j) {
+            if !arg.kind().contains("comment") {
+                count = count.saturating_add(1);
+            }
+        }
+    }
+    count
+}
+
+fn find_arguments_child(parent: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    for i in 0..parent.child_count() {
+        if let Some(child) = parent.child(i) {
+            let ckind = child.kind();
+            if ckind.contains("argument") || ckind == "args" {
+                return Some(child);
+            }
+        }
+    }
+    None
+}
+
+fn count_call_arguments(name_node: tree_sitter::Node<'_>) -> (u16, bool) {
+    let mut curr = name_node.parent();
+    while let Some(parent) = curr {
+        let kind = parent.kind();
+        if kind.contains("call") || kind == "invocation" || kind == "method_invocation" {
+            if let Some(args_node) = find_arguments_child(parent) {
+                return (count_arguments_in_list(args_node), true);
+            }
+            break;
+        }
+        curr = parent.parent();
+    }
+    (0, false)
+}
+
 struct MatchExtract<'a> {
     name: Option<String>,
     name_node: Option<tree_sitter::Node<'a>>,
@@ -312,6 +354,10 @@ fn record_extracted_item(
         } else {
             crate::metrics::ComplexityMetrics::default()
         };
+        let params = ext
+            .def_node
+            .map(crate::gate::contract::extract_param_count)
+            .unwrap_or(0);
         defs.push(RawDef {
             name: name.clone(),
             scope,
@@ -319,18 +365,25 @@ fn record_extracted_item(
             line,
             start_byte: start,
             end_byte: end,
+            params,
             metrics,
         });
     } else if let (Some(name), Some((role, start, line))) = (ext.name, ext.r#ref) {
         let qualifier = ext
             .name_node
             .and_then(|n| find_call_qualifier(n, source_bytes));
+        let (arg_count, arg_count_known) = ext
+            .name_node
+            .map(count_call_arguments)
+            .unwrap_or((0, false));
         refs.push(RawRef {
             callee_name: name,
             qualifier,
             line,
             start_byte: start,
             role,
+            arg_count,
+            arg_count_known,
         });
     }
 }
@@ -500,6 +553,7 @@ fn build_file_symbols(
         sym.cx = def.metrics.cx;
         sym.ccx = def.metrics.ccx;
         sym.max_nest = def.metrics.max_nest;
+        sym.params = def.params;
         sym.humps = def.metrics.humps;
         sym.deep = def.metrics.deep;
         sym.ev = def.metrics.ev;
@@ -534,6 +588,8 @@ fn build_file_references(
                 reference.qualifier = Some(interner.intern(q));
             }
             reference.start_byte = r.start_byte as u32;
+            reference.arg_count = r.arg_count;
+            reference.arg_count_known = r.arg_count_known;
             reference
         })
         .collect()

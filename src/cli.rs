@@ -30,6 +30,14 @@ pub struct Cli {
     #[arg(long)]
     pub hotspots: bool,
 
+    /// Verify 1-hop caller compatibility against git HEAD
+    #[arg(long)]
+    pub edit_check: Option<String>,
+
+    /// Show test files affected by changes
+    #[arg(long)]
+    pub affected: Option<String>,
+
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -427,6 +435,81 @@ pub fn execute_hotspots_with<W: io::Write>(
     report.write_xml(out)
 }
 
+pub fn execute_edit_check_with<W: io::Write>(
+    sym_name: &str,
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
+    let ids = crate::navigate::find_symbols_by_name(sym_name, &state.ingest, &state.interner);
+    let Some(&sym_id) = ids.first() else {
+        writeln!(out, "Symbol '{}' not found", sym_name)?;
+        return Ok(());
+    };
+
+    let sym = &state.ingest.symbols[sym_id as usize];
+    let rel_path = state
+        .interner
+        .resolve(&state.ingest.files[sym.file_id as usize].path);
+    let head_contract = crate::gate::contract::load_head_symbol_contract(
+        std::path::Path::new(&state.root),
+        rel_path,
+        sym_name,
+        sym.lang,
+    )
+    .ok()
+    .flatten();
+
+    if let Some(report) = crate::gate::edit_check::check_symbol_contract(
+        sym_id,
+        head_contract.as_ref(),
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+    ) {
+        report.write_xml(out)?;
+    }
+    Ok(())
+}
+
+pub fn execute_affected_with<W: io::Write>(
+    specs_str: &str,
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
+    let specs: Vec<&str> = specs_str.split(',').map(|s| s.trim()).collect();
+    let report = crate::gate::affected::find_affected_tests(
+        &specs,
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+    );
+    report.write_xml(out)
+}
+
+fn dispatch_gate_command(
+    root: &str,
+    edit_check: Option<&str>,
+    affected: Option<&str>,
+) -> Option<io::Result<()>> {
+    if let Some(sym) = edit_check {
+        let state = match crate::mcp::McpState::load(root) {
+            Some(s) => s,
+            None => return Some(Err(io::Error::other("failed to load repository"))),
+        };
+        let mut stdout = io::stdout().lock();
+        return Some(execute_edit_check_with(sym, &state, &mut stdout));
+    }
+    if let Some(spec) = affected {
+        let state = match crate::mcp::McpState::load(root) {
+            Some(s) => s,
+            None => return Some(Err(io::Error::other("failed to load repository"))),
+        };
+        let mut stdout = io::stdout().lock();
+        return Some(execute_affected_with(spec, &state, &mut stdout));
+    }
+    None
+}
+
 /// Execute CLI from parsed options.
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     let root = cli.path.as_deref().unwrap_or(".");
@@ -436,6 +519,11 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
         cli.hotspots,
         cli.since.as_deref(),
     ) {
+        return res;
+    }
+    if let Some(res) =
+        dispatch_gate_command(root, cli.edit_check.as_deref(), cli.affected.as_deref())
+    {
         return res;
     }
 
@@ -449,7 +537,15 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
             let root = orient_args.path.as_deref().unwrap_or(".");
             execute_stream_xml(root)
         }
-        Some(Commands::Gate(_)) => {
+        Some(Commands::Gate(gate_args)) => {
+            let root = gate_args.path.as_deref().unwrap_or(".");
+            if let Some(res) = dispatch_gate_command(
+                root,
+                gate_args.edit_check.as_deref(),
+                gate_args.affected.as_deref(),
+            ) {
+                return res;
+            }
             println!("rwire gate: pre-commit verification gates (Wave 2 feature)");
             Ok(())
         }

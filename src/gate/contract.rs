@@ -1,0 +1,290 @@
+use crate::domain::Lang;
+use crate::ingest::LanguageRegistry;
+use std::path::Path;
+use streaming_iterator::StreamingIterator;
+
+/// Function signature contract defining parameter count and public visibility.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignatureContract {
+    pub name: String,
+    pub params: u16,
+    pub is_public: bool,
+}
+
+/// Comparison result between current AST signature and baseline (git HEAD).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContractStatus {
+    Unchanged,
+    ContractChange {
+        param_changed: bool,
+        public_changed: bool,
+        was_params: u16,
+        now_params: u16,
+        was_public: bool,
+        now_public: bool,
+    },
+    NewSymbol,
+    NoBaseline,
+}
+
+impl ContractStatus {
+    #[must_use]
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Unchanged => "unchanged",
+            Self::ContractChange { .. } => "contract-change",
+            Self::NewSymbol => "new-symbol",
+            Self::NoBaseline => "no-baseline",
+        }
+    }
+}
+
+/// Compare working tree signature contract against a baseline.
+#[must_use]
+pub fn compare_contracts(
+    now: &SignatureContract,
+    was: Option<&SignatureContract>,
+) -> ContractStatus {
+    let Some(baseline) = was else {
+        return ContractStatus::NewSymbol;
+    };
+
+    let param_changed = now.params != baseline.params;
+    let public_changed = now.is_public != baseline.is_public;
+
+    if !param_changed && !public_changed {
+        ContractStatus::Unchanged
+    } else {
+        ContractStatus::ContractChange {
+            param_changed,
+            public_changed,
+            was_params: baseline.params,
+            now_params: now.params,
+            was_public: baseline.is_public,
+            now_public: now.is_public,
+        }
+    }
+}
+
+fn read_head_blob_bytes(repo_path: &Path, rel_path: &str) -> Option<Vec<u8>> {
+    let repo = gix::open(repo_path).ok()?;
+    let head = repo.head_commit().ok()?;
+    let tree = head.tree().ok()?;
+    let entry = tree.lookup_entry_by_path(rel_path).ok()??;
+    let obj = entry.object().ok()?;
+    Some(obj.data.to_vec())
+}
+
+fn parse_head_signature_match(
+    m: &tree_sitter::QueryMatch<'_, '_>,
+    query: &tree_sitter::Query,
+    bytes: &[u8],
+    lang: Lang,
+) -> (Option<String>, u16, bool) {
+    let mut name = None;
+    let mut params = 0u16;
+    let mut is_pub = false;
+
+    for capture in m.captures {
+        let cap_name = query.capture_names()[capture.index as usize];
+        let node = capture.node;
+        if cap_name == "name" {
+            if let Ok(text) = node.utf8_text(bytes) {
+                name = Some(text.to_string());
+            }
+        } else if cap_name.starts_with("definition.") {
+            params = extract_param_count(node);
+            is_pub = check_node_visibility(node, bytes, lang);
+        }
+    }
+    (name, params, is_pub)
+}
+
+/// Load a symbol's contract from the git HEAD commit.
+pub fn load_head_symbol_contract(
+    repo_path: &Path,
+    rel_path: &str,
+    sym_name: &str,
+    lang: Lang,
+) -> Result<Option<SignatureContract>, String> {
+    let Some(bytes) = read_head_blob_bytes(repo_path, rel_path) else {
+        return Ok(None);
+    };
+
+    let registry = LanguageRegistry::new().map_err(|e| e.to_string())?;
+    let Some((ts_lang, query)) = registry.get(lang) else {
+        return Ok(None);
+    };
+
+    let mut parser = tree_sitter::Parser::new();
+    if parser.set_language(ts_lang).is_err() {
+        return Ok(None);
+    }
+
+    let Some(tree) = parser.parse(&bytes, None) else {
+        return Ok(None);
+    };
+
+    let mut cursor = tree_sitter::QueryCursor::new();
+    let mut matches = cursor.matches(query, tree.root_node(), bytes.as_slice());
+
+    while let Some(m) = matches.next() {
+        let (name, params, is_public) = parse_head_signature_match(m, query, &bytes, lang);
+        if let Some(n) = name {
+            if n == sym_name {
+                return Ok(Some(SignatureContract {
+                    name: n,
+                    params,
+                    is_public,
+                }));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+fn count_param_children(child: tree_sitter::Node<'_>) -> u16 {
+    let mut count = 0u16;
+    for j in 0..child.named_child_count() {
+        if let Some(param) = child.named_child(j) {
+            if !param.kind().contains("comment") {
+                count = count.saturating_add(1);
+            }
+        }
+    }
+    count
+}
+
+#[must_use]
+pub fn extract_param_count(def_node: tree_sitter::Node<'_>) -> u16 {
+    for i in 0..def_node.child_count() {
+        if let Some(child) = def_node.child(i) {
+            let kind = child.kind();
+            if kind.contains("parameter") || kind == "params" {
+                return count_param_children(child);
+            }
+        }
+    }
+    0
+}
+
+fn is_go_public(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
+    let Some(name_node) = def_node.child_by_field_name("name") else {
+        return false;
+    };
+    let Ok(text) = name_node.utf8_text(source_bytes) else {
+        return false;
+    };
+    text.chars().next().is_some_and(|c| c.is_uppercase())
+}
+
+fn has_visibility_modifier(child: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
+    let kind = child.kind();
+    if kind == "visibility_modifier" || kind == "accessibility_modifier" {
+        if let Ok(text) = child.utf8_text(source_bytes) {
+            return text.contains("pub") || text.contains("public");
+        }
+    }
+    false
+}
+
+fn has_any_visibility_modifier(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
+    for i in 0..def_node.child_count() {
+        if let Some(child) = def_node.child(i) {
+            if has_visibility_modifier(child, source_bytes) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[must_use]
+pub fn check_node_visibility(
+    def_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+    lang: Lang,
+) -> bool {
+    if lang == Lang::Go {
+        is_go_public(def_node, source_bytes)
+    } else {
+        has_any_visibility_modifier(def_node, source_bytes)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compare_contracts_scenarios() {
+        let baseline = SignatureContract {
+            name: "fetch".to_string(),
+            params: 2,
+            is_public: false,
+        };
+
+        // 1. Unchanged
+        let same = SignatureContract {
+            name: "fetch".to_string(),
+            params: 2,
+            is_public: false,
+        };
+        assert_eq!(
+            compare_contracts(&same, Some(&baseline)),
+            ContractStatus::Unchanged
+        );
+
+        // 2. Arity change
+        let arity_broken = SignatureContract {
+            name: "fetch".to_string(),
+            params: 3,
+            is_public: false,
+        };
+        assert_eq!(
+            compare_contracts(&arity_broken, Some(&baseline)),
+            ContractStatus::ContractChange {
+                param_changed: true,
+                public_changed: false,
+                was_params: 2,
+                now_params: 3,
+                was_public: false,
+                now_public: false,
+            }
+        );
+
+        // 3. Visibility change
+        let pub_changed = SignatureContract {
+            name: "fetch".to_string(),
+            params: 2,
+            is_public: true,
+        };
+        assert_eq!(
+            compare_contracts(&pub_changed, Some(&baseline)),
+            ContractStatus::ContractChange {
+                param_changed: false,
+                public_changed: true,
+                was_params: 2,
+                now_params: 2,
+                was_public: false,
+                now_public: true,
+            }
+        );
+
+        // 4. New symbol
+        assert_eq!(compare_contracts(&same, None), ContractStatus::NewSymbol);
+    }
+
+    #[test]
+    fn test_extract_param_and_visibility() {
+        let code = b"pub fn example(a: i32, b: i32) {}";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(code, None).unwrap();
+        let fn_node = tree.root_node().child(0).unwrap();
+        assert_eq!(extract_param_count(fn_node), 2);
+        assert!(check_node_visibility(fn_node, code, Lang::Rust));
+    }
+}

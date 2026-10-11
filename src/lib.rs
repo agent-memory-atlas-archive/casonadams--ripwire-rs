@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod crawler;
 pub mod domain;
+pub mod gate;
 pub mod git;
 pub mod graph;
 pub mod ingest;
@@ -17,6 +18,11 @@ pub use crawler::{
 };
 pub use domain::{
     FileInfo, IngestResult, Interner, Lang, NodeId, RefRole, Reference, SymKind, Symbol, NO_NODE,
+};
+pub use gate::{
+    check_symbol_contract, compare_contracts, find_affected_tests, is_test_path,
+    load_head_symbol_contract, AffectedReport, AffectedTest, CallerCheckResult, ContractStatus,
+    EditCheckReport, IncompatibleCallSite, SignatureContract,
 };
 pub use git::cochange::{
     check_pair_dependency_capability, mine_cochange_for_file, mine_repo_cochange_pairs, CoPair,
