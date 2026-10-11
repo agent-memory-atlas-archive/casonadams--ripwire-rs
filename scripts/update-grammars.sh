@@ -13,7 +13,7 @@ VENDOR_DIR="${REPO_ROOT}/vendor/grammars"
 GRAMMARS=(
     "elixir|https://github.com/elixir-lang/tree-sitter-elixir|main|src"
     "dart|https://github.com/UserNobody14/tree-sitter-dart|master|src"
-    "kotlin|https://github.com/fwcd/tree-sitter-kotlin|master|src"
+    "kotlin|https://github.com/fwcd/tree-sitter-kotlin|main|src"
     "ruby|https://github.com/tree-sitter/tree-sitter-ruby|master|src"
     "php|https://github.com/tree-sitter/tree-sitter-php|master|special_php"
     "lua|https://github.com/tree-sitter-grammars/tree-sitter-lua|main|src"
