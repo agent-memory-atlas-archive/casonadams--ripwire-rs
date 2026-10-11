@@ -1,0 +1,205 @@
+; ripwire TypeScript tags — written for ripwire.
+; The upstream tree-sitter-typescript tags.scm targets .d.ts declaration files
+; (function_signature / method_signature) and ships no @reference.call, so it extracts
+; almost nothing from ordinary .ts source. This set covers real source: concrete
+; declarations + arrow-function-bound consts + call/new references.
+;
+; .ts/.mts/.cts ONLY. tree-sitter-typescript ships two grammars: plain "typescript" (this
+; one — a .ts file cannot contain JSX, by the TypeScript language's own rule) and "tsx" (a
+; real superset that adds jsx_self_closing_element/jsx_opening_element/…). Until #285 the
+; plain grammar really was a strict subset of tsx for every node THIS file names, so one
+; query text served both (kLangTable's .tsx row pointed at this same "typescript" querySub,
+; the CUDA-on-cpp precedent: tree-sitter-cuda is a generated superset of tree-sitter-cpp and
+; the two share querySub "cpp" the same way). #285's JSX patterns broke that: tree-sitter's
+; ts_query_new refuses the WHOLE query when even one pattern names a node type the grammar
+; does not have (measured — adding jsx_self_closing_element here made `[ripwire] tags.scm
+; compile error for typescript at byte N (err 2) — skipping language` and took EVERY .ts
+; symbol/reference with it, not just the JSX ones). queries/tsx/tags.scm is this file's
+; content plus the JSX additions, kept in its own file for the grammar that actually has
+; those nodes — see its header. Keep the two in sync by hand for every pattern below, the
+; same duplication precedent queries/c/tags.scm vs queries/cpp/tags.scm already carries for
+; two related-but-diverging grammars.
+
+; ---- definitions ----
+
+(function_declaration
+  name: (identifier) @name) @definition.function
+
+(generator_function_declaration
+  name: (identifier) @name) @definition.function
+
+(class_declaration
+  name: (type_identifier) @name) @definition.class
+
+(abstract_class_declaration
+  name: (type_identifier) @name) @definition.class
+
+(interface_declaration
+  name: (type_identifier) @name) @definition.interface
+
+(enum_declaration
+  name: (identifier) @name) @definition.class
+
+(type_alias_declaration
+  name: (type_identifier) @name) @definition.type
+
+(method_definition
+  name: (property_identifier) @name) @definition.method
+
+; `#render() {..}` — an ES #private method is a distinct node the pattern above never matched
+; (same gap jsshapecheck closed for JS: the two tags.scm files are separate). 120 sites in
+; openclaw @7a0a4c5f, 2026-08-04, with 326 `this.#x(...)` call sites — a class's whole internal
+; call graph went missing.
+(method_definition
+  name: (private_property_identifier) @name) @definition.method
+
+; `abstract foo(): T;` — the contract half of an abstract base. method_signature above only covers
+; .d.ts-style signatures; an abstract member is its own node, so before this pattern an abstract
+; class published its name and nothing a caller could bind to. 76 sites in openclaw — and --lego
+; reads exactly this shape when it lists an interface's method contract beside its implementors.
+(abstract_method_signature
+  name: (property_identifier) @name) @definition.method
+
+; `send = async (payload) => {..}` — a class field bound to a callable IS the class's callable
+; surface: reachable as `obj.send(...)` exactly like a method_definition, and the whole point of the
+; bound-method idiom. 287 sites in openclaw. Scoped to arrow/function VALUES on purpose: a
+; public_field_definition with any value at all is >5000 sites there (a --match floor), i.e. mostly
+; data members, and taking those would bury the map. Same reason the object-literal `pair` form
+; stays out — see test/tsshapefix/objectliteral.ts.
+(public_field_definition
+  name: [ (property_identifier) (private_property_identifier) ] @name
+  value: [ (arrow_function) (function_expression) ]) @definition.method
+
+; const foo = (..) => {..}  /  const foo = function(){..}  -> a named function
+(lexical_declaration
+  (variable_declarator
+    name: (identifier) @name
+    value: [ (arrow_function) (function_expression) ])) @definition.function
+
+; the lazy-facade export: `export const f: M["f"] = ((...args) => ..) as M["f"];`. The cast puts an
+; as_expression (or satisfies_expression) where the pattern above looks for the arrow itself, so
+; every one of these read as an unnamed const and — not being SCREAMING_SNAKE — was dropped by the
+; convention gate. 105 sites in openclaw, and they are not marginal: that idiom is how its entire
+; public `src/plugin-sdk/` surface is written, so each miss was an exported API entry point --for
+; structurally could not surface.
+(lexical_declaration
+  (variable_declarator
+    name: (identifier) @name
+    value: [ (as_expression        (parenthesized_expression [ (arrow_function) (function_expression) ]))
+             (satisfies_expression (parenthesized_expression [ (arrow_function) (function_expression) ])) ])) @definition.function
+
+; ---- module-level settings constants (r3 q10 — bench/headtohead/r3-headroom-2026-08-03) ----
+; `const PASSWORD_HASHERS = [...]` at module scope: a settings/config constant is a real, rankable
+; symbol — before these patterns a whole settings module contributed ZERO symbols to the map, so
+; --for structurally could not surface it (the r3 head-to-head's only unrecoverable loss).
+; Shape verified with --match: the (program …) wrapper keeps function-local consts out; the export
+; form nests (program (export_statement (lexical_declaration …))) so it needs its own pattern.
+; "const"-keyword-anchored (a top-level `let` is a mutable counter, not config). Scoped to
+; SCREAMING_SNAKE names in ingest.cpp (constCaptureNeedsScreamingGate — tags predicates never run),
+; so `const retryBudget = 3` stays unindexed and an ALL-CAPS arrow const dedups to its Function def.
+
+(program
+  (lexical_declaration
+    "const"
+    (variable_declarator
+      name: (identifier) @name)) @definition.constant)
+
+(export_statement
+  (lexical_declaration
+    "const"
+    (variable_declarator
+      name: (identifier) @name)) @definition.constant)
+
+; declaration-file signatures (kept so .d.ts still yields symbols)
+(function_signature
+  name: (identifier) @name) @definition.function
+
+(method_signature
+  name: (property_identifier) @name) @definition.method
+
+; ---- references ----
+
+(call_expression
+  function: (identifier) @name) @reference.call
+
+(call_expression
+  function: (member_expression
+    property: (property_identifier) @name)) @reference.call
+
+; `this.#retry()` — the ref half of the #private method pattern above (326 openclaw sites;
+; property_identifier never matches a private_property_identifier).
+(call_expression
+  function: (member_expression
+    property: (private_property_identifier) @name)) @reference.call
+
+; `await f<T>(x)` — tree-sitter-typescript parses an await before an explicit type-argument call as
+; `(await f)<T>(x)`: a call_expression whose function: is the await_expression, so the three patterns
+; above never see the callee and the site was no reference at all (no edge, no declined or unresolved
+; count). `await f(x)` without type arguments parses the other way round and is already covered. The
+; @name's parent is the await_expression for the bare form (a bare call to receiverOf) and the
+; member_expression for the member forms (the same receiver reading as the patterns above).
+(call_expression
+  function: (await_expression
+    (identifier) @name)) @reference.call
+
+(call_expression
+  function: (await_expression
+    (member_expression
+      property: (property_identifier) @name))) @reference.call
+
+(call_expression
+  function: (await_expression
+    (member_expression
+      property: (private_property_identifier) @name))) @reference.call
+
+; The same precedence quirk for the unary operators: `!f<T>(x)`, `typeof f<T>(x)`, `void f<T>(x)` and `-f<T>(x)`
+; parse as `(!f)<T>(x)`, a call whose function: is the unary_expression. Same three forms, same receiver
+; reading (the bare form's @name parent is the unary_expression, which receiverOf reads as a bare call).
+(call_expression
+  function: (unary_expression
+    argument: (identifier) @name)) @reference.call
+
+(call_expression
+  function: (unary_expression
+    argument: (member_expression
+      property: (property_identifier) @name))) @reference.call
+
+(call_expression
+  function: (unary_expression
+    argument: (member_expression
+      property: (private_property_identifier) @name))) @reference.call
+
+; One level deeper, the two stacked forms real code writes: `!await f<T>(x)` (the call's function: is
+; unary(await f)) and `await await f<T>(x)` (await(await f)). Deeper stacks stay unextracted (a disclosed floor).
+(call_expression
+  function: (unary_expression
+    argument: (await_expression
+      (identifier) @name))) @reference.call
+
+(call_expression
+  function: (unary_expression
+    argument: (await_expression
+      (member_expression
+        property: (property_identifier) @name)))) @reference.call
+
+(call_expression
+  function: (await_expression
+    (await_expression
+      (identifier) @name))) @reference.call
+
+(call_expression
+  function: (await_expression
+    (await_expression
+      (member_expression
+        property: (property_identifier) @name)))) @reference.call
+
+(new_expression
+  constructor: (identifier) @name) @reference.call
+
+; H4: qualified `new` — `new ns.Inner()` / `new a.b.C()`. member_expression nests LEFT (property: is
+; always the final segment at any depth), so this binds the constructed CLASS name regardless of
+; namespace depth — same ctor-ref-to-class-def precedent as the bare form above. Verified with
+; --match on fixtures/ts at 2 AND 3 segments, empirically, not just assumed from the grammar shape.
+(new_expression
+  constructor: (member_expression
+    property: (property_identifier) @name)) @reference.call
