@@ -760,14 +760,22 @@ fn execute_nav_symbol_query<W: io::Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
+    let ids = crate::navigate::find_symbols_by_name(sym, ingest, interner);
+    let Some(&id) = ids.first() else {
+        let flag_name = match nav_mode {
+            0 => "--callers",
+            1 => "--callees",
+            2 => "--impact",
+            3 => "--uses",
+            _ => "--find-symbol",
+        };
+        return Err(io::Error::other(format!(
+            "rwire: {flag_name} symbol not found: {sym}"
+        )));
+    };
     if nav_mode == 3 {
         return crate::navigate::serialize_uses_xml(sym, ingest, interner, out);
     }
-    let ids = crate::navigate::find_symbols_by_name(sym, ingest, interner);
-    let Some(&id) = ids.first() else {
-        writeln!(out, "Symbol '{sym}' not found")?;
-        return Ok(());
-    };
     match nav_mode {
         0 => {
             let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner)
