@@ -32,28 +32,30 @@ AI coding agents.
 
 ---
 
-## Getting Started
+## Installation
 
-### Prerequisites
-
-- Rust 1.80+ (2021 edition)
-- C compiler (`clang` or `gcc`) for compiling Tree-Sitter grammars
-- Git
-
-### Build
-
-Grammar sources are fetched on demand to keep the repository lightweight:
+### Homebrew (macOS & Linux)
 
 ```bash
-# Fetch upstream Tree-Sitter grammars
-make update-grammars
+brew install casonadams/tap/ripwire
+```
 
-# Build release binary
+### Cargo
+
+```bash
+cargo install ripwire
+```
+
+### From Source
+
+```bash
+# Fetch upstream Tree-Sitter grammars and build release binary
+git clone https://github.com/casonadams/rwire.git
+cd rwire
 make build-release
 ```
 
 Binary will be located at `target/release/rw`.
-
 ---
 
 ## Usage
