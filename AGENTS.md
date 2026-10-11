@@ -53,6 +53,15 @@
   cognitive complexity <= 15 via cccc, quality regression delta via ripwire, and
   tests under test code coverage with CRAP <= 30 gating).
 
+## Documentation synchronization
+
+- Whenever updating documentation (`README.md`, `docs/`, CLI flags, subcommands,
+  or MCP tool definitions), the static GitHub Pages showcase and documentation
+  site in `www/` (`www/index.html`, `www/docs.html`) MUST be updated and
+  synchronized in the same commit.
+- Ensure all relative links, code examples, tool names, command names (`rw`),
+  and feature lists stay aligned between repository docs and the `www/` site.
+
 ## Completion
 
 - Run `make all` and ensure all checks pass before finishing:

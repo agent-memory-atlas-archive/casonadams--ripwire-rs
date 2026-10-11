@@ -38,7 +38,7 @@
         <a href="./" class="nav-link">Home</a>
         <a href="docs.html" class="nav-link active">Docs</a>
         <a href="https://crates.io/crates/ripwire" target="_blank" rel="noopener" class="nav-link">crates.io</a>
-        <a href="https://github.com/casonadams/rwire" target="_blank" rel="noopener" class="btn-icon" aria-label="GitHub Repository">
+        <a href="https://github.com/casonadams/ripwire" target="_blank" rel="noopener" class="btn-icon" aria-label="GitHub Repository">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
         </a>
         <button id="themeToggle" class="btn-icon" aria-label="Toggle dark/light theme">
@@ -63,6 +63,7 @@
         <li><a href="#subcommands" class="docs-nav-link">Subcommands</a></li>
         <li><a href="#gates" class="docs-nav-link">Pre-Commit Verification Gates</a></li>
         <li><a href="#mcp" class="docs-nav-link">33 MCP Context Tools</a></li>
+        <li><a href="#algorithms" class="docs-nav-link">Algorithms &amp; Lenses</a></li>
         <li><a href="#library" class="docs-nav-link">Rust Library API</a></li>
       </ul>
     </div>
@@ -92,6 +93,7 @@
         <div class="docs-nav-title">Protocol &amp; Library</div>
         <ul class="docs-nav-links">
           <li><a href="#mcp" class="docs-nav-link">33 MCP Tools</a></li>
+          <li><a href="#algorithms" class="docs-nav-link">Algorithms &amp; Lenses</a></li>
           <li><a href="#library" class="docs-nav-link">Rust Library API</a></li>
         </ul>
       </div>
@@ -104,6 +106,9 @@
         <strong>ripwire</strong> is a high-throughput code intelligence engine and context router for AI coding agents and developers. It indexes 24 programming languages via Tree-Sitter to construct directed call graphs, calculate symbol impact via Personalized PageRank, slice intra-procedural dataflow, and enforce pre-commit quality gates.
       </p>
 
+      <div style="font-size: 0.95rem; color: var(--text-muted); background: var(--bg-secondary); border-left: 3px solid var(--accent); padding: 14px 18px; border-radius: var(--radius-sm); margin-bottom: 28px;">
+        <strong style="color: var(--text-primary);">Lineage &amp; Attribution:</strong> ripwire is an idiomatic Rust port and rewrite of the original <a href="https://github.com/redhat-et/ripwire" target="_blank" rel="noopener">C++23 ripwire engine</a> authored by <strong>David Brewster</strong> at <strong>Red Hat Emerging Technologies</strong>. We gratefully acknowledge their foundational work on token-budgeted streaming call graphs, pre-commit delta heuristics, and deterministic code intelligence for AI agents.
+      </div>
       <h2 id="installation">Installation</h2>
       <h3>Homebrew (macOS &amp; Linux)</h3>
       <pre><code>brew install casonadams/tap/ripwire</code></pre>
@@ -171,79 +176,68 @@ rw mcp</code></pre>
       <p>
         Ripwire embeds a native JSON-RPC stdio server exposing 33 context routing tools directly to AI coding agents like Claude Desktop, OpenCode, and Omp:
       </p>
-
-      <div class="tool-card">
-        <div class="tool-header">
-          <span class="tool-name">explore</span>
-          <span class="tool-badge">Orientation</span>
-        </div>
-        <div class="tool-desc">One-call task orientation: ranked symbols, signatures, 1-hop callers, and field notes under a deterministic token budget.</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Tool</th>
+              <th>Category</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>explore</code></td><td>Retrieval</td><td>Ranked map, bodies, callers, and test targets in a single byte-budgeted response.</td></tr>
+            <tr><td><code>for</code></td><td>Retrieval</td><td>Task-lens relevance ranking using BM25 and Personalized PageRank.</td></tr>
+            <tr><td><code>batch</code></td><td>Retrieval</td><td>Execute up to 16 heterogeneous sub-queries in a single call.</td></tr>
+            <tr><td><code>fetch_body</code></td><td>Retrieval</td><td>Fetch symbol definition source code by handle or name with optional line bounds.</td></tr>
+            <tr><td><code>exemplar</code></td><td>Retrieval</td><td>Retrieve the best-in-class implementation of a given role (fn, class, interface).</td></tr>
+            <tr><td><code>lego</code></td><td>Retrieval</td><td>Interface contract view with all implementors across the workspace.</td></tr>
+            <tr><td><code>grep</code></td><td>Search</td><td>Trigram literal search annotated with enclosing symbols and definitions.</td></tr>
+            <tr><td><code>find_symbol</code></td><td>Navigation</td><td>1-hop symbol neighborhood: callers, callees, definitions, and ambiguity metrics.</td></tr>
+            <tr><td><code>find_referencing_symbols</code></td><td>Navigation</td><td>Direct (1-hop) callers of a symbol.</td></tr>
+            <tr><td><code>impact</code></td><td>Navigation</td><td>Transitive blast radius of a symbol via call hierarchy.</td></tr>
+            <tr><td><code>uses</code></td><td>Navigation</td><td>Statically resolvable use-sites (call, read, write, import, extends).</td></tr>
+            <tr><td><code>path_between</code></td><td>Architecture</td><td>Shortest directed call path between two symbols.</td></tr>
+            <tr><td><code>connect</code></td><td>Architecture</td><td>Minimal directed connecting subgraph relating 2..16 symbols.</td></tr>
+            <tr><td><code>analyze</code></td><td>Architecture</td><td>Architecture map ranked by PageRank or chosen metric.</td></tr>
+            <tr><td><code>rank_by</code></td><td>Architecture</td><td>Architecture map ranked by alternate signal (authority, hub, churn).</td></tr>
+            <tr><td><code>situational_awareness</code></td><td>Architecture</td><td>Diff context: blast radius, tests to run, and forgotten co-change partners.</td></tr>
+            <tr><td><code>from_trace</code></td><td>Debugging</td><td>Maps stack trace frames and compiler errors onto indexed symbol definitions.</td></tr>
+            <tr><td><code>slice</code></td><td>Slicing</td><td>Intra-procedural def-use variable slicing (forward, backward, or both).</td></tr>
+            <tr><td><code>cochange</code></td><td>Git Analytics</td><td>Historical Shotgun Surgery co-change coupling.</td></tr>
+            <tr><td><code>owners</code></td><td>Git Analytics</td><td>Recency-weighted author ownership per file.</td></tr>
+            <tr><td><code>edit_check</code></td><td>Safety Gates</td><td>Verify caller compatibility after editing a function contract.</td></tr>
+            <tr><td><code>affected</code></td><td>Safety Gates</td><td>Transitive test reachability mapping from changed symbols.</td></tr>
+            <tr><td><code>quality_baseline</code></td><td>Safety Gates</td><td>Snapshot code quality floor at current commit.</td></tr>
+            <tr><td><code>quality_delta</code></td><td>Safety Gates</td><td>Pre-commit quality regression self-check against baseline or git HEAD.</td></tr>
+            <tr><td><code>doc_drift</code></td><td>Documentation</td><td>Detect out-of-bounds file:line references in markdown documents.</td></tr>
+            <tr><td><code>mentions</code></td><td>Documentation</td><td>Locate markdown design notes referencing a code symbol in backticks.</td></tr>
+            <tr><td><code>memory_recall</code></td><td>Documentation</td><td>Relevant documentation and design notes matching a task.</td></tr>
+            <tr><td><code>flags</code></td><td>Inspection</td><td>Dark feature flags, <code>#ifdef</code> guards, and runtime environment variable reads.</td></tr>
+            <tr><td><code>whereis</code></td><td>Inspection</td><td>Branch divergence tracker: finds which branch's tree defines a symbol.</td></tr>
+            <tr><td><code>stray_content</code></td><td>Inspection</td><td>Lines authored on a divergent branch not present in HEAD.</td></tr>
+            <tr><td><code>replace_symbol_body</code></td><td>Atomic Edit</td><td>Atomically replace an entire symbol definition with verified byte rollback.</td></tr>
+            <tr><td><code>insert_before_symbol</code></td><td>Atomic Edit</td><td>Atomically insert source code before a symbol definition.</td></tr>
+            <tr><td><code>insert_after_symbol</code></td><td>Atomic Edit</td><td>Atomically insert source code after a symbol definition.</td></tr>
+          </tbody>
+        </table>
       </div>
 
-      <div class="tool-card">
-        <div class="tool-header">
-          <span class="tool-name">impact</span>
-          <span class="tool-badge">Analysis</span>
-        </div>
-        <div class="tool-desc">Calculates the transitive blast radius of a symbol across all reverse callers, ranked by PageRank.</div>
-      </div>
+      <h2 id="algorithms">Algorithms &amp; Academic Lenses</h2>
+      <p>
+        ripwire implements 11 academic and algorithmic lenses over codebase graphs and behavioral histories:
+      </p>
 
-      <div class="tool-card">
-        <div class="tool-header">
-          <span class="tool-name">quality_delta</span>
-          <span class="tool-badge">Quality Gate</span>
-        </div>
-        <div class="tool-desc">Evaluates pre-PR regressions against git HEAD across 10 quality metrics.</div>
-      </div>
-
-      <div class="tool-card">
-        <div class="tool-header">
-          <span class="tool-name">edit_check</span>
-          <span class="tool-badge">Quality Gate</span>
-        </div>
-        <div class="tool-desc">Checks whether a symbol contract (arity + visibility) broke against git HEAD and surfaces incompatible callers.</div>
-      </div>
-
-      <div class="tool-card">
-        <div class="tool-header">
-          <span class="tool-name">affected</span>
-          <span class="tool-badge">Test Routing</span>
-        </div>
-        <div class="tool-desc">Identifies tests transitively reaching modified files and symbols.</div>
-      </div>
-
-      <div class="tool-card">
-        <div class="tool-header">
-          <span class="tool-name">slice</span>
-          <span class="tool-badge">Dataflow</span>
-        </div>
-        <div class="tool-desc">Intra-procedural def-use variable slicing (ARISE algorithm) following value flow forward or backward.</div>
-      </div>
-
-      <div class="tool-card">
-        <div class="tool-header">
-          <span class="tool-name">cochange</span>
-          <span class="tool-badge">Git Mining</span>
-        </div>
-        <div class="tool-desc">Mines Fowler's Shotgun Surgery historical git co-change partners.</div>
-      </div>
-
-      <div class="tool-card">
-        <div class="tool-header">
-          <span class="tool-name">replace_symbol_body / insert_before / insert_after</span>
-          <span class="tool-badge">Atomic Edits</span>
-        </div>
-        <div class="tool-desc">Safe, atomic AST-based symbol body replacement and code insertion.</div>
-      </div>
-
-      <div class="tool-card">
-        <div class="tool-header">
-          <span class="tool-name">doc_drift</span>
-          <span class="tool-badge">Verification</span>
-        </div>
-        <div class="tool-desc">Identifies claims in markdown files that no longer match the live index.</div>
-      </div>
-
+      <ul>
+        <li><strong>Personalized PageRank</strong>: Power iteration over transpose in-edge CSR matrix with dangling mass redistribution. 1024-block reduction sums with early convergence checking.</li>
+        <li><strong>Kleinberg HITS (Hubs &amp; Authorities)</strong>: Coupled iterative eigenvector convergence distinguishing core utility APIs (authorities) from orchestrators and test suites (hubs).</li>
+        <li><strong>Louvain Community Modularity</strong>: Partitions the call graph into architectural modules by maximizing Newman-Girvan modularity with deterministic tie-breaking.</li>
+        <li><strong>AST Clone Detector</strong>: Token-level normalization detecting exact Type-1, renamed Type-2, and near-miss Type-3 gapped duplicates with $k$-gram Jaccard prefiltering and LCS.</li>
+        <li><strong>ARISE Slicing</strong>: Intra-procedural forward and backward def-use dataflow slicing tracing reaching definitions and assignment propagation.</li>
+        <li><strong>Fowler's Co-Change Mining</strong>: Exponential half-life decay weighting commits over time to expose hidden Shotgun Surgery change coupling.</li>
+        <li><strong>Maintenance Hotspots</strong>: Multiplies historical change frequency (churn) by cognitive complexity to surface defect-prone hotspots.</li>
+        <li><strong>Posnett Code Readability</strong>: Information-theoretic readability metric combining entropy, Halstead volume, line length, and identifier vocabularies.</li>
+      </ul>
       <h2 id="library">Rust Library API</h2>
       <p>
         Embed ripwire directly into your Rust developer tools, custom CLI utilities, or AI agent runtimes:
@@ -272,12 +266,12 @@ fn main() {
   <footer class="footer">
     <div class="container footer-inner">
       <div>
-        <strong>ripwire</strong> · Apache-2.0 License · Crafted by <a href="https://github.com/casonadams" target="_blank" rel="noopener">Cason Adams</a>
+        <strong>ripwire</strong> · Apache-2.0 License · Ported with gratitude from <a href="https://github.com/redhat-et/ripwire" target="_blank" rel="noopener">redhat-et/ripwire</a> (David Brewster).
       </div>
       <div class="footer-links">
         <a href="./">Home</a>
         <a href="https://crates.io/crates/ripwire" target="_blank" rel="noopener">Crates.io</a>
-        <a href="https://github.com/casonadams/rwire" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://github.com/casonadams/ripwire" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>
   </footer>
