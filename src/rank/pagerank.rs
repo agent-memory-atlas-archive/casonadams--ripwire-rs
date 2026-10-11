@@ -77,14 +77,25 @@ pub fn compute_l1_residual(next: &[f64], current: &[f64]) -> f64 {
     total
 }
 
-/// Scale current rank by weighted out-degree. Dangling nodes scale to 0.0.
-pub fn scale_ranks_by_out_degree(current_rank: &[f64], w_out_deg: &[f64], scaled: &mut [f64]) {
+/// Precompute reciprocal out-degrees so power iteration multiplies instead of dividing.
+#[must_use]
+#[inline]
+pub fn compute_inv_out_degrees(w_out_deg: &[f64]) -> Vec<f64> {
+    w_out_deg
+        .iter()
+        .map(|&w| if w > 0.0 { 1.0 / w } else { 0.0 })
+        .collect()
+}
+
+/// Scale current rank by precomputed reciprocal out-degrees.
+#[inline]
+pub fn scale_ranks_by_inv_out_degree(
+    current_rank: &[f64],
+    inv_out_deg: &[f64],
+    scaled: &mut [f64],
+) {
     for i in 0..current_rank.len() {
-        scaled[i] = if w_out_deg[i] > 0.0 {
-            current_rank[i] / w_out_deg[i]
-        } else {
-            0.0
-        };
+        scaled[i] = current_rank[i] * inv_out_deg[i];
     }
 }
 
@@ -97,10 +108,18 @@ pub fn gather_in_edges(
     teleport: &[f64],
     next: &mut [f64],
 ) {
+    let row_offsets = &in_edges.row_offsets;
+    let col_indices = &in_edges.col_indices;
+    let values = &in_edges.values;
+
     for target in 0..in_edges.rows {
+        let start = row_offsets[target] as usize;
+        let end = row_offsets[target + 1] as usize;
         let mut incoming = 0.0f64;
-        for (source, weight) in in_edges.row_entries(target) {
-            incoming += (weight as f64) * scaled[source as usize];
+        for i in start..end {
+            let source = col_indices[i] as usize;
+            let weight = values[i] as f64;
+            incoming += weight * scaled[source];
         }
         next[target] = alpha * incoming + teleport_scale * teleport[target];
     }
@@ -143,6 +162,7 @@ pub fn page_rank(
         };
     }
 
+    let inv_out_deg = compute_inv_out_degrees(w_out_deg);
     let mut current_rank = teleport.to_vec();
     let mut next_rank = vec![0.0f64; n];
     let mut scaled_rank = vec![0.0f64; n];
@@ -151,7 +171,7 @@ pub fn page_rank(
 
     for iter in 0..config.max_iterations {
         let dangling_mass = compute_dangling_mass(&current_rank, w_out_deg);
-        scale_ranks_by_out_degree(&current_rank, w_out_deg, &mut scaled_rank);
+        scale_ranks_by_inv_out_degree(&current_rank, &inv_out_deg, &mut scaled_rank);
         let teleport_scale = config.alpha * dangling_mass + (1.0 - config.alpha);
         gather_in_edges(
             in_edges,
