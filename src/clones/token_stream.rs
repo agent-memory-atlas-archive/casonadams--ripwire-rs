@@ -1,5 +1,4 @@
 use crate::domain::Lang;
-use std::collections::HashSet;
 
 /// Check if word is a reserved control-flow, declaration, or structural keyword.
 #[must_use]
@@ -263,13 +262,9 @@ pub fn compute_kgrams(tokens: &[String], k: usize) -> Vec<u64> {
         return Vec::new();
     }
 
-    let mut set = HashSet::new();
-    for window in tokens.windows(k) {
-        set.insert(hash_tokens(window));
-    }
-
-    let mut list: Vec<u64> = set.into_iter().collect();
+    let mut list: Vec<u64> = tokens.windows(k).map(hash_tokens).collect();
     list.sort_unstable();
+    list.dedup();
     list
 }
 

@@ -1,6 +1,11 @@
 use super::{FileParseResult, RawDef, RawRef};
 use crate::domain::{RefRole, SymKind};
+use std::cell::RefCell;
 use tree_sitter::{Language, Node, Parser};
+
+thread_local! {
+    static MD_PARSER: RefCell<Parser> = RefCell::new(Parser::new());
+}
 
 /// Clean heading text by stripping carriage returns and trailing hashes/spaces.
 fn clean_heading_text(raw: &str) -> String {
@@ -211,11 +216,14 @@ pub fn extract_markdown(
     rel_path: &str,
     language: &Language,
 ) -> FileParseResult {
-    let mut parser = Parser::new();
-    if parser.set_language(language).is_err() {
-        return FileParseResult::default();
-    }
-    let Some(tree) = parser.parse(source_bytes, None) else {
+    let tree = MD_PARSER.with(|cell| {
+        let parser = &mut *cell.borrow_mut();
+        if parser.set_language(language).is_err() {
+            return None;
+        }
+        parser.parse(source_bytes, None)
+    });
+    let Some(tree) = tree else {
         return FileParseResult::default();
     };
 
