@@ -1,7 +1,6 @@
 use crate::domain::{IngestResult, Interner, NodeId, RefRole};
 use crate::gate::contract::{compare_contracts, ContractStatus, SignatureContract};
 use crate::graph::Graph;
-use std::fmt::Write as FmtWrite;
 use std::io::{self, Write};
 
 /// Detailed site information for an incompatible call.
@@ -34,9 +33,8 @@ pub struct EditCheckReport {
     pub callers: Vec<CallerCheckResult>,
 }
 
-impl EditCheckReport {
-    /// Format report as dense minified XML conforming to Ripwire schema.
-    pub fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+impl crate::serialize::ToXmlString for EditCheckReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         writeln!(
             out,
             "<edit-check sym=\"{}\" p=\"{}\" status=\"{}\" callers=\"{}\" incompatible=\"{}\">",
@@ -75,51 +73,6 @@ impl EditCheckReport {
             }
         }
         writeln!(out, "</edit-check>")
-    }
-
-    /// Render XML as string.
-    #[must_use]
-    pub fn to_xml_string(&self) -> String {
-        let mut s = String::new();
-        let _ = writeln!(
-            s,
-            "<edit-check sym=\"{}\" p=\"{}\" status=\"{}\" callers=\"{}\" incompatible=\"{}\">",
-            self.symbol_name,
-            self.file_path,
-            self.status.as_str(),
-            self.total_callers,
-            self.incompatible_callers
-        );
-        for c in &self.callers {
-            let incomp_attr = if c.is_incompatible {
-                " incompatible=\"1\""
-            } else {
-                ""
-            };
-            if c.sites.is_empty() {
-                let _ = writeln!(
-                    s,
-                    "  <caller sym=\"{}\" p=\"{}:{}\"{}/>",
-                    c.caller_name, c.file_path, c.line, incomp_attr
-                );
-            } else {
-                let _ = writeln!(
-                    s,
-                    "  <caller sym=\"{}\" p=\"{}:{}\"{}>",
-                    c.caller_name, c.file_path, c.line, incomp_attr
-                );
-                for site in &c.sites {
-                    let _ = writeln!(
-                        s,
-                        "    <site line=\"{}\" args=\"{}\" required=\"{}\"/>",
-                        site.line, site.arg_count, site.required_params
-                    );
-                }
-                let _ = writeln!(s, "  </caller>");
-            }
-        }
-        let _ = writeln!(s, "</edit-check>");
-        s
     }
 }
 
@@ -222,6 +175,7 @@ pub fn check_symbol_contract(
 mod tests {
     use super::*;
     use crate::domain::{FileInfo, Lang, SymKind, Symbol};
+    use crate::serialize::ToXmlString;
 
     #[test]
     fn test_caller_compatibility_verification() {

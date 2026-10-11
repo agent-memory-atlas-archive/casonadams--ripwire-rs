@@ -1,6 +1,5 @@
 use crate::domain::{IngestResult, Interner};
 use std::collections::HashMap;
-use std::fmt::Write as FmtWrite;
 use std::io::{self, Write};
 
 /// Metrics and worst function details for a single hotspot file.
@@ -25,9 +24,8 @@ pub struct HotspotsReport {
     pub unranked_no_complexity: usize,
 }
 
-impl HotspotsReport {
-    /// Format report as dense minified XML conforming to Ripwire schema.
-    pub fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+impl crate::serialize::ToXmlString for HotspotsReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         writeln!(
             out,
             "<hotspots files=\"{}\" ranked=\"{}\" unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\">",
@@ -41,26 +39,6 @@ impl HotspotsReport {
             )?;
         }
         writeln!(out, "</hotspots>")
-    }
-
-    /// Render XML as string.
-    #[must_use]
-    pub fn to_xml_string(&self) -> String {
-        let mut s = String::new();
-        let _ = writeln!(
-            s,
-            "<hotspots files=\"{}\" ranked=\"{}\" unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\">",
-            self.total_files, self.ranked_count, self.unranked_no_churn, self.unranked_no_complexity
-        );
-        for f in &self.files {
-            let _ = writeln!(
-                s,
-                "  <f p=\"{}\" churn=\"{}\" ccx=\"{}\" score=\"{}\" top=\"{}\" top_ccx=\"{}\" top_l=\"{}\"/>",
-                f.file_path, f.churn, f.ccx_sum, f.score, f.top_fn_name, f.top_fn_ccx, f.top_fn_line
-            );
-        }
-        let _ = writeln!(s, "</hotspots>");
-        s
     }
 }
 
@@ -155,6 +133,7 @@ pub fn compute_hotspots(
 mod tests {
     use super::*;
     use crate::domain::{FileInfo, Lang, SymKind, Symbol};
+    use crate::serialize::ToXmlString;
 
     #[test]
     fn test_compute_hotspots_ranking() {

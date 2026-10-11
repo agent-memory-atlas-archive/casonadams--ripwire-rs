@@ -1,7 +1,6 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt::Write as FmtWrite;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -24,9 +23,8 @@ pub struct AffectedReport {
     pub tests: Vec<AffectedTest>,
 }
 
-impl AffectedReport {
-    /// Format report as dense minified XML conforming to Ripwire schema.
-    pub fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+impl crate::serialize::ToXmlString for AffectedReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         writeln!(
             out,
             "<affected changed=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\">",
@@ -49,35 +47,6 @@ impl AffectedReport {
             )?;
         }
         writeln!(out, "</affected>")
-    }
-
-    /// Render XML as string.
-    #[must_use]
-    pub fn to_xml_string(&self) -> String {
-        let mut s = String::new();
-        let _ = writeln!(
-            s,
-            "<affected changed=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\">",
-            self.changed_spec,
-            self.seed_count,
-            self.seed_test_files.len(),
-            self.total_tests,
-            self.reached_symbols
-        );
-        for t in &self.tests {
-            let direct_attr = if t.is_direct_change {
-                " direct=\"1\""
-            } else {
-                ""
-            };
-            let _ = writeln!(
-                s,
-                "  <test path=\"{}\" hops=\"{}\"{}/>",
-                t.path, t.hops, direct_attr
-            );
-        }
-        let _ = writeln!(s, "</affected>");
-        s
     }
 }
 
@@ -270,6 +239,7 @@ pub fn find_affected_tests(
 mod tests {
     use super::*;
     use crate::domain::{FileInfo, Lang, RefRole, SymKind, Symbol};
+    use crate::serialize::ToXmlString;
 
     #[test]
     fn test_is_test_path_detection() {

@@ -3,7 +3,7 @@ use crate::graph::Graph;
 use crate::mcp::run_mcp_stdio;
 use crate::navigate::{find_symbols_by_name, navigate_1hop, transitive_impact};
 use crate::rank::PageRankResult;
-use crate::serialize::{serialize_xml, SerializeOptions};
+use crate::serialize::{serialize_xml, SerializeOptions, ToXmlString};
 use clap::{Args, Parser, Subcommand};
 use std::io;
 
@@ -37,6 +37,14 @@ pub struct Cli {
     /// Show test files affected by changes
     #[arg(long)]
     pub affected: Option<String>,
+
+    /// Pin quality baseline stamped with git HEAD
+    #[arg(long)]
+    pub quality_baseline: bool,
+
+    /// Report code quality delta regressions vs baseline
+    #[arg(long)]
+    pub quality_delta: bool,
 
     /// Workflow subcommand group
     #[command(subcommand)]
@@ -103,6 +111,10 @@ pub struct GateArgs {
     /// Verify 1-hop caller compatibility against git HEAD
     #[arg(long)]
     pub edit_check: Option<String>,
+
+    /// Pin quality baseline stamped with git HEAD
+    #[arg(long)]
+    pub quality_baseline: bool,
 
     /// Measure quality delta against baseline
     #[arg(long)]
@@ -485,27 +497,77 @@ pub fn execute_affected_with<W: io::Write>(
     );
     report.write_xml(out)
 }
+pub fn execute_quality_baseline_with<W: io::Write>(
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
+    let head_sha = state
+        .commits
+        .as_ref()
+        .and_then(|c| c.first())
+        .map(|c| c.id.as_str())
+        .unwrap_or("HEAD");
+    let snap = crate::gate::baseline::compute_snapshot(
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+        head_sha,
+    );
+    let baseline_path =
+        std::path::Path::new(&state.root).join(crate::gate::baseline::DEFAULT_BASELINE_FILE);
+    crate::gate::baseline::write_baseline_file(&snap, &baseline_path)?;
+    writeln!(
+        out,
+        "rwire: pinned quality baseline stamped at {head_sha} -> {}",
+        baseline_path.display()
+    )
+}
 
-fn dispatch_gate_command(
-    root: &str,
-    edit_check: Option<&str>,
-    affected: Option<&str>,
-) -> Option<io::Result<()>> {
-    if let Some(sym) = edit_check {
-        let state = match crate::mcp::McpState::load(root) {
-            Some(s) => s,
-            None => return Some(Err(io::Error::other("failed to load repository"))),
-        };
-        let mut stdout = io::stdout().lock();
+pub fn execute_quality_delta_with<W: io::Write>(
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<bool> {
+    let report = crate::gate::quality_delta::evaluate_quality_delta(&state.root, state)?;
+    report.write_xml(out)?;
+    Ok(report.has_gating_failures())
+}
+
+#[derive(Default)]
+struct GateDispatchArgs<'a> {
+    edit_check: Option<&'a str>,
+    affected: Option<&'a str>,
+    quality_baseline: bool,
+    quality_delta: bool,
+}
+
+fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<io::Result<()>> {
+    let state = match crate::mcp::McpState::load(root) {
+        Some(s) => s,
+        None => return Some(Err(io::Error::other("failed to load repository"))),
+    };
+    let mut stdout = io::stdout().lock();
+
+    if let Some(sym) = args.edit_check {
         return Some(execute_edit_check_with(sym, &state, &mut stdout));
     }
-    if let Some(spec) = affected {
-        let state = match crate::mcp::McpState::load(root) {
-            Some(s) => s,
-            None => return Some(Err(io::Error::other("failed to load repository"))),
-        };
-        let mut stdout = io::stdout().lock();
+    if let Some(spec) = args.affected {
         return Some(execute_affected_with(spec, &state, &mut stdout));
+    }
+    if args.quality_baseline {
+        return Some(execute_quality_baseline_with(&state, &mut stdout));
+    }
+    if args.quality_delta {
+        let res = execute_quality_delta_with(&state, &mut stdout);
+        return match res {
+            Ok(has_failures) => {
+                if has_failures {
+                    Some(Err(io::Error::other("quality regressions detected")))
+                } else {
+                    Some(Ok(()))
+                }
+            }
+            Err(e) => Some(Err(e)),
+        };
     }
     None
 }
@@ -521,35 +583,45 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     ) {
         return res;
     }
-    if let Some(res) =
-        dispatch_gate_command(root, cli.edit_check.as_deref(), cli.affected.as_deref())
-    {
+
+    let cli_gate = GateDispatchArgs {
+        edit_check: cli.edit_check.as_deref(),
+        affected: cli.affected.as_deref(),
+        quality_baseline: cli.quality_baseline,
+        quality_delta: cli.quality_delta,
+    };
+    if let Some(res) = dispatch_gate_command(root, cli_gate) {
         return res;
     }
 
     match &cli.command {
-        Some(Commands::Mcp(mcp_args)) => {
-            let root = mcp_args.path.as_deref().unwrap_or(".");
-            run_mcp_stdio(root)
+        Some(cmd) => dispatch_subcommand(cmd),
+        None => execute_stream_xml(root),
+    }
+}
+
+fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
+    match command {
+        Commands::Mcp(mcp_args) => run_mcp_stdio(mcp_args.path.as_deref().unwrap_or(".")),
+        Commands::Navigate(nav_args) => execute_navigate(nav_args),
+        Commands::Orient(orient_args) => {
+            execute_stream_xml(orient_args.path.as_deref().unwrap_or("."))
         }
-        Some(Commands::Navigate(nav_args)) => execute_navigate(nav_args),
-        Some(Commands::Orient(orient_args)) => {
-            let root = orient_args.path.as_deref().unwrap_or(".");
-            execute_stream_xml(root)
-        }
-        Some(Commands::Gate(gate_args)) => {
+        Commands::Gate(gate_args) => {
             let root = gate_args.path.as_deref().unwrap_or(".");
-            if let Some(res) = dispatch_gate_command(
-                root,
-                gate_args.edit_check.as_deref(),
-                gate_args.affected.as_deref(),
-            ) {
+            let sub_gate = GateDispatchArgs {
+                edit_check: gate_args.edit_check.as_deref(),
+                affected: gate_args.affected.as_deref(),
+                quality_baseline: gate_args.quality_baseline,
+                quality_delta: gate_args.quality_delta,
+            };
+            if let Some(res) = dispatch_gate_command(root, sub_gate) {
                 return res;
             }
             println!("rwire gate: pre-commit verification gates (Wave 2 feature)");
             Ok(())
         }
-        Some(Commands::Metrics(metrics_args)) => {
+        Commands::Metrics(metrics_args) => {
             let root = metrics_args.path.as_deref().unwrap_or(".");
             if let Some(res) = dispatch_git_metrics_command(
                 root,
@@ -562,11 +634,10 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
             println!("rwire metrics: code complexity and health metrics (Wave 2 feature)");
             Ok(())
         }
-        Some(Commands::Slice(_)) => {
+        Commands::Slice(_) => {
             println!("rwire slice: ARISE variable dataflow slicing (Wave 3 feature)");
             Ok(())
         }
-        None => execute_stream_xml(root),
     }
 }
 

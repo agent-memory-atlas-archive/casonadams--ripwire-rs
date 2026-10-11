@@ -20,9 +20,11 @@ pub use domain::{
     FileInfo, IngestResult, Interner, Lang, NodeId, RefRole, Reference, SymKind, Symbol, NO_NODE,
 };
 pub use gate::{
-    check_symbol_contract, compare_contracts, find_affected_tests, is_test_path,
-    load_head_symbol_contract, AffectedReport, AffectedTest, CallerCheckResult, ContractStatus,
-    EditCheckReport, IncompatibleCallSite, SignatureContract,
+    check_symbol_contract, compare_contracts, compute_quality_delta, compute_snapshot,
+    evaluate_quality_delta, find_affected_tests, is_test_path, load_head_symbol_contract,
+    read_baseline_file, write_baseline_file, AffectedReport, AffectedTest, CallerCheckResult,
+    ContractStatus, EditCheckReport, IncompatibleCallSite, QualityDeltaReport, QualityRegression,
+    QualitySnapshot, SignatureContract, DEFAULT_BASELINE_FILE,
 };
 pub use git::cochange::{
     check_pair_dependency_capability, mine_cochange_for_file, mine_repo_cochange_pairs, CoPair,
@@ -51,4 +53,5 @@ pub use resolve::{
 };
 pub use serialize::{
     escape_xml_str, escape_xml_write, serialize_xml, serialize_xml_to_string, SerializeOptions,
+    ToXmlString,
 };

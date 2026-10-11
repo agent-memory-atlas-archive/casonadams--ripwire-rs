@@ -5,6 +5,7 @@ use rwire::gate::contract::SignatureContract;
 use rwire::gate::edit_check::check_symbol_contract;
 use rwire::graph::Graph;
 use rwire::mcp::{dispatch_json_rpc, McpState};
+use rwire::ToXmlString;
 use serde_json::Value;
 use std::io::Cursor;
 

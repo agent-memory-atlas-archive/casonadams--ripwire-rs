@@ -11,59 +11,73 @@ ack dead-code:new-symbol 33437bf5b1f3eb6a 0 cid=11849eb7f31a7fe0 now=0 was=0 p=t
 ack dead-code:new-symbol 366edd43c80f037e 0 cid=fa46023247d62f19 now=0 was=0 p=src/metrics/complexity.rs:320 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 46c452392a967e94 0 cid=393a1a55d167a97d now=0 was=0 p=src/gate/edit_check.rs:227 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 51f1e352a3f638d2 0 cid=ec3850a9999880d3 now=0 was=0 p=tests/test_edit_check_arity_break.rs:181 feat(gate): pre-commit contract gate and affected test reachability
+ack dead-code:new-symbol 52c090f9d0efc961 0 cid=bfb31e838590a044 now=0 was=0 p=tests/test_quality_delta_gate.rs:101 feat(gate): quality baseline and delta gate
+ack dead-code:new-symbol 53165f3946b16f9a 0 cid=d3f560283b350c08 now=0 was=0 p=tests/test_quality_delta_gate.rs:139 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol 795c5808ab0ca979 0 cid=3f603d0498ec0654 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 89cc6ea26e2c5dda 0 cid=9c3a3d5e89523184 now=0 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 8aa03f84e2d2f98a 0 cid=0ef648a45d0b46d6 now=0 was=0 p=tests/test_quality_delta_gate.rs:125 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol 8ad4c7876d05d498 0 cid=c44e07cd58788ef9 now=0 was=0 p=src/ingest.rs:279 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 8b8653693bb10aa5 0 cid=df69e53dd4bd9c95 now=0 was=0 p=src/metrics/readability.rs:232 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 8fa8a0c576f5de1f 0 cid=d35b890630585bc1 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:12 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 93a9c6e359a6853a 0 cid=a1e11f5326e7451c now=0 was=0 p=src/gate/affected.rs:29 feat(gate): pre-commit contract gate and affected test reachability
+ack dead-code:new-symbol 97baee50110a15e1 0 cid=d40a76493b0be67b now=0 was=0 p=tests/test_quality_delta_gate.rs:38 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol a3886bffb93481ae 0 cid=1ce8d02793b24b3f now=0 was=0 p=src/gate/affected.rs:275 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol a42a2dea2162a74f 0 cid=cfe358d269f24f9d now=0 was=0 p=src/metrics/complexity.rs:334 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol b4f59e525b0fe7dc 0 cid=28b793b358b3aa27 now=0 was=0 p=src/gate/contract.rs:216 feat(gate): pre-commit contract gate and affected test reachability
+ack dead-code:new-symbol c12f5ad506c25213 0 cid=c727557470bae560 now=0 was=0 p=src/gate/quality_delta.rs:34 feat(gate): quality baseline and delta gate
+ack dead-code:new-symbol c1545ebe53d74c2a 0 cid=f6daf121cd2fa191 now=0 was=0 p=src/gate/quality_delta.rs:231 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol c361951a2462aeb4 0 cid=32834a6e840dec29 now=0 was=0 p=src/metrics/readability.rs:228 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol c77c4ed0ed9c52d2 0 cid=5158a14822f28702 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:67 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol cc3d481e594826eb 0 cid=a6bc36174aad90ea now=0 was=0 p=src/gate/baseline.rs:222 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol d2a8efd1668b962a 0 cid=2fec3766e394c46f now=0 was=0 p=src/gate/contract.rs:212 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol dc541d00847aff4a 0 cid=128a9dc1b3f08bf2 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:203 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol ddbaca610a1f091c 0 cid=ecd165521dadd68a now=0 was=0 p=src/metrics/complexity.rs:324 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol e0ab848c5d67d7ae 0 cid=510934f45e78e30e now=0 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol e4f886db2ad78ca8 0 cid=96c071c53435697e now=0 was=0 p=tests/test_quality_delta_gate.rs:59 feat(gate): quality baseline and delta gate
+ack dead-code:new-symbol eb8a349f84dfee31 0 cid=29088c55b738bb66 now=0 was=0 p=src/gate/baseline.rs:226 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol ef626e7fbdac48cf 0 cid=c560a4919f395ede now=0 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability
+ack dead-code:new-symbol fb0d433ebd7ff914 0 cid=72668aac5d535d99 now=0 was=0 p=src/gate/quality_delta.rs:227 feat(gate): quality baseline and delta gate
 ack dead-code:preexisting c0300ca9ffbbc65c 0 cid=5a489bd9f0f776b1 now=0 was=0 p=src/metrics/hotspots.rs:30 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 02427b21a4f355ba 504 now=504 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 1336857542d3befe 641 now=641 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
 ack duplication 1dec0fb2c1f89afd 190 now=190 was=0 p=src/gate/edit_check.rs:82 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 378895c50d59fd95 105 now=105 was=0 p=src/gate/affected.rs:56 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 4568e39b8b97b662 146 now=146 was=0 p=src/metrics/readability.rs:238 feat(metrics): compute complexity, readability, and hotspots
+ack duplication 6af64fcdf256b60e 277 now=277 was=0 p=src/gate/baseline.rs:226 feat(gate): quality baseline and delta gate
 ack duplication 89c3edaf9bab79a3 55 now=55 was=0 p=src/ingest.rs:255 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication a2302432e09510c7 85 now=85 was=0 p=src/metrics/complexity.rs:19 feat(metrics): compute complexity, readability, and hotspots
 ack duplication b57d7cd71a911669 105 now=105 was=0 p=src/gate/affected.rs:56 feat(gate): pre-commit contract gate and affected test reachability
+ack duplication e3697d8c8dc449f9 277 now=277 was=0 p=src/gate/quality_delta.rs:231 feat(gate): quality baseline and delta gate
 ack duplication f67ca71a54fe23e3 56 now=56 was=0 p=src/gate/contract.rs:160 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 facet=ambient p=src/domain.rs:214 feat(metrics): compute complexity, readability, and hotspots
-ack short-horizon-churn 03e609981e51a079 4 cid=46618f02ab391654 now=4 was=0 facet=ambient p=src/cli.rs:17 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 03e609981e51a079 5 cid=1a77de16da933882 now=5 was=0 facet=ambient p=src/cli.rs:17 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 0dbcc2ebfc642340 7 cid=f7161ab1dbd67c20 now=7 was=0 facet=ambient p=src/ingest.rs:130 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 189e3c54e1874beb 7 cid=13afc9c65d43e4da now=7 was=0 facet=ambient p=src/ingest.rs:565 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 1a5e8bf9afe9ee39 7 cid=edfff520d79813ba now=7 was=0 facet=ambient p=src/ingest.rs:339 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 440c0e361021d0eb 6 cid=4b3c01ada5c9158b now=6 was=0 facet=self p=src/ingest.rs:339 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 4a1230f1cfd095df 6 cid=1ffe7220eae6384a now=6 was=0 facet=self p=src/ingest.rs:430 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 58c99c7de18a09a6 7 cid=a2bdbce68e56d287 now=7 was=0 facet=ambient p=src/ingest.rs:531 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
-ack short-horizon-churn 5d3030ce205bd4d9 4 cid=bf48f28e64080f4f now=4 was=0 facet=self p=src/cli.rs:514 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 5d3030ce205bd4d9 5 cid=e08d7d68067ee5c0 now=5 was=0 facet=self p=src/cli.rs:576 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn 5e69f1155e343c23 5 cid=a62db5d0a8cce6d8 now=5 was=0 facet=ambient p=src/cli.rs:106 feat(gate): quality baseline and delta gate
 ack short-horizon-churn 6592ae6ffe2a9edc 2 now=2 was=0 facet=self p=tests/test_ingest_tier1_fixtures.rs:6 migrate to in-memory fixtures for zero-IO testing
-ack short-horizon-churn 6c9b4b9bca1c4eb1 3 cid=902e7c42b751ebb2 now=3 was=0 facet=ambient p=src/mcp/mod.rs:442 feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn 6c9b4b9bca1c4eb1 4 cid=13ec561675263e0e now=4 was=0 facet=ambient p=src/mcp/mod.rs:490 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 6dcec957b21602d3 9 cid=97aeeecf8b5df765 now=9 was=0 facet=ambient p=src/domain.rs:237 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 72c710eba4e4924e 7 cid=2b62c5d5dcaca3ff now=7 was=0 facet=ambient p=src/ingest.rs:117 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 73e3b4916fad8f15 5 cid=6e9ea3a239f75d03 now=5 was=0 facet=self p=src/cli.rs:543 feat(gate): quality baseline and delta gate
 ack short-horizon-churn 76568d93a351a68d 6 cid=7dcd61687d79d92a now=6 was=0 facet=self p=src/ingest.rs:547 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 93c77c6f3702d249 6 cid=381f5e2d83524a67 now=6 was=0 facet=self p=src/main.rs:1 delegate main to rwire::run_cli | prior: stream XML output to stdout
 ack short-horizon-churn a29bdbd875b3bb62 6 cid=b84620de9d471718 now=6 was=0 facet=self p=src/ingest.rs:383 feat(metrics): compute complexity, readability, and hotspots
-ack short-horizon-churn a8b62b30beb02329 3 cid=e5b0073fdcce12b4 now=3 was=0 facet=ambient p=src/mcp/mod.rs:101 feat(gate): pre-commit contract gate and affected test reachability
-ack short-horizon-churn b5a40f34ce7656a9 4 cid=6fb235086cec3740 now=4 was=0 facet=ambient p=tests/test_cli_and_mcp.rs:28 feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn a8b62b30beb02329 4 cid=a0d26211732eaa15 now=4 was=0 facet=ambient p=src/mcp/mod.rs:101 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn b5a40f34ce7656a9 5 cid=d52b6241ca973147 now=5 was=0 facet=ambient p=tests/test_cli_and_mcp.rs:28 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn b88b1ea9b3cfaea8 6 cid=45bade1cbbda7009 now=6 was=0 facet=self p=src/ingest.rs:543 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn dbf9873eb051deef 2 now=2 was=0 facet=self p=tests/test_cli_and_mcp.rs:136 migrate to in-memory fixtures for zero-IO testing
 ack verbosity 2976ccc597b56f50 97 cid=547adee2b8442588 now=97 was=0 p=src/gate/affected.rs:270 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 2cdcf0486a28549b 63 cid=1f9ce08aaffe8e8e now=63 was=0 p=src/gate/edit_check.rs:222 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 38e4fa4960049db5 69 cid=4cb1a2afbe738a56 now=69 was=0 p=tests/test_edit_check_arity_break.rs:11 feat(gate): pre-commit contract gate and affected test reachability
-ack verbosity 6c9b4b9bca1c4eb1 64 cid=902e7c42b751ebb2 now=64 was=62 p=src/mcp/mod.rs:442 feat(gate): pre-commit contract gate and affected test reachability
+ack verbosity 6c9b4b9bca1c4eb1 66 cid=13ec561675263e0e now=66 was=64 p=src/mcp/mod.rs:490 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 795c5808ab0ca979 90 cid=3f603d0498ec0654 now=90 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity 89cc6ea26e2c5dda 67 cid=9c3a3d5e89523184 now=67 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
-ack verbosity a8b62b30beb02329 101 cid=e5b0073fdcce12b4 now=101 was=79 p=src/mcp/mod.rs:101 feat(gate): pre-commit contract gate and affected test reachability
-ack verbosity b5a40f34ce7656a9 76 cid=6fb235086cec3740 now=76 was=74 p=tests/test_cli_and_mcp.rs:28 feat(gate): pre-commit contract gate and affected test reachability
+ack verbosity a8b62b30beb02329 117 cid=a0d26211732eaa15 now=117 was=101 p=src/mcp/mod.rs:101 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
+ack verbosity b5a40f34ce7656a9 78 cid=d52b6241ca973147 now=78 was=76 p=tests/test_cli_and_mcp.rs:28 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity e0ab848c5d67d7ae 72 cid=510934f45e78e30e now=72 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity ef626e7fbdac48cf 83 cid=c560a4919f395ede now=83 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability

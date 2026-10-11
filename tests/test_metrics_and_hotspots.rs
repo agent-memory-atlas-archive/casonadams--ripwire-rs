@@ -5,6 +5,7 @@ use rwire::mcp::McpState;
 use rwire::metrics::{
     compute_complexity, compute_hotspots, compute_readability, posnett_score, NESTING_BAR,
 };
+use rwire::ToXmlString;
 use std::collections::HashMap;
 use std::io::Cursor;
 

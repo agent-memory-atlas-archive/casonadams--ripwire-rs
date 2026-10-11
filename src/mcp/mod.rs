@@ -194,6 +194,22 @@ pub fn handle_tools_list(id: &Value) -> Value {
                         },
                         "required": ["files"]
                     }
+                },
+                {
+                    "name": "quality_baseline",
+                    "description": "PIN the quality floor: writes .rwire_quality_baseline stamped with git HEAD sha",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "quality_delta",
+                    "description": "Your PR self-check: reports ONLY what your working tree made WORSE vs baseline",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {}
+                    }
                 }
             ]
         }
@@ -437,6 +453,38 @@ fn call_affected(state: &McpState, args: &Value) -> Result<Value, String> {
     }))
 }
 
+fn call_quality_baseline(state: &McpState, _args: &Value) -> Result<Value, String> {
+    let mut out = Vec::new();
+    crate::cli::execute_quality_baseline_with(state, &mut out).map_err(|e| e.to_string())?;
+    let msg = String::from_utf8(out).unwrap_or_default();
+    Ok(json!({ "result": msg.trim() }))
+}
+
+fn call_quality_delta(state: &McpState, _args: &Value) -> Result<Value, String> {
+    let report = crate::gate::quality_delta::evaluate_quality_delta(&state.root, state)
+        .map_err(|e| e.to_string())?;
+
+    Ok(json!({
+        "baseline_source": report.baseline_source,
+        "head_sha": report.head_sha,
+        "gating_count": report.gating_count,
+        "total_regressions": report.regressions.len(),
+        "has_gating_failures": report.has_gating_failures(),
+        "regressions": report.regressions.into_iter().map(|r| {
+            json!({
+                "kind": r.kind,
+                "symbol": r.sym_name,
+                "file": r.file_path,
+                "line": r.line,
+                "was": r.was_val,
+                "now": r.now_val,
+                "gating": r.is_gating,
+                "new_symbol": r.is_new_symbol
+            })
+        }).collect::<Vec<_>>()
+    }))
+}
+
 /// Handle `tools/call` method.
 #[must_use]
 pub fn handle_tools_call(
@@ -477,6 +525,8 @@ pub fn handle_tools_call(
         "cochange" => call_cochange(current_state, args),
         "edit_check" => call_edit_check(current_state, args),
         "affected" => call_affected(current_state, args),
+        "quality_baseline" => call_quality_baseline(current_state, args),
+        "quality_delta" => call_quality_delta(current_state, args),
         _ => Err(format!("unknown tool: {}", tool_name)),
     };
     match result {
