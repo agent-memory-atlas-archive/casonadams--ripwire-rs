@@ -82,9 +82,91 @@ pub struct Cli {
     #[arg(long)]
     pub token_budget: Option<usize>,
 
+    /// Top-level symbol navigation flags
+    #[command(flatten)]
+    pub nav: TopNavArgs,
+
+    /// Top-level retrieval and architecture flags
+    #[command(flatten)]
+    pub retrieval: TopRetrievalArgs,
+
+    /// Top-level workspace and audit flags
+    #[command(flatten)]
+    pub workspace: TopWorkspaceArgs,
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
+}
+/// Top-level symbol navigation flags.
+#[derive(Args, Debug, Clone, Default, PartialEq)]
+pub struct TopNavArgs {
+    /// Query 1-hop callers of a symbol
+    #[arg(long, value_name = "SYM")]
+    pub callers: Option<String>,
+
+    /// Query 1-hop callees of a symbol
+    #[arg(long, value_name = "SYM")]
+    pub callees: Option<String>,
+
+    /// Query transitive impact blast radius of a symbol
+    #[arg(long, value_name = "SYM")]
+    pub impact: Option<String>,
+
+    /// Query all static use-sites of a symbol
+    #[arg(long, value_name = "SYM")]
+    pub uses: Option<String>,
+
+    /// Query 1-hop callers and callees of a symbol
+    #[arg(long = "find-symbol", value_name = "SYM")]
+    pub find_symbol: Option<String>,
+}
+
+/// Top-level retrieval & architecture flags.
+#[derive(Args, Debug, Clone, Default, PartialEq)]
+pub struct TopRetrievalArgs {
+    /// Task-lens relevance ranking
+    #[arg(long = "for", value_name = "TASK")]
+    pub task_for: Option<String>,
+
+    /// Literal trigram text search
+    #[arg(long, value_name = "PAT")]
+    pub grep: Option<String>,
+
+    /// Minimal connecting subgraph relating symbols (A,B,...)
+    #[arg(long, value_name = "A,B")]
+    pub connect: Option<String>,
+
+    /// Shortest directed call path between two symbols (A:B)
+    #[arg(long = "path-between", value_name = "A:B")]
+    pub path_between: Option<String>,
+}
+
+/// Top-level workspace & audit flags.
+#[derive(Args, Debug, Clone, Default, PartialEq)]
+pub struct TopWorkspaceArgs {
+    /// Find which branches or trees define a symbol
+    #[arg(long, value_name = "SYM")]
+    pub whereis: Option<String>,
+
+    /// Authorship and bus-factor analysis
+    #[arg(long)]
+    pub owners: bool,
+
+    /// Detect stale doc references
+    #[arg(long = "doc-drift")]
+    pub doc_drift: bool,
+
+    /// Scan dark feature flags and environment reads
+    #[arg(long)]
+    pub flags: bool,
+
+    /// Divergent branch content tracking
+    #[arg(long = "stray-content")]
+    pub stray_content: bool,
+
+    /// Markdown docs referencing symbol in backticks
+    #[arg(long, value_name = "SYM")]
+    pub mentions: Option<String>,
 }
 
 /// Categorized workflow command groups.
@@ -669,9 +751,188 @@ fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<io::R
     execute_gate_action(args, &state, &mut stdout)
 }
 
+fn execute_nav_symbol_query<W: io::Write>(
+    sym: &str,
+    nav_mode: u8,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    ranks: &[f64],
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    if nav_mode == 3 {
+        return crate::navigate::serialize_uses_xml(sym, ingest, interner, out);
+    }
+    let ids = crate::navigate::find_symbols_by_name(sym, ingest, interner);
+    let Some(&id) = ids.first() else {
+        writeln!(out, "Symbol '{sym}' not found")?;
+        return Ok(());
+    };
+    match nav_mode {
+        0 => {
+            let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner)
+            else {
+                return Ok(());
+            };
+            crate::navigate::serialize_callers_xml(sym, &nav.callers, out)
+        }
+        1 => {
+            let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner)
+            else {
+                return Ok(());
+            };
+            crate::navigate::serialize_callees_xml(sym, &nav.callees, out)
+        }
+        2 => {
+            let impact =
+                crate::navigate::transitive_impact(id, ingest, graph, ranks, interner, None);
+            crate::navigate::serialize_impact_xml(sym, &impact, out)
+        }
+        4 => {
+            let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner)
+            else {
+                return Ok(());
+            };
+            crate::navigate::serialize_find_symbol_xml(&nav, out)
+        }
+        _ => Ok(()),
+    }
+}
+
+fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    let (sym, nav_mode) = if let Some(s) = cli.nav.callers.as_deref() {
+        (s, 0)
+    } else if let Some(s) = cli.nav.callees.as_deref() {
+        (s, 1)
+    } else if let Some(s) = cli.nav.impact.as_deref() {
+        (s, 2)
+    } else if let Some(s) = cli.nav.uses.as_deref() {
+        (s, 3)
+    } else {
+        let s = cli.nav.find_symbol.as_deref()?;
+        (s, 4)
+    };
+
+    Some((|| {
+        let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+        let mut stdout = io::stdout().lock();
+        execute_nav_symbol_query(
+            sym,
+            nav_mode,
+            &ingest,
+            &graph,
+            &pr.ranks,
+            &interner,
+            &mut stdout,
+        )
+    })())
+}
+
+fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    let ret = &cli.retrieval;
+    if ret.task_for.is_none()
+        && ret.grep.is_none()
+        && ret.connect.is_none()
+        && ret.path_between.is_none()
+    {
+        return None;
+    }
+    Some((|| {
+        let state = crate::mcp::McpState::load(root)
+            .ok_or_else(|| io::Error::other("failed to load repository"))?;
+        let mut stdout = io::stdout().lock();
+        if let Some(task) = ret.task_for.as_deref() {
+            let val = crate::mcp::retrieval::call_for_task(
+                &state.ingest,
+                &state.interner,
+                &state.pr.ranks,
+                task,
+                None,
+            );
+            crate::serialize::serialize_for_xml(&val, &mut stdout)?;
+        } else if let Some(pat) = ret.grep.as_deref() {
+            let val = crate::mcp::retrieval::call_grep(&state.ingest, &state.interner, pat, None);
+            crate::serialize::serialize_grep_xml(&val, &mut stdout)?;
+        } else if let Some(syms) = ret.connect.as_deref() {
+            let sym_list: Vec<String> = syms
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let val = crate::mcp::graph_tools::call_connect(
+                &state.ingest,
+                &state.graph,
+                &state.interner,
+                &sym_list,
+            );
+            crate::serialize::serialize_connect_xml(&val, &mut stdout)?;
+        } else if let Some(pair) = ret.path_between.as_deref() {
+            let parts: Vec<&str> = pair.split(':').collect();
+            let from = parts.first().copied().unwrap_or("");
+            let to = parts.get(1).copied().unwrap_or("");
+            let val = crate::mcp::graph_tools::call_path_between(
+                &state.ingest,
+                &state.graph,
+                &state.interner,
+                from,
+                to,
+            );
+            crate::serialize::serialize_path_between_xml(&val, &mut stdout)?;
+        }
+        Ok(())
+    })())
+}
+
+fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    let ws = &cli.workspace;
+    if ws.whereis.is_none()
+        && !ws.owners
+        && !ws.doc_drift
+        && !ws.flags
+        && !ws.stray_content
+        && ws.mentions.is_none()
+    {
+        return None;
+    }
+    Some((|| {
+        let state = crate::mcp::McpState::load(root)
+            .ok_or_else(|| io::Error::other("failed to load repository"))?;
+        let mut stdout = io::stdout().lock();
+        if let Some(sym) = ws.whereis.as_deref() {
+            let val = crate::mcp::doc_tools::call_whereis(&state.ingest, &state.interner, sym);
+            crate::serialize::serialize_whereis_xml(&val, &mut stdout)?;
+        } else if ws.owners {
+            let val = crate::mcp::doc_tools::call_owners(state.commits.as_deref(), None);
+            crate::serialize::serialize_owners_xml(&val, &mut stdout)?;
+        } else if ws.doc_drift {
+            let val = crate::mcp::doc_tools::call_doc_drift(&state.ingest, &state.interner);
+            crate::serialize::serialize_doc_drift_xml(&val, &mut stdout)?;
+        } else if ws.flags {
+            let val = crate::mcp::doc_tools::call_flags(&state.ingest, &state.interner);
+            crate::serialize::serialize_flags_xml(&val, &mut stdout)?;
+        } else if ws.stray_content {
+            let val = crate::mcp::doc_tools::call_stray_content(state.commits.as_deref());
+            crate::serialize::serialize_stray_content_xml(&val, &mut stdout)?;
+        } else if let Some(sym) = ws.mentions.as_deref() {
+            let val = crate::mcp::doc_tools::call_mentions(&state.ingest, &state.interner, sym);
+            crate::serialize::serialize_mentions_xml(&val, &mut stdout)?;
+        }
+        Ok(())
+    })())
+}
+
 /// Execute CLI from parsed options.
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     let root = cli.path.as_deref().unwrap_or(".");
+    if let Some(res) = dispatch_top_nav(&cli, root) {
+        return res;
+    }
+    if let Some(res) = dispatch_top_retrieval(&cli, root) {
+        return res;
+    }
+    if let Some(res) = dispatch_top_workspace(&cli, root) {
+        return res;
+    }
     if let Some(res) = dispatch_git_metrics_command(
         root,
         cli.cochange.as_ref().map(|o| o.as_deref()),
