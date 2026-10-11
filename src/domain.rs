@@ -175,6 +175,38 @@ impl Lang {
                 | (Self::Kotlin, Self::Java)
         )
     }
+
+    /// True if this language has syntax-backed dependency / import capability.
+    #[must_use]
+    pub fn is_dependency_capable(self) -> bool {
+        matches!(
+            self,
+            Self::Rust
+                | Self::TypeScript
+                | Self::JavaScript
+                | Self::Python
+                | Self::Go
+                | Self::C
+                | Self::Cpp
+                | Self::Cuda
+                | Self::Metal
+                | Self::Java
+                | Self::CSharp
+                | Self::Swift
+                | Self::Bash
+                | Self::Ruby
+                | Self::Php
+                | Self::Lua
+                | Self::Elixir
+                | Self::Kotlin
+        )
+    }
+
+    /// True if both languages are dependency capable and share dialect compatibility.
+    #[must_use]
+    pub fn is_pair_dependency_capable(self, other: Self) -> bool {
+        self.is_dependency_capable() && other.is_dependency_capable() && self.is_compatible(other)
+    }
 }
 
 /// Indexed definition in the symbol table.

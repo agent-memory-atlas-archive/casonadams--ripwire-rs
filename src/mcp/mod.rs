@@ -18,6 +18,7 @@ pub struct McpState {
     pub ranks: Vec<f64>,
     pub interner: Interner,
     pub pr: PageRankResult,
+    pub commits: Option<Vec<crate::git::history::CommitInfo>>,
 }
 
 impl McpState {
@@ -32,6 +33,7 @@ impl McpState {
         let pr = graph.page_rank(&PageRankConfig::default());
         let ranks = pr.ranks.clone();
 
+        let commits = crate::git::history::walk_repository_history(path).ok();
         Some(Self {
             root: root.to_string(),
             ingest,
@@ -39,6 +41,7 @@ impl McpState {
             ranks,
             interner,
             pr,
+            commits,
         })
     }
 
@@ -54,7 +57,14 @@ impl McpState {
             ranks,
             interner,
             pr,
+            commits: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_commits(mut self, commits: Vec<crate::git::history::CommitInfo>) -> Self {
+        self.commits = Some(commits);
+        self
     }
 }
 
@@ -148,6 +158,19 @@ pub fn handle_tools_list(id: &Value) -> Value {
                             "max_depth": { "type": "integer", "description": "Maximum hop depth" }
                         },
                         "required": ["symbol"]
+                    }
+                }
+                ,
+                {
+                    "name": "cochange",
+                    "description": "Files that historically change together with this file (Fowler's Shotgun Surgery logical coupling)",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "path": { "type": "string", "description": "Target file path to find co-change partners for" },
+                            "since": { "type": "string", "description": "Time window or revision (e.g. '18 months ago')" }
+                        },
+                        "required": ["path"]
                     }
                 }
             ]
@@ -262,6 +285,54 @@ fn call_explore(state: &McpState, args: &Value) -> Result<Value, String> {
     Ok(Value::String(xml))
 }
 
+fn call_cochange(state: &McpState, args: &Value) -> Result<Value, String> {
+    let file_path = args["path"]
+        .as_str()
+        .ok_or_else(|| "missing 'path' parameter".to_string())?;
+    let since_str = args["since"].as_str();
+
+    let empty_commits = Vec::new();
+    let commits_ref = state.commits.as_ref().unwrap_or(&empty_commits);
+    let anchor_epoch = commits_ref.first().map(|c| c.timestamp).unwrap_or(0);
+    let scope = crate::git::history::parse_since_scope(since_str, anchor_epoch);
+    let filtered = crate::git::history::filter_commits_by_scope(commits_ref, &scope);
+
+    let coupling = crate::git::cochange::StaticCouplingMap::build(
+        &state.ingest,
+        &state.interner,
+        Some(&state.graph),
+    );
+    let opts = crate::git::cochange::CochangeOptions::default();
+    let partners = crate::git::cochange::mine_cochange_for_file(
+        file_path,
+        filtered,
+        Some(&coupling),
+        Some(&state.ingest),
+        Some(&state.interner),
+        &opts,
+    );
+
+    let partners_json: Vec<Value> = partners
+        .into_iter()
+        .map(|p| {
+            json!({
+                "file": p.file_path,
+                "together": p.together,
+                "deg": (p.deg * 100.0).round() / 100.0,
+                "deg_rev": (p.deg_rev * 100.0).round() / 100.0,
+                "recur": p.recur,
+                "surprising": p.surprising,
+                "dep_capable": p.dep_capable
+            })
+        })
+        .collect();
+
+    Ok(json!({
+        "path": file_path,
+        "partners": partners_json
+    }))
+}
+
 /// Handle `tools/call` method.
 #[must_use]
 pub fn handle_tools_call(
@@ -299,6 +370,7 @@ pub fn handle_tools_call(
         "callees" => call_callees(current_state, args),
         "impact" => call_impact(current_state, args),
         "explore" => call_explore(current_state, args),
+        "cochange" => call_cochange(current_state, args),
         _ => Err(format!("unknown tool: {}", tool_name)),
     };
     match result {

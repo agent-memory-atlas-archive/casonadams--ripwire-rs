@@ -1,6 +1,7 @@
 pub mod cli;
 pub mod crawler;
 pub mod domain;
+pub mod git;
 pub mod graph;
 pub mod ingest;
 pub mod mcp;
@@ -15,6 +16,16 @@ pub use crawler::{
 };
 pub use domain::{
     FileInfo, IngestResult, Interner, Lang, NodeId, RefRole, Reference, SymKind, Symbol, NO_NODE,
+};
+pub use git::cochange::{
+    check_pair_dependency_capability, mine_cochange_for_file, mine_repo_cochange_pairs, CoPair,
+    CoPartner, CochangeOptions, StaticCouplingMap,
+};
+pub use git::history::{
+    civil_from_days, compute_file_churn, days_from_civil, filter_commits_by_scope,
+    months_before_epoch, parse_since_scope, walk_repository_history, CommitInfo, FileChurn,
+    GitHistoryError, SinceScope, CHURN_DECAY_HALF_LIFE_DAYS, DEFAULT_CHURN_MONTHS,
+    DEFAULT_COCHANGE_MONTHS, MERGE_BOMB_MAX_FILES,
 };
 pub use graph::{CsrMatrix, Graph};
 pub use ingest::{ingest_crawled_files, ingest_in_memory_files, LanguageRegistry};

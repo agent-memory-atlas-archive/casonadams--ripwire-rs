@@ -8,7 +8,7 @@ use clap::{Args, Parser, Subcommand};
 use std::io;
 
 /// CLI command line options.
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Default, PartialEq)]
 #[command(
     name = "rwire",
     version,
@@ -18,6 +18,13 @@ pub struct Cli {
     /// Target repository path (default: current directory)
     #[arg(value_name = "PATH")]
     pub path: Option<String>,
+    /// Fowler's Shotgun Surgery co-change mining
+    #[arg(long)]
+    pub cochange: Option<Option<String>>,
+
+    /// Limit git history traversal to commits after this date or revision
+    #[arg(long)]
+    pub since: Option<String>,
 
     /// Workflow subcommand group
     #[command(subcommand)]
@@ -103,6 +110,14 @@ pub struct MetricsArgs {
     /// Show top maintenance hotspots (churn * ccx)
     #[arg(long)]
     pub hotspots: bool,
+
+    /// Show file co-change coupling (Fowler's Shotgun Surgery)
+    #[arg(long)]
+    pub cochange: Option<Option<String>>,
+
+    /// Limit git history traversal to commits after this date or revision
+    #[arg(long)]
+    pub since: Option<String>,
 }
 
 #[derive(Args, Debug, Default, PartialEq)]
@@ -266,8 +281,107 @@ fn execute_navigate(args: &NavigateArgs) -> io::Result<()> {
     let mut stdout = io::stdout().lock();
     execute_navigate_with(args, &ctx, &mut stdout)
 }
+
+fn print_cochange_partners<W: io::Write>(
+    file: &str,
+    partners: &[crate::git::cochange::CoPartner],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(out, "<f path=\"{}\" partners=\"{}\">", file, partners.len())?;
+    for p in partners {
+        let attr = if !p.dep_capable {
+            " dep_capable=\"0\""
+        } else if p.surprising {
+            " surprising=\"1\""
+        } else {
+            ""
+        };
+        writeln!(
+            out,
+            "  <partner path=\"{}\" together=\"{}\" deg=\"{:.2}\" deg_rev=\"{:.2}\" recur=\"{}\"{} />",
+            p.file_path, p.together, p.deg, p.deg_rev, p.recur, attr
+        )?;
+    }
+    writeln!(out, "</f>")
+}
+
+fn print_cochange_pairs<W: io::Write>(
+    pairs: &[crate::git::cochange::CoPair],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(out, "<cochange pairs=\"{}\">", pairs.len())?;
+    for p in pairs {
+        let attr = if !p.dep_capable {
+            " dep_capable=\"0\""
+        } else if p.surprising {
+            " surprising=\"1\""
+        } else {
+            ""
+        };
+        writeln!(
+            out,
+            "  <pair a=\"{}\" b=\"{}\" together=\"{}\" deg=\"{:.2}\" recur=\"{}\"{} />",
+            p.file_a, p.file_b, p.together, p.deg, p.recur, attr
+        )?;
+    }
+    writeln!(out, "</cochange>")
+}
+
+pub fn execute_cochange_with<W: io::Write>(
+    probed_file: Option<&str>,
+    since_str: Option<&str>,
+    commits: &[crate::git::history::CommitInfo],
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
+    let anchor_epoch = commits.first().map(|c| c.timestamp).unwrap_or(0);
+    let scope = crate::git::history::parse_since_scope(since_str, anchor_epoch);
+    let filtered = crate::git::history::filter_commits_by_scope(commits, &scope);
+    let coupling = crate::git::cochange::StaticCouplingMap::build(
+        &state.ingest,
+        &state.interner,
+        Some(&state.graph),
+    );
+    let opts = crate::git::cochange::CochangeOptions::default();
+
+    if let Some(file) = probed_file {
+        let partners = crate::git::cochange::mine_cochange_for_file(
+            file,
+            filtered,
+            Some(&coupling),
+            Some(&state.ingest),
+            Some(&state.interner),
+            &opts,
+        );
+        print_cochange_partners(file, &partners, out)
+    } else {
+        let pairs = crate::git::cochange::mine_repo_cochange_pairs(
+            filtered,
+            Some(&coupling),
+            Some(&state.ingest),
+            Some(&state.interner),
+            &opts,
+        );
+        print_cochange_pairs(&pairs, out)
+    }
+}
+
+fn execute_cochange(root: &str, probed_file: Option<&str>, since: Option<&str>) -> io::Result<()> {
+    let state = crate::mcp::McpState::load(root)
+        .ok_or_else(|| io::Error::other("failed to load repository"))?;
+    let empty_commits = Vec::new();
+    let commits = state.commits.as_ref().unwrap_or(&empty_commits);
+    let mut stdout = io::stdout().lock();
+    execute_cochange_with(probed_file, since, commits, &state, &mut stdout)
+}
 /// Execute CLI from parsed options.
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
+    if let Some(co_opt) = &cli.cochange {
+        let root = cli.path.as_deref().unwrap_or(".");
+        let probed = co_opt.as_deref();
+        return execute_cochange(root, probed, cli.since.as_deref());
+    }
+
     match &cli.command {
         Some(Commands::Mcp(mcp_args)) => {
             let root = mcp_args.path.as_deref().unwrap_or(".");
@@ -282,7 +396,12 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
             println!("rwire gate: pre-commit verification gates (Wave 2 feature)");
             Ok(())
         }
-        Some(Commands::Metrics(_)) => {
+        Some(Commands::Metrics(metrics_args)) => {
+            if let Some(co_opt) = &metrics_args.cochange {
+                let root = metrics_args.path.as_deref().unwrap_or(".");
+                let probed = co_opt.as_deref();
+                return execute_cochange(root, probed, metrics_args.since.as_deref());
+            }
             println!("rwire metrics: code complexity and health metrics (Wave 2 feature)");
             Ok(())
         }

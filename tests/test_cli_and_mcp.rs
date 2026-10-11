@@ -63,6 +63,7 @@ fn test_mcp_json_rpc_suite() {
     assert!(tool_names.contains(&"impact"));
     assert!(tool_names.contains(&"callers"));
     assert!(tool_names.contains(&"callees"));
+    assert!(tool_names.contains(&"cochange"));
 
     // ── 4. TOOLS/CALL: explore ───────────────────────────────────────────────
     let explore_call = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"explore","arguments":{"top_k":5}}}"#;
@@ -212,18 +213,18 @@ fn test_cli_execution_modes() {
 
     // 3. Subcommand stubs
     assert!(run_cli_args(Cli {
-        path: None,
         command: Some(Commands::Gate(GateArgs::default())),
+        ..Default::default()
     })
     .is_ok());
     assert!(run_cli_args(Cli {
-        path: None,
         command: Some(Commands::Metrics(MetricsArgs::default())),
+        ..Default::default()
     })
     .is_ok());
     assert!(run_cli_args(Cli {
-        path: None,
         command: Some(Commands::Slice(SliceArgs::default())),
+        ..Default::default()
     })
     .is_ok());
 }
