@@ -28,14 +28,42 @@ rw . --impact="Type.method"
 # Export self-contained interactive SVG/HTML visualizer
 rw . --html=callgraph.html --color-by=community
 
-## Pre-Commit Verification Gates
+## Detail Ladder & Progressive Expansion
 
 ```bash
-# Check caller compatibility after editing a symbol contract
+# Expand full source body of symbols and callee signatures
+rw . --expand="Symbol::new"
+
+# Outline control-flow skeletons of symbols (declarations, loops, branches)
+rw . --outline="Interner::intern"
+
+# Pack source bodies of the top N highest PageRank symbols
+rw . --pack-top-n=5
+
+# Orient file by file with top 3 symbols per file
+rw . --tree
+```
+
+## Pre-Commit Verification & Safety Gates
+
+```bash
+# Verify caller compatibility after editing a symbol contract
 rw . --edit-check="symbol_name"
 
 # Transitive reachability mapping to affected test suites
 rw . --affected="src/lib.rs"
+
+# Name tests to run and untested blast radius (exit 4 if non-empty obligations)
+rw . --test-gate
+
+# Situational awareness report for working tree diff: blast radius, tests, co-change
+rw . --situ
+
+# Safe delete assessment joining callers, blast radius, tests, and history
+rw . --safe-delete="Interner::len"
+
+# Show non-test symbols reached by a test suite
+rw . --exercises="tests/test_cli_and_mcp.rs"
 
 # Snapshot code quality baseline at current commit
 rw . --quality-baseline
@@ -44,9 +72,24 @@ rw . --quality-baseline
 rw . --quality-delta
 ```
 
-## Code Intelligence & Metrics
+## Architecture & Code Intelligence
 
 ```bash
+# Detect internal functions with zero incoming callers across the tree
+rw . --dead-code
+
+# Partition call graph into cohesive modules (Louvain community detection)
+rw . --communities
+
+# Extract ego-graph around a symbol (depth 1, fanout 32)
+rw . --around="Interner::new" --around-depth=2 --around-fanout=16
+
+# Discover symbols referenced but never defined (stdlib & external dependencies)
+rw . --external-surface
+
+# File-to-file dependency graph with instability and afferent coupling
+rw . --deps
+
 # Detect AST code clones and near-miss duplicates (Type-1, Type-2, Type-3)
 rw . --clones --min-tokens=40
 
@@ -60,11 +103,33 @@ rw . --hotspots
 rw . --slice="compute:x" --slice-flow=fwd
 ```
 
+## Task Retrieval & Batching
+
+```bash
+# Find best-in-class existing implementation of kind to imitate
+rw . --exemplar="parser"
+
+# Show one interface contract and all types implementing it
+rw . --lego="ToXmlString"
+
+# Search repository markdown documentation for relevant plans and notes
+rw . --recall="PageRank"
+
+# Map stack trace / compiler error lines onto indexed symbols
+rw . --from-trace=error.log
+
+# Emit JSON instead of XML for navigation queries
+rw . --callers="Interner::len" --json
+
+# Execute up to 16 heterogeneous sub-queries in a single turn
+rw . --batch=queries.txt
+```
+
 ## Workflow Subcommands
 
 - `rw orient [PATH]`: Codebase orientation and structural summaries.
 - `rw navigate [PATH] --symbol <SYM> [--callers|--callees|--impact]`: Symbol neighborhood analysis.
-- `rw gate [PATH] [--edit-check|--affected|--quality-delta]`: Verification safety gates.
-- `rw metrics [PATH] [--hotspots|--complexity]`: Code health metrics.
+- `rw gate [PATH] [--edit-check|--affected|--quality-delta|--test-gate]`: Verification safety gates.
+- `rw metrics [PATH] [--hotspots|--complexity|--clones]`: Code health metrics.
 - `rw slice [PATH] --symbol <SYM> --var <VAR>`: Intra-procedural slicing.
 - `rw mcp`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.

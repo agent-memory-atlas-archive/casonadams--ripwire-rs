@@ -163,6 +163,68 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
+          <div class="cmd-title"><code>rw --test-gate [FILES]</code></div>
+          <span class="cmd-badge">Safety Gate</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Pre-PR verification gate: identifies all test suites that reach modified files and detects untested transitive blast radius. Exits with status code 4 if obligations remain.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Inspects git working tree diffs, traces reverse call graph reachability to test harnesses, and evaluates untested downstream symbols across 1-hop and transitive edges.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">In pre-push and PR verification gates to ensure all modified code is tested before opening pull requests.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --expand &lt;SYMS&gt;</code></div>
+          <span class="cmd-badge">Detail Ladder</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Expands full source bodies and callee signatures for comma-separated symbols, wrapped in token-dense CDATA XML blocks.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Extracts exact byte spans from the underlying source files, resolving qualified selectors (`Type::method`, `file:name`), and streams the function bodies to stdout.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">When drilling down from architectural map summaries to implementation details of specific core functions.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>rw --dead-code</code></div>
+          <span class="cmd-badge">Architecture</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Scans the entire workspace call graph and identifies internal functions and methods with zero incoming callers.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Computes in-degree matrix offsets across the graph, filtering out public library entry points and self-registering test macros.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">During codebase refactoring, dead-weight cleanup, or technical debt audits to find safely removable internal code.</p>
+          </div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-header">
           <div class="cmd-title"><code>rw --edit-check &lt;SYM&gt;</code></div>
           <span class="cmd-badge">Safety Gate</span>
         </div>

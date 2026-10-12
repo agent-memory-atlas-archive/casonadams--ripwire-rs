@@ -62,12 +62,17 @@ pub use resolve::{
     EdgeAcc, ResolutionResult, ResolvedRef, resolve_all_references, resolve_call_reference,
 };
 pub use serialize::{
-    ColorBy, CountingWriter, DEFAULT_PACK_BUDGET_BYTES, RootElementContext, SerializeOptions,
-    StreamXmlContext, ToXmlString, escape_xml_str, escape_xml_write, generate_call_graph_html,
-    serialize_connect_xml, serialize_doc_drift_xml, serialize_flags_xml, serialize_for_xml,
-    serialize_grep_xml, serialize_mentions_xml, serialize_owners_xml, serialize_path_between_xml,
-    serialize_stray_content_xml, serialize_whereis_xml, serialize_xml, serialize_xml_to_string,
-    serialize_xml_with_ranks, write_call_graph_html,
+    ColorBy, CommunityModule, CountingWriter, DEFAULT_PACK_BUDGET_BYTES, RootElementContext,
+    SerializeOptions, StreamXmlContext, ToXmlString, TreeFileSymbols, escape_xml_str,
+    escape_xml_write, generate_call_graph_html, serialize_around_xml, serialize_communities_xml,
+    serialize_connect_xml, serialize_dead_code_xml, serialize_deps_xml, serialize_doc_drift_xml,
+    serialize_exemplar_xml, serialize_exercises_xml, serialize_expand_xml,
+    serialize_external_surface_xml, serialize_flags_xml, serialize_for_xml,
+    serialize_from_trace_xml, serialize_grep_xml, serialize_lego_xml, serialize_mentions_xml,
+    serialize_owners_xml, serialize_pack_top_n_xml, serialize_path_between_xml,
+    serialize_recall_xml, serialize_safe_delete_xml, serialize_stray_content_xml,
+    serialize_test_gate_xml, serialize_tree_xml, serialize_whereis_xml, serialize_xml,
+    serialize_xml_to_string, serialize_xml_with_ranks, write_call_graph_html,
 };
 pub use slice::{
     OccRole, SliceFlowDir, SliceStep, VariableOcc, compute_dataflow_slice, execute_slice,

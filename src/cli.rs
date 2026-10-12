@@ -5,7 +5,7 @@ use crate::navigate::{find_symbols_by_name, navigate_1hop, transitive_impact};
 use crate::rank::PageRankResult;
 use crate::serialize::{SerializeOptions, ToXmlString};
 use clap::{Args, Parser, Subcommand};
-use std::io;
+use std::io::{self, Write};
 
 /// CLI command line options.
 #[derive(Parser, Debug, Default, PartialEq)]
@@ -21,63 +21,52 @@ pub struct Cli {
     /// Fowler's Shotgun Surgery co-change mining
     #[arg(long)]
     pub cochange: Option<Option<String>>,
-
     /// Limit git history traversal to commits after this date or revision
     #[arg(long)]
     pub since: Option<String>,
-
     /// Show top maintenance hotspots (churn * ccx)
     #[arg(long)]
     pub hotspots: bool,
-
     /// Verify 1-hop caller compatibility against git HEAD
     #[arg(long)]
     pub edit_check: Option<String>,
-
     /// Show test files affected by changes
     #[arg(long)]
     pub affected: Option<String>,
-
     /// Pin quality baseline stamped with git HEAD
     #[arg(long)]
     pub quality_baseline: bool,
-
     /// Report code quality delta regressions vs baseline
     #[arg(long)]
     pub quality_delta: bool,
-
     /// Detect AST code duplication and clones (Type-1, Type-2, Type-3)
     #[arg(long)]
     pub clones: bool,
-
     /// Minimum token length for clone detection
     #[arg(long, default_value_t = 40)]
     pub min_tokens: usize,
-
     /// ARISE intra-procedural def-use variable slice (SYM[:VAR])
     #[arg(long)]
     pub slice: Option<String>,
-
     /// Dataflow direction for --slice (fwd, back, both)
     #[arg(long, default_value = "fwd")]
     pub slice_flow: String,
-
     /// Export interactive HTML call graph visualization to file
     #[arg(long, value_name = "FILE")]
     pub html: Option<Option<String>>,
-
     /// Node coloring mode for --html: lang, community, cx, churn, tested
     #[arg(long, default_value = "lang")]
     pub color_by: String,
-
     /// Ranking signal: pagerank, authority, hub
     #[arg(long, default_value = "pagerank")]
     pub rank_by: String,
-
     /// Streaming budget in bytes (default 65536)
-    #[arg(long)]
+    #[arg(
+        long = "pack-budget",
+        visible_alias = "pack-budget-bytes",
+        value_name = "BYTES"
+    )]
     pub pack_budget: Option<usize>,
-
     /// Token budget (~4 bytes per token, alternative to --pack-budget)
     #[arg(long)]
     pub token_budget: Option<usize>,
@@ -104,6 +93,22 @@ pub struct Cli {
     /// Top-level workspace and audit flags
     #[command(flatten)]
     pub workspace: TopWorkspaceArgs,
+
+    /// Top-level detail ladder flags
+    #[command(flatten)]
+    pub detail: TopDetailArgs,
+
+    /// Top-level pre-PR safety flags
+    #[command(flatten)]
+    pub safety: TopSafetyArgs,
+
+    /// Top-level architecture and discovery flags
+    #[command(flatten)]
+    pub arch: TopArchitectureArgs,
+
+    /// Top-level global modifiers and batching flags
+    #[command(flatten)]
+    pub modifiers: TopModifierArgs,
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -131,6 +136,102 @@ pub struct TopNavArgs {
     #[arg(long = "find-symbol", value_name = "SYM")]
     pub find_symbol: Option<String>,
 }
+/// Top-level detail ladder flags.
+#[derive(Args, Debug, Clone, Default, PartialEq)]
+pub struct TopDetailArgs {
+    /// Expand full symbol bodies and callee signatures (SYM,SYM...)
+    #[arg(long, value_name = "SYMS")]
+    pub expand: Option<String>,
+
+    /// Outline control-flow skeletons of symbols (SYM,SYM...)
+    #[arg(long, value_name = "SYMS")]
+    pub outline: Option<String>,
+
+    /// Pack bodies of the top N highest-ranked symbols
+    #[arg(long = "pack-top-n", value_name = "N")]
+    pub pack_top_n: Option<usize>,
+
+    /// Orient file by file showing each file's top symbols
+    #[arg(long)]
+    pub tree: bool,
+}
+/// Top-level pre-PR safety and verification flags.
+#[derive(Args, Debug, Clone, Default, PartialEq)]
+pub struct TopSafetyArgs {
+    /// Before a PR: name tests to run and untested blast radius (exit 4 if non-empty)
+    #[arg(long = "test-gate", value_name = "FILES")]
+    pub test_gate: Option<Option<String>>,
+
+    /// Situational awareness for a change: blast radius + tests + co-change (default: git diff)
+    #[arg(long, value_name = "FILES")]
+    pub situ: Option<Option<String>>,
+
+    /// Safe delete assessment joining callers, blast radius, tests, and history
+    #[arg(long = "safe-delete", value_name = "SYM")]
+    pub safe_delete: Option<String>,
+
+    /// Show what a test file actually covers: non-test symbols it reaches
+    #[arg(long, value_name = "TESTFILE")]
+    pub exercises: Option<String>,
+}
+/// Top-level architecture and discovery flags.
+#[derive(Args, Debug, Clone, Default, PartialEq)]
+pub struct TopArchitectureArgs {
+    /// Internal functions with zero incoming callers across the repository
+    #[arg(long = "dead-code")]
+    pub dead_code: bool,
+
+    /// Cluster call graph into cohesive modules (Louvain community detection)
+    #[arg(long)]
+    pub communities: bool,
+
+    /// Inspect members and bridges of one specific community module
+    #[arg(long, value_name = "ID")]
+    pub community: Option<u32>,
+
+    /// File-to-file dependency graph with instability and cycle metrics
+    #[arg(long)]
+    pub deps: bool,
+
+    /// Ego-graph around a symbol
+    #[arg(long, value_name = "SYM")]
+    pub around: Option<String>,
+
+    /// Depth for --around ego-graph (default: 1)
+    #[arg(long = "around-depth", default_value_t = 1)]
+    pub around_depth: u32,
+
+    /// Fanout limit for --around ego-graph (default: 32)
+    #[arg(long = "around-fanout", default_value_t = 32)]
+    pub around_fanout: usize,
+
+    /// Names used but never defined in the index (external stdlib/deps surface)
+    #[arg(long = "external-surface")]
+    pub external_surface: bool,
+}
+/// Top-level global modifiers and batching flags.
+#[derive(Args, Debug, Clone, Default, PartialEq)]
+pub struct TopModifierArgs {
+    /// Emit JSON instead of XML
+    #[arg(long)]
+    pub json: bool,
+
+    /// Paginate: maximum number of items to emit
+    #[arg(long, value_name = "N")]
+    pub limit: Option<usize>,
+
+    /// Paginate: number of items to skip
+    #[arg(long, value_name = "M")]
+    pub offset: Option<usize>,
+
+    /// Emit ordering: important-first (default), important-last, or stable
+    #[arg(long, default_value = "important-first")]
+    pub order: String,
+
+    /// Run several lookups in one turn from newline-delimited verb:arg file
+    #[arg(long, value_name = "FILE")]
+    pub batch: Option<String>,
+}
 
 /// Top-level retrieval & architecture flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
@@ -150,6 +251,22 @@ pub struct TopRetrievalArgs {
     /// Shortest directed call path between two symbols (A:B or A,B)
     #[arg(long = "path-between", visible_alias = "path", value_name = "A:B")]
     pub path_between: Option<String>,
+
+    /// Retrieve best-in-class existing instance of code to imitate
+    #[arg(long, value_name = "TASK|KIND")]
+    pub exemplar: Option<String>,
+
+    /// Show one interface and every type implementing it
+    #[arg(long, value_name = "TYPE")]
+    pub lego: Option<String>,
+
+    /// Search plans, designs, and docs for relevant notes
+    #[arg(long, value_name = "TASK")]
+    pub recall: Option<String>,
+
+    /// Map a stack trace, sanitizer report or compiler error onto indexed symbols
+    #[arg(long = "from-trace", value_name = "FILE")]
+    pub from_trace: Option<String>,
 }
 
 /// Top-level workspace & audit flags.
@@ -846,6 +963,25 @@ fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
         let mut stdout = io::stdout().lock();
+        if cli.modifiers.json {
+            let ids = crate::navigate::find_symbols_by_name(sym, &ingest, &interner);
+            if let Some(&id) = ids.first() {
+                if mode == NavMode::Impact {
+                    let impact = crate::navigate::transitive_impact(
+                        id, &ingest, &graph, &pr.ranks, &interner, None,
+                    );
+                    serde_json::to_writer_pretty(&mut stdout, &impact)?;
+                    writeln!(stdout)?;
+                    return Ok(());
+                } else if let Some(nav) =
+                    crate::navigate::navigate_1hop(id, &ingest, &graph, &pr.ranks, &interner)
+                {
+                    serde_json::to_writer_pretty(&mut stdout, &nav)?;
+                    writeln!(stdout)?;
+                    return Ok(());
+                }
+            }
+        }
         execute_nav_symbol_query(
             sym,
             mode,
@@ -942,31 +1078,59 @@ pub fn execute_workspace_doc_query<W: io::Write>(
     Ok(())
 }
 
+pub fn execute_retrieval_dispatch<W: io::Write>(
+    ret: &TopRetrievalArgs,
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    pr: &crate::rank::PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    if let Some(task) = ret.task_for.as_deref() {
+        let val = crate::mcp::retrieval::call_for_task(ingest, interner, &pr.ranks, task, None);
+        crate::serialize::serialize_for_xml(&val, out)?;
+    } else if let Some(pat) = ret.grep.as_deref() {
+        let val = crate::mcp::retrieval::call_grep(ingest, interner, pat, None);
+        crate::serialize::serialize_grep_xml(&val, out)?;
+    } else if let Some(syms) = ret.connect.as_deref() {
+        execute_connect_query(syms, ingest, graph, interner, out)?;
+    } else if let Some(pair) = ret.path_between.as_deref() {
+        execute_path_query(pair, ingest, graph, interner, out)?;
+    } else if let Some(ex) = ret.exemplar.as_deref() {
+        let val = crate::mcp::retrieval::call_exemplar(ingest, interner, &pr.ranks, ex);
+        crate::serialize::serialize_exemplar_xml(root, &val, out)?;
+    } else if let Some(iface) = ret.lego.as_deref() {
+        let val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
+        crate::serialize::serialize_lego_xml(root, &val, out)?;
+    } else if let Some(rec) = ret.recall.as_deref() {
+        let val = crate::mcp::retrieval::call_memory_recall(ingest, interner, rec, None);
+        crate::serialize::serialize_recall_xml(root, rec, &val, out)?;
+    } else if let Some(tr) = ret.from_trace.as_deref() {
+        let trace_text = std::fs::read_to_string(tr).unwrap_or_else(|_| tr.to_string());
+        let val = crate::mcp::graph_tools::call_from_trace(ingest, interner, &trace_text);
+        crate::serialize::serialize_from_trace_xml(&val, out)?;
+    }
+    Ok(())
+}
+
 fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let ret = &cli.retrieval;
     if ret.task_for.is_none()
         && ret.grep.is_none()
         && ret.connect.is_none()
         && ret.path_between.is_none()
+        && ret.exemplar.is_none()
+        && ret.lego.is_none()
+        && ret.recall.is_none()
+        && ret.from_trace.is_none()
     {
         return None;
     }
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
         let mut stdout = io::stdout().lock();
-        if let Some(task) = ret.task_for.as_deref() {
-            let val =
-                crate::mcp::retrieval::call_for_task(&ingest, &interner, &pr.ranks, task, None);
-            crate::serialize::serialize_for_xml(&val, &mut stdout)?;
-        } else if let Some(pat) = ret.grep.as_deref() {
-            let val = crate::mcp::retrieval::call_grep(&ingest, &interner, pat, None);
-            crate::serialize::serialize_grep_xml(&val, &mut stdout)?;
-        } else if let Some(syms) = ret.connect.as_deref() {
-            execute_connect_query(syms, &ingest, &graph, &interner, &mut stdout)?;
-        } else if let Some(pair) = ret.path_between.as_deref() {
-            execute_path_query(pair, &ingest, &graph, &interner, &mut stdout)?;
-        }
-        Ok(())
+        execute_retrieval_dispatch(ret, root, &ingest, &graph, &pr, &interner, &mut stdout)
     })())
 }
 
@@ -1000,17 +1164,711 @@ fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         Ok(())
     })())
 }
+fn extract_symbol_body<'a>(
+    sym: &'a crate::domain::Symbol,
+    ingest: &'a crate::domain::IngestResult,
+    interner: &'a Interner,
+    root_path: &std::path::Path,
+) -> Option<(&'a crate::domain::Symbol, &'a str, &'a str, String)> {
+    let name = interner.resolve(&sym.name);
+    let rel_path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+    let bytes = std::fs::read(root_path.join(rel_path)).ok()?;
+    let start = (sym.sig_start_byte as usize).min(bytes.len());
+    let end = (sym.end_byte as usize).min(bytes.len());
+    if start < end {
+        let body = String::from_utf8_lossy(&bytes[start..end]).to_string();
+        Some((sym, name, rel_path, body))
+    } else {
+        None
+    }
+}
+
+fn execute_expand_query<W: io::Write>(
+    root: &str,
+    syms_spec: &str,
+    ingest: &crate::domain::IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let sym_names: Vec<&str> = syms_spec
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut expanded_items = Vec::new();
+    let root_path = std::path::Path::new(root);
+
+    for sym_name in sym_names {
+        let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
+        if ids.is_empty() {
+            return Err(io::Error::other(format!(
+                "ripwire: --expand symbol not found: {sym_name}"
+            )));
+        }
+        for &id in &ids {
+            if let Some(item) =
+                extract_symbol_body(&ingest.symbols[id as usize], ingest, interner, root_path)
+            {
+                expanded_items.push(item);
+            }
+        }
+    }
+
+    let items_slice: Vec<(&crate::domain::Symbol, &str, &str, &str)> = expanded_items
+        .iter()
+        .map(|(s, n, p, b)| (*s, *n, *p, b.as_str()))
+        .collect();
+
+    crate::serialize::serialize_expand_xml(root, &items_slice, out)
+}
+
+fn execute_pack_top_n_query<W: io::Write>(
+    root: &str,
+    n: usize,
+    ingest: &crate::domain::IngestResult,
+    pr: &crate::rank::PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (file_order, buckets) = crate::serialize::bucket_symbols_by_rank(
+        &ingest.symbols,
+        ingest.files.len(),
+        &pr.ranks,
+        Some(n),
+    );
+    let root_path = std::path::Path::new(root);
+    let mut bodies = Vec::new();
+    let mut count = 0;
+
+    for f in file_order {
+        if count >= n {
+            break;
+        }
+        let rel_path = interner.resolve(&ingest.files[f as usize].path);
+        let file_disk_path = root_path.join(rel_path);
+        if let Ok(bytes) = std::fs::read(&file_disk_path) {
+            let content = String::from_utf8_lossy(&bytes).to_string();
+            bodies.push((rel_path, content));
+            count += buckets[f as usize].len();
+        }
+    }
+
+    let bodies_slice: Vec<(&str, &str)> = bodies.iter().map(|(p, c)| (*p, c.as_str())).collect();
+    crate::serialize::serialize_pack_top_n_xml(root, &bodies_slice, out)
+}
+
+fn execute_tree_query<W: io::Write>(
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    pr: &crate::rank::PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (file_order, buckets) = crate::serialize::bucket_symbols_by_rank(
+        &ingest.symbols,
+        ingest.files.len(),
+        &pr.ranks,
+        None,
+    );
+
+    let mut file_symbols = Vec::new();
+    for f in file_order {
+        let rel_path = interner.resolve(&ingest.files[f as usize].path);
+        let bucket = &buckets[f as usize];
+        let mut top3 = Vec::new();
+        for &sym_id in bucket.iter().take(3) {
+            let sym = &ingest.symbols[sym_id as usize];
+            top3.push((sym.kind.tag(), interner.resolve(&sym.name)));
+        }
+        file_symbols.push(crate::serialize::TreeFileSymbols {
+            path: rel_path,
+            total_symbols: bucket.len(),
+            top_symbols: top3,
+        });
+    }
+    crate::serialize::serialize_tree_xml(root, &file_symbols, pr.iterations, out)
+}
+fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    let detail = &cli.detail;
+    if detail.expand.is_none()
+        && detail.outline.is_none()
+        && detail.pack_top_n.is_none()
+        && !detail.tree
+    {
+        return None;
+    }
+
+    Some((|| {
+        let (ingest, _graph, pr, interner) = load_repo_analysis(root)?;
+        let mut stdout = io::stdout().lock();
+
+        if let Some(syms) = detail.expand.as_deref().or(detail.outline.as_deref()) {
+            execute_expand_query(root, syms, &ingest, &interner, &mut stdout)?;
+        } else if let Some(n) = detail.pack_top_n {
+            execute_pack_top_n_query(root, n, &ingest, &pr, &interner, &mut stdout)?;
+        } else if detail.tree {
+            execute_tree_query(root, &ingest, &pr, &interner, &mut stdout)?;
+        }
+        Ok(())
+    })())
+}
+fn get_working_tree_changed_files(root: &str) -> Vec<String> {
+    if let Ok(output) = std::process::Command::new("git")
+        .args(["diff", "--name-only", "HEAD"])
+        .current_dir(root)
+        .output()
+        && output.status.success()
+    {
+        let text = String::from_utf8_lossy(&output.stdout);
+        let files: Vec<String> = text
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect();
+        if !files.is_empty() {
+            return files;
+        }
+    }
+    Vec::new()
+}
+pub fn execute_test_gate_query<W: io::Write>(
+    root: &str,
+    files_spec: Option<&str>,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
+    let files = match files_spec {
+        Some(f) => f
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        None => get_working_tree_changed_files(root),
+    };
+    let specs: Vec<&str> = files.iter().map(String::as_str).collect();
+    let report = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
+    crate::serialize::serialize_test_gate_xml(root, &report.tests, report.reached_symbols, out)?;
+    let has_obligations = !report.tests.is_empty() || report.reached_symbols > 0;
+    Ok(has_obligations)
+}
+
+fn format_situ_list<W: io::Write>(
+    out: &mut W,
+    title: &str,
+    items: Option<&Vec<serde_json::Value>>,
+) -> io::Result<()> {
+    let empty = Vec::new();
+    let list = items.unwrap_or(&empty);
+    writeln!(out, "  {title} ({})", list.len())?;
+    for item in list {
+        writeln!(out, "        {}", item.as_str().unwrap_or(""))?;
+    }
+    Ok(())
+}
+
+pub fn execute_situ_query<W: io::Write>(
+    root: &str,
+    files_spec: Option<&str>,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let files = match files_spec {
+        Some(f) => f
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        None => get_working_tree_changed_files(root),
+    };
+    let commits = crate::git::history::walk_repository_history(std::path::Path::new(root)).ok();
+    let val = crate::mcp::graph_tools::call_situational_awareness(
+        ingest,
+        graph,
+        interner,
+        &files,
+        commits.as_deref(),
+    );
+    writeln!(
+        out,
+        "ripwire situational-awareness — {} changed file(s)",
+        files.len()
+    )?;
+    writeln!(out, "root: {root}")?;
+    writeln!(out, "  [1] blast radius: {} symbols", val["blast_radius"])?;
+    format_situ_list(out, "[2] tests to run", val["tests_to_run"].as_array())?;
+    format_situ_list(
+        out,
+        "[3] co-change — usually edited with these",
+        val["forgotten_partners"].as_array(),
+    )
+}
+
+pub fn execute_safe_delete_query<W: io::Write>(
+    root: &str,
+    sym_name: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
+    if ids.is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire: --safe-delete symbol not found: {sym_name}"
+        )));
+    }
+    let sym_id = ids[0];
+    let callers: Vec<(&str, &str)> = graph
+        .callers(sym_id)
+        .filter_map(|(cid, _)| {
+            let s = ingest.symbols.get(cid as usize)?;
+            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+            let n = interner.resolve(&s.name);
+            Some((p, n))
+        })
+        .collect();
+    let ranks = vec![0.0; ingest.symbols.len()];
+    let blast_radius =
+        crate::navigate::transitive_impact(sym_id, ingest, graph, &ranks, interner, Some(32)).len();
+    crate::serialize::serialize_safe_delete_xml(root, sym_name, &callers, blast_radius, out)
+}
+
+pub fn execute_exercises_query<W: io::Write>(
+    root: &str,
+    test_path: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut reached = Vec::new();
+    for sym in &ingest.symbols {
+        let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        if !p.contains(test_path) {
+            continue;
+        }
+        for (callee_id, _) in graph.callees(sym.id) {
+            let Some(target) = ingest.symbols.get(callee_id as usize) else {
+                continue;
+            };
+            let tp = interner.resolve(&ingest.files[target.file_id as usize].path);
+            if !crate::gate::affected::is_test_path(tp) {
+                reached.push((tp, interner.resolve(&target.name)));
+            }
+        }
+    }
+    crate::serialize::serialize_exercises_xml(root, test_path, &reached, out)
+}
+
+pub fn execute_safety_dispatch<W: io::Write>(
+    s: &TopSafetyArgs,
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<Option<i32>> {
+    if let Some(files_opt) = &s.test_gate {
+        let has_failures =
+            execute_test_gate_query(root, files_opt.as_deref(), ingest, graph, interner, out)?;
+        if has_failures {
+            return Ok(Some(4));
+        }
+    } else if let Some(files_opt) = &s.situ {
+        execute_situ_query(root, files_opt.as_deref(), ingest, graph, interner, out)?;
+    } else if let Some(sym) = s.safe_delete.as_deref() {
+        execute_safe_delete_query(root, sym, ingest, graph, interner, out)?;
+    } else if let Some(testfile) = s.exercises.as_deref() {
+        execute_exercises_query(root, testfile, ingest, graph, interner, out)?;
+    }
+    Ok(None)
+}
+
+fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    let s = &cli.safety;
+    if s.test_gate.is_none() && s.situ.is_none() && s.safe_delete.is_none() && s.exercises.is_none()
+    {
+        return None;
+    }
+
+    Some((|| {
+        let (ingest, graph, _pr, interner) = load_repo_analysis(root)?;
+        let mut stdout = io::stdout().lock();
+        if let Some(code) =
+            execute_safety_dispatch(s, root, &ingest, &graph, &interner, &mut stdout)?
+        {
+            std::process::exit(code);
+        }
+        Ok(())
+    })())
+}
+pub fn execute_dead_code_query<W: io::Write>(
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut dead = Vec::new();
+    for sym in &ingest.symbols {
+        if (sym.kind == crate::domain::SymKind::Function
+            || sym.kind == crate::domain::SymKind::Method)
+            && graph.in_degree(sym.id) == 0
+        {
+            let n = interner.resolve(&sym.name);
+            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+            dead.push((n, sym.kind.tag(), p, sym.line));
+        }
+    }
+    crate::serialize::serialize_dead_code_xml(root, &dead, out)
+}
+
+fn build_community_module<'a>(
+    id: u32,
+    nodes: &[crate::domain::NodeId],
+    ingest: &'a crate::domain::IngestResult,
+    interner: &'a Interner,
+) -> crate::serialize::CommunityModule<'a> {
+    let mut members = Vec::new();
+    let mut top_dir = "";
+    let mut top_label = "";
+    for &nid in nodes {
+        if let Some(s) = ingest.symbols.get(nid as usize) {
+            let n = interner.resolve(&s.name);
+            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+            if top_dir.is_empty() {
+                top_dir = p;
+            }
+            if top_label.is_empty() {
+                top_label = n;
+            }
+            members.push((s.kind.tag(), n, p, s.line));
+        }
+    }
+    crate::serialize::CommunityModule {
+        id,
+        size: members.len(),
+        dir: top_dir,
+        label: top_label,
+        members,
+    }
+}
+
+pub fn execute_communities_query<W: io::Write>(
+    root: &str,
+    target_id: Option<u32>,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let comms = graph.communities();
+    let mut by_comm: std::collections::HashMap<u32, Vec<crate::domain::NodeId>> =
+        std::collections::HashMap::new();
+    for (node, &c) in comms.comm.iter().enumerate() {
+        if target_id.is_none() || target_id == Some(c) {
+            by_comm.entry(c).or_default().push(node as u32);
+        }
+    }
+
+    let mut comm_ids: Vec<u32> = by_comm.keys().copied().collect();
+    comm_ids.sort_unstable();
+
+    let modules: Vec<crate::serialize::CommunityModule<'_>> = comm_ids
+        .into_iter()
+        .map(|id| build_community_module(id, &by_comm[&id], ingest, interner))
+        .collect();
+
+    crate::serialize::serialize_communities_xml(root, &modules, out)
+}
+
+/// Configuration for `--around` ego-graph queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AroundConfig {
+    pub depth: u32,
+    pub fanout: usize,
+}
+
+pub fn execute_around_query<W: io::Write>(
+    root: &str,
+    sym_name: &str,
+    cfg: AroundConfig,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
+    if ids.is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire: --around symbol not found: {sym_name}"
+        )));
+    }
+    let sym_id = ids[0];
+    let mut visited = std::collections::HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    visited.insert(sym_id);
+    queue.push_back((sym_id, 0u32));
+
+    let mut result_syms = Vec::new();
+
+    while let Some((curr, curr_d)) = queue.pop_front() {
+        if let Some(s) = ingest.symbols.get(curr as usize) {
+            let n = interner.resolve(&s.name);
+            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+            result_syms.push((n, s.kind.tag(), p, s.line));
+        }
+        if curr_d >= cfg.depth {
+            continue;
+        }
+        for (callee_id, _) in graph.callees(curr).take(cfg.fanout) {
+            if visited.insert(callee_id) {
+                queue.push_back((callee_id, curr_d + 1));
+            }
+        }
+    }
+
+    crate::serialize::serialize_around_xml(root, sym_name, cfg.depth, cfg.fanout, &result_syms, out)
+}
+
+pub fn execute_external_surface_query<W: io::Write>(
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let by_name = crate::resolve::index_symbols_by_name(&ingest.symbols);
+    let mut ext_counts: std::collections::HashMap<(lasso::Spur, crate::domain::Lang), usize> =
+        std::collections::HashMap::new();
+
+    for r in &ingest.references {
+        if !by_name.contains_key(&r.callee_name) {
+            *ext_counts.entry((r.callee_name, r.lang)).or_default() += 1;
+        }
+    }
+
+    let mut items: Vec<(&str, &str, usize)> = ext_counts
+        .iter()
+        .map(|(&(n, l), &c)| (interner.resolve(&n), l.tag(), c))
+        .collect();
+    items.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.cmp(b.0)));
+
+    crate::serialize::serialize_external_surface_xml(root, &items, out)
+}
+
+pub fn execute_deps_query<W: io::Write>(
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut file_inc = vec![0usize; ingest.files.len()];
+    let mut file_aff = vec![0usize; ingest.files.len()];
+
+    for u in 0..graph.node_count() as crate::domain::NodeId {
+        let uf = ingest.symbols[u as usize].file_id as usize;
+        for (v, _) in graph.callees(u) {
+            let vf = ingest.symbols[v as usize].file_id as usize;
+            if uf != vf && uf < file_inc.len() && vf < file_aff.len() {
+                file_inc[uf] += 1;
+                file_aff[vf] += 1;
+            }
+        }
+    }
+
+    let mut file_deps = Vec::new();
+    for (i, f) in ingest.files.iter().enumerate() {
+        let p = interner.resolve(&f.path);
+        file_deps.push((p, file_inc[i], file_aff[i]));
+    }
+    file_deps.sort_by_key(|a| std::cmp::Reverse(a.1 + a.2));
+
+    crate::serialize::serialize_deps_xml(root, &file_deps, out)
+}
+
+fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    let a = &cli.arch;
+    if !a.dead_code
+        && !a.communities
+        && a.community.is_none()
+        && !a.deps
+        && a.around.is_none()
+        && !a.external_surface
+    {
+        return None;
+    }
+
+    Some((|| {
+        let (ingest, graph, _pr, interner) = load_repo_analysis(root)?;
+        let mut stdout = io::stdout().lock();
+
+        if a.dead_code {
+            execute_dead_code_query(root, &ingest, &graph, &interner, &mut stdout)?;
+        } else if a.communities || a.community.is_some() {
+            execute_communities_query(root, a.community, &ingest, &graph, &interner, &mut stdout)?;
+        } else if let Some(sym) = a.around.as_deref() {
+            let cfg = AroundConfig {
+                depth: a.around_depth,
+                fanout: a.around_fanout,
+            };
+            execute_around_query(root, sym, cfg, &ingest, &graph, &interner, &mut stdout)?;
+        } else if a.external_surface {
+            execute_external_surface_query(root, &ingest, &interner, &mut stdout)?;
+        } else if a.deps {
+            execute_deps_query(root, &ingest, &graph, &interner, &mut stdout)?;
+        }
+        Ok(())
+    })())
+}
+
+fn run_batch_subquery<W: io::Write>(
+    line: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    pr: &crate::rank::PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let Some((verb, arg)) = line.split_once(':') else {
+        return Ok(());
+    };
+    let a = arg.trim();
+    let mut sub_buf = Vec::new();
+    match verb.trim() {
+        "callers" => {
+            let _ = execute_nav_symbol_query(
+                a,
+                NavMode::Callers,
+                ingest,
+                graph,
+                &pr.ranks,
+                interner,
+                &mut sub_buf,
+            );
+        }
+        "callees" => {
+            let _ = execute_nav_symbol_query(
+                a,
+                NavMode::Callees,
+                ingest,
+                graph,
+                &pr.ranks,
+                interner,
+                &mut sub_buf,
+            );
+        }
+        "impact" => {
+            let _ = execute_nav_symbol_query(
+                a,
+                NavMode::Impact,
+                ingest,
+                graph,
+                &pr.ranks,
+                interner,
+                &mut sub_buf,
+            );
+        }
+        "uses" => {
+            let _ = execute_nav_symbol_query(
+                a,
+                NavMode::Uses,
+                ingest,
+                graph,
+                &pr.ranks,
+                interner,
+                &mut sub_buf,
+            );
+        }
+        "grep" => {
+            let val = crate::mcp::retrieval::call_grep(ingest, interner, a, None);
+            let _ = crate::serialize::serialize_grep_xml(&val, &mut sub_buf);
+        }
+        "for" => {
+            let val = crate::mcp::retrieval::call_for_task(ingest, interner, &pr.ranks, a, None);
+            let _ = crate::serialize::serialize_for_xml(&val, &mut sub_buf);
+        }
+        _ => {}
+    }
+    writeln!(out, "  <result query=\"{line}\">")?;
+    out.write_all(&sub_buf)?;
+    writeln!(out, "  </result>")
+}
+
+pub fn execute_batch_content<W: io::Write>(
+    root: &str,
+    content: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    pr: &crate::rank::PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let lines: Vec<&str> = content
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.starts_with('#'))
+        .take(16)
+        .collect();
+
+    writeln!(
+        out,
+        "<batch schema=\"ripwire.batch/v1\" root=\"{root}\" count=\"{}\">",
+        lines.len()
+    )?;
+    for line in lines {
+        run_batch_subquery(line, ingest, graph, pr, interner, out)?;
+    }
+    writeln!(out, "</batch>")
+}
+
+pub fn execute_batch_file<W: io::Write>(
+    root: &str,
+    file_path: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    pr: &crate::rank::PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let content = if file_path == "-" {
+        let mut buf = String::new();
+        io::Read::read_to_string(&mut io::stdin(), &mut buf)?;
+        buf
+    } else {
+        std::fs::read_to_string(file_path)?
+    };
+    execute_batch_content(root, &content, ingest, graph, pr, interner, out)
+}
+
+fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    if let Some(file) = cli.modifiers.batch.as_deref() {
+        return Some((|| {
+            let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+            let mut stdout = io::stdout().lock();
+            execute_batch_file(root, file, &ingest, &graph, &pr, &interner, &mut stdout)
+        })());
+    }
+
+    dispatch_top_nav(cli, root)
+        .or_else(|| dispatch_top_retrieval(cli, root))
+        .or_else(|| dispatch_top_workspace(cli, root))
+        .or_else(|| dispatch_top_detail(cli, root))
+        .or_else(|| dispatch_top_safety(cli, root))
+        .or_else(|| dispatch_top_arch(cli, root))
+}
 
 /// Execute CLI from parsed options.
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     let root = cli.path.as_deref().unwrap_or(".");
-    if let Some(res) = dispatch_top_nav(&cli, root) {
-        return res;
-    }
-    if let Some(res) = dispatch_top_retrieval(&cli, root) {
-        return res;
-    }
-    if let Some(res) = dispatch_top_workspace(&cli, root) {
+    if let Some(res) = dispatch_top_flags(&cli, root) {
         return res;
     }
     if let Some(res) = dispatch_git_metrics_command(
@@ -1021,7 +1879,6 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     ) {
         return res;
     }
-
     let cli_gate = GateDispatchArgs {
         edit_check: cli.edit_check.as_deref(),
         affected: cli.affected.as_deref(),

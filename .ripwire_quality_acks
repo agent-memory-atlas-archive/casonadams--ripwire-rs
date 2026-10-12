@@ -1,6 +1,7 @@
 # ripwire quality acks v1 — written by --quality-ack; a finding stays suppressed until it worsens past its acked magnitude
 # format: ack <kind> <16-hex-key> <ackNow> [cid=<16-hex-content-id>] [by=<scope that acked it>] [now=<uint> was=<uint>] [prov=recon] [facet=<token>] [p=<path>:<line>] <reason to end of line> — one per line, kept SORTED by (kind,key) on every write (merge-friendly)
 # PROVENANCE: now=/was=/facet=/p= exist only on rows a provenance-aware binary WROTE OR REFRESHED (2026-09-22+); a legacy row heals FORWARD on its next --quality-ack. prov=recon marks a row a backfill RECONSTRUCTED from the CURRENT tree rather than measured when it was accepted: it answers 'would this be gating now', NOT 'was it gating then'. A recon row is a CACHE, not a dated record — every --quality-ack re-derives the ones whose clone group it can still find, so a checkable value is never older than the last ack; one whose group this run did NOT find is left untouched and counted as unverified on stderr, because not finding a group is a floor (scoped scan, capped file, different tree), never proof it is gone. Absent prov= means measured live, and a measurement is never overwritten by a reconstruction. Only the two clone kinds can be reconstructed (their key is a member-set hash, so today's idiom verdict is recomputable); a numeric row's was= still needs the commit that accepted it, which no field here records.
+ack complexity 70a00a1f5e885d55 15 cid=e15879c9e432177c now=15 was=5 p=src/cli.rs:949 cli flag expansion
 ack dead-code:new-symbol 02107e7a94d4e0b1 0 cid=c2775e3b91fa030d now=0 was=0 p=tests/test_edit_check_arity_break.rs:158 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 03e1e8ac408c0bb8 0 cid=89f4caf669115726 now=0 was=0 p=tests/test_edit_check_arity_break.rs:201 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 158549e63da54ccf 0 cid=5482b5a9f78fded4 now=0 was=0 p=src/mcp/retrieval.rs:344 feat(mcp): complete 33 mcp tools suite
@@ -15,21 +16,27 @@ ack dead-code:new-symbol 33437bf5b1f3eb6a 0 cid=11849eb7f31a7fe0 now=0 was=0 p=t
 ack dead-code:new-symbol 339368931c6dcbfd 0 cid=4e121478d3b4d94c now=0 was=0 p=src/mcp/doc_tools.rs:211 feat(mcp): complete 33 mcp tools suite
 ack dead-code:new-symbol 35864867e9f930b2 0 cid=34b59eab7cf163b4 now=0 was=0 p=tests/test_mcp_33_tools.rs:6 feat(mcp): complete 33 mcp tools suite
 ack dead-code:new-symbol 366edd43c80f037e 0 cid=fa46023247d62f19 now=0 was=0 p=src/metrics/complexity.rs:320 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 3e5d89483b9ae82c 0 cid=2a6aed800e714b60 now=0 was=0 p=tests/test_streaming_xml_serializer.rs:303 safety dispatch routing
 ack dead-code:new-symbol 46c452392a967e94 0 cid=393a1a55d167a97d now=0 was=0 p=src/gate/edit_check.rs:227 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 51f1e352a3f638d2 0 cid=ec3850a9999880d3 now=0 was=0 p=tests/test_edit_check_arity_break.rs:181 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 52c090f9d0efc961 0 cid=bfb31e838590a044 now=0 was=0 p=tests/test_quality_delta_gate.rs:101 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol 53165f3946b16f9a 0 cid=d3f560283b350c08 now=0 was=0 p=tests/test_quality_delta_gate.rs:139 feat(gate): quality baseline and delta gate
+ack dead-code:new-symbol 5d1c47d7ed0abe51 0 cid=b97ba3d0b3db8764 now=0 was=0 p=tests/test_cli_and_mcp.rs:516 retrieval dispatch routing
 ack dead-code:new-symbol 662a2172035907cd 0 cid=e9eb9772d64f57f0 now=0 was=0 p=src/mcp/edit.rs:217 feat(mcp): complete 33 mcp tools suite
+ack dead-code:new-symbol 68f171ed9d5920c6 0 cid=2a5e9338e6fbd3ca now=0 was=0 p=tests/test_streaming_xml_serializer.rs:361 retrieval dispatch routing
 ack dead-code:new-symbol 795c5808ab0ca979 0 cid=3f603d0498ec0654 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 7dd9d37f97a49ab9 0 cid=d28da232c324815f now=0 was=0 p=tests/test_streaming_xml_serializer.rs:403 retrieval dispatch routing
 ack dead-code:new-symbol 835014cf519abbfd 0 cid=f06d8bcd08de78f7 now=0 was=0 p=tests/test_streaming_xml_serializer.rs:172 cli options and streaming enhancements
 ack dead-code:new-symbol 89cc6ea26e2c5dda 0 cid=9c3a3d5e89523184 now=0 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 8aa03f84e2d2f98a 0 cid=0ef648a45d0b46d6 now=0 was=0 p=tests/test_quality_delta_gate.rs:125 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol 8b8653693bb10aa5 0 cid=df69e53dd4bd9c95 now=0 was=0 p=src/metrics/readability.rs:232 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 8cf327d0ed9d3689 0 cid=f2afb5137e596d8c now=0 was=0 p=src/mcp/doc_tools.rs:207 feat(mcp): complete 33 mcp tools suite
 ack dead-code:new-symbol 8fa8a0c576f5de1f 0 cid=d35b890630585bc1 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:12 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 904cc38cf4bdf43d 0 cid=c69216d4056108a1 now=0 was=0 p=tests/test_streaming_xml_serializer.rs:340 safety dispatch routing
 ack dead-code:new-symbol 93a9c6e359a6853a 0 cid=a1e11f5326e7451c now=0 was=0 p=src/gate/affected.rs:29 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 97baee50110a15e1 0 cid=d40a76493b0be67b now=0 was=0 p=tests/test_quality_delta_gate.rs:38 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol 97d73268df5506df 0 cid=f58fba967009d60c now=0 was=0 p=src/mcp/graph_tools.rs:333 feat(mcp): complete 33 mcp tools suite
+ack dead-code:new-symbol 9b1c44c5d3a24728 0 cid=da43663267325b02 now=0 was=0 p=tests/test_cli_and_mcp.rs:396 safety queries test suite
 ack dead-code:new-symbol a3886bffb93481ae 0 cid=1ce8d02793b24b3f now=0 was=0 p=src/gate/affected.rs:275 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol a42a2dea2162a74f 0 cid=cfe358d269f24f9d now=0 was=0 p=src/metrics/complexity.rs:334 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol a6cf49bb462801c8 0 cid=f1ba5c494c7a4090 now=0 was=0 p=src/mcp/edit.rs:228 feat(mcp): complete 33 mcp tools suite
@@ -56,28 +63,56 @@ ack dead-code:preexisting c0300ca9ffbbc65c 0 cid=5a489bd9f0f776b1 now=0 was=0 p=
 ack duplication 02427b21a4f355ba 504 now=504 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 1336857542d3befe 641 now=641 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
 ack duplication 1dec0fb2c1f89afd 190 now=190 was=0 p=src/gate/edit_check.rs:82 feat(gate): pre-commit contract gate and affected test reachability
+ack duplication 20fbd8ff0e3ca16f 412 now=412 was=0 p=tests/test_cli_and_mcp.rs:347 safety queries test suite
 ack duplication 2f9d3acbd0e38728 168 now=168 was=0 p=src/mcp/graph_tools.rs:297 feat(mcp): complete 33 mcp tools suite
+ack duplication 3598b25464891c8a 132 now=132 was=0 p=src/serialize/query_xml.rs:527 retrieval dispatch routing
 ack duplication 368b03d3a725d35b 67 now=67 was=0 p=src/mcp/doc_tools.rs:211 feat(mcp): complete 33 mcp tools suite
 ack duplication 378895c50d59fd95 105 now=105 was=0 p=src/gate/affected.rs:56 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 39a4e8543db87cd3 74 now=74 was=0 p=src/mcp/edit.rs:228 feat(mcp): complete 33 mcp tools suite
+ack duplication 3aa99d55b8fdd038 45 now=45 was=0 p=src/serialize/query_xml.rs:432 retrieval dispatch routing
+ack duplication 3d4e5a4c18cf8a62 132 now=132 was=0 p=src/serialize/query_xml.rs:527 retrieval dispatch routing
 ack duplication 4568e39b8b97b662 146 now=146 was=0 p=src/metrics/readability.rs:238 feat(metrics): compute complexity, readability, and hotspots
+ack duplication 50068cc975ab738a 47 now=47 was=0 p=src/serialize/query_xml.rs:367 retrieval dispatch routing
+ack duplication 5bf3a45a44efcc76 241 now=241 was=0 p=tests/test_streaming_xml_serializer.rs:303 safety dispatch routing
+ack duplication 6aa91a25d5b22030 45 now=45 was=0 p=src/serialize/query_xml.rs:449 retrieval dispatch routing
 ack duplication 6af64fcdf256b60e 277 now=277 was=0 p=src/gate/baseline.rs:226 feat(gate): quality baseline and delta gate
+ack duplication 6f569b93edaa6688 43 now=43 was=0 p=src/serialize/query_xml.rs:340 safety dispatch routing
+ack duplication 72056194b9a2c16c 47 now=47 was=0 p=src/serialize/query_xml.rs:412 retrieval dispatch routing
 ack duplication 89c3edaf9bab79a3 55 now=55 was=0 p=src/ingest.rs:255 feat(gate): pre-commit contract gate and affected test reachability
+ack duplication 99fc73e822d88331 45 now=45 was=0 p=src/serialize/query_xml.rs:340 retrieval dispatch routing
 ack duplication 9c4140b778c1671e 181 now=181 was=0 p=src/mcp/graph_tools.rs:105 feat(mcp): complete 33 mcp tools suite
 ack duplication a2302432e09510c7 85 now=85 was=0 p=src/metrics/complexity.rs:19 feat(metrics): compute complexity, readability, and hotspots
 ack duplication b57d7cd71a911669 105 now=105 was=0 p=src/gate/affected.rs:56 feat(gate): pre-commit contract gate and affected test reachability
+ack duplication c105effba9d2de60 47 now=47 was=0 p=src/serialize/query_xml.rs:367 retrieval dispatch routing
 ack duplication c6d51b335cb2560a 72 now=72 was=0 p=src/mcp/edit.rs:217 feat(mcp): complete 33 mcp tools suite
+ack duplication cddca65fd31797b1 132 now=132 was=0 p=src/serialize/query_xml.rs:487 retrieval dispatch routing
+ack duplication dd4c31cb7409343d 47 now=47 was=0 p=src/serialize/query_xml.rs:367 retrieval dispatch routing
 ack duplication e3697d8c8dc449f9 277 now=277 was=0 p=src/gate/quality_delta.rs:231 feat(gate): quality baseline and delta gate
 ack duplication f67ca71a54fe23e3 56 now=56 was=0 p=src/gate/contract.rs:160 feat(gate): pre-commit contract gate and affected test reachability
 ack nesting c9bcc01a8ee00ea7 5 cid=c6e6d6517e1bc166 now=5 was=0 p=src/mcp/edit.rs:30 feat(mcp): complete 33 mcp tools suite
+ack nesting d8d0bab89c9e3dd3 5 cid=dd2347d8763dc1d0 now=5 was=0 p=src/cli.rs:1323 safety dispatch routing
 ack params 036578c0c808c522 6 cid=ac65639f5a740595 now=6 was=0 p=src/mcp/retrieval.rs:86 feat(mcp): complete 33 mcp tools suite
+ack params 03964b5fab11a3e9 7 cid=cb1cc9803abdea7c now=7 was=0 p=src/cli.rs:1805 cli flag expansion
+ack params 0b9eb55f672f2fa5 6 cid=7c832b24c475b9fb now=6 was=0 p=src/cli.rs:1293 safety dispatch routing
+ack params 234aef5a84aff53e 7 cid=541120b1e9f9a739 now=7 was=0 p=src/cli.rs:1046 retrieval dispatch routing
 ack params 49a1c863499fc814 6 cid=d7eb0c7f1a9c096e now=6 was=0 p=src/mcp/edit.rs:139 feat(mcp): complete 33 mcp tools suite
+ack params 4f7e71157c3d1049 6 cid=113ba1f19bfe3fbc now=6 was=0 p=src/cli.rs:1529 retrieval dispatch routing
 ack params 54e7136a347d0061 6 cid=abc12525642d7d06 now=6 was=0 p=src/mcp/graph_tools.rs:172 feat(mcp): complete 33 mcp tools suite
+ack params 5bef67aad995008a 7 cid=e8fa6091dd55ad9f now=7 was=0 p=src/cli.rs:1832 cli flag expansion
+ack params 5c7735a993dee75a 6 cid=5263c2de335d0817 now=6 was=0 p=src/cli.rs:1107 safety dispatch routing
+ack params 76d27df82866e316 6 cid=aa1b30e71896b9fe now=6 was=0 p=src/cli.rs:1218 safety dispatch routing
+ack params beba225c830c507a 6 cid=56f9664013c294ca now=6 was=0 p=src/cli.rs:1352 safety queries test suite
+ack params c3b002fb7273923c 6 cid=28450cd46cffbbf4 now=6 was=0 p=src/cli.rs:1732 cli flag expansion
+ack params d8d0bab89c9e3dd3 6 cid=dd2347d8763dc1d0 now=6 was=0 p=src/cli.rs:1323 safety dispatch routing
+ack params dbdad3c9a111feaf 7 cid=e917af5a471760ec now=7 was=0 p=src/cli.rs:1564 retrieval dispatch routing
+ack params eb0335dc263eb7d1 6 cid=84009aee2033ef82 now=6 was=0 p=src/cli.rs:1242 safety dispatch routing
+ack params fe114e977e970be6 6 cid=4347f70dcc10924c now=6 was=0 p=src/serialize/query_xml.rs:412 retrieval dispatch routing
 ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 facet=ambient p=src/domain.rs:214 feat(metrics): compute complexity, readability, and hotspots
-ack short-horizon-churn 03e609981e51a079 17 cid=92ae49c978d4d77f now=17 was=0 facet=ambient p=src/cli.rs:17 cli options and streaming enhancements | prior: feat(gate): quality baseline and delta gate
+ack short-horizon-churn 03e609981e51a079 19 cid=12f34c9cbed57c34 now=19 was=0 facet=ambient p=src/cli.rs:17 safety dispatch routing | prior: cli options and streaming enhancements
 ack short-horizon-churn 0dbcc2ebfc642340 7 cid=f7161ab1dbd67c20 now=7 was=0 facet=ambient p=src/ingest.rs:130 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 0e1b61952f94ae34 4 cid=4667fc680786ab8b now=4 was=0 facet=self p=src/serialize/xml.rs:58 cli options and streaming enhancements
 ack short-horizon-churn 0f39ab23ef529273 4 cid=cf0afdcfa9c322c3 now=4 was=0 facet=self p=src/serialize/xml.rs:109 cli options and streaming enhancements
+ack short-horizon-churn 11108e7c52569865 19 cid=d6b87bd42fce1bc3 now=19 was=0 facet=ambient p=src/cli.rs:222 retrieval dispatch routing
 ack short-horizon-churn 1171f6ae61619ff2 17 cid=306b3d7a6b0da943 now=17 was=0 facet=self p=src/cli.rs:1132 cli options and streaming enhancements | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 1619bf764bb83838 17 cid=2faaa1867545050d now=17 was=0 facet=self p=src/cli.rs:393 cli options and streaming enhancements
 ack short-horizon-churn 170dabfb4d6abeed 12 cid=60632a1424bae51d now=12 was=0 facet=self p=src/cli.rs:319 feat(navigate): format navigation commands as canonical XML
@@ -99,7 +134,7 @@ ack short-horizon-churn 4832c252adf48140 6 cid=23620452b86e415a now=6 was=0 face
 ack short-horizon-churn 495e9245f0a62004 16 cid=9d8a216ad61182ef now=16 was=0 facet=self p=src/cli.rs:777 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 4a1230f1cfd095df 6 cid=1ffe7220eae6384a now=6 was=0 facet=self p=src/ingest.rs:430 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 5befe906674d1d04 5 cid=9cebc1cfcad1bd9b now=5 was=0 facet=self p=src/mcp/mod.rs:764 feat(mcp): complete 33 mcp tools suite
-ack short-horizon-churn 5d3030ce205bd4d9 17 cid=9339bc41a5e1e324 now=17 was=0 facet=self p=src/cli.rs:995 cli options and streaming enhancements | prior: refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 5d3030ce205bd4d9 19 cid=35ff8e83a3c0e9db now=19 was=0 facet=self p=src/cli.rs:1398 safety dispatch routing | prior: cli options and streaming enhancements
 ack short-horizon-churn 5dd771c9def9da52 5 cid=9284006cc955fafb now=5 was=0 facet=ambient p=src/mcp/mod.rs:693 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 5e62941216009d7d 4 cid=029942f196f0d316 now=4 was=0 facet=self p=src/ingest/mod.rs:323 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 5e69f1155e343c23 5 cid=a62db5d0a8cce6d8 now=5 was=0 facet=ambient p=src/cli.rs:106 feat(gate): quality baseline and delta gate
@@ -108,6 +143,7 @@ ack short-horizon-churn 6592ae6ffe2a9edc 2 now=2 was=0 facet=self p=tests/test_i
 ack short-horizon-churn 67d2dcee81975bca 5 cid=a4334c84726b2b74 now=5 was=0 facet=ambient p=src/graph.rs:316 cli options and streaming enhancements
 ack short-horizon-churn 6c9b4b9bca1c4eb1 5 cid=29a3c399aaac8a10 now=5 was=0 facet=self p=src/mcp/mod.rs:613 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn 6dcec957b21602d3 9 cid=97aeeecf8b5df765 now=9 was=0 facet=ambient p=src/domain.rs:237 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 70a00a1f5e885d55 19 cid=e15879c9e432177c now=19 was=0 facet=ambient p=src/cli.rs:949 cli flag expansion
 ack short-horizon-churn 7272cbefa18a4549 3 cid=82050217a190c19f now=3 was=0 facet=self p=src/gate/contract.rs:197 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 72c710eba4e4924e 7 cid=2b62c5d5dcaca3ff now=7 was=0 facet=ambient p=src/ingest.rs:117 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 73e3b4916fad8f15 5 cid=6e9ea3a239f75d03 now=5 was=0 facet=self p=src/cli.rs:543 feat(gate): quality baseline and delta gate
@@ -129,7 +165,7 @@ ack short-horizon-churn a29bdbd875b3bb62 6 cid=b84620de9d471718 now=6 was=0 face
 ack short-horizon-churn a8b62b30beb02329 5 cid=4f50111421bfb6c6 now=5 was=0 facet=self p=src/mcp/mod.rs:96 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn a8d8a8c2b3c692bb 5 cid=8a850df30c972216 now=5 was=0 facet=self p=src/mcp/mod.rs:760 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn aa67274c42eaba44 4 cid=9af0b78481da1999 now=4 was=0 facet=self p=src/serialize/xml.rs:62 cli options and streaming enhancements
-ack short-horizon-churn abbf9013bfc446fc 16 cid=bcbe15acab8c2265 now=16 was=0 facet=self p=src/cli.rs:918 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
+ack short-horizon-churn abbf9013bfc446fc 19 cid=2afd56d18715568a now=19 was=0 facet=self p=src/cli.rs:1082 retrieval dispatch routing | prior: fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn af8f8cdf2368bd78 5 cid=a44d1244512278d2 now=5 was=0 facet=self p=src/mcp/mod.rs:265 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn b375ec7d1556994c 5 cid=5325c82e263c650e now=5 was=0 facet=ambient p=src/graph.rs:303 cli options and streaming enhancements
 ack short-horizon-churn b5a40f34ce7656a9 6 cid=f92ea050828bbe61 now=6 was=0 facet=self p=tests/test_cli_and_mcp.rs:28 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
@@ -142,6 +178,7 @@ ack short-horizon-churn c2491a80cbc08195 2 cid=2148b2f7fdaadc97 now=2 was=0 face
 ack short-horizon-churn c28be696f55888fe 5 cid=391a26a2b3b563e2 now=5 was=0 facet=self p=src/mcp/mod.rs:203 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn cd6d279e4dbbdbc4 4 cid=44f6ec8edd045c25 now=4 was=0 facet=ambient p=src/serialize/xml.rs:46 cli options and streaming enhancements
 ack short-horizon-churn d3eebdef7a909404 7 cid=13afc9c65d43e4da now=7 was=0 facet=ambient p=src/ingest.rs:565 feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn d644d739704097d8 10 cid=bb889d997dd16326 now=10 was=0 facet=self p=tests/test_cli_and_mcp.rs:347 safety queries test suite
 ack short-horizon-churn da149eda75c93291 5 cid=f35a608cb75d4c25 now=5 was=0 facet=ambient p=src/graph.rs:102 cli options and streaming enhancements
 ack short-horizon-churn dbf9873eb051deef 7 cid=f6f66f92d6091196 now=7 was=0 facet=self p=tests/test_cli_and_mcp.rs:143 feat(navigate): format navigation commands as canonical XML | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn df3364bea9738161 5 cid=b6a09e2e51877ccc now=5 was=0 facet=self p=src/mcp/mod.rs:30 feat(mcp): complete 33 mcp tools suite
@@ -160,6 +197,7 @@ ack short-horizon-churn f63ae9b95743e1a1 4 cid=c9ad26e8025e2684 now=4 was=0 face
 ack short-horizon-churn facea9a26b6819c2 5 cid=428a31d751b879a1 now=5 was=0 facet=self p=src/mcp/mod.rs:152 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn faeda1a26b82bcb9 5 cid=029dba1e608c8d9f now=5 was=0 facet=self p=src/mcp/mod.rs:130 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn ff2afe1ec5c50beb 17 cid=7035e8bc40b1bb80 now=17 was=0 facet=self p=src/cli.rs:328 cli options and streaming enhancements
+ack verbosity 03e609981e51a079 62 cid=844fd93f87304958 now=62 was=50 p=src/cli.rs:17 cli flag expansion
 ack verbosity 21c952917f59fdf2 374 cid=082a96c2f7393aa8 now=374 was=0 p=src/mcp/schema.rs:5 feat(mcp): complete 33 mcp tools suite
 ack verbosity 2976ccc597b56f50 97 cid=547adee2b8442588 now=97 was=0 p=src/gate/affected.rs:270 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 2cdcf0486a28549b 63 cid=1f9ce08aaffe8e8e now=63 was=0 p=src/gate/edit_check.rs:222 feat(gate): pre-commit contract gate and affected test reachability
@@ -169,10 +207,13 @@ ack verbosity 54e7136a347d0061 66 cid=abc12525642d7d06 now=66 was=0 p=src/mcp/gr
 ack verbosity 6c9b4b9bca1c4eb1 74 cid=29a3c399aaac8a10 now=74 was=66 p=src/mcp/mod.rs:613 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack verbosity 795c5808ab0ca979 90 cid=3f603d0498ec0654 now=90 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity 89cc6ea26e2c5dda 67 cid=9c3a3d5e89523184 now=67 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
+ack verbosity 9b1c44c5d3a24728 69 cid=da43663267325b02 now=69 was=0 p=tests/test_cli_and_mcp.rs:396 safety queries test suite
 ack verbosity a8b62b30beb02329 117 cid=a0d26211732eaa15 now=117 was=101 p=src/mcp/mod.rs:101 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity b5a40f34ce7656a9 80 cid=f92ea050828bbe61 now=80 was=78 p=tests/test_cli_and_mcp.rs:28 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
 ack verbosity c0877650b51b994a 89 cid=5ae3bc85466baf17 now=89 was=86 p=tests/test_streaming_xml_serializer.rs:42 refactor(distribution): rename crate to ripwire and binary to rw
+ack verbosity c3b002fb7273923c 72 cid=28450cd46cffbbf4 now=72 was=0 p=src/cli.rs:1732 cli flag expansion
 ack verbosity c7651463abe73266 185 cid=0a1e9a3c96ea5a06 now=185 was=0 p=src/mcp/mod.rs:425 feat(mcp): complete 33 mcp tools suite
+ack verbosity d644d739704097d8 93 cid=4cc565e7575f30b2 now=93 was=55 p=tests/test_cli_and_mcp.rs:347 retrieval dispatch routing
 ack verbosity dbf9873eb051deef 110 cid=f6f66f92d6091196 now=110 was=90 p=tests/test_cli_and_mcp.rs:143 feat(navigate): format navigation commands as canonical XML | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack verbosity e0ab848c5d67d7ae 72 cid=510934f45e78e30e now=72 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity ef626e7fbdac48cf 83 cid=c560a4919f395ede now=83 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability

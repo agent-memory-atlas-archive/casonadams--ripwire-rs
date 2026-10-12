@@ -9,16 +9,28 @@ rw, ripwire \- high-throughput agent context router and deterministic static ana
 [\fIPATH\fR] [\fB\-\-top\-k\fR \fIN\fR] [\fB\-\-max\-tokens\fR \fIN\fR] [\fB\-\-pack\-budget\fR \fIBYTES\fR] [\fB\-\-rank\-by\fR \fIMODE\fR] [\fB\-\-legend\fR \fIMODE\fR]
 .br
 .B rw
+[\fIPATH\fR] [\fB\-\-expand\fR \fISYMS\fR] [\fB\-\-outline\fR \fISYMS\fR] [\fB\-\-pack\-top\-n\fR \fIN\fR] [\fB\-\-tree\fR]
+.br
+.B rw
 [\fIPATH\fR] [\fB\-\-callers\fR \fISYM\fR] [\fB\-\-callees\fR \fISYM\fR] [\fB\-\-impact\fR \fISYM\fR] [\fB\-\-uses\fR \fISYM\fR] [\fB\-\-find\-symbol\fR \fISYM\fR]
 .br
 .B rw
 [\fIPATH\fR] [\fB\-\-for\fR \fITASK\fR] [\fB\-\-grep\fR \fIPAT\fR] [\fB\-\-connect\fR \fIA,B\fR] [\fB\-\-path\fR \fIA:B\fR] [\fB\-\-whereis\fR \fISYM\fR]
 .br
 .B rw
-[\fIPATH\fR] [\fB\-\-edit\-check\fR \fISYM\fR] [\fB\-\-affected\fR \fIPATH\fR] [\fB\-\-quality\-baseline\fR] [\fB\-\-quality\-delta\fR]
+[\fIPATH\fR] [\fB\-\-exemplar\fR \fITASK\fR] [\fB\-\-lego\fR \fITYPE\fR] [\fB\-\-recall\fR \fITASK\fR] [\fB\-\-from\-trace\fR \fIFILE\fR]
 .br
 .B rw
-[\fIPATH\fR] [\fB\-\-clones\fR] [\fB\-\-hotspots\fR] [\fB\-\-slice\fR \fISYM[:VAR]\fR] [\fB\-\-cochange\fR]
+[\fIPATH\fR] [\fB\-\-edit\-check\fR \fISYM\fR] [\fB\-\-affected\fR \fIPATH\fR] [\fB\-\-test\-gate\fR [\fIFILES\fR]] [\fB\-\-situ\fR [\fIFILES\fR]]
+.br
+.B rw
+[\fIPATH\fR] [\fB\-\-safe\-delete\fR \fISYM\fR] [\fB\-\-exercises\fR \fITESTFILE\fR] [\fB\-\-quality\-baseline\fR] [\fB\-\-quality\-delta\fR]
+.br
+.B rw
+[\fIPATH\fR] [\fB\-\-dead\-code\fR] [\fB\-\-communities\fR] [\fB\-\-around\fR \fISYM\fR] [\fB\-\-deps\fR] [\fB\-\-external\-surface\fR]
+.br
+.B rw
+[\fIPATH\fR] [\fB\-\-clones\fR] [\fB\-\-hotspots\fR] [\fB\-\-slice\fR \fISYM[:VAR]\fR] [\fB\-\-cochange\fR] [\fB\-\-json\fR] [\fB\-\-batch\fR \fIFILE\fR]
 .br
 .B rw mcp
 [\fIPATH\fR]
@@ -48,6 +60,20 @@ Ranking signal algorithm: \fBpagerank\fR (default, structural authority), \fBaut
 .TP
 .BI \-\-legend= MODE
 Schema documentation comment posture: \fBcompact\fR (default, includes in-context AST schema header comment) or \fBnone\fR (suppresses leading XML comments).
+
+.SH DETAIL LADDER & BODY OPTIONS
+.TP
+.BI \-\-expand= SYMS
+Expand full source body of comma-separated symbols \fISYMS\fR and list callee signatures.
+.TP
+.BI \-\-outline= SYMS
+Outline control-flow skeletons of symbols (declarations, loops, branches with body statements collapsed).
+.TP
+.BI \-\-pack\-top\-n= N
+Pack source bodies of the top \fIN\fR highest PageRank symbols.
+.TP
+.B \-\-tree
+Orient file by file, showing each file's top 3 symbols by rank.
 
 .SH NAVIGATION & GRAPH OPTIONS
 .TP
@@ -86,6 +112,18 @@ Locate which branches, revisions, or tree locations define symbol \fISYM\fR.
 .BI \-\-mentions= SYM
 Locate Markdown documentation and specification files that reference symbol \fISYM\fR in backticks.
 .TP
+.BI \-\-exemplar= TASK|KIND
+Retrieve best-in-class existing implementation of kind or role to imitate.
+.TP
+.BI \-\-lego= TYPE
+Show one interface or trait contract and all implementing types in the codebase.
+.TP
+.BI \-\-recall= TASK
+Search repository documentation, design plans, and notes for relevant concepts.
+.TP
+.BI \-\-from\-trace= FILE
+Map stack trace lines, compiler error messages, or sanitizer frames onto indexed symbols.
+.TP
 .B \-\-owners
 Analyze recency-weighted Git commit authorship and calculate per-file bus-factor metrics.
 
@@ -97,13 +135,49 @@ Verify caller compatibility after modifying symbol \fISYM\fR's signature. Verifi
 .BI \-\-affected= PATH
 Transitive reachability mapping from changed file or symbol \fIPATH\fR to affected test suites, ranked by evidence distance.
 .TP
+.BI \-\-test\-gate [=FILES]
+Pre-PR verification gate: names tests to run and untested blast radius. Exits with code \fB4\fR if non-empty obligations exist. Defaults to git diff.
+.TP
+.BI \-\-situ [=FILES]
+Situational awareness report for a change: blast radius, tests to run, and Fowler's Shotgun Surgery co-change coupling. Defaults to git diff.
+.TP
+.BI \-\-safe\-delete= SYM
+Safe deletion assessment: joins 1-hop callers, impact blast radius, test coverage, and dead code candidate status for symbol \fISYM\fR.
+.TP
+.BI \-\-exercises= TESTFILE
+Show which non-test domain symbols a specific test harness file reaches.
+.TP
 .B \-\-quality\-baseline
 Pin a code quality baseline stamped with git \fBHEAD\fR to \fB.ripwire_quality_baseline\fR.
 .TP
 .B \-\-quality\-delta
 Measure code quality regressions against git \fBHEAD\fR (or pinned baseline) across cognitive complexity, cyclomatic complexity, code duplication, and contract breaks. Exits non-zero if gating regressions are detected.
 
-.SH CODE QUALITY & METRICS OPTIONS
+.SH ARCHITECTURE & CODE INTELLIGENCE
+.TP
+.B \-\-dead\-code
+Detect internal functions with zero incoming callers across the repository.
+.TP
+.B \-\-communities
+Partition call graph into cohesive modular clusters using Louvain community detection.
+.TP
+.BI \-\-community= ID
+Inspect member symbols and bridges of a specific community cluster.
+.TP
+.BI \-\-around= SYM
+Extract ego-graph around symbol \fISYM\fR.
+.TP
+.BI \-\-around\-depth= N
+Depth limit for \fB\-\-around\fR ego-graph (default: 1).
+.TP
+.BI \-\-around\-fanout= N
+Maximum neighbors explored per hop for \fB\-\-around\fR (default: 32).
+.TP
+.B \-\-external\-surface
+Discover symbols referenced in code that have no definition in the repository (standard library and external package surface).
+.TP
+.B \-\-deps
+Generate file-to-file dependency graph with afferent and efferent inclusion counts.
 .TP
 .B \-\-clones
 Detect AST code duplication and near-miss duplicate functions across Type-1 (exact), Type-2 (renamed identifiers), and Type-3 (gapped modifications) clone categories.
@@ -135,6 +209,14 @@ Detect stale or broken symbol references within repository documentation.
 .B \-\-stray\-content
 Track authored content living on divergent branches that has not merged into \fBHEAD\fR.
 
+.SH MODIFIERS & BATCHING
+.TP
+.B \-\-json
+Emit JSON instead of XML for navigation and query commands.
+.TP
+.BI \-\-batch= FILE
+Execute up to 16 heterogeneous sub-queries sequentially from a newline-delimited \fIverb:arg\fR specification file (\fI-\fR for stdin).
+
 .SH VISUALIZATION OPTIONS
 .TP
 .BI \-\-html [=FILE]
@@ -151,7 +233,7 @@ Exploration and task-based context orientation.
 .B rw navigate \fR[\fIPATH\fR] \fB\-\-symbol\fR \fISYM\fR [\fB\-\-callers\fR|\fB\-\-callees\fR|\fB\-\-impact\fR]
 Symbol neighborhood analysis and traversals.
 .TP
-.B rw gate \fR[\fIPATH\fR] [\fB\-\-edit\-check\fR|\fB\-\-affected\fR|\fB\-\-quality\-delta\fR]
+.B rw gate \fR[\fIPATH\fR] [\fB\-\-edit\-check\fR|\fB\-\-affected\fR|\fB\-\-quality\-delta\fR|\fB\-\-test\-gate\fR]
 Pre-commit verification safety gates.
 .TP
 .B rw metrics \fR[\fIPATH\fR] [\fB\-\-hotspots\fR|\fB\-\-clones\fR]
@@ -164,7 +246,7 @@ Intra-procedural def-use slicing.
 Launch native Model Context Protocol (MCP) JSON-RPC 2.0 server over standard input/output.
 
 .SH SYMBOL SELECTOR SYNTAX
-When querying symbols via \fB\-\-callers\fR, \fB\-\-callees\fR, \fB\-\-impact\fR, \fB\-\-uses\fR, or \fB\-\-edit\-check\fR, \fBrw\fR accepts several selector formats:
+When querying symbols via \fB\-\-callers\fR, \fB\-\-callees\fR, \fB\-\-impact\fR, \fB\-\-uses\fR, \fB\-\-expand\fR, or \fB\-\-edit\-check\fR, \fBrw\fR accepts several selector formats:
 .TP
 .B bare_name
 Matches any symbol with name \fIbare_name\fR (e.g. \fBlen\fR).
@@ -180,39 +262,39 @@ Fully qualified canonical identifier (e.g. \fBsrc/domain.rs::Interner::len\fR).
 
 .SH EXAMPLES
 .PP
-Generate top-ranked call graph map bounded to 200 symbols:
+Expand full body of an interned method:
 .RS
-.B rw . \-\-top\-k=200
+.B rw . \-\-expand="Interner::len"
 .RE
 .PP
-Generate streaming map capped at 4000 prompt tokens with no leading XML comments:
+Run pre-PR test gate check (exits 4 on untested blast radius):
 .RS
-.B rw . \-\-max\-tokens=4000 \-\-legend=none
+.B rw . \-\-test\-gate
 .RE
 .PP
-Inspect direct callers of an interned method:
+Inspect situational awareness diff analysis:
 .RS
-.B rw . \-\-callers="Interner::len"
+.B rw . \-\-situ
 .RE
 .PP
-Find shortest call path between two functions:
+Verify whether a symbol can be safely deleted:
 .RS
-.B rw . \-\-path="execute_stream:write_root_open"
+.B rw . \-\-safe\-delete="Interner::len"
 .RE
 .PP
-Run pre-commit quality delta gate against git HEAD:
+Partition repository call graph into modules:
 .RS
-.B rw . \-\-quality\-delta
+.B rw . \-\-communities
 .RE
 .PP
-Detect AST code duplication with minimum 40 tokens:
+Find dead internal functions:
 .RS
-.B rw . \-\-clones \-\-min\-tokens=40
+.B rw . \-\-dead\-code
 .RE
 .PP
-Export interactive call graph clustered by community:
+Execute a batch of queries in a single turn:
 .RS
-.B rw . \-\-html=graph.html \-\-color\-by=community
+.B rw . \-\-batch=queries.txt
 .RE
 
 .SH SEE ALSO

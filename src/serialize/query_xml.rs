@@ -221,3 +221,322 @@ pub fn serialize_path_between_xml<W: Write>(val: &Value, out: &mut W) -> io::Res
     }
     writeln!(out, "</path>")
 }
+/// Serialize `--expand` symbol bodies to Ripwire XML.
+pub fn serialize_expand_xml<W: Write>(
+    root: &str,
+    items: &[(&crate::domain::Symbol, &str, &str, &str)],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<ctx schema=\"ripwire.expand/v1\" root=\"{root}\"><bodies shown=\"{}\" total=\"{}\">",
+        items.len(),
+        items.len()
+    )?;
+    for (sym, name, path, body) in items {
+        let kind = sym.kind.tag();
+        let line = sym.line;
+        writeln!(
+            out,
+            "  <b t=\"{kind}\" l=\"{line}\" p=\"{path}\" n=\"{name}\"><![CDATA[{body}]]></b>"
+        )?;
+    }
+    writeln!(out, "</bodies></ctx>")
+}
+
+/// Top symbol representation in tree view.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeFileSymbols<'a> {
+    pub path: &'a str,
+    pub total_symbols: usize,
+    pub top_symbols: Vec<(&'a str, &'a str)>,
+}
+
+/// Serialize `--tree` hierarchical file symbol views to Ripwire XML.
+pub fn serialize_tree_xml<W: Write>(
+    root: &str,
+    file_symbols: &[TreeFileSymbols<'_>],
+    pr_iters: u32,
+    out: &mut W,
+) -> io::Result<()> {
+    let total_shown: usize = file_symbols.iter().map(|f| f.top_symbols.len()).sum();
+    write!(
+        out,
+        "<tree schema=\"ripwire.tree/v1\" files=\"{}\" pr_iters=\"{pr_iters}\" root=\"{root}\" shown_symbols=\"{total_shown}\">",
+        file_symbols.len()
+    )?;
+    for f in file_symbols {
+        write!(
+            out,
+            "<file p=\"{}\" symbols=\"{}\">",
+            f.path, f.total_symbols
+        )?;
+        for &(kind, name) in &f.top_symbols {
+            write!(out, "<s t=\"{kind}\" n=\"{name}\"/>")?;
+        }
+        write!(out, "</file>")?;
+    }
+    writeln!(out, "</tree>")
+}
+
+/// Serialize `--pack-top-n` bodies to Ripwire XML.
+pub fn serialize_pack_top_n_xml<W: Write>(
+    root: &str,
+    bodies: &[(&str, &str)],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<ctx schema=\"ripwire.pack-top-n/v1\" root=\"{root}\">"
+    )?;
+    for (path, body) in bodies {
+        writeln!(out, "<src p=\"{path}\">\n{body}\n</src>")?;
+    }
+    writeln!(out, "</ctx>")
+}
+/// Serialize `--test-gate` to Ripwire XML.
+pub fn serialize_test_gate_xml<W: Write>(
+    root: &str,
+    tests: &[crate::gate::affected::AffectedTest],
+    untested: usize,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut buf = format!(
+        "<test-gate schema=\"ripwire.test-gate/v1\" root=\"{root}\" tests=\"{}\" untested=\"{untested}\">",
+        tests.len()
+    );
+    for t in tests {
+        buf.push_str(&format!("<t p=\"{}\" hops=\"{}\"/>", t.path, t.hops));
+    }
+    buf.push_str("</test-gate>\n");
+    out.write_all(buf.as_bytes())
+}
+
+/// Serialize `--safe-delete` to Ripwire XML.
+pub fn serialize_safe_delete_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    callers: &[(&str, &str)],
+    blast_radius: usize,
+    out: &mut W,
+) -> io::Result<()> {
+    let risk = if callers.is_empty() && blast_radius == 0 {
+        "none-found"
+    } else {
+        "uses-exist"
+    };
+    writeln!(
+        out,
+        "<safe-delete schema=\"ripwire.safe-delete/v1\" root=\"{root}\" sym=\"{sym_name}\" callers=\"{}\" blast_radius=\"{blast_radius}\" risk=\"{risk}\">",
+        callers.len()
+    )?;
+    for (p, n) in callers {
+        writeln!(out, "  <caller p=\"{p}\" n=\"{n}\"/>")?;
+    }
+    writeln!(out, "</safe-delete>")
+}
+
+/// Serialize `--exercises` to Ripwire XML.
+pub fn serialize_exercises_xml<W: Write>(
+    root: &str,
+    test_path: &str,
+    reached: &[(&str, &str)],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<exercises schema=\"ripwire.exercises/v1\" root=\"{root}\" test=\"{test_path}\" count=\"{}\">",
+        reached.len()
+    )?;
+    for (p, n) in reached {
+        writeln!(out, "  <target p=\"{p}\" n=\"{n}\"/>")?;
+    }
+    writeln!(out, "</exercises>")
+}
+/// Community module representation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommunityModule<'a> {
+    pub id: u32,
+    pub size: usize,
+    pub dir: &'a str,
+    pub label: &'a str,
+    pub members: Vec<(&'static str, &'a str, &'a str, u32)>,
+}
+
+/// Serialize `--dead-code` candidates to Ripwire XML.
+pub fn serialize_dead_code_xml<W: Write>(
+    root: &str,
+    items: &[(&str, &'static str, &str, u32)],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<dead-code schema=\"ripwire.dead-code/v1\" count=\"{}\" root=\"{root}\">",
+        items.len()
+    )?;
+    for (n, t, p, l) in items {
+        writeln!(out, "  <d n=\"{n}\" t=\"{t}\" p=\"{p}\" l=\"{l}\"/>")?;
+    }
+    writeln!(out, "</dead-code>")
+}
+
+/// Serialize `--communities` to Ripwire XML.
+pub fn serialize_communities_xml<W: Write>(
+    root: &str,
+    modules: &[CommunityModule<'_>],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<communities schema=\"ripwire.communities/v1\" root=\"{root}\" modules=\"{}\">",
+        modules.len()
+    )?;
+    for m in modules {
+        writeln!(
+            out,
+            "  <community id=\"{}\" size=\"{}\" dir=\"{}\" label=\"{}\">",
+            m.id, m.size, m.dir, m.label
+        )?;
+        for &(kind, name, path, line) in &m.members {
+            writeln!(
+                out,
+                "    <member t=\"{kind}\" n=\"{name}\" p=\"{path}:{line}\"/>"
+            )?;
+        }
+        writeln!(out, "  </community>")?;
+    }
+    writeln!(out, "</communities>")
+}
+
+/// Serialize `--around` ego graph to Ripwire XML.
+pub fn serialize_around_xml<W: Write>(
+    root: &str,
+    target: &str,
+    depth: u32,
+    fanout: usize,
+    symbols: &[(&str, &'static str, &str, u32)],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<around schema=\"ripwire.around/v1\" root=\"{root}\" of=\"{target}\" depth=\"{depth}\" fanout=\"{fanout}\" count=\"{}\">",
+        symbols.len()
+    )?;
+    for (name, kind, path, line) in symbols {
+        writeln!(out, "  <s t=\"{kind}\" n=\"{name}\" p=\"{path}:{line}\"/>")?;
+    }
+    writeln!(out, "</around>")
+}
+
+/// Serialize `--external-surface` to Ripwire XML.
+pub fn serialize_external_surface_xml<W: Write>(
+    root: &str,
+    externals: &[(&str, &str, usize)],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<external-surface schema=\"ripwire.external-surface/v1\" root=\"{root}\" names=\"{}\">",
+        externals.len()
+    )?;
+    for (name, lang, refs) in externals {
+        writeln!(out, "  <x n=\"{name}\" lang=\"{lang}\" refs=\"{refs}\"/>")?;
+    }
+    writeln!(out, "</external-surface>")
+}
+
+/// Serialize `--deps` to Ripwire XML.
+pub fn serialize_deps_xml<W: Write>(
+    root: &str,
+    file_deps: &[(&str, usize, usize)],
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<deps schema=\"ripwire.deps/v1\" root=\"{root}\" files=\"{}\">",
+        file_deps.len()
+    )?;
+    for (p, inc, aff) in file_deps {
+        writeln!(
+            out,
+            "  <f p=\"{p}\" includes=\"{inc}\" afferent=\"{aff}\"/>"
+        )?;
+    }
+    writeln!(out, "</deps>")
+}
+/// Serialize `--exemplar` to Ripwire XML.
+pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
+    let ex = &val["exemplar"];
+    let k = val.get("kind").and_then(Value::as_str).unwrap_or("fn");
+    let n = ex.get("name").and_then(Value::as_str).unwrap_or_default();
+    let p = ex.get("path").and_then(Value::as_str).unwrap_or_default();
+    let l = ex.get("line").and_then(Value::as_u64).unwrap_or(1);
+    let c = ex
+        .get("callers")
+        .and_then(Value::as_u64)
+        .unwrap_or_default();
+    let cx = ex.get("ccx").and_then(Value::as_u64).unwrap_or_default();
+    let b = ex.get("body").and_then(Value::as_str).unwrap_or_default();
+
+    writeln!(
+        out,
+        "<exemplar schema=\"ripwire.exemplar/v1\" root=\"{root}\" kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\"><bodies shown=\"1\" total=\"1\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]></b></bodies></exemplar>"
+    )
+}
+/// Serialize `--lego` to Ripwire XML.
+pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
+    let iface = val["interface"].as_str().unwrap_or("");
+    let empty = Vec::new();
+    let impls = val["implementors"].as_array().unwrap_or(&empty);
+    let mut buf = format!(
+        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego><iface n=\"{iface}\" implementors=\"{}\">\n",
+        impls.len()
+    );
+    for it in impls {
+        let n = it["name"].as_str().unwrap_or("");
+        let p = it["path"].as_str().unwrap_or("");
+        buf.push_str(&format!("  <impl n=\"{n}\" p=\"{p}\"/>\n"));
+    }
+    buf.push_str("</iface></lego></ctx>\n");
+    out.write_all(buf.as_bytes())
+}
+
+/// Serialize `--recall` to Ripwire XML.
+pub fn serialize_recall_xml<W: Write>(
+    root: &str,
+    query: &str,
+    val: &Value,
+    out: &mut W,
+) -> io::Result<()> {
+    let empty = Vec::new();
+    let matches = val["matches"].as_array().unwrap_or(&empty);
+    let mut buf = format!(
+        "<recall schema=\"ripwire.recall/v1\" root=\"{root}\" query=\"{query}\" docs=\"{}\">\n",
+        matches.len()
+    );
+    for d in matches {
+        let p = d["path"].as_str().unwrap_or("");
+        let text = d["snippet"].as_str().unwrap_or("");
+        buf.push_str(&format!("  <doc p=\"{p}\"><![CDATA[{text}]]></doc>\n"));
+    }
+    buf.push_str("</recall>\n");
+    out.write_all(buf.as_bytes())
+}
+
+/// Serialize `--from-trace` to Ripwire XML.
+pub fn serialize_from_trace_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    let empty = Vec::new();
+    let suspects = val["suspects"].as_array().unwrap_or(&empty);
+    let mut buf = format!(
+        "<from-trace schema=\"ripwire.from-trace/v1\" count=\"{}\">\n",
+        suspects.len()
+    );
+    for s in suspects {
+        let n = s["name"].as_str().unwrap_or("");
+        let p = s["path"].as_str().unwrap_or("");
+        let l = s["line"].as_u64().unwrap_or(0);
+        buf.push_str(&format!("  <suspect n=\"{n}\" p=\"{p}\" l=\"{l}\"/>\n"));
+    }
+    buf.push_str("</from-trace>\n");
+    out.write_all(buf.as_bytes())
+}

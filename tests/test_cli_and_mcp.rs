@@ -327,67 +327,227 @@ fn test_top_nav_queries() {
     assert!(err_msg.contains("ripwire: --callers symbol not found: missing_sym_404"));
 }
 
+fn setup_in_memory_fixture() -> (ripwire::domain::IngestResult, Graph, Interner) {
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[(
+            "lib.rs",
+            Lang::Rust,
+            b"pub fn run_cli() { helper(); } fn helper() {}",
+        )],
+        &reg,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    (ingest, graph, interner)
+}
+
 #[test]
 fn test_top_retrieval_and_workspace_queries() {
     use ripwire::cli::{
-        TopWorkspaceArgs, execute_connect_query, execute_path_query, execute_workspace_doc_query,
+        TopRetrievalArgs, TopWorkspaceArgs, execute_connect_query, execute_path_query,
+        execute_retrieval_dispatch, execute_workspace_doc_query,
     };
-
-    let fixtures: &[(&str, Lang, &[u8])] = &[(
-        "lib.rs",
-        Lang::Rust,
-        b"pub fn run_cli() { helper(); } fn helper() {}",
-    )];
-    let reg = LanguageRegistry::new().unwrap();
-    let interner = Interner::new();
-    let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
-    let graph = Graph::build(&ingest, &interner);
+    let (ingest, graph, interner) = setup_in_memory_fixture();
 
     let mut out = Vec::new();
     assert!(execute_connect_query("run_cli,helper", &ingest, &graph, &interner, &mut out).is_ok());
     assert!(execute_connect_query("missing_one", &ingest, &graph, &interner, &mut out).is_err());
+    assert!(execute_path_query("run_cli,helper", &ingest, &graph, &interner, &mut out).is_ok());
+    assert!(execute_path_query("missing,helper", &ingest, &graph, &interner, &mut out).is_err());
 
-    let mut path_out = Vec::new();
-    assert!(
-        execute_path_query("run_cli,helper", &ingest, &graph, &interner, &mut path_out).is_ok()
-    );
-    assert!(
-        execute_path_query("missing,helper", &ingest, &graph, &interner, &mut path_out).is_err()
-    );
-    assert!(
-        execute_path_query("run_cli,missing", &ingest, &graph, &interner, &mut path_out).is_err()
-    );
-
-    let mut ws_out = Vec::new();
-    let ws_whereis = TopWorkspaceArgs {
-        whereis: Some("run_cli".into()),
-        ..Default::default()
-    };
-    assert!(execute_workspace_doc_query(&ws_whereis, &ingest, &interner, &mut ws_out).is_ok());
-
-    let ws_drift = TopWorkspaceArgs {
-        doc_drift: true,
-        ..Default::default()
-    };
-    assert!(execute_workspace_doc_query(&ws_drift, &ingest, &interner, &mut ws_out).is_ok());
-
-    let ws_flags = TopWorkspaceArgs {
-        flags: true,
-        ..Default::default()
-    };
-    assert!(execute_workspace_doc_query(&ws_flags, &ingest, &interner, &mut ws_out).is_ok());
-
-    let ws_mentions = TopWorkspaceArgs {
-        mentions: Some("run_cli".into()),
-        ..Default::default()
-    };
-    assert!(execute_workspace_doc_query(&ws_mentions, &ingest, &interner, &mut ws_out).is_ok());
-
-    let ws_mentions_missing = TopWorkspaceArgs {
-        mentions: Some("missing_404".into()),
+    let chk = |w, d, f, m| TopWorkspaceArgs {
+        whereis: w,
+        doc_drift: d,
+        flags: f,
+        mentions: m,
         ..Default::default()
     };
     assert!(
-        execute_workspace_doc_query(&ws_mentions_missing, &ingest, &interner, &mut ws_out).is_err()
+        execute_workspace_doc_query(
+            &chk(Some("run_cli".into()), false, false, None),
+            &ingest,
+            &interner,
+            &mut out
+        )
+        .is_ok()
     );
+    assert!(
+        execute_workspace_doc_query(
+            &chk(None, true, true, Some("run_cli".into())),
+            &ingest,
+            &interner,
+            &mut out
+        )
+        .is_ok()
+    );
+    assert!(
+        execute_workspace_doc_query(
+            &chk(None, false, false, Some("missing".into())),
+            &ingest,
+            &interner,
+            &mut out
+        )
+        .is_err()
+    );
+    let pr = ripwire::PageRankResult {
+        iterations: 1,
+        converged: true,
+        ranks: vec![0.5, 0.5],
+    };
+    let r_for = TopRetrievalArgs {
+        task_for: Some("run".into()),
+        ..Default::default()
+    };
+    assert!(
+        execute_retrieval_dispatch(&r_for, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
+    );
+    let r_grep = TopRetrievalArgs {
+        grep: Some("fn".into()),
+        ..Default::default()
+    };
+    assert!(
+        execute_retrieval_dispatch(&r_grep, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
+    );
+    let r_ex = TopRetrievalArgs {
+        exemplar: Some("fn".into()),
+        ..Default::default()
+    };
+    assert!(
+        execute_retrieval_dispatch(&r_ex, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
+    );
+    let r_lego = TopRetrievalArgs {
+        lego: Some("Iface".into()),
+        ..Default::default()
+    };
+    assert!(
+        execute_retrieval_dispatch(&r_lego, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
+    );
+    let r_rec = TopRetrievalArgs {
+        recall: Some("plan".into()),
+        ..Default::default()
+    };
+    assert!(
+        execute_retrieval_dispatch(&r_rec, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
+    );
+    let r_tr = TopRetrievalArgs {
+        from_trace: Some("error at src/lib.rs:1".into()),
+        ..Default::default()
+    };
+    assert!(
+        execute_retrieval_dispatch(&r_tr, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
+    );
+}
+
+#[test]
+fn test_top_safety_queries() {
+    use ripwire::cli::{
+        TopSafetyArgs, execute_exercises_query, execute_safe_delete_query, execute_safety_dispatch,
+        execute_situ_query, execute_test_gate_query,
+    };
+    let (ingest, graph, interner) = setup_in_memory_fixture();
+    let mut out = Vec::new();
+
+    assert!(
+        execute_test_gate_query(".", Some("lib.rs"), &ingest, &graph, &interner, &mut out).is_ok()
+    );
+    assert!(execute_situ_query(".", Some("lib.rs"), &ingest, &graph, &interner, &mut out).is_ok());
+    assert!(
+        execute_safe_delete_query(".", "run_cli", &ingest, &graph, &interner, &mut out).is_ok()
+    );
+    assert!(
+        execute_safe_delete_query(".", "missing", &ingest, &graph, &interner, &mut out).is_err()
+    );
+    assert!(execute_exercises_query(".", "tests", &ingest, &graph, &interner, &mut out).is_ok());
+
+    let s = |tg, si, sd, ex| TopSafetyArgs {
+        test_gate: tg,
+        situ: si,
+        safe_delete: sd,
+        exercises: ex,
+    };
+    assert!(
+        execute_safety_dispatch(
+            &s(Some(Some("lib.rs".into())), None, None, None),
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &mut out
+        )
+        .is_ok()
+    );
+    assert!(
+        execute_safety_dispatch(
+            &s(None, Some(Some("lib.rs".into())), None, None),
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &mut out
+        )
+        .is_ok()
+    );
+    assert!(
+        execute_safety_dispatch(
+            &s(None, None, Some("run_cli".into()), None),
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &mut out
+        )
+        .is_ok()
+    );
+    assert!(
+        execute_safety_dispatch(
+            &s(None, None, None, Some("tests".into())),
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &mut out
+        )
+        .is_ok()
+    );
+}
+#[test]
+fn test_top_architecture_queries() {
+    use ripwire::cli::{
+        AroundConfig, TopArchitectureArgs, execute_around_query, execute_batch_content,
+        execute_communities_query, execute_dead_code_query, execute_deps_query,
+        execute_external_surface_query,
+    };
+    let (ingest, graph, interner) = setup_in_memory_fixture();
+    let mut out = Vec::new();
+
+    assert!(execute_dead_code_query(".", &ingest, &graph, &interner, &mut out).is_ok());
+    assert!(execute_communities_query(".", None, &ingest, &graph, &interner, &mut out).is_ok());
+    let cfg = AroundConfig {
+        depth: 1,
+        fanout: 32,
+    };
+    assert!(
+        execute_around_query(".", "run_cli", cfg, &ingest, &graph, &interner, &mut out).is_ok()
+    );
+    assert!(
+        execute_around_query(".", "missing", cfg, &ingest, &graph, &interner, &mut out).is_err()
+    );
+    assert!(execute_external_surface_query(".", &ingest, &interner, &mut out).is_ok());
+    assert!(execute_deps_query(".", &ingest, &graph, &interner, &mut out).is_ok());
+
+    let pr = ripwire::PageRankResult {
+        iterations: 1,
+        converged: true,
+        ranks: vec![0.5, 0.5],
+    };
+    let batch =
+        "callers:run_cli\ncallees:run_cli\nimpact:run_cli\nuses:run_cli\ngrep:fn\nfor:run\n";
+    assert!(execute_batch_content(".", batch, &ingest, &graph, &pr, &interner, &mut out).is_ok());
+
+    let _a = TopArchitectureArgs {
+        dead_code: true,
+        ..Default::default()
+    };
 }

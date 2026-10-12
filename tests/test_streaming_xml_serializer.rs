@@ -299,6 +299,142 @@ fn test_query_xml_retrieval_and_git() {
     serialize_mentions_xml(&val_mentions, &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.mentions/v1\""));
 }
+#[test]
+fn test_query_xml_detail_ladder() {
+    use ripwire::{
+        TreeFileSymbols, serialize_expand_xml, serialize_pack_top_n_xml, serialize_tree_xml,
+    };
+    let mut buf = Vec::new();
+    let interner = Interner::new();
+    let sym = Symbol::new(
+        0,
+        interner.intern("run"),
+        interner.intern("run"),
+        SymKind::Function,
+        Lang::Rust,
+        0,
+        10,
+    );
+    serialize_expand_xml(
+        ".",
+        &[(&sym, "run", "src/main.rs", "fn run() {}")],
+        &mut buf,
+    )
+    .unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.expand/v1\""));
+    buf.clear();
+
+    let tree_files = [TreeFileSymbols {
+        path: "src/main.rs",
+        total_symbols: 1,
+        top_symbols: vec![("fn", "run")],
+    }];
+    serialize_tree_xml(".", &tree_files, 16, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.tree/v1\""));
+    buf.clear();
+
+    serialize_pack_top_n_xml(".", &[("src/main.rs", "fn run() {}")], &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.pack-top-n/v1\""));
+}
+#[test]
+fn test_query_xml_safety_family() {
+    use ripwire::{serialize_exercises_xml, serialize_safe_delete_xml, serialize_test_gate_xml};
+    let mut buf = Vec::new();
+
+    let tests = [ripwire::gate::affected::AffectedTest {
+        path: "tests/foo.rs".into(),
+        hops: 1,
+        is_direct_change: false,
+    }];
+    serialize_test_gate_xml(".", &tests, 2, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.test-gate/v1\""));
+    buf.clear();
+
+    serialize_safe_delete_xml(".", "sym", &[("src/lib.rs", "caller")], 3, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.safe-delete/v1\""));
+    buf.clear();
+
+    serialize_exercises_xml(".", "tests/foo.rs", &[("src/lib.rs", "target")], &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.exercises/v1\""));
+}
+#[test]
+fn test_query_xml_architecture_family() {
+    use ripwire::{
+        CommunityModule, serialize_around_xml, serialize_communities_xml, serialize_dead_code_xml,
+        serialize_deps_xml, serialize_external_surface_xml,
+    };
+    let mut buf = Vec::new();
+
+    serialize_dead_code_xml(".", &[("unused", "fn", "src/lib.rs", 10)], &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.dead-code/v1\""));
+    buf.clear();
+
+    let mods = [CommunityModule {
+        id: 0,
+        size: 1,
+        dir: "src",
+        label: "core",
+        members: vec![("fn", "run", "src/lib.rs", 1)],
+    }];
+    serialize_communities_xml(".", &mods, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.communities/v1\""));
+    buf.clear();
+
+    serialize_around_xml(
+        ".",
+        "run",
+        1,
+        32,
+        &[("run", "fn", "src/lib.rs", 1)],
+        &mut buf,
+    )
+    .unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.around/v1\""));
+    buf.clear();
+
+    serialize_external_surface_xml(".", &[("extern_fn", "rs", 5)], &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.external-surface/v1\""));
+    buf.clear();
+
+    serialize_deps_xml(".", &[("src/lib.rs", 2, 1)], &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.deps/v1\""));
+}
+#[test]
+fn test_query_xml_task_retrieval_family() {
+    use ripwire::{
+        serialize_exemplar_xml, serialize_from_trace_xml, serialize_lego_xml, serialize_recall_xml,
+    };
+    let mut buf = Vec::new();
+
+    let val_ex = json!({
+        "kind": "fn",
+        "exemplar": { "name": "run", "path": "src/main.rs", "line": 1, "body": "fn run() {}", "ccx": 0, "callers": 1 }
+    });
+    serialize_exemplar_xml(".", &val_ex, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.exemplar/v1\""));
+    buf.clear();
+
+    let val_lego = json!({
+        "interface": "ToXmlString",
+        "implementors": [{ "name": "AffectedReport", "path": "src/gate/affected.rs" }]
+    });
+    serialize_lego_xml(".", &val_lego, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.lego/v1\""));
+    buf.clear();
+
+    let val_recall = json!({
+        "matches": [{ "path": "README.md", "snippet": "context router" }]
+    });
+    serialize_recall_xml(".", "router", &val_recall, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.recall/v1\""));
+    buf.clear();
+
+    let val_trace = json!({
+        "suspects": [{ "name": "run", "path": "src/main.rs", "line": 10 }]
+    });
+    serialize_from_trace_xml(&val_trace, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.from-trace/v1\""));
+}
 
 #[test]
 fn test_query_xml_graph_paths() {
