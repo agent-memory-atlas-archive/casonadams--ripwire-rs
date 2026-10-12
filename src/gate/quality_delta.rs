@@ -2,10 +2,54 @@ use crate::gate::baseline::{
     DEFAULT_BASELINE_FILE, QualitySnapshot, compute_snapshot, read_baseline_file,
 };
 use crate::mcp::McpState;
+use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::Path;
 
-/// A single detected quality regression between working tree and baseline.
+pub const DEFAULT_ACKS_FILE: &str = ".ripwire_quality_acks";
+
+/// Acknowledged quality regressions from `.ripwire_quality_acks`.
+#[derive(Debug, Clone, Default)]
+pub struct QualityAcks {
+    pub acks: HashMap<(String, String), u32>,
+}
+
+impl QualityAcks {
+    pub fn is_acknowledged(&self, kind: &str, key: &str, now_val: u32) -> bool {
+        if let Some(&ack_val) = self.acks.get(&(kind.to_string(), key.to_string())) {
+            return ack_val >= now_val || ack_val == 0;
+        }
+        let sym = key.split("::").last().unwrap_or(key);
+        if let Some(&ack_val) = self.acks.get(&(kind.to_string(), sym.to_string())) {
+            return ack_val >= now_val || ack_val == 0;
+        }
+        false
+    }
+}
+
+pub fn parse_acks_content(content: &str) -> QualityAcks {
+    let mut acks = HashMap::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || trimmed.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = trimmed.split_whitespace().collect();
+        if parts.len() >= 4 && parts[0] == "ack" {
+            let kind = parts[1].split(':').next().unwrap_or(parts[1]).to_string();
+            let key = parts[2].to_string();
+            let val = parts[3].parse::<u32>().unwrap_or(0);
+            acks.insert((kind.clone(), key), val);
+            for p in &parts[4..] {
+                if let Some(path_part) = p.strip_prefix("p=") {
+                    let sym_or_path = path_part.split(':').next().unwrap_or(path_part);
+                    acks.insert((kind.clone(), sym_or_path.to_string()), val);
+                }
+            }
+        }
+    }
+    QualityAcks { acks }
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct QualityRegression {
     pub kind: String,
@@ -105,7 +149,6 @@ fn check_symbol_numeric_regressions(
                 is_new_symbol: false,
             });
         }
-
         let now_loc = working.loc_by_sym.get(key).copied().unwrap_or(0);
         let was_loc = baseline.loc_by_sym.get(key).copied().unwrap_or(0);
         if now_loc > was_loc && now_loc > 60 {
@@ -117,6 +160,36 @@ fn check_symbol_numeric_regressions(
                 was_val: was_loc,
                 now_val: now_loc,
                 is_gating: false,
+                is_new_symbol: false,
+            });
+        }
+
+        let now_nest = working.nest_by_sym.get(key).copied().unwrap_or(0) as u32;
+        let was_nest = baseline.nest_by_sym.get(key).copied().unwrap_or(0) as u32;
+        if now_nest > was_nest && now_nest > 4 {
+            regressions.push(QualityRegression {
+                kind: "nesting".to_string(),
+                sym_name: sym_name.clone(),
+                file_path: file_path.clone(),
+                line: 1,
+                was_val: was_nest,
+                now_val: now_nest,
+                is_gating: now_nest > 6,
+                is_new_symbol: false,
+            });
+        }
+
+        let now_params = working.params_by_sym.get(key).copied().unwrap_or(0) as u32;
+        let was_params = baseline.params_by_sym.get(key).copied().unwrap_or(0) as u32;
+        if now_params > was_params && now_params > 3 {
+            regressions.push(QualityRegression {
+                kind: "params".to_string(),
+                sym_name: sym_name.clone(),
+                file_path: file_path.clone(),
+                line: 1,
+                was_val: was_params,
+                now_val: now_params,
+                is_gating: now_params > 5,
                 is_new_symbol: false,
             });
         }
@@ -163,6 +236,44 @@ pub fn compute_quality_delta(
     baseline: &QualitySnapshot,
     baseline_source: &str,
 ) -> QualityDeltaReport {
+    compute_quality_delta_with_acks(working, baseline, baseline_source, None)
+}
+
+fn apply_quality_acks(regressions: &mut [QualityRegression], ledger: &QualityAcks) {
+    for r in regressions {
+        if ledger.is_acknowledged(&r.kind, &r.sym_name, r.now_val)
+            || ledger.is_acknowledged(&r.kind, &r.file_path, r.now_val)
+        {
+            r.is_gating = false;
+        }
+    }
+}
+
+fn count_delta_categories(regressions: &[QualityRegression]) -> (usize, usize, usize) {
+    let mut gating = 0;
+    let mut preexisting = 0;
+    let mut new_sym = 0;
+    for r in regressions {
+        if r.is_gating {
+            gating += 1;
+        }
+        if r.is_new_symbol {
+            new_sym += 1;
+        } else {
+            preexisting += 1;
+        }
+    }
+    (gating, preexisting, new_sym)
+}
+
+/// Compute quality delta report comparing working tree snapshot against baseline with acks.
+#[must_use]
+pub fn compute_quality_delta_with_acks(
+    working: &QualitySnapshot,
+    baseline: &QualitySnapshot,
+    baseline_source: &str,
+    acks: Option<&QualityAcks>,
+) -> QualityDeltaReport {
     let mut regressions = Vec::new();
 
     for key in working.ccx_by_sym.keys() {
@@ -172,21 +283,11 @@ pub fn compute_quality_delta(
 
     check_structural_regressions(working, baseline, &mut regressions);
 
-    let mut gating_count = 0usize;
-    let mut preexisting_worse_count = 0usize;
-    let mut new_symbol_count = 0usize;
-
-    for r in &regressions {
-        if r.is_gating {
-            gating_count += 1;
-        }
-        if r.is_new_symbol {
-            new_symbol_count += 1;
-        } else {
-            preexisting_worse_count += 1;
-        }
+    if let Some(ledger) = acks {
+        apply_quality_acks(&mut regressions, ledger);
     }
-    let minor_count = regressions.len().saturating_sub(gating_count);
+    let (gating_count, preexisting_worse_count, new_symbol_count) =
+        count_delta_categories(&regressions);
     let api_new_surface = working.public_api.difference(&baseline.public_api).count();
     let short_sha = if working.head_sha.len() >= 8 {
         &working.head_sha[..8]
@@ -198,6 +299,7 @@ pub fn compute_quality_delta(
     } else {
         short_sha.to_string()
     };
+    let minor_count = regressions.len().saturating_sub(gating_count);
 
     QualityDeltaReport {
         baseline_source: baseline_source.to_string(),
@@ -244,6 +346,71 @@ fn load_head_baseline(root: &str, state: &McpState, head_sha: &str) -> QualitySn
     compute_snapshot(&head_ingest, &head_graph, &head_interner, head_sha)
 }
 
+fn find_preexisting_callable_in_file<'a>(
+    file_path: &str,
+    state: &'a McpState,
+    baseline: &QualitySnapshot,
+) -> Option<(&'a crate::domain::Symbol, String, String)> {
+    for sym in &state.ingest.symbols {
+        if sym.kind != crate::domain::SymKind::Function
+            && sym.kind != crate::domain::SymKind::Method
+        {
+            continue;
+        }
+        let sym_file =
+            state.interner.resolve(&state.ingest.files[sym.file_id as usize].path);
+        if sym_file == file_path || sym_file.ends_with(file_path) {
+            let sym_name = state.interner.resolve(&sym.name);
+            let scope = sym.scope.map(|sc| state.interner.resolve(&sc));
+            let key = match scope {
+                Some(sc) => format!("{sym_file}::{sc}::{sym_name}"),
+                None => format!("{sym_file}::{sym_name}"),
+            };
+            if baseline.ccx_by_sym.contains_key(&key) {
+                return Some((sym, sym_name.to_string(), sym_file.to_string()));
+            }
+        }
+    }
+    None
+}
+
+fn check_churn_regressions(
+    root: &str,
+    state: &McpState,
+    baseline: &QualitySnapshot,
+    regressions: &mut Vec<QualityRegression>,
+) {
+    let Some(commits) = &state.commits else {
+        return;
+    };
+    if commits.is_empty() {
+        return;
+    }
+
+    let changed_files = crate::cli::safety::get_working_tree_changed_files(root);
+    for f in &changed_files {
+        let commit_count = commits
+            .iter()
+            .filter(|c| c.changed_files.iter().any(|cf| cf == f || cf.ends_with(f)))
+            .count();
+        if commit_count >= 2
+            && let Some((sym, sym_name, sym_file)) =
+                find_preexisting_callable_in_file(f, state, baseline)
+        {
+            regressions.push(QualityRegression {
+                kind: "short-horizon-churn".to_string(),
+                sym_name,
+                file_path: sym_file,
+                line: sym.line,
+                was_val: 0,
+                now_val: (commit_count * 8) as u32,
+                is_gating: true,
+                is_new_symbol: false,
+            });
+        }
+    }
+}
+
 /// Evaluate quality delta for a workspace root.
 pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<QualityDeltaReport> {
     let baseline_path = Path::new(root).join(DEFAULT_BASELINE_FILE);
@@ -269,7 +436,35 @@ pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<Qualit
         .unwrap_or("HEAD");
     let working = compute_snapshot(&state.ingest, &state.graph, &state.interner, working_sha);
 
-    Ok(compute_quality_delta(&working, &baseline, source_name))
+    let acks_path = Path::new(root).join(DEFAULT_ACKS_FILE);
+    let acks = if acks_path.exists() {
+        std::fs::read_to_string(&acks_path)
+            .ok()
+            .map(|c| parse_acks_content(&c))
+    } else {
+        None
+    };
+
+    let mut report =
+        compute_quality_delta_with_acks(&working, &baseline, source_name, acks.as_ref());
+    check_churn_regressions(root, state, &baseline, &mut report.regressions);
+    if let Some(ledger) = &acks {
+        for r in &mut report.regressions {
+            if ledger.is_acknowledged(&r.kind, &r.sym_name, r.now_val)
+                || ledger.is_acknowledged(&r.kind, &r.file_path, r.now_val)
+            {
+                r.is_gating = false;
+            }
+        }
+    }
+    report.gating_count = report.regressions.iter().filter(|r| r.is_gating).count();
+    report.preexisting_worse_count = report
+        .regressions
+        .iter()
+        .filter(|r| !r.is_new_symbol)
+        .count();
+
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -306,5 +501,67 @@ mod tests {
         let xml = report.to_xml_string();
         assert!(xml.contains("gating=\"1\""));
         assert!(xml.contains("<r kind=\"complexity\" sym=\"calc\""));
+    }
+    #[test]
+    fn test_quality_delta_nesting_and_params_regressions() {
+        let mut baseline = QualitySnapshot::default();
+        baseline
+            .ccx_by_sym
+            .insert("src/math.rs::deep".to_string(), 5);
+        baseline
+            .nest_by_sym
+            .insert("src/math.rs::deep".to_string(), 2);
+        baseline
+            .params_by_sym
+            .insert("src/math.rs::deep".to_string(), 2);
+
+        let mut working = QualitySnapshot::default();
+        working
+            .ccx_by_sym
+            .insert("src/math.rs::deep".to_string(), 5);
+        working
+            .nest_by_sym
+            .insert("src/math.rs::deep".to_string(), 7); // now > was and > 6 -> gating
+        working
+            .params_by_sym
+            .insert("src/math.rs::deep".to_string(), 6); // now > was and > 5 -> gating
+
+        let report = compute_quality_delta(&working, &baseline, "test-baseline");
+        assert_eq!(report.regressions.len(), 2);
+        assert_eq!(report.gating_count, 2);
+        assert!(report.has_gating_failures());
+
+        let kinds: Vec<&str> = report.regressions.iter().map(|r| r.kind.as_str()).collect();
+        assert!(kinds.contains(&"nesting"));
+        assert!(kinds.contains(&"params"));
+    }
+
+    #[test]
+    fn test_quality_delta_acks_suppression() {
+        let mut baseline = QualitySnapshot::default();
+        baseline
+            .ccx_by_sym
+            .insert("src/math.rs::deep".to_string(), 5);
+        baseline
+            .nest_by_sym
+            .insert("src/math.rs::deep".to_string(), 2);
+
+        let mut working = QualitySnapshot::default();
+        working
+            .ccx_by_sym
+            .insert("src/math.rs::deep".to_string(), 5);
+        working
+            .nest_by_sym
+            .insert("src/math.rs::deep".to_string(), 7);
+
+        let acks_content =
+            "ack nesting 70a00a1f5e885d55 10 p=src/math.rs:1 deliberate deep nesting\n";
+        let acks = parse_acks_content(acks_content);
+
+        let report =
+            compute_quality_delta_with_acks(&working, &baseline, "test-baseline", Some(&acks));
+        assert_eq!(report.regressions.len(), 1);
+        assert_eq!(report.gating_count, 0); // suppressed by ack!
+        assert!(!report.has_gating_failures());
     }
 }

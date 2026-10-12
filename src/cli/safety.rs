@@ -46,7 +46,7 @@ pub fn run_quality_delta_gate<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     match execute_quality_delta_with(state, out) {
-        Ok(has_failures) if has_failures => Err(io::Error::other("quality regressions detected")),
+        Ok(has_failures) if has_failures => std::process::exit(2),
         Ok(_) => Ok(()),
         Err(e) => Err(e),
     }
