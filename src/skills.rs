@@ -106,21 +106,27 @@ fn write_skill_file(dest_dir: &Path, rel_path: &str, content: &str) -> io::Resul
     clean_path_if_symlink(&target_file)?;
     fs::write(&target_file, content)
 }
+fn write_manifest_file(dest_dir: &Path, skill_names: &[&str]) -> io::Result<()> {
+    let manifest_content = generate_manifest_content(skill_names);
+    let manifest_path = dest_dir.join(".ripwire-manifest-v1");
+    clean_path_if_symlink(&manifest_path)?;
+    fs::write(&manifest_path, manifest_content)
+}
+
+fn write_all_skill_files(dest_dir: &Path) -> io::Result<()> {
+    for (rel_path, content) in EMBEDDED_SKILLS {
+        write_skill_file(dest_dir, rel_path, content)?;
+    }
+    Ok(())
+}
 
 /// Install embedded skills and write active manifest to destination directory.
 pub fn install_skills(custom_path: Option<&str>) -> io::Result<SkillInstallReport> {
     let dest_dir = resolve_skills_dir(custom_path);
     fs::create_dir_all(&dest_dir)?;
-
-    for (rel_path, content) in EMBEDDED_SKILLS {
-        write_skill_file(&dest_dir, rel_path, content)?;
-    }
-
+    write_all_skill_files(&dest_dir)?;
     let skill_names = get_skill_names();
-    let manifest_content = generate_manifest_content(&skill_names);
-    let manifest_path = dest_dir.join(".ripwire-manifest-v1");
-    clean_path_if_symlink(&manifest_path)?;
-    fs::write(&manifest_path, manifest_content)?;
+    write_manifest_file(&dest_dir, &skill_names)?;
 
     Ok(SkillInstallReport {
         installed_count: skill_names.len(),

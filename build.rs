@@ -71,6 +71,32 @@ fn install_man_pages() {
     }
     copy_man_to_dir(&src, PathBuf::from("/opt/homebrew/share/man/man1"));
 }
+fn is_skill_md(path: &std::path::Path) -> bool {
+    let Some(ext) = path.extension() else {
+        return false;
+    };
+    if ext != "md" {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+        return false;
+    };
+    name != "CONSOLIDATION.md" && name != "README.md"
+}
+
+fn add_skill_entry(
+    base: &std::path::Path,
+    path: &std::path::Path,
+    entries: &mut Vec<(String, String)>,
+) {
+    if let Ok(stripped) = path.strip_prefix(base)
+        && let Some(rel_src) = stripped.to_str()
+    {
+        let rel_dest = rel_src.strip_prefix("hermes/").unwrap_or(rel_src);
+        entries.push((rel_dest.to_string(), rel_src.to_string()));
+    }
+}
+
 fn collect_skills(
     base: &std::path::Path,
     dir: &std::path::Path,
@@ -83,19 +109,8 @@ fn collect_skills(
         let path = entry.path();
         if path.is_dir() {
             collect_skills(base, &path, entries);
-        } else if path.extension().is_some_and(|ext| ext == "md") {
-            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            if file_name == "CONSOLIDATION.md" || file_name == "README.md" {
-                continue;
-            }
-            let Ok(stripped) = path.strip_prefix(base) else {
-                continue;
-            };
-            let Some(rel_src) = stripped.to_str() else {
-                continue;
-            };
-            let rel_dest = rel_src.strip_prefix("hermes/").unwrap_or(rel_src);
-            entries.push((rel_dest.to_string(), rel_src.to_string()));
+        } else if is_skill_md(&path) {
+            add_skill_entry(base, &path, entries);
         }
     }
 }

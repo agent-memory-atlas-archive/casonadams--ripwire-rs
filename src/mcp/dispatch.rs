@@ -7,11 +7,20 @@ use crate::ingest::LanguageRegistry;
 use crate::navigate::{find_symbols_by_name, navigate_1hop, transitive_impact};
 use serde_json::{Value, json};
 use std::path::Path;
+#[inline]
+pub fn require_str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
+    args[key]
+        .as_str()
+        .ok_or_else(|| format!("missing '{key}' parameter"))
+}
+
+#[inline]
+pub fn opt_str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args[key].as_str()
+}
 
 pub fn call_find_symbol(state: &McpState, args: &Value) -> Result<Value, String> {
-    let Some(sym_name) = args["symbol"].as_str() else {
-        return Err("missing 'symbol' parameter".to_string());
-    };
+    let sym_name = require_str_arg(args, "symbol")?;
     let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
     let mut matches = Vec::new();
     for id in ids {
@@ -33,9 +42,7 @@ pub fn call_find_symbol(state: &McpState, args: &Value) -> Result<Value, String>
 }
 
 pub fn call_callers(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym_name = args["symbol"]
-        .as_str()
-        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
+    let sym_name = require_str_arg(args, "symbol")?;
     let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
 
     let callers_json: Vec<Value> = ids
@@ -55,9 +62,7 @@ pub fn call_callers(state: &McpState, args: &Value) -> Result<Value, String> {
 }
 
 pub fn call_callees(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym_name = args["symbol"]
-        .as_str()
-        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
+    let sym_name = require_str_arg(args, "symbol")?;
     let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
 
     let callees_json: Vec<Value> = ids
@@ -77,9 +82,7 @@ pub fn call_callees(state: &McpState, args: &Value) -> Result<Value, String> {
 }
 
 pub fn call_impact(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym_name = args["symbol"]
-        .as_str()
-        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
+    let sym_name = require_str_arg(args, "symbol")?;
     let max_depth = args["max_depth"].as_u64().unwrap_or(8) as u32;
 
     let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
@@ -127,9 +130,7 @@ pub fn call_explore(state: &McpState, args: &Value) -> Result<Value, String> {
 }
 
 pub fn call_cochange(state: &McpState, args: &Value) -> Result<Value, String> {
-    let path = args["path"]
-        .as_str()
-        .ok_or_else(|| "missing 'path' parameter".to_string())?;
+    let path = require_str_arg(args, "path")?;
     let commits_empty = Vec::new();
     let commits_slice = state.commits.as_deref().unwrap_or(&commits_empty);
     let coupling = crate::git::cochange::StaticCouplingMap::build(
@@ -169,9 +170,7 @@ pub fn call_cochange(state: &McpState, args: &Value) -> Result<Value, String> {
 }
 
 pub fn call_edit_check(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym_name = args["symbol"]
-        .as_str()
-        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
+    let sym_name = require_str_arg(args, "symbol")?;
 
     let ids = crate::navigate::find_symbols_by_name(sym_name, &state.ingest, &state.interner);
     let Some(&sym_id) = ids.first() else {
