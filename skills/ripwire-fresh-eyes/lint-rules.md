@@ -3,7 +3,7 @@
 Reference for `ripwire-fresh-eyes` step 4 (AST smells). Load this when you're about to write a rule of your
 own rather than rely on the built-ins.
 
-`ripwire <dir> --lint-rules=DIR` loads YAML ast-grep-style rules from `DIR` and runs them alongside (or
+`rw <dir> --lint-rules=DIR` loads YAML ast-grep-style rules from `DIR` and runs them alongside (or
 instead of) the built-ins; findings share the same `<f rule= sev= p= …>message</f>` shape as `--lint`.
 
 Minimal working rule (verified against `test/lintrulesfix/`):

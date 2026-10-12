@@ -15,7 +15,7 @@ allowed-tools: Bash, Read
 > • You want the blast radius / tests for a *change* (not to find a bug) → **ripwire-change-check**.
 > • Repo-wide quality once-over, no specific symptom → **ripwire-fresh-eyes**.
 > • "Why don't I see feature X?" and nothing looks broken — the code may be built but compiled/flagged OFF,
->   not buggy: `ripwire <dir> --flags[=SUBSTR] --legend=compact` (`--flip=NAME` for the blast radius of turning one ON) —
+>   not buggy: `rw <dir> --flags[=SUBSTR] --legend=compact` (`--flip=NAME` for the blast radius of turning one ON) —
 >   lives in **ripwire-fresh-eyes**, worth a look before you go hunting for a bug that isn't one.
 
 `<dir>` = repo root. Calls are warm after the first parse — chain freely. **Pick the branch that matches
@@ -31,15 +31,15 @@ candidates remain plausible, or the change's blast radius is itself part of the 
 
 ## Branch A — "I have a symptom, no idea where it lives"
 
-1. **Symptom search** — `ripwire <dir> --for="<symptom in plain words>"`
+1. **Symptom search** — `rw <dir> --for="<symptom in plain words>"`
    `<sigs>` ranked by relevance — signatures + doc-comments closest to the symptom. The `in=` reuse count
    and `cx=` complexity are inline; **prefer high-`cx`, high-`in` matches** — complex, widely-called code
    fails in more ways. If the bundle says `weak="1"`, reformulate — split camelCase terms, add synonyms
    from the domain, or quote an exact path/symbol from the issue — before trusting the ranking below it.
-2. **If several candidates remain, maintenance hotspots** — `ripwire <dir> --hotspots --legend=compact`
+2. **If several candidates remain, maintenance hotspots** — `rw <dir> --hotspots --legend=compact`
    `<hotspots>` ranked by `score = churn × ccx`; `top=` names the worst function per file. Bugs cluster in
    high-score files — **cross with step 1: a symbol in both lists is your prime suspect.**
-3. **If the symptom is broad, blast radius of each remaining candidate** — `ripwire <dir> --impact=SYM --legend=compact`
+3. **If the symptom is broad, blast radius of each remaining candidate** — `rw <dir> --impact=SYM --legend=compact`
    for the top 2–3 from step 1.
    `<impact of="SYM" defs="D" reaches="N">` lists everything that reaches SYM. A large `reaches` count is
    consistent with a symptom that appears in many places — that's the root, not a downstream effect.
@@ -48,26 +48,26 @@ candidates remain plausible, or the change's blast radius is itself part of the 
 
 ## Branch B — "I suspect a subsystem — narrow it"
 
-1. **Symptom-to-code** — `ripwire <dir> --for="<symptom>"` → note the `p=` (file paths) of the top 5. Which
+1. **Symptom-to-code** — `rw <dir> --for="<symptom>"` → note the `p=` (file paths) of the top 5. Which
    directories recur? That's your first narrowing.
-2. **Hotspots in those directories** — `ripwire <dir> --hotspots --legend=compact` → files that are relevant to the symptom
+2. **Hotspots in those directories** — `rw <dir> --hotspots --legend=compact` → files that are relevant to the symptom
    AND high churn+complexity are the most likely bug homes.
-3. **Find the exact emit site** — `ripwire <dir> --grep="ERROR_STRING" --legend=compact` (literal + enclosing symbol) or
+3. **Find the exact emit site** — `rw <dir> --grep="ERROR_STRING" --legend=compact` (literal + enclosing symbol) or
    `--regex="pattern"`. Add `--grep-context=N` (or `--grep-before=N`/`--grep-after=N`) for ripgrep-style
    lines of source around each hit — often enough to confirm the bug without a follow-up `--expand`. The
    enclosing symbol (`in=`) is ground truth — now `--callers=SYM` to trace up one level to the true root.
 
 ## Branch C — "I changed X and now something's broken" (regression)
 
-1. **Situational awareness on the change** — `ripwire <dir> --situ=fileA.cpp,fileB.h` (or bare `--situ` to
+1. **Situational awareness on the change** — `rw <dir> --situ=fileA.cpp,fileB.h` (or bare `--situ` to
    read from `git diff`). Emits, in one pass:
    - **blast radius** — everything that transitively reaches the changed symbols
    - **tests to run now** (`--affected` under the hood)
    - **co-change partners NOT in your diff** — files that historically move together (hidden coupling). This is
      the Shotgun Surgery check: did the change land everywhere it usually has to?
-2. **Who calls the broken symbol** — `ripwire <dir> --callers=SYM --legend=compact` → each recorded caller (a floor — counts_floor=) is a candidate for an
+2. **Who calls the broken symbol** — `rw <dir> --callers=SYM --legend=compact` → each recorded caller (a floor — counts_floor=) is a candidate for an
    unexpected side-effect.
-3. **Co-change history** — `ripwire <dir> --cochange=fileA.cpp --legend=compact` → partners ranked by `deg` (fraction of
+3. **Co-change history** — `rw <dir> --cochange=fileA.cpp --legend=compact` → partners ranked by `deg` (fraction of
    commits). A `surprising="1"` partner has no `#include` link — pure behavioural coupling, the non-obvious
    suspect.
 4. **Read** the functions that appear in BOTH the blast radius and the co-change list first.
@@ -77,15 +77,15 @@ candidates remain plausible, or the change's blast radius is itself part of the 
 You have the failing artifact's TEXT (a Python traceback, an ASan/UBSan report, a node/js stack, a
 clang/gcc diagnostic) — don't hand-translate its frames into queries one by one. Pipe it straight in:
 
-1. **Map the trace onto symbols** — `ripwire <dir> --from-trace=FILE --legend=compact` (or `--from-trace=-` to read the
-   trace from stdin, e.g. `pytest ... 2>&1 | ripwire <dir> --from-trace=- --legend=compact`). Table-driven frame extraction
+1. **Map the trace onto symbols** — `rw <dir> --from-trace=FILE --legend=compact` (or `--from-trace=-` to read the
+   trace from stdin, e.g. `pytest ... 2>&1 | rw <dir> --from-trace=- --legend=compact`). Table-driven frame extraction
    (python / asan / node / compiler / generic), ranked **innermost-first** over the frames that resolve to
    your indexed code. Out-of-corpus frames (stdlib, vendored deps) are listed and counted, never ranked.
 2. **Read rank 1 first** — the `innermost="1"` suspect is the crash/throw site; its FULL body is emitted
    inline, the other suspects as signatures. `skipped=` tells you how many frames fell outside every root.
 3. **Compose the budget** — `--from-trace=FILE --token-budget=N` fits the bundle to N tokens for a tight
    context window. Unparseable input refuses loudly (never a misleading empty map).
-4. **Or skip the run-read-paste loop entirely** — `ripwire <dir> --run-trace="make -j" --legend=compact` RUNS the
+4. **Or skip the run-read-paste loop entirely** — `rw <dir> --run-trace="make -j" --legend=compact` RUNS the
    build/test command itself (`sh -c`, your user, your environment — the make trust model, no sandbox)
    and, on a non-zero exit, serves the SAME from-trace bundle for the captured output plus a token-frugal
    `<lines view="relevant">` cut of the error/frame-shaped output lines. Exit 0 gets a minimal success
@@ -109,5 +109,5 @@ no alias analysis, block scopes separated (a shadowed name's rows carry `b=`, th
 cross that boundary you still need the compiler — use these results to focus *where* to look, not as proof.
 A high-`amb` symbol can be a dispatch hub, not the bug.
 
-**Found it?** Pin the gotcha with `ripwire <dir> --note-add="SYM_or_path: what actually went wrong"` — the
+**Found it?** Pin the gotcha with `rw <dir> --note-add="SYM_or_path: what actually went wrong"` — the
 next agent (or you, next session) gets it automatically the next time `--for`/`--expand` surfaces that symbol.

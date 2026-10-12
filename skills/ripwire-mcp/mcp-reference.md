@@ -75,9 +75,9 @@ signature-through-closing-brace or nothing).
 ## Listing fewer tools — `--mcp-tools` {#mcp-tools}
 
 ```
-ripwire --mcp --mcp-tools=core              # 8 tools: explore batch from_trace impact uses fetch_body edit_check quality_delta
-ripwire --mcp --mcp-tools=core,grep,slice   # names and profiles union
-ripwire wrap claude --mcp-tools=core        # the printed recipe carries the flag
+rw mcp --mcp-tools=core              # 8 tools: explore batch from_trace impact uses fetch_body edit_check quality_delta
+rw mcp --mcp-tools=core,grep,slice   # names and profiles union
+rw wrap claude --mcp-tools=core        # the printed recipe carries the flag
 ```
 
 - **Why.** An eager-loading client pays for every listed schema at session start: `tools/list` is 46,368 B for
@@ -92,9 +92,9 @@ ripwire wrap claude --mcp-tools=core        # the printed recipe carries the fla
 ## Remote transport — `--listen` reference {#remote-transport}
 
 ```
-ripwire . --listen=127.0.0.1:8765                       # loopback only; no token needed
-ripwire . --listen=0.0.0.0:8765 --mcp-token=SECRET      # off-host: REQUIRES a token or it refuses to start
-ripwire . --listen=127.0.0.1:8765 --mcp-token=S --allow-remote-edits   # opt in to remote edits (forces the token)
+rw . --listen=127.0.0.1:8765                       # loopback only; no token needed
+rw . --listen=0.0.0.0:8765 --mcp-token=SECRET      # off-host: REQUIRES a token or it refuses to start
+rw . --listen=127.0.0.1:8765 --mcp-token=S --allow-remote-edits   # opt in to remote edits (forces the token)
 # POST a JSON-RPC body to /mcp:
 curl -s -X POST http://127.0.0.1:8765/mcp -H 'Content-Type: application/json' \
      -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"for","arguments":{"task":"parse http"}}}'

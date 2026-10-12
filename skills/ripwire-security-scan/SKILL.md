@@ -24,7 +24,7 @@ boundary — and want structural signal on where the risk concentrates before yo
 
 **Scan a single file:**
 ```
-ripwire --scan-skill=PATH/TO/SKILL.md
+rw --scan-skill=PATH/TO/SKILL.md
 ```
 Output: `ripwire scan: N finding(s) in <file>`, then one line per finding —
 ```
@@ -35,10 +35,10 @@ exfiltration/path-traversal rules), and the offending text verbatim.
 
 **Scan a whole directory:**
 ```
-ripwire --scan-skills=DIR          # bare form also scans repo-local, Claude, and Codex skill homes
+rw --scan-skills=DIR          # bare form also scans repo-local, Claude, and Codex skill homes
 ```
 Recursively scans every `.md`, reports the same per-finding lines. Run this before adopting an entire skills
-folder, and as a periodic check on installed ones. (`ripwire wrap <agent>` runs this scan automatically at
+folder, and as a periodic check on installed ones. (`rw wrap <agent>` runs this scan automatically at
 adoption time and refuses to emit the recipe on a CRITICAL finding unless `--force`.)
 
 **Exit codes:** `0` = clean · `1` = WARN (review before installing) · `2` = CRITICAL (do not install). The
@@ -52,7 +52,7 @@ the security semantics of an MCP stanza. Retrieval is automated; the semantic de
 
 **Step 1 — locate and read the config** with ripwire or the shell + Read tool:
 ```
-ripwire <dir> --grep-in=any --grep='"command"' --grep-context=6 --legend=compact
+rw <dir> --grep-in=any --grep='"command"' --grep-context=6 --legend=compact
 ls <dir>/.mcp.json ~/.claude/mcp.json ~/.cursor/mcp.json 2>/dev/null
 find <dir> -maxdepth 3 \( -name ".mcp.json" -o -name "mcp*.json" \) 2>/dev/null
 ```
@@ -89,7 +89,7 @@ to the compiler/a real static analyzer (clang static analyzer, CodeQL, Semgrep w
 finding matters enough to need one; use this to decide fast where to point that tool, or when none is
 available.
 
-1. **Unsafe constructs** — `ripwire <dir> --lint --legend=compact`
+1. **Unsafe constructs** — `rw <dir> --lint --legend=compact`
    Output: `<lint findings="N">` with a per-rule count block, then one `<f rule=... p=file:line in=enclosing>`
    per hit. The security-relevant rules: `unsafe-c-fn` (banned/dangerous libc calls — `strcpy`/`gets`/`system`
    class), `c-style-cast` (masks a `reinterpret_cast` as an implicit conversion — hides type-safety holes),
@@ -108,7 +108,7 @@ available.
    the cap with `--limit=N` (or narrow the scan to the subsystem) before concluding the hits are elsewhere.
    Root `capped="0"` means you are seeing everything.
 
-2. **Taint-reach (structural, not real taint)** — `ripwire <dir> --graph-query='callees(name("SYM"),6)' --legend=compact`
+2. **Taint-reach (structural, not real taint)** — `rw <dir> --graph-query='callees(name("SYM"),6)' --legend=compact`
    where SYM is the parse/deserialize/handler entry point that receives untrusted input (the number bounds
    the hop depth; `--callees=SYM` is the 1-hop version for a quick first look).
    Output: `<query expr=... count="N">` — everything transitively reachable FROM that entry point via the
@@ -121,13 +121,13 @@ available.
    to modify the handler and need to know who depends on it — for forward taint-reach it's a false negative
    (on an entry point like `main` it returns an empty set).
 
-3. **Untested integration seams** — `ripwire <dir> --seams --legend=compact`
+3. **Untested integration seams** — `rw <dir> --seams --legend=compact`
    Output: `<seams>` — cross-module call edges no test file reaches. A parser/deserializer/auth boundary
    that shows up as an untested seam is doubly worth attention: it's both attack-surface-adjacent and has
    no regression net if you (or an attacker-triggered path) breaks it.
 
-4. **Find the sinks and their call sites** — `ripwire <dir> --grep-in=any --grep=STR --legend=compact` (literal, e.g.
-   `system(`, `eval`, `exec`, `pickle.loads`, `deserialize`) for a quick census, or `ripwire <dir> --uses=SYM --legend=compact` (e.g.
+4. **Find the sinks and their call sites** — `rw <dir> --grep-in=any --grep=STR --legend=compact` (literal, e.g.
+   `system(`, `eval`, `exec`, `pickle.loads`, `deserialize`) for a quick census, or `rw <dir> --uses=SYM --legend=compact` (e.g.
    `--uses=deserialize`) once you know the exact symbol name — gives the statically-resolvable call/read/write sites by role (a floor: dynamic dispatch/callbacks/macros are unmodelled — counts_floor=) and
    file:line, and flags `external="1"` when the sink is a stdlib/third-party name with no in-corpus
    definition (the common case for `system`/`eval`-class calls). Treat the site list as a floor, not

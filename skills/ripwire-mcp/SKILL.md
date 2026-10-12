@@ -1,7 +1,7 @@
 ---
 name: ripwire-mcp
 description: >
-  Wire ripwire into an agent as an MCP server — `ripwire wrap AGENT` (Claude Code, Cursor, Codex,
+  Wire ripwire into an agent as an MCP server — `rw wrap AGENT` (Claude Code, Cursor, Codex,
   Gemini…) — and choose the server verb mid-task. Also tool HEALTH: a symbol you expected is missing
   from the ranked output, the index feels stale after a rebase, 'is my ripwire setup broken?'
 allowed-tools: Bash, Read
@@ -41,26 +41,26 @@ writes) detailed below and in full in [`mcp-reference.md`](mcp-reference.md).
 
 The server exposes **33 MCP verbs**: 17 read verbs (incl. `rank_by`/`fetch_body`/`flags`/`slice`), 13 flagship-reflex
 verbs (`affected`/`connect`/`explore`/`from_trace`/`edit_check` and the cross-branch pair `whereis`/`stray_content`) and
-3 edit verbs — `ripwire wrap codex --force` prints the live count.
+3 edit verbs — `rw wrap codex --force` prints the live count.
 
-## Wiring — `ripwire wrap <agent>` prints the recipe
+## Wiring — `rw wrap <agent>` prints the recipe
 
 ```
-ripwire wrap claude      # → claude mcp add ripwire -- ripwire --mcp
-ripwire wrap cursor      # → JSON mcpServers stanza for .cursor/mcp.json (also: windsurf, gemini)
-ripwire wrap codex       # → TOML stanza for ~/.codex/config.toml
-ripwire wrap opencode    # → CLI first (AGENTS.md is read automatically); its config key is "mcp", NOT mcpServers
-ripwire wrap aider       # → no MCP: ripwire . --for="<task>" > .ripwire-map.txt; aider --read .ripwire-map.txt
-ripwire wrap --all       # → auto-detect installed agents, emit each one's config in one run
+rw wrap claude      # → claude mcp add ripwire -- rw mcp
+rw wrap cursor      # → JSON mcpServers stanza for .cursor/mcp.json (also: windsurf, gemini)
+rw wrap codex       # → TOML stanza for ~/.codex/config.toml
+rw wrap opencode    # → CLI first (AGENTS.md is read automatically); its config key is "mcp", NOT mcpServers
+rw wrap aider       # → no MCP: rw . --for="<task>" > .ripwire-map.txt; aider --read .ripwire-map.txt
+rw wrap --all       # → auto-detect installed agents, emit each one's config in one run
 ```
 
 `wrap` never edits config itself — it prints; you review and run. Before printing it security-scans
 `./skills` and `.agents/skills`: a CRITICAL finding blocks the recipe (exit 1) unless you pass
-`--force`; WARNs print and continue. Bare `ripwire wrap` lists the supported agents.
+`--force`; WARNs print and continue. Bare `rw wrap` lists the supported agents.
 
 ### Audit the active Codex surface
 
-Run `ripwire <repo> --doctor --agent=codex` after install/update or when Codex appears to be using a stale
+Run `rw <repo> --doctor --agent=codex` after install/update or when Codex appears to be using a stale
 binary, missing a skill, skipping the advisory CLI-first hooks, or starting the wrong MCP executable. This
 extends the ordinary six-check doctor with four read-only checks over the LIVE environment: PATH binary
 agreement, exact parity between the installed skills and `.ripwire-manifest-v1`, executability of all three
@@ -71,7 +71,7 @@ commands, so it is safe to paste for diagnosis; `--agent=codex` alone refuses be
 ### "no project root" / "memory limit reached" / `_memory_stop`
 
 `$HOME`, `/` and system directories are never a project root over MCP — not as the launch directory and not as
-`path=`: pass the project directory itself (a server started as `ripwire ~ --mcp` still answers about `~`). A tool call refused with "memory limit reached", or an answer carrying `_memory_stop`
+`path=`: pass the project directory itself (a server started as `rw ~ --mcp` still answers about `~`). A tool call refused with "memory limit reached", or an answer carrying `_memory_stop`
 in its envelope, means the memory guard cut or refused the work on a tree too large for the machine: point
 `path=` at a smaller root, or raise the limit with `--max-memory=<N>[K|M|G]` (or `RIPWIRE_MAX_MEMORY`) on the
 server's command line. The default (65% of RAM) is silent on real projects.
@@ -101,7 +101,7 @@ enclosing-chain report) and `@FILE:LINE` in any SYM selector; contract gate: `te
 
 | Verb | CLI twin | Ask it for |
 |---|---|---|
-| `analyze` | `ripwire <dir>` | the ranked XML map |
+| `analyze` | `rw <dir>` | the ranked XML map |
 | `for` (`task`) | `--for=TASK` | the task lens: signatures + cx/in metrics framed for reuse. **Auto-routes** the ranker — pass a symbol NAME verbatim as `task` to get name-exact retrieval (recall@1 ~99%); a conceptual phrase uses subtoken+body. Root carries `route=` as a code (`name-exact(X)` / `subtoken+body[:broad\|:declined]`). |
 | `find_symbol` (`symbol`) | `--callers` + `--callees` | locate a symbol with its callers AND callees in one call — each symbol carries a `handle` |
 | `find_referencing_symbols` (`symbol`) | `--callers=SYM` | just who references/calls it — also handle-bearing |
@@ -139,7 +139,7 @@ cleanly onto a single JSON-RPC call) and `--note-add`/`--notes` (a write verb; a
 safety-contract thinking the 3 edit verbs got) — shell out for all of these even with the server running;
 the on-disk warm cache keeps them fast too.
 
-**Team/CI: commit the warm cache as an index artifact.** `ripwire <dir> --index-out=BASE` cold-parses once,
+**Team/CI: commit the warm cache as an index artifact.** `rw <dir> --index-out=BASE` cold-parses once,
 writes `BASE.lean.ripwirecache` + `BASE.rich.ripwirecache` (`--for`/`--exemplar`/`--metrics` need RICH), then
 exits with no map. Generate on main, commit or CI-cache it, restore with `--cache=BASE.lean.ripwirecache` (or
 `.rich.`) in PR jobs so only changed files re-parse — a same-arch SPEED cache that self-heals to a cold parse
@@ -197,7 +197,7 @@ with a read of the MCP resource `ripwire://legend-dict` (`initialize` names it).
 `legend` (and `for`) answer rows first and end with `<about … legend="ref" dict= dictv=/>`, which carries the
 root attributes; a definition arrives once per session, in a comment after the rows of the first answer that
 needs it (an answer whose ref form would be longer stays inline). Lost the definitions (a compacted context)?
-Read `ripwire://legend-dict/full` for all of them, or print them with `ripwire --legend-dict`.
+Read `ripwire://legend-dict/full` for all of them, or print them with `rw --legend-dict`.
 `legend:"compact"` on one call keeps that answer's legend inline; a server started with
 `--mcp --mcp-legend=inline` keeps every answer's legend inline. The HTTP transport (`--listen`) keeps every
 legend inline.
@@ -231,9 +231,9 @@ needs a fresh Read of the file immediately before the edit, even when you alread
 elsewhere in the session — these verbs check their own staleness hash instead of requiring one, so under any
 harness the file gets read at most once, never twice.
 
-**Workspace pin (stdio, D3/D4):** when the server was started `ripwire <root> --mcp`, an omitted
+**Workspace pin (stdio, D3/D4):** when the server was started `rw <root> mcp`, an omitted
 `path` on ANY verb (read or edit) defaults to that startup root; the 3 edit verbs above additionally
 REFUSE (file byte-identical, same contract as every other refusal above) if an explicit `path` resolves
 outside it — `path outside workspace; start the server on that root or pass an absolute in-root path`.
-Read verbs stay unrestricted at any `path`. A bare `ripwire --mcp` with no startup root is unchanged: every
+Read verbs stay unrestricted at any `path`. A bare `rw mcp` with no startup root is unchanged: every
 verb still requires its own `path`.

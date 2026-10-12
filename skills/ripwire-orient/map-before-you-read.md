@@ -63,7 +63,7 @@ the table below is what you reach for *instead*.
 - **Do NOT infer structure by reading build files and imports.** `--deps`/`--report` derive it.
 - **Do NOT read your way through a directory of DUMPED output.** A `git log`, fetched docs, a big
   reference file or `<tool> --help` text in a scratch dir is already a knowledge base:
-  `ripwire <dumpdir> --recall="<the question>"` ranks those documents and serves the matching
+  `rw <dumpdir> --recall="<the question>"` ranks those documents and serves the matching
   sections. Two rules, both yours when you write the dump: **dump to `.md`** (`.txt`/`.log`/`.json`
   are not documents to `--recall`, and a dir of them answers `0 relevant of 0 document files`), and
   keep `##` headings — a headed document is served as whole ranked sections, so a mid-file answer
@@ -75,7 +75,7 @@ the table below is what you reach for *instead*.
 
 The tell that you need this is linguistic, not architectural: if you just thought *"let me search the
 codebase"*, *"let me read that file"*, or *"let me look at a few files first"*, that sentence is the
-trigger. The same prohibitions ship in the always-loaded `ripwire wrap` primer (`src/wrap.h`), so an agent
+trigger. The same prohibitions ship in the always-loaded `rw wrap` primer (`src/wrap.h`), so an agent
 that never opens this file still meets them.
 
 ## The reflex
@@ -84,10 +84,10 @@ only the files it surfaces.
 
 | You need… | Cheapest move (not a file read) |
 |---|---|
-| the code for a specific task | `ripwire <dir> --for="<task in words>"`  ·  `--report` — header says `weak="1"` when the top match's lexical evidence is thin; reformulate rather than trust that ranking |
-| a symbol you can NAME | `ripwire <dir> --for="theExactName"` — auto-routes to name-exact BM25 (recall@1 ~99%) |
-| recall what's already known | `ripwire <dir> --recall="<task>"` (docs/plans/memory, full bodies) |
-| an answer out of DUMPED output — a `git log`, fetched docs, a CLI usage dump, one oversized reference file | `ripwire <dumpdir> --recall="<question>"` — the scratch dir IS the knowledge base, no index and no daemon. Dump as `.md` with `##` headings (prohibition above); the served `[sections: … lines="…"; dropped_by_budget=D]` note names the ranges you got and what the ceiling cost |
+| the code for a specific task | `rw <dir> --for="<task in words>"`  ·  `--report` — header says `weak="1"` when the top match's lexical evidence is thin; reformulate rather than trust that ranking |
+| a symbol you can NAME | `rw <dir> --for="theExactName"` — auto-routes to name-exact BM25 (recall@1 ~99%) |
+| recall what's already known | `rw <dir> --recall="<task>"` (docs/plans/memory, full bodies) |
+| an answer out of DUMPED output — a `git log`, fetched docs, a CLI usage dump, one oversized reference file | `rw <dumpdir> --recall="<question>"` — the scratch dir IS the knowledge base, no index and no daemon. Dump as `.md` with `##` headings (prohibition above); the served `[sections: … lines="…"; dropped_by_budget=D]` note names the ranges you got and what the ceiling cost |
 | who calls / what it calls | `--callers=SYM` · `--callees=SYM` |
 | the recorded uses of a name (read/write/import; a floor — see counts_floor=) | `--uses=SYM` |
 | a literal / regex / code-shape | `--grep=STR` · `--regex=PAT` · `--pattern='foo($X, ...)'` (shape as CODE) · `--match='(<tree-sitter>)'`. Add `--handles` to grep/regex when the next action is a safe CLI edit: each unambiguous enclosing symbol gets a content-addressed target accepted directly by the edit verbs; ambiguous/uneditable rows say why and mint no unsafe handle. |
@@ -103,7 +103,7 @@ only the files it surfaces.
 | the WHOLE orientation for a task, budgeted, in ONE call | `--pack-task="<task in words>"` — assembles the usual 3-5 call dance (`--for` ranking → top-K full bodies → their 1-hop callers → their field notes → `tests_to_run`) under ONE deterministic budget (default 6K tokens; `--token-budget=N` overrides), in a FIXED section order. Each section truncates rank-adaptively and the header REPORTS every truncation (no silent caps); a tiny budget degrades to ranking-only. Reach for it as the first move on a new task instead of firing `--for` then `--expand` then `--callers` then `--affected` yourself — one call, one budget, one round-trip. |
 | the same task about to FAN OUT to N parallel agents | `--pack-task="<task>" --partition=N` (N=2..16) — one call returns a shared common core plus N per-agent slices carved along the call graph's communities, instead of N agents each re-deriving the same orientation. `--token-budget` becomes ONE AGENT's budget (core + its slice); each `<bundle>` is handed to one agent verbatim. Check `overlap_max` / `split` / `partitions` vs `requested` on the wrapper before trusting the split — a task whose surface sits in one module is not partitionable and says so. |
 | the same fan-out, but you need to know which lanes would COLLIDE or which Codex model should take each lane | `--plan-lanes=N --task="<goal>"`, or `--plan-lanes --brief=FILE` with one line per lane — a deterministic JSON plan: per-lane claimed symbols/files, predicted `conflicts` (same claim key on two lanes), `same_file_risk`, `contract_touch` (a claim inside another lane's blast radius — NOT a merge conflict), `landing_order`, per-lane `tests_to_run`, and `execution` (current Codex model, reasoning effort, rule, exact structural signals and caveats). `--partition` splits the work; this predicts the collisions BEFORE a line is written. Read `warnings[]` first, then treat `execution` as advisory: `basis=structural-only` cannot see task semantics, runtime behavior or security sensitivity. Prefer `--brief` when your task has enumerable parts — the auto-carve balances the RANKING and can leave a part in no lane. |
-| a SCRIPT/CI step parsing the output, not an agent reading it | `--json` — the same content as the XML, machine-parseable (keys mirror the XML attr names 1:1), for the default map, `--for`, `--pack-task`, `--callers`/`--callees`/`--impact`, `--quality-delta`, `--test-gate`. Every other verb refuses loudly (stderr + exit 1) rather than silently falling back to XML. Pipe it straight to `jq`: `ripwire . --quality-delta --json \| jq '.regressions'`. |
+| a SCRIPT/CI step parsing the output, not an agent reading it | `--json` — the same content as the XML, machine-parseable (keys mirror the XML attr names 1:1), for the default map, `--for`, `--pack-task`, `--callers`/`--callees`/`--impact`, `--quality-delta`, `--test-gate`. Every other verb refuses loudly (stderr + exit 1) rather than silently falling back to XML. Pipe it straight to `jq`: `rw . --quality-delta --json \| jq '.regressions'`. |
 | a VISUAL of the bundle's own anchor neighborhood | `--with-graph` (with `--for`/`--pack-task`) — appends a small `<graph fmt="mermaid">` block (top-8 ranked anchors + their 1-hop call edges) right before `</ctx>`. It's PURE ADD — more tokens on top of the sigs you already paid for — so only reach for it when the calling agent actually renders mermaid (a multimodal/diagram-aware reader); a text-only reader gets no benefit from the extra bytes. Off by default. |
 
 Choosing HOW MUCH detail to pull (the full skeleton→outline→body ladder, `--compress`'s exact scope, when
@@ -114,7 +114,7 @@ are deciding how much of them to read.
 ## Cost calibration (stay honest)
 - **First call on a tree parses (~1s); every call after is warm (~instant).** A follow-up query is nearly
   free — chain several rather than reading one big file.
-- **Portable indexes for a cold team/CI:** `ripwire <dir> --index-out=BASE` cold-parses once, writes
+- **Portable indexes for a cold team/CI:** `rw <dir> --index-out=BASE` cold-parses once, writes
   `BASE.lean.ripwirecache` + `BASE.rich.ripwirecache`, exits without a map. Restore lean for
   map/navigation/PR-context work, rich for exemplar/metrics/uses, via `--cache=PATH`. A plain `--cache=PATH`
   stays useful for a repeated local query; `--index-out` is the generate-once artifact workflow.
@@ -133,7 +133,7 @@ are deciding how much of them to read.
   a head spread over fewer than three files) — widen first, then read one file. The bundle-shaping flags
   (`--json`, `--detail`, `--signatures-only`, `--token-budget`, `--top-k`) are refused beside it, never
   ignored: the page is a document of its own, not a shaped bundle.
-- **Spans a service+client split?** `ripwire dir1 dir2 <verb>` merges 2..16 checkouts into ONE labeled map —
+- **Spans a service+client split?** `rw dir1 dir2 <verb>` merges 2..16 checkouts into ONE labeled map —
   cheaper than reading each repo separately and cross-referencing an include/import by hand.
 - ripwire shines on **specific technical** asks. For a **broad common-word** question, plain `rg` + one read
   can still win — use judgment, don't force it.

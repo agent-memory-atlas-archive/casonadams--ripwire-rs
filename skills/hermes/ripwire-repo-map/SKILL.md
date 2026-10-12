@@ -35,20 +35,20 @@ questions — ripwire shines on specific technical asks.
 ## Core verbs (all take a repo dir; `--help` is authoritative)
 
 ```bash
-ripwire <dir> --report            # architecture summary: modules, god-files, cycles, top symbols
-ripwire <dir> --for="<task in your own words>"   # ranked task lens: what to touch first, with 1-hop edges
-ripwire <dir> --callers=someFunc --legend=compact  # who calls it (blast radius)
-ripwire <dir> --test-gate --legend=compact         # which tests must run before committing
-ripwire <dir> --tree --legend=compact              # file-by-file: top symbols per file
-ripwire <dir> --hotspots --legend=compact          # files ranked by churn × complexity
-ripwire <dir> --communities --legend=compact       # cohesive modules (Louvain) + bridges — where a new feature belongs
-ripwire <dir> --situ              # what the working tree already changed + its blast radius (resuming work)
-ripwire <dir> --notes --legend=compact             # pinned gotchas from past sessions (field notes)
-ripwire <git-url>                 # orient in a remote repo (shallow-clones into a cached temp dir; --refetch refreshes)
+rw <dir> --report            # architecture summary: modules, god-files, cycles, top symbols
+rw <dir> --for="<task in your own words>"   # ranked task lens: what to touch first, with 1-hop edges
+rw <dir> --callers=someFunc --legend=compact  # who calls it (blast radius)
+rw <dir> --test-gate --legend=compact         # which tests must run before committing
+rw <dir> --tree --legend=compact              # file-by-file: top symbols per file
+rw <dir> --hotspots --legend=compact          # files ranked by churn × complexity
+rw <dir> --communities --legend=compact       # cohesive modules (Louvain) + bridges — where a new feature belongs
+rw <dir> --situ              # what the working tree already changed + its blast radius (resuming work)
+rw <dir> --notes --legend=compact             # pinned gotchas from past sessions (field notes)
+rw <git-url>                 # orient in a remote repo (shallow-clones into a cached temp dir; --refetch refreshes)
 ```
 
 Read the map, then open only the files it surfaces (god-files and hotspots first). For a body of one
-ranked symbol: `ripwire <dir> --for="..." --expand=path:name` (paste `p=`/`n=` off the row).
+ranked symbol: `rw <dir> --for="..." --expand=path:name` (paste `p=`/`n=` off the row).
 
 ## Honesty signals — read them before trusting a result
 

@@ -94,6 +94,6 @@ degrades on (large-N studies):
 
 ## One-liner the agent can run on its own diff
 ```
-for v in --hotspots --clones --deps --dead-code --external-surface; do echo "== $v =="; ripwire <dir> $v; done
-ripwire <dir> --situ        # blast radius + tests + co-change, defaults to the current git diff
+for v in --hotspots --clones --deps --dead-code --external-surface; do echo "== $v =="; rw <dir> $v; done
+rw <dir> --situ        # blast radius + tests + co-change, defaults to the current git diff
 ```

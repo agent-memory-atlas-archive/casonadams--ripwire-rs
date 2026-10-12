@@ -20,7 +20,7 @@ reviewing whether the codebase is trending toward or away from clean layering.
 
 `<dir>` = repo root. Every metric below has a NUMBER → THRESHOLD → ACTION — don't stop at reporting it.
 
-1. **Layering rules** (if a rules file exists) — `ripwire <dir> --arch=rules.txt`
+1. **Layering rules** (if a rules file exists) — `rw <dir> --arch=rules.txt`
    Output: `<arch>` with violations listed by layer pair and file. Exit 2 = NEW violations
    found (CI gate). If no rules file exists yet, this step is the prompt to write one
    (grammar: `layer NAME = substr…`, `deny FROM -> TO`, `allow FROM -> TO`; `#` comments).
@@ -28,7 +28,7 @@ reviewing whether the codebase is trending toward or away from clean layering.
    explicitly `allow` (document why it's intentional) — don't leave it silently baselined forever.
 
    **Adopting rules on a codebase with existing debt** — the baseline workflow:
-   - `ripwire <dir> --arch=rules.txt --baseline` — accept every CURRENT violation as known
+   - `rw <dir> --arch=rules.txt --baseline` — accept every CURRENT violation as known
      debt: writes a `.ripwire_arch_baseline` sidecar in the CWD (commit it), exits 0.
    - From then on, plain `--arch=rules.txt` suppresses baselined violations and exits 2 only
      on NEW ones — the gate stops the bleeding without demanding an up-front cleanup.
@@ -47,7 +47,7 @@ reviewing whether the codebase is trending toward or away from clean layering.
    are driving it (the `<m path=... ca= ce=>` per-module rows) and formalize a boundary between
    them — a `layer`/`deny` rule in `rules.txt` that would have caught the coupling.
 
-2. **Dependency health** — `ripwire <dir> --deps --legend=compact`
+2. **Dependency health** — `rw <dir> --deps --legend=compact`
    Output: `<deps>` with `<health>` metrics:
    - `acd` (average component dependency) — lower is better
    - `nccd` (normalized CCD) — < 0.25 is healthy
@@ -64,7 +64,7 @@ reviewing whether the codebase is trending toward or away from clean layering.
    its internals. A cycle in `--report` is worse than a high-afferent file — break it before
    formalizing anything downstream of it.
 
-3. **Module clustering** — `ripwire <dir> --communities --legend=compact`
+3. **Module clustering** — `rw <dir> --communities --legend=compact`
    Output: `<communities modules="N">` clusters with dominant directory and lead symbols.
    `<bridge edges="N">` shows where clusters are tightly coupled across module boundaries.
    High bridge counts between non-adjacent modules are the layering violations `--arch` catches.
@@ -73,7 +73,7 @@ reviewing whether the codebase is trending toward or away from clean layering.
    than leaving it as an observation; a high bridge count between clusters that ARE meant to
    talk to each other is fine and doesn't need a rule.
 
-4. **Mermaid diagram** (optional, for visual review) — `ripwire <dir> --mermaid`
+4. **Mermaid diagram** (optional, for visual review) — `rw <dir> --mermaid`
    Output: a `flowchart LR` Mermaid snippet with module nodes and inter-module call counts.
    Paste at mermaid.live to render. Edges labeled with high counts are the hot coupling seams —
    same action as step 3: a heavy edge crossing an intended boundary becomes a `deny` rule.

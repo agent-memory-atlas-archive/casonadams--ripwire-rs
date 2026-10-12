@@ -9,8 +9,8 @@ need to decide HOW MUCH of a symbol to pull into context, or want to shrink body
 
 | Rung | Command | You get | Cost |
 |---|---|---|---|
-| 0. map | `ripwire <dir>` | the ranked map: subsystems, entry points, the symbols that matter most, and a count of every file the ranking left out | cheapest |
-| 0b. map, cut | `ripwire <dir> --max-tokens=N` | the head of the same map for a tight context; the cut is disclosed (`shown=` of `symbols=`) and can drop what you need — a later rung, never "start here" | cheapest |
+| 0. map | `rw <dir>` | the ranked map: subsystems, entry points, the symbols that matter most, and a count of every file the ranking left out | cheapest |
+| 0b. map, cut | `rw <dir> --max-tokens=N` | the head of the same map for a tight context; the cut is disclosed (`shown=` of `symbols=`) and can drop what you need — a later rung, never "start here" | cheapest |
 | 1. skeletons | `--pack-signatures` | body-elided decl skeletons + doc-comments (~68% fewer element BYTES at the top-50 sigs payload, vs the same symbols' full bodies; see `docs/EVALS.md`) | cheap |
 | 2. control flow | `--outline=A,B` | branch/loop skeletons of named symbols | medium |
 | 3. full body | `--expand=A,B` | full source of named symbols + inline callee signatures | dear |
@@ -29,8 +29,8 @@ body output of `--expand`/`--outline`, `--for`'s auto/anchor bundle and `--detai
 **20–35%** of the body tokens.
 
 ```
-ripwire <dir> --expand=SYM1,SYM2 --legend=compact --compress     # bodies, comments stripped
-ripwire <dir> --outline=SYM1 --legend=compact --compress         # skeleton, comments stripped
+rw <dir> --expand=SYM1,SYM2 --legend=compact --compress     # bodies, comments stripped
+rw <dir> --outline=SYM1 --legend=compact --compress         # skeleton, comments stripped
 ```
 
 It is **string-literal-safe** — a `//` or `/* */` *inside a string* is kept verbatim:

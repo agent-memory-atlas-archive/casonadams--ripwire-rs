@@ -19,13 +19,13 @@ allowed-tools: Bash, Read
 > • Deep architecture-health read (deps metrics, layering rules, --arch gate) → **ripwire-layers**.
 > • Not sure which skill? → **ripwire-router**.
 
-`ripwire` is on your PATH. First call on a tree parses (~1s even at 1500 files); every call after is warm
+`rw` is on your PATH. First call on a tree parses (~1s even at 1500 files); every call after is warm
 (auto-cached, ~instant), so chaining several rungs is nearly free. `<dir>` = the repo root or the specific
-subsystem you're working in — also accepts a remote `ripwire <git-url>` (shallow-clones to a temp cache, so
+subsystem you're working in — also accepts a remote `rw <git-url>` (shallow-clones to a temp cache, so
 you can orient in a dependency before ever cloning it) — or several roots for a split checkout,
-`ripwire dir1 dir2 --report`: ONE merged, root-labeled map instead of two separate mental models.
+`rw dir1 dir2 --report`: ONE merged, root-labeled map instead of two separate mental models.
 
-**Orient ONCE per session, then look up lean.** Plain `ripwire <dir>` is the one-call orient: the ranked map with
+**Orient ONCE per session, then look up lean.** Plain `rw <dir>` is the one-call orient: the ranked map with
 the subsystems, the program entries and every file the ranking left out (`<inv>`). Only that call carries `<inv>`:
 a `--for`, `--expand` or `--max-tokens` map does not, and `--max-tokens` drops the tier (use `--top-k` to keep it).
 After it, `--expand` / `--outline` / `--whereis` / `--callers` answer with no ride-along map. If you skipped the
@@ -33,7 +33,7 @@ orient step, the `map_next=` on an `--expand` root is the call that prints it.
 
 ## The escalation ladder — climb only until you feel oriented
 
-**0. Recall what you already KNOW** — `ripwire <dir> --recall="<the task>"`
+**0. Recall what you already KNOW** — `rw <dir> --recall="<the task>"`
 The most relevant DOCS' FULL bodies (docs only, so code never swamps them — markdown memory notes,
 planning/design docs, skills, READMEs, plus `.ipynb`/`.html`/`.csv`/Office/PDF via the optional
 markitdown bridge). Point it at the **memory dir** for what past sessions learned, or the **repo root** for
@@ -49,12 +49,12 @@ own slice (`share_bytes=` in the header discloses it). Full form in
 [`map-before-you-read.md`](map-before-you-read.md); the recorded run is `docs/COMMANDS.md`'s `--recall`
 pattern subsection.
 
-**1. Architecture summary** — `ripwire <dir> --report`
+**1. Architecture summary** — `rw <dir> --report`
 Plain markdown: file + symbol count, call-graph modules (Louvain clusters with lead symbol), god-files
 ranked by `afferent` (dependents), cycle list, top PageRank symbols. **Read the god-file list carefully** —
 highest-leverage, highest-risk files. For most "orient me" asks this one rung is enough.
 
-**2. Task-relevant code** — `ripwire <dir> --for="<the task in your own words>"`
+**2. Task-relevant code** — `rw <dir> --for="<the task in your own words>"`
 Ranked signatures + doc-comments + cx/in metrics by relevance (matches names, docs, AND bodies — not just
 identifiers). This is the rung that answers "where's the code for X".
 **What the bundle serves depends on which way the query routed, and the root says which.**
@@ -84,25 +84,25 @@ doc explains it even when its own prose shares no words with your query; disable
 fewer than three files, or `coverage=` under 50 — says so on the root: `coverage="N"` is the IDF-weighted
 share (whole percent) of your query's subtokens found in the top-ranked symbol's name, doc or body, and it
 rides the root **only** on a thin answer (a confident one carries neither the attribute nor its clause).
-The step then is not a body, it is a wider net: `ripwire <dir> --for="<task>" --limit=40` serves the
+The step then is not a body, it is a wider net: `rw <dir> --for="<task>" --limit=40` serves the
 FILE-GRAIN page — one row per file holding any positive-score symbol, `score=`/`n=`/`sym=` per row,
 `--offset=M` for the next page. A thin answer's own `next=` names that page for you; reach for it on the
 FIRST call when the task is vague enough that one ranked head is unlikely to hold the answer.
 `--adaptive` cuts the result at the relevance cliff instead of a fixed top-k. Same
 routing in the MCP `for` verb. Orienting from a pasted issue/bug-report's own text? `--anchor` beats plain
 `--for` on Loc-Bench (n=560) — a mild win, not a default (`bench/locbench/README.md`). `--cochange-boost` is
-an experimental, off-by-default co-change prior — see `ripwire --help` before reaching for it.
+an experimental, off-by-default co-change prior — see `rw --help` before reaching for it.
 
-**3. File-by-file map** — `ripwire <dir> --tree --legend=compact` — each file with its top symbols, a quick "what's where".
+**3. File-by-file map** — `rw <dir> --tree --legend=compact` — each file with its top symbols, a quick "what's where".
 
-**4. Cohesive modules** — `ripwire <dir> --communities --legend=compact` — `<communities modules="N">`, each cluster with its
+**4. Cohesive modules** — `rw <dir> --communities --legend=compact` — `<communities modules="N">`, each cluster with its
 dominant directory and lead symbols; `<bridge>` edges show tight coupling between clusters. Use it to decide
 where a new feature belongs. Each row shows only its top five members — to see one module in full,
-`ripwire <dir> --community=ID --legend=compact` (the `id=` from a row, or from `--zoom`): its complete ranked member list
+`rw <dir> --community=ID --legend=compact` (the `id=` from a row, or from `--zoom`): its complete ranked member list
 (`--limit`/`--offset` page it) plus every bridge edge that module has. That is the call to make when a
 cluster looks like the one you'll be working in and five names aren't enough to judge it.
 
-**5. Maintenance pain** — `ripwire <dir> --hotspots --legend=compact` — files ranked by `score = churn × ccx`; `top=` names
+**5. Maintenance pain** — `rw <dir> --hotspots --legend=compact` — files ranked by `score = churn × ccx`; `top=` names
 the gnarliest function. Plan edits around this list.
 
 **6. Budget it** if the map is large — `--max-tokens=8000` or `--top-k=50`. Both shape the default map;
@@ -119,7 +119,7 @@ About to fan a single task out to several parallel agents? Do **not** let each o
 pay for the map N times. Run it **once**:
 
 ```bash
-ripwire <dir> --pack-task="<the task in words>" --legend=compact --partition=4
+rw <dir> --pack-task="<the task in words>" --legend=compact --partition=4
 ```
 
 You get one `<ctx-partitions>` document: a **shared common core** (the anchors the task is literally about,
@@ -140,7 +140,7 @@ boundary — one `--pack-task` and one agent is the honest answer there.
 
 ## When a flat module list is too coarse (big repos) — zoom out
 
-**7. Nested module hierarchy** — `ripwire <dir> --zoom --legend=compact` (`--zoom=DEPTH` to cap levels; the default prints the top 2
+**7. Nested module hierarchy** — `rw <dir> --zoom --legend=compact` (`--zoom=DEPTH` to cap levels; the default prints the top 2
 levels of the 40 largest modules — `levels_shown=`/`shown=` disclose it, `next=` pastes the next page, `--zoom-levels=0`
 prints every level): multi-level Louvain,
 `<module level=N id= size= dir=>`, indent = one level deeper, innermost `level="0"` lists top-ranked members.
@@ -148,15 +148,15 @@ Read top-down; a `dir=` that doesn't match its parent's is a cross-cutting conce
 Trailing `<bridge …>` entries name the high-traffic integration seams *between* top modules — pair with
 `--seams` to see which ones no test reaches.
 
-**8. Render it** — `ripwire <dir> --zoom --mermaid` (or `--mermaid` for the flat module graph): a
-`flowchart TB`, paste at mermaid.live. For hand-exploring, `ripwire <dir> --html[=FILE]` writes a
+**8. Render it** — `rw <dir> --zoom --mermaid` (or `--mermaid` for the flat module graph): a
+`flowchart TB`, paste at mermaid.live. For hand-exploring, `rw <dir> --html[=FILE]` writes a
 self-contained clickable wiki (module cards → subgraphs → Sourcetrail-style node recentering, no CDN);
 `--color-by=community|cx|churn|tested` sets its initial node-colour lens (a live selector covers the rest).
 Working inside a `--for`/`--pack-task` bundle instead of a whole-repo pass? Add `--with-graph` to that
 same call — it appends a tiny `<graph fmt="mermaid">` block (top-8 ranked anchors + their 1-hop call
 edges) right in the bundle, no second call.
 
-**9. Export it** — `ripwire <dir> --export=cc.json[:FILE]` — per-file metrics (loc, cx, fan-in/out, churn) as
+**9. Export it** — `rw <dir> --export=cc.json[:FILE]` — per-file metrics (loc, cx, fan-in/out, churn) as
 a CodeCharta `cc.json` for its 3D city view; the ladder's visualization end-point, not a map to read.
 
 ## Then read, and trust the honesty signals
@@ -164,9 +164,9 @@ a CodeCharta `cc.json` for its 3D city view; the ladder's visualization end-poin
 **Read the specific files ripwire surfaces** (god-files + hotspots first) — don't grep blindly. A symbol's
 `amb="K"` means K of its calls are ambiguous (the resolver guessed) → read the source if which-target
 matters. A map header showing `skipped_oversize=N` means N otherwise-indexable files were dropped for
-exceeding a size ceiling — they are absent from `files=` and every ranking; `ripwire <dir> --skipped --legend=compact`
+exceeding a size ceiling — they are absent from `files=` and every ranking; `rw <dir> --skipped --legend=compact`
 names them (path + bytes + the ceiling that dropped each), so you know what the index cannot show you
-before you trust a "not found". A git root also drops every `.gitignore`d path by default (header `ignored_files=N`, absent when 0; `--skipped` lists them); `ripwire <dir> --no-ignore --legend=compact` restores the full walk when the symbol you want lives in an ignored tree. Caveat: *broad, common-word* questions can still favor plain `rg` —
+before you trust a "not found". A git root also drops every `.gitignore`d path by default (header `ignored_files=N`, absent when 0; `--skipped` lists them); `rw <dir> --no-ignore --legend=compact` restores the full walk when the symbol you want lives in an ignored tree. Caveat: *broad, common-word* questions can still favor plain `rg` —
 ripwire shines on specific technical asks. CI-enforceable module boundaries graduate to
 `--arch=rules.txt` (see **ripwire-layers**).
 
@@ -177,8 +177,8 @@ non-obvious fact about a symbol or file (a race trap, an off-by-one seam, "don't
 re-running X"), pin it so the *next* orientation surfaces it automatically:
 
 ```bash
-ripwire . --note-add="Bar::compute: recompute is NOT idempotent — reset the arena first"
-ripwire . --note-add="src/pool.h: 128-byte cache line on Apple, never hardcode 64"   # a file also works
+rw . --note-add="Bar::compute: recompute is NOT idempotent — reset the arena first"
+rw . --note-add="src/pool.h: 128-byte cache line on Apple, never hardcode 64"   # a file also works
 ```
 
 The TARGET is **a symbol name or a path**. A symbol resolves through the same resolver the read verbs use,
@@ -188,7 +188,7 @@ notes are keyed by; the rewrite is echoed on stderr). A name matching several de
 each; a name matching none is refused with a did-you-mean. A path is written even when nothing indexed
 matches it yet — a note on a file you are about to add is legal — with a loud warning that it is dangling.
 Notes live in committed `.ripwire_notes` and **surface on their own** — whenever `--for`/`--expand` emit that
-symbol/file, the note rides along as a `<note d="date">…</note>` child. `ripwire . --notes` lists every note
+symbol/file, the note rides along as a `<note d="date">…</note>` child. `rw . --notes` lists every note
 (`dangling="1"` = target no longer in the tree). `--recall=TASK` is the doc-level complement.
 `--note-add` nudges (stderr, non-blocking) toward writing the decision, not a description — a note that
 keeps firing on the same symbol has outgrown a comment: graduate it into a `--quality-ack` reason or a
@@ -202,9 +202,9 @@ half-changed. Re-reading source rebuilds the *least* valuable of those. Run the 
 rest, in this order:
 
 ```bash
-ripwire . --recall="<the task, in the words you'd use>"   # 1. what past sessions WROTE DOWN
-ripwire . --situ                                          # 2. what the working tree already CHANGED
-ripwire . --notes                                         # 3. gotchas already paid for
+rw . --recall="<the task, in the words you'd use>"   # 1. what past sessions WROTE DOWN
+rw . --situ                                          # 2. what the working tree already CHANGED
+rw . --notes                                         # 3. gotchas already paid for
 ```
 
 1. **`--recall`** returns the *full bodies* of the most relevant markdown only — memory notes,

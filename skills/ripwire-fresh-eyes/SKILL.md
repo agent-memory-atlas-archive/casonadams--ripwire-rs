@@ -27,12 +27,12 @@ allowed-tools: Bash, Read
 otherwise show up as false clones and dead code. This composes descriptive passes into one snapshot; run the
 sections your question needs.
 
-**Inheriting this subsystem?** Check `ripwire <dir> --notes --legend=compact` first — a prior agent's pinned gotcha
+**Inheriting this subsystem?** Check `rw <dir> --notes --legend=compact` first — a prior agent's pinned gotcha
 (`--note-add`'d trap, flake, or invariant) is the cheapest fact you can pick up before you start reading.
 
 ## Core health passes
 
-1. **Maintenance hotspots** — `ripwire <dir> --hotspots --legend=compact`
+1. **Maintenance hotspots** — `rw <dir> --hotspots --legend=compact`
    ```
    <hotspots window="12mo" ranked="33"><f p="./src/main.cpp" churn="53" ccx="1365" score="72345" top="main:1306"/> …
    ```
@@ -45,21 +45,21 @@ sections your question needs.
    high score on a `ppalt=`-heavy function can be the preprocessor fan-out, not the logic — read `ppalt=`
    before calling a row the worst in the file.
 
-1a. **"What changed recently / who touched this / what is moving here?"** — `ripwire <dir> --rank-by=churn-decay --legend=compact`
+1a. **"What changed recently / who touched this / what is moving here?"** — `rw <dir> --rank-by=churn-decay --legend=compact`
    ```
    <recent n="40" of="1857" merge_bombs_skipped="5"><rc p="src/graph.h" w="0.91" age="2"/> …
    ```
    The HISTORY question, not the working-tree one: `--situ` answers what *you* changed and have not
    committed, this answers what the repository has been moving, newest-and-heaviest first.
-   **Scope it to a directory: `ripwire <dir> --rank-by=churn-decay --in=DIR`** (root-relative, and it must
+   **Scope it to a directory: `rw <dir> --rank-by=churn-decay --in=DIR`** (root-relative, and it must
    exist under the root) — a second `<recent scope="DIR" …>` block follows the global
    one and the symbol map collapses to a counted stub, so the answer is the window rather than a whole-repo
    map. `merge_bombs_skipped="N"` is the disclosure that N commits touching more than 100 indexed files
    were left out of the weighting — if the commit you are hunting is a giant rename, it is in that N and
    not in the rows. `--since=REV|DATE` bounds the window; `--limit/--offset` page the scoped block.
-   `ripwire <dir> --help-task="what changed recently in DIR" --legend=compact` routes here on its own.
+   `rw <dir> --help-task="what changed recently in DIR" --legend=compact` routes here on its own.
 
-1b. **What is BUILT but DARK here?** — `ripwire <dir> --flags --legend=compact` (`=SUBSTR` to narrow)
+1b. **What is BUILT but DARK here?** — `rw <dir> --flags --legend=compact` (`=SUBSTR` to narrow)
    ```
    <flags gates="98" dark_gates="90" compile="32" cmake="9" env="57"><gate name="X_HARMONY_SFX" kind="compile"
      default="0" dark="1" regions="7" loc="45" reads="8" p="sound/audioWiringFlags.h" l="47"/> …
@@ -76,7 +76,7 @@ sections your question needs.
    A gate read as a value (`constexpr bool k = F != 0;` then `if constexpr`) honestly reports `regions="0"`
    here — **`--flip` below lifts exactly that limit.**
 
-1b-ii. **If I flip THIS one, what lights up?** — `ripwire <dir> --flags --legend=compact --flip=NAME`
+1b-ii. **If I flip THIS one, what lights up?** — `rw <dir> --flags --legend=compact --flip=NAME`
    ```
    <flip gate="X_RRF_ALL" kind="cmake" default="ON" dark="0" family="12" regions="0" loc="0" branches="43"
      bindings="11" hosts="11" downstream="95" dependents="146" tests="23" untested="0">
@@ -101,7 +101,7 @@ sections your question needs.
    `constexpr`, a test-macro body) counts into `filescope=` instead of a host. `--detail=N` lifts the row
    caps. Report only — always exit 0; an unknown gate name refuses (exit 1) and names the near-misses.
 
-1c. **Can I TRUST this repo's docs?** — `ripwire <dir> --doc-drift --legend=compact` (`=SUBSTR` to narrow to one doc)
+1c. **Can I TRUST this repo's docs?** — `rw <dir> --doc-drift --legend=compact` (`=SUBSTR` to narrow to one doc)
    ```
    <doc-drift docs="129" clean="110" anchors="1995" checked="716" unchecked="1279" drift="110">
      <doc p="docs/ARCHITECTURE.md" anchors="50" checked="34" drift="9"><a k="file-line" l="186" c="80"
@@ -119,7 +119,7 @@ sections your question needs.
    `checked + unchecked = anchors` with each declined check named in an `<unchecked>` row. Exit is always 0:
    drift is a report, not a gate.
 
-   **Want it to BECOME a gate?** — `ripwire <dir> --doc-drift --legend=compact --gateability`. The reason CI can't gate on
+   **Want it to BECOME a gate?** — `rw <dir> --doc-drift --legend=compact --gateability`. The reason CI can't gate on
    drift is usually a handful of UNDATED design docs: with no date the lexical lanes can't tell "stale" from
    "a record of what was true then", so their rows stay unclassifiable. This lists exactly those docs and
    what one annotation each would fix:
@@ -141,7 +141,7 @@ sections your question needs.
    on that repo against a 0.64 s default; the result is memoized per (repo, HEAD sha), so every later
    question on the same commit — including `--whereis --with-history` — is a cache load.
 
-1d. **Did a task in this plan just never get launched?** — `ripwire <dir> --plan-lint=FILE --legend=compact`. Where 1c
+1d. **Did a task in this plan just never get launched?** — `rw <dir> --plan-lint=FILE --legend=compact`. Where 1c
    explicitly does NOT check `§Status` lines, dates or "N of M done" tallies, this is the narrow
    structural check that closes that one gap — a wave-closer's job, mechanized. It is opt-in per FILE
    (never a directory sweep) because the house PLAN dialect it recognizes is deliberately narrow: a task
@@ -174,7 +174,7 @@ sections your question needs.
    not a guessed-at fix. Unlike `--doc-drift`'s always-0 report, this **gates**: exit 2 when `dialect="1"`
    and any row carries `gating="1"`, exit 0 clean or `dialect="0"`, exit 1 only when FILE could not be read.
 
-2. **Dead code** — `ripwire <dir> --dead-code[=DIR] --legend=compact`
+2. **Dead code** — `rw <dir> --dead-code[=DIR] --legend=compact`
    `<dead-code count="N" evidence="internal-linkage+zero-callers"><d n="orphan" …/>` — no `confidence=`
    attribute (removed 2026-09-20: it was a fixed literal, not a derived signal) — source-defined free
    functions with explicit internal linkage and **in-degree 0** in the indexed call graph.
@@ -183,7 +183,7 @@ sections your question needs.
    Name-based and tree-local — **verify before deleting**: confirm against the compiler's unused-symbol
    diagnostics or a linker map; ripwire narrows the field, the toolchain proves it.
 
-3. **Duplicate bodies** — `ripwire <dir> --clones --legend=compact`
+3. **Duplicate bodies** — `rw <dir> --clones --legend=compact`
    `<clones groups="N" type3="M"><group type="2" tokens="161" n="2"><f n="line" p="…:31"/><f n="line"
    p="…:28"/></group>`. `type="2"` = exact/renamed (identifiers + literals normalized, so a renamed copy
    still matches); `type="3"` = a gapped NEAR-miss (similarity 0.80–1.0, an inserted/changed statement) —
@@ -197,7 +197,7 @@ sections your question needs.
    and still count; they stop *gating*. The idiom is named precisely so you can overrule it by reading the
    bodies — treat it as the tool showing its work, not as a row it decided for you.
 
-4. **AST smells** — `ripwire <dir> --lint --legend=compact`
+4. **AST smells** — `rw <dir> --lint --legend=compact`
    `<lint findings="N"><rule name="magic-number" count="82"/> …` then per-finding `<f rule= p= …>` with the
    enclosing symbol. No-build, AST-only — a fast complement to clang-tidy, not a replacement. Skim the
    per-rule counts for the dominant smell.
@@ -214,7 +214,7 @@ sections your question needs.
    per-rule floor) with a `pairs=` sample size and its own legend calling itself a **noisy proxy**, not a
    verdict on any function you're looking at. It always exits 0.
 
-   **What rules exist, and are they even structurally possible on this corpus? — `ripwire <dir>
+   **What rules exist, and are they even structurally possible on this corpus? — `rw <dir>
    --lint-catalog`.** The full built-in registry: every rule's severity, category, one-line rationale, its
    registered languages, and the release it shipped in — no corpus needed, so it answers "what could `--lint`
    ever find here" before you run it. A plain `--lint` run then discloses the corpus-specific half:
@@ -229,7 +229,7 @@ sections your question needs.
    the root then carries `findings_next=` — paste it: it re-runs only those rules under a 10x `--lint-max-per-rule=N`
    (SARIF: `runs[0].properties.findingsNext`), and a re-run still floored names its own.
 
-   **The one naming lens that proposes a FIX, not just evidence — `ripwire <dir> --naming-consistency --legend=compact`.**
+   **The one naming lens that proposes a FIX, not just evidence — `rw <dir> --naming-consistency --legend=compact`.**
    Every other pass on this page tells you WHAT is wrong; this one is the deliberate exception, and only for
    one narrow reason: case-CONVENTION is Tier A (the research record's own tiering for "propose a fix only
    where the correct replacement is derivable from the corpus" — see `ripwire-quality-bar`'s zoom-in table
@@ -244,7 +244,7 @@ sections your question needs.
    unimplemented on purpose; both need a dictionary or a semantic judgment call this verb's design
    deliberately avoids.
 
-   **Local-variable naming, opt-in and explicitly not the default — `ripwire <dir> --lint --legend=compact --naming-locals`.**
+   **Local-variable naming, opt-in and explicitly not the default — `rw <dir> --lint --legend=compact --naming-locals`.**
    A `--lint` modifier, not a standalone verb (a no-op without `--lint`): runs `naming-short`/`naming-wordy`/
    `naming-underscore`/`naming-case` — the same tags, same predicates as the Symbol-scoped checks above —
    against LOCAL variable names too, C/C++ only, and only where the risk is real: inside a function that
@@ -258,13 +258,13 @@ sections your question needs.
    `buf`/`tmp`/`err`) has not run. Treat a `--naming-locals` finding as a candidate to eyeball, not a verdict,
    until that audit lands.
 
-   **Your own rules** — `ripwire <dir> --lint-rules=DIR` loads YAML ast-grep-style rules from `DIR` and runs
+   **Your own rules** — `rw <dir> --lint-rules=DIR` loads YAML ast-grep-style rules from `DIR` and runs
    them alongside (or instead of) the built-ins; findings share the same `<f rule= sev= p= …>message</f>`
    shape. A malformed rule alerts to stderr and is skipped (sibling rules still load); zero loaded rules
    exits 1. Writing a rule (the query grammar, the `inside`/`not-inside`/`not-matches` combinators, a worked
    example) → **[`lint-rules.md`](lint-rules.md)**.
 
-5. **Ownership / knowledge risk** — `ripwire <dir> --owners[=SYM] --legend=compact`
+5. **Ownership / knowledge risk** — `rw <dir> --owners[=SYM] --legend=compact`
    `<owners files="N"><f p="…" authors="1" bf="1" top="…@…" share="1.00"/>` (recency-weighted, 6-month
    half-life). `authors=` distinct authors; `share=` the top author's fraction of weighted commits;
    **`bf="1"` = one person holds >80% (bus-factor risk)**; `top=` = who to ask / who should review.
@@ -273,7 +273,7 @@ sections your question needs.
    **Worst case:** a file that's BOTH a top hotspot (step 1) AND `bf="1"` — gnarly code only one person
    understands.
 
-   **Per-function size ranking** — `ripwire <dir> --biggest-first --legend=compact`
+   **Per-function size ranking** — `rw <dir> --biggest-first --legend=compact`
    `<readability functions="N" shown="40" capped="1"><fn p="…:512" n="buildGraph" lines="1244" toks="6753"
    ops="4359" vocab="382" vol="57923.4" ent="6.26" posnett="0.000"/>` — the Posnett/Hindle/Devanbu (MSR 2011)
    closed-form model, rows ordered by Halstead volume, token entropy and length, largest first: `vol=`
@@ -286,7 +286,7 @@ sections your question needs.
    readability signal (ripwire's `docs/EVALS.md` §8). Use it to find the largest, densest
    bodies; use `--hotspots` (step 1) for where pain has actually been paid.
 
-   **Reachable non-local mutable state** — `ripwire <dir> --nonlocal-state --legend=compact`
+   **Reachable non-local mutable state** — `rw <dir> --nonlocal-state --legend=compact`
    `<fn p="src/infra/profilePmc.h:288" n="ensure_global_init" writes="2" reads="3" direct_writes="1"
    direct_reads="3" cells_total="3"><cell n="g_perf" p="…:284" dir="rw" at="…:339" at_dir="rw"/>…` — per
    function, the globals / file-scope statics / function-local statics / Python module globals it **or its
@@ -302,7 +302,7 @@ sections your question needs.
    can be charged to the cell; and it covers **C++/ObjC/Python only**, with every other indexed language
    named in `unanalyzed_langs=` on the root, which is *not measured*, not *measured zero*.
 
-   **THE SINGLE COMMAND — `ripwire <dir> --quality-panel[=strict|default|lenient] --legend=compact`. When the question is
+   **THE SINGLE COMMAND — `rw <dir> --quality-panel[=strict|default|lenient] --legend=compact`. When the question is
    just "where is the rot", start HERE, not at step 1.** It is the whole panel in one ranked report: the four
    families `--ensemble` joins, plus `colocation` (how much of what you must read to understand this function
    lives outside its own file) and `state` (this function's OWN BODY touching non-local mutable state) — six
@@ -354,7 +354,7 @@ sections your question needs.
    any property of its own. On a subsystem read that is worth discounting explicitly: confirm at the symbol
    (`git log -p <file>`, or `--hotspots --since=`) before calling one function the churny one.
 
-   **Corroborated rot, four families only — `ripwire <dir> --ensemble --legend=compact`.** The narrower join, and the one
+   **Corroborated rot, four families only — `rw <dir> --ensemble --legend=compact`.** The narrower join, and the one
    whose numbers are published; reach for it when you want exactly the calibrated four plus the per-file
    rollup. One lens firing is an
    opinion; the same function flagged by *several kinds of evidence at once* is a finding. `--ensemble` joins
@@ -375,7 +375,7 @@ sections your question needs.
    named in `unavail=` with `of=` dropping to 3 — **UNAVAILABLE is not the same as clean**, so on a corpus
    with no git history do not read the missing `historical` as "nothing is churning".
 
-   **How much is NOT in front of you — `ripwire <dir> --context-ratio --legend=compact`.** The other lenses ask how hard a
+   **How much is NOT in front of you — `rw <dir> --context-ratio --legend=compact`.** The other lenses ask how hard a
    function is to read *once you have it open*; this one asks how much you must open *besides* it.
    `<s p="src/main.cpp:10177" n="main" sites="1050" ents="131" ents_out="85" ent_ratio="0.649" files="37"
    files_out="36" rtok="165317" rtok_out="61968" read_ratio="0.375" ext="141" amb_names="19"/>` — `ents=` distinct
@@ -390,7 +390,7 @@ sections your question needs.
    definitions and `ents=` is a floor; and `ext=` is dominated by locals and parameters, so it is **not** an
    external-dependency count and never enters either ratio.
 
-   **Comments that say nothing — `ripwire <dir> --comment-coherence --legend=compact`.** Per function/method **with a doc
+   **Comments that say nothing — `rw <dir> --comment-coherence --legend=compact`.** Per function/method **with a doc
    comment**, two content measures, most name-restating first: `<fn p="…:41" n="computeTotal" c_coeff="1.000"
    words="2" restate="2" cic="0.667" c_terms="2" i_terms="3" shared="2"/>`. `c_coeff` (Steidl/Hummel/Juergens,
    ICPC 2013) is the fraction of the comment's words within Levenshtein distance 2 of a word in the name —
@@ -405,7 +405,7 @@ sections your question needs.
 
 ## Hidden-coupling pass — "a change here keeps breaking unrelated files" (Fowler's Shotgun Surgery, in its measurable form: change coupling)
 
-6. **Behavioural coupling** — `ripwire <dir> --cochange --legend=compact`
+6. **Behavioural coupling** — `rw <dir> --cochange --legend=compact`
    Bare `--cochange` emits ONLY the *surprising* pairs — files that change together in git but share **no
    static dependency** either way:
    `<cochange pairs="N" sub_windows="3"><pair a="…" b="…" together="17" deg="1.00" conf_ab="1.00"
@@ -417,19 +417,19 @@ sections your question needs.
    **Read `recur=` before you act on a row.** It is how many of the header's `sub_windows=` equal-commit-count
    slices of the window the pair actually co-changed in. `recur="1"` at any `together=` is a *single burst* —
    a refactor sprint, a rename wave — not a standing coupling, and it is the biggest source of rows that look
-   alarming and are not. `ripwire <dir> --cochange --legend=compact --cochange-recur=2` drops them; the header then carries
+   alarming and are not. `rw <dir> --cochange --legend=compact --cochange-recur=2` drops them; the header then carries
    `min_recur=` so the shorter list is explained rather than mysterious.
 
    **`driver=` names the file to look at.** `conf_ab` is "of a's commits, the fraction that also touched b";
    `conf_ba` is the reverse. `driver="a"` means a is the one that never moves alone, so a is where the
    implicit dependency lives. `deg=` is just the larger of the two, and `driver=` is omitted on a tie.
 
-   **`ripwire <dir> --cochange --legend=compact --cochange-groups`** collapses the violating pairs around the file each one
+   **`rw <dir> --cochange --legend=compact --cochange-groups`** collapses the violating pairs around the file each one
    implicates: `<group core="…" partners="3">` says "this file co-changes with three files it does not depend
    on" in one row instead of three. That is the row to act on — it names the fix target. The cover is greedy
    (`cover="greedy"`), so `groups=` is an upper bound on the minimum, not the minimum.
 
-7. **Structural coupling** — `ripwire <dir> --deps --legend=compact`
+7. **Structural coupling** — `rw <dir> --deps --legend=compact`
    `<deps>` with god-files ranked by `afferent` (dependents) and each file's `instab` (1 = leaf, 0 = core).
    High-afferent, high-instability files are unstable hubs — every change there fans out. Cross with the
    step-6 surprising partners: a clone group (step 3) that *also* co-changes is a maintenance coupling — a
@@ -440,18 +440,18 @@ sections your question needs.
 When the job is *"I'm about to restructure this — where's the seam and what will it break?"*, chain three
 passes into a refactor brief:
 
-1. **Find the high-complexity cluster** — `ripwire <dir> --communities --legend=compact` (cohesive call-graph modules) or
-   `ripwire <dir> --metrics --legend=compact --top-k=40` and read `ccx`/`lcom4`. `lcom4>1` is a **god object by the numbers**
+1. **Find the high-complexity cluster** — `rw <dir> --communities --legend=compact` (cohesive call-graph modules) or
+   `rw <dir> --metrics --legend=compact --top-k=40` and read `ccx`/`lcom4`. `lcom4>1` is a **god object by the numbers**
    — N disjoint method clusters that want to be N types; the community/`--zoom` view names the members that
    belong together. Pick the cluster to break apart.
-2. **Its blast radius** — `ripwire <dir> --impact=SYM --legend=compact` on the cluster's lead symbol → `reaches="N"` = every
+2. **Its blast radius** — `rw <dir> --impact=SYM --legend=compact` on the cluster's lead symbol → `reaches="N"` = every
    caller a signature change would touch. Large `reaches=` → stage behind a shim, don't big-bang it.
    `--affected=<files>` names the tests to keep green through the move.
-3. **Its co-change seams** — `ripwire <dir> --cochange=FILE --legend=compact` on the file you're splitting → files that
+3. **Its co-change seams** — `rw <dir> --cochange=FILE --legend=compact` on the file you're splitting → files that
    historically move with it. A `surprising="1"` partner (no static dependency) is **hidden coupling the
    refactor must preserve or explicitly cut** — fold it into the plan before you start.
 
-4. **Pick the fix from the SHAPE, not the score** — `ripwire <dir> --quality-panel --legend=compact` (or `--metrics`) on the
+4. **Pick the fix from the SHAPE, not the score** — `rw <dir> --quality-panel --legend=compact` (or `--metrics`) on the
    cluster, then read `humps=`/`deep=`/`locals=` as above: many shallow humps → extract each one (cheap); one
    deep tangle → guard-clause inversion then state extraction (expensive); small-and-dense → read it first,
    density is often the algorithm; `join="deep+untested"` or high fan-in → **test before you touch it**. The

@@ -28,7 +28,7 @@ is the validated retrieval shape; "find me a similar-looking snippet" is the ant
 though it's the tempting first instinct.
 
 ## Before you write a function / class / util
-1. **Find the building block first** — `ripwire <dir> --for="<what you're about to build>"` → ranked existing
+1. **Find the building block first** — `rw <dir> --for="<what you're about to build>"` → ranked existing
    signatures (plus, when the code has them, the `<lego>` / `<compose>` HAS-A blocks — what a class already
    owns; a block that would cost more than its count arrives as a counted stub, `shown="0"` with a `next=`,
    and `--sections=lego,compose` restores both in full). If you can name the helper you suspect exists, query it verbatim (`--for="parseByteSize"`) — `--for`
@@ -36,32 +36,32 @@ though it's the tempting first instinct.
    the quality lens (`cx`/`ccx`/`in`/`churn`/`amp`/`tested`) so you see which
    candidates are safe to extend. Often the thing exists — compose from it.
 2. **Optionally get a style/shape exemplar** — if the retrieval result leaves a local-idiom question,
-   `ripwire <dir> --exemplar=fn|method|class|struct|iface|var --legend=compact` (a kind) or
+   `rw <dir> --exemplar=fn|method|class|struct|iface|var --legend=compact` (a kind) or
    `--exemplar="<task in words>"` (the top match's kind is inferred) returns the repo's single best-in-class
    instance of that shape: highest fan-in, lowest cognitive complexity, `tested=1` where possible — selected
    by ROLE, **not** text similarity. It returns the full body under `<bodies>`. **Copy its shape (structure,
    error handling, naming), not its text** — it is a model to imitate, not a relevant-code search.
-3. **Find candidates by behavior/shape** — `ripwire <dir> --grep="<a word from the behavior>" --legend=compact`, or a NARROWED
+3. **Find candidates by behavior/shape** — `rw <dir> --grep="<a word from the behavior>" --legend=compact`, or a NARROWED
    graph query: `--graph-query='and(file(all,"<area>"),kind(all,fn))'`. (Bare `kind(all,fn)` is ranked by
    importance + capped at `--top-k`, so it's safe — but narrowing by `file()`/`name()`/`callers()` finds the
    *relevant* building block, not just the globally-important one.) → implementations to reuse or extend.
-4. **Don't duplicate** — `ripwire <dir> --clones --legend=compact` → if your intended body matches an existing one, call it
+4. **Don't duplicate** — `rw <dir> --clones --legend=compact` → if your intended body matches an existing one, call it
    instead. **Rule of Three:** extract a shared helper on the *third* occurrence, not the second — and prefer
    a little duplication over the *wrong* abstraction (a helper you bend with boolean flags is worse than two
    honest copies).
 
 ## Before you add a dependency
-5. **Is it already here?** — `ripwire <dir> --external-surface --legend=compact` (what the tree already depends on; the default is a
+5. **Is it already here?** — `rw <dir> --external-surface --legend=compact` (what the tree already depends on; the default is a
    100-row window with the sh builtins dropped and counted as `builtins_excluded=` — `--include-builtins` keeps them) and
    `--uses=NAME` (the import role). Reuse an in-tree dependency before adding a new one: a new dep is build
    weight, supply-chain surface, and one more thing every reader must learn — it has to earn its place.
-6. **Before adding/vendoring a NEW dependency, map the candidate repo first** — `ripwire <git-url>` (https://
+6. **Before adding/vendoring a NEW dependency, map the candidate repo first** — `rw <git-url>` (https://
    or git@; shallow-clones to a temp cache dir, then maps it like any local tree — `--refetch` forces a fresh
    clone instead of reusing the cached one). Run `--report`/`--hotspots`/`--deps` on it before you commit to
    the dependency: is it actually small and well-factored, or a god-file waiting to become your problem?
 
 ## When you do write
-- **Match the local idiom** — `ripwire <dir> --for="<the area>"` shows the surrounding naming, layout, and
+- **Match the local idiom** — `rw <dir> --for="<the area>"` shows the surrounding naming, layout, and
   error-handling style. Mirror it so your diff reads like the file, not like a graft (cache-friendly for the
   reader and for KV-cache reuse).
 - **Less code wins on every metric at once:** lower complexity, fewer call edges, smaller blast radius, less

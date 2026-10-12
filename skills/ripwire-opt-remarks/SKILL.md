@@ -182,7 +182,7 @@ clock cannot resolve.
 Then, before you keep it:
 
 ```bash
-t=$(mktemp -d); ./build/ripwire <dir> >"$t/a"; ./build/ripwire <dir> >"$t/b"; diff -q "$t/a" "$t/b"   # determinism is a contract (outputs outside <dir>)
+t=$(mktemp -d); ./build/rw <dir> >"$t/a"; ./build/rw <dir> >"$t/b"; diff -q "$t/a" "$t/b"   # determinism is a contract (outputs outside <dir>)
 python3 test/pargates.py . ./build/ripwire -j 6
 ```
 
