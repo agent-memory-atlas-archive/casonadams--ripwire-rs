@@ -304,6 +304,27 @@ pub struct TopWorkspaceArgs {
     /// Markdown docs referencing symbol in backticks
     #[arg(long, value_name = "SYM")]
     pub mentions: Option<String>,
+    /// Environment and dependency health diagnostics
+    #[arg(long)]
+    pub doctor: bool,
+    /// Continuation packet for interrupted agent sessions
+    #[arg(long)]
+    pub handoff: bool,
+    /// View pinned session gotchas and invariants (.ripwire_notes)
+    #[arg(long)]
+    pub notes: bool,
+    /// Pin gotcha note to .ripwire_notes (e.g. --note-add="SYM: text")
+    #[arg(long = "note-add", value_name = "NOTE")]
+    pub note_add: Option<String>,
+    /// Replace symbol definition body with text
+    #[arg(long = "replace-symbol-body", value_name = "SYM:BODY")]
+    pub replace_symbol_body: Option<String>,
+    /// Insert text immediately before a symbol definition
+    #[arg(long = "insert-before-symbol", value_name = "SYM:TEXT")]
+    pub insert_before_symbol: Option<String>,
+    /// Insert text immediately after a symbol definition
+    #[arg(long = "insert-after-symbol", value_name = "SYM:TEXT")]
+    pub insert_after_symbol: Option<String>,
 }
 
 /// Categorized workflow command groups.

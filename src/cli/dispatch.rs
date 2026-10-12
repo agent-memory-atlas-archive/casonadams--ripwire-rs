@@ -203,6 +203,13 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         && !ws.flags
         && !ws.stray_content
         && ws.mentions.is_none()
+        && !ws.doctor
+        && !ws.handoff
+        && !ws.notes
+        && ws.note_add.is_none()
+        && ws.replace_symbol_body.is_none()
+        && ws.insert_before_symbol.is_none()
+        && ws.insert_after_symbol.is_none()
     {
         return None;
     }

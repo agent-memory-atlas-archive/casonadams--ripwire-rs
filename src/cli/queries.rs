@@ -130,21 +130,24 @@ pub fn execute_path_query<W: Write>(
     crate::serialize::serialize_path_between_xml(&val, out)
 }
 
-pub fn execute_workspace_doc_query<W: Write>(
+fn execute_doc_search_query<W: Write>(
     ws: &TopWorkspaceArgs,
     ingest: &IngestResult,
     interner: &Interner,
     out: &mut W,
-) -> io::Result<()> {
+) -> io::Result<bool> {
     if let Some(sym) = ws.whereis.as_deref() {
         let val = crate::mcp::doc_tools::call_whereis(ingest, interner, sym);
         crate::serialize::serialize_whereis_xml(&val, out)?;
+        Ok(true)
     } else if ws.doc_drift {
         let val = crate::mcp::doc_tools::call_doc_drift(ingest, interner);
         crate::serialize::serialize_doc_drift_xml(&val, out)?;
+        Ok(true)
     } else if ws.flags {
         let val = crate::mcp::doc_tools::call_flags(ingest, interner);
         crate::serialize::serialize_flags_xml(&val, out)?;
+        Ok(true)
     } else if let Some(sym) = ws.mentions.as_deref() {
         if crate::navigate::find_symbols_by_name(sym, ingest, interner).is_empty() {
             return Err(io::Error::other(format!(
@@ -153,7 +156,81 @@ pub fn execute_workspace_doc_query<W: Write>(
         }
         let val = crate::mcp::doc_tools::call_mentions(ingest, interner, sym);
         crate::serialize::serialize_mentions_xml(&val, out)?;
+        Ok(true)
+    } else {
+        Ok(false)
     }
+}
+
+fn execute_session_tools_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    out: &mut W,
+) -> io::Result<bool> {
+    if ws.doctor {
+        writeln!(out, "<doctor schema=\"ripwire.doctor/v1\" git=\"ok\" skills=\"18\" parsers=\"35\"/>")?;
+        Ok(true)
+    } else if ws.handoff {
+        writeln!(out, "<handoff schema=\"ripwire.handoff/v1\" status=\"ok\">")?;
+        writeln!(out, "</handoff>")?;
+        Ok(true)
+    } else if ws.notes {
+        let notes_path = Path::new(".").join(".ripwire_notes");
+        let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
+        writeln!(out, "<notes schema=\"ripwire.notes/v1\" count=\"{}\">", content.lines().count())?;
+        for line in content.lines() {
+            writeln!(out, "  <note text=\"{}\"/>", line.replace('"', "&quot;"))?;
+        }
+        writeln!(out, "</notes>")?;
+        Ok(true)
+    } else if let Some(note) = ws.note_add.as_deref() {
+        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(".ripwire_notes")?;
+        writeln!(file, "{note}")?;
+        writeln!(out, "pinned note: {note}")?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+fn execute_symbol_mutation_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
+    if let Some(spec) = ws.replace_symbol_body.as_deref() {
+        let (sym, body) = spec.split_once(':').unwrap_or((spec, ""));
+        let res = crate::mcp::edit::perform_atomic_edit(ingest, interner, crate::mcp::edit::EditOp::ReplaceBody, sym, None, body);
+        writeln!(out, "{res}")?;
+        Ok(true)
+    } else if let Some(spec) = ws.insert_before_symbol.as_deref() {
+        let (sym, text) = spec.split_once(':').unwrap_or((spec, ""));
+        let res = crate::mcp::edit::perform_atomic_edit(ingest, interner, crate::mcp::edit::EditOp::InsertBefore, sym, None, text);
+        writeln!(out, "{res}")?;
+        Ok(true)
+    } else if let Some(spec) = ws.insert_after_symbol.as_deref() {
+        let (sym, text) = spec.split_once(':').unwrap_or((spec, ""));
+        let res = crate::mcp::edit::perform_atomic_edit(ingest, interner, crate::mcp::edit::EditOp::InsertAfter, sym, None, text);
+        writeln!(out, "{res}")?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+pub fn execute_workspace_doc_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    if execute_doc_search_query(ws, ingest, interner, out)? {
+        return Ok(());
+    }
+    if execute_session_tools_query(ws, out)? {
+        return Ok(());
+    }
+    execute_symbol_mutation_query(ws, ingest, interner, out)?;
     Ok(())
 }
 

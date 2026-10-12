@@ -346,29 +346,42 @@ fn load_head_baseline(root: &str, state: &McpState, head_sha: &str) -> QualitySn
     compute_snapshot(&head_ingest, &head_graph, &head_interner, head_sha)
 }
 
+fn symbol_matches_and_changed(
+    sym: &crate::domain::Symbol,
+    file_path: &str,
+    state: &McpState,
+    baseline: &QualitySnapshot,
+) -> Option<(String, String)> {
+    let sym_file = state.interner.resolve(&state.ingest.files[sym.file_id as usize].path);
+    if sym_file != file_path && !sym_file.ends_with(file_path) {
+        return None;
+    }
+    let sym_name = state.interner.resolve(&sym.name);
+    let scope = sym.scope.map(|sc| state.interner.resolve(&sc));
+    let key = match scope {
+        Some(sc) => format!("{sym_file}::{sc}::{sym_name}"),
+        None => format!("{sym_file}::{sym_name}"),
+    };
+    let &was_ccx = baseline.ccx_by_sym.get(&key)?;
+    let was_loc = baseline.loc_by_sym.get(&key).copied().unwrap_or(0);
+    if sym.ccx != was_ccx || sym.loc != was_loc {
+        Some((sym_name.to_string(), sym_file.to_string()))
+    } else {
+        None
+    }
+}
+
 fn find_preexisting_callable_in_file<'a>(
     file_path: &str,
     state: &'a McpState,
     baseline: &QualitySnapshot,
 ) -> Option<(&'a crate::domain::Symbol, String, String)> {
     for sym in &state.ingest.symbols {
-        if sym.kind != crate::domain::SymKind::Function
-            && sym.kind != crate::domain::SymKind::Method
+        if (sym.kind == crate::domain::SymKind::Function || sym.kind == crate::domain::SymKind::Method)
+            && let Some((sym_name, sym_file)) =
+                symbol_matches_and_changed(sym, file_path, state, baseline)
         {
-            continue;
-        }
-        let sym_file =
-            state.interner.resolve(&state.ingest.files[sym.file_id as usize].path);
-        if sym_file == file_path || sym_file.ends_with(file_path) {
-            let sym_name = state.interner.resolve(&sym.name);
-            let scope = sym.scope.map(|sc| state.interner.resolve(&sc));
-            let key = match scope {
-                Some(sc) => format!("{sym_file}::{sc}::{sym_name}"),
-                None => format!("{sym_file}::{sym_name}"),
-            };
-            if baseline.ccx_by_sym.contains_key(&key) {
-                return Some((sym, sym_name.to_string(), sym_file.to_string()));
-            }
+            return Some((sym, sym_name, sym_file));
         }
     }
     None
