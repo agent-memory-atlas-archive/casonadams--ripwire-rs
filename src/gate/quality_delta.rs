@@ -212,6 +212,38 @@ pub fn compute_quality_delta(
     }
 }
 
+fn load_head_baseline(root: &str, state: &McpState, head_sha: &str) -> QualitySnapshot {
+    let mut head_files = Vec::new();
+    let root_path = Path::new(root);
+
+    for f in &state.ingest.files {
+        let rel_path = state.interner.resolve(&f.path);
+        if let Some(bytes) = crate::gate::contract::read_head_blob_bytes(root_path, rel_path) {
+            head_files.push((rel_path.to_string(), f.lang, bytes));
+        }
+    }
+
+    if head_files.is_empty() {
+        return compute_snapshot(&state.ingest, &state.graph, &state.interner, head_sha);
+    }
+
+    let head_interner = crate::domain::Interner::new();
+    let registry = match crate::ingest::LanguageRegistry::new() {
+        Ok(r) => r,
+        Err(_) => return compute_snapshot(&state.ingest, &state.graph, &state.interner, head_sha),
+    };
+
+    let head_file_slices: Vec<(&str, crate::domain::Lang, &[u8])> = head_files
+        .iter()
+        .map(|(p, l, b)| (p.as_str(), *l, b.as_slice()))
+        .collect();
+
+    let head_ingest =
+        crate::ingest::ingest_in_memory_files(&head_file_slices, &registry, &head_interner);
+    let head_graph = crate::graph::Graph::build(&head_ingest, &head_interner);
+    compute_snapshot(&head_ingest, &head_graph, &head_interner, head_sha)
+}
+
 /// Evaluate quality delta for a workspace root.
 pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<QualityDeltaReport> {
     let baseline_path = Path::new(root).join(DEFAULT_BASELINE_FILE);
@@ -226,10 +258,9 @@ pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<Qualit
             .and_then(|c| c.first())
             .map(|c| c.id.as_str())
             .unwrap_or("HEAD");
-        let snap = compute_snapshot(&state.ingest, &state.graph, &state.interner, head_sha);
+        let snap = load_head_baseline(root, state, head_sha);
         (snap, "git-HEAD")
     };
-
     let working_sha = state
         .commits
         .as_ref()

@@ -152,6 +152,7 @@ mod tests {
                 crate::resolve::EdgeAcc {
                     n_ref: 1,
                     conf_sum: 1.0,
+                    is_split: false,
                 },
             )]),
             amb_out: vec![0, 0],

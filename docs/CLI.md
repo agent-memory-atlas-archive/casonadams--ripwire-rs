@@ -14,10 +14,19 @@ rw . --rank-by=authority
 # Set explicit streaming pack budget in bytes or tokens
 rw . --pack-budget=32768
 rw . --token-budget=8192
+rw . --max-tokens=4096
+rw . --top-k=200
+
+# Control schema legend comment posture (compact or none)
+rw . --legend=compact
+
+# Query symbol relationships by bare name, scoped name, or file:name
+rw . --callers="Interner::len"
+rw . --callees="src/domain.rs:new"
+rw . --impact="Type.method"
 
 # Export self-contained interactive SVG/HTML visualizer
 rw . --html=callgraph.html --color-by=community
-```
 
 ## Pre-Commit Verification Gates
 

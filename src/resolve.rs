@@ -219,6 +219,7 @@ pub fn resolve_call_reference(
 pub struct EdgeAcc {
     pub conf_sum: f32,
     pub n_ref: u32,
+    pub is_split: bool,
 }
 
 /// Resolved graph edges and symbol ambiguity counts.
@@ -249,6 +250,7 @@ fn resolve_reference_chunk(
                 let acc = edge_accumulators.entry((resolved.from, to)).or_default();
                 acc.conf_sum += resolved.conf_per_target;
                 acc.n_ref += 1;
+                acc.is_split |= resolved.is_ambiguous;
             }
         }
     }
@@ -264,6 +266,7 @@ fn merge_resolutions(
         let acc_a = a.0.entry(k).or_default();
         acc_a.conf_sum += acc_b.conf_sum;
         acc_a.n_ref += acc_b.n_ref;
+        acc_a.is_split |= acc_b.is_split;
     }
     for (i, val) in b.1.into_iter().enumerate() {
         a.1[i] += val;

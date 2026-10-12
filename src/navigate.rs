@@ -35,16 +35,53 @@ pub struct ImpactNode {
     pub hops: u32,
 }
 
-/// Find symbol IDs by exact name match.
+fn matches_symbol_selector(
+    sym: &crate::domain::Symbol,
+    ingest: &IngestResult,
+    interner: &Interner,
+    selector: &str,
+) -> bool {
+    let sym_name = interner.resolve(&sym.name);
+    let sym_scope = sym.scope.map(|sc| interner.resolve(&sc)).unwrap_or("");
+    let file_path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+
+    if let Some((scope, name)) = selector.split_once("::") {
+        if let Some((file, sc)) = scope.split_once("::") {
+            return sym_name == name && sym_scope == sc && file_path.ends_with(file);
+        }
+        return sym_name == name && (sym_scope == scope || file_path.ends_with(scope));
+    }
+
+    if let Some((file, name)) = selector.split_once(':') {
+        return sym_name == name && file_path.ends_with(file);
+    }
+
+    if let Some((scope, name)) = selector.split_once('.') {
+        return sym_name == name && sym_scope == scope;
+    }
+
+    sym_name == selector
+}
+
+/// Find symbol IDs by exact name match or qualified selector (`p::sc::n`, `sc::n`, `file:name`, `Type.method`).
 #[must_use]
 pub fn find_symbols_by_name(name: &str, ingest: &IngestResult, interner: &Interner) -> Vec<NodeId> {
-    let Some(target_spur) = interner.get(name) else {
-        return Vec::new();
-    };
+    if let Some(target_spur) = interner.get(name) {
+        let exact: Vec<NodeId> = ingest
+            .symbols
+            .iter()
+            .filter(|s| s.name == target_spur)
+            .map(|s| s.id)
+            .collect();
+        if !exact.is_empty() {
+            return exact;
+        }
+    }
+
     ingest
         .symbols
         .iter()
-        .filter(|s| s.name == target_spur)
+        .filter(|s| matches_symbol_selector(s, ingest, interner, name))
         .map(|s| s.id)
         .collect()
 }

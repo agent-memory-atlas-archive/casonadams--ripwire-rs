@@ -66,7 +66,7 @@ pub fn compare_contracts(
     }
 }
 
-fn read_head_blob_bytes(repo_path: &Path, rel_path: &str) -> Option<Vec<u8>> {
+pub(crate) fn read_head_blob_bytes(repo_path: &Path, rel_path: &str) -> Option<Vec<u8>> {
     let repo = gix::open(repo_path).ok()?;
     let head = repo.head_commit().ok()?;
     let tree = head.tree().ok()?;

@@ -105,6 +105,7 @@ pub struct Graph {
     pub out_offsets: Vec<u32>,
     pub out_targets: Vec<NodeId>,
     pub out_weights: Vec<f32>,
+    pub out_split: Vec<bool>,
     pub amb_out: Vec<u32>,
 }
 
@@ -141,10 +142,22 @@ impl Graph {
     }
 
     pub fn callees(&self, node: NodeId) -> impl Iterator<Item = (NodeId, f32)> + '_ {
+        self.callees_with_prov(node).map(|(id, w, _)| (id, w))
+    }
+    pub fn callees_with_prov(
+        &self,
+        node: NodeId,
+    ) -> impl Iterator<Item = (NodeId, f32, bool)> + '_ {
         let n = node as usize;
         let start = self.out_offsets[n] as usize;
         let end = self.out_offsets[n + 1] as usize;
-        (start..end).map(move |i| (self.out_targets[i], self.out_weights[i]))
+        (start..end).map(move |i| {
+            (
+                self.out_targets[i],
+                self.out_weights[i],
+                self.out_split.get(i).copied().unwrap_or(false),
+            )
+        })
     }
 
     #[must_use]
@@ -181,38 +194,45 @@ impl Graph {
 
     #[must_use]
     pub fn from_resolution(node_count: usize, resolution: ResolutionResult) -> Self {
-        let mut edges: Vec<(NodeId, NodeId, f32)> = resolution
+        let mut edges: Vec<(NodeId, NodeId, f32, bool)> = resolution
             .edge_accumulators
             .into_iter()
             .map(|((from, to), acc)| {
                 let w = (acc.conf_sum / acc.n_ref as f32) * (acc.n_ref as f32).sqrt();
-                (from, to, w.min(8.0))
+                (from, to, w.min(8.0), acc.is_split)
             })
             .collect();
 
-        edges.sort_by_key(|&(from, to, _)| (from, to));
+        edges.sort_by_key(|&(from, to, _, _)| (from, to));
 
-        let (out_offsets, out_targets, out_weights, w_out_deg) =
-            build_out_edges(node_count, &edges);
-        let in_edges = build_in_edges_csr(node_count, &edges);
+        let out = build_out_edges(node_count, &edges);
+        let in_edges_tuples: Vec<(NodeId, NodeId, f32)> =
+            edges.iter().map(|&(f, t, w, _)| (f, t, w)).collect();
+        let in_edges = build_in_edges_csr(node_count, &in_edges_tuples);
 
         Self {
             in_edges,
-            w_out_deg,
-            out_offsets,
-            out_targets,
-            out_weights,
+            w_out_deg: out.w_out_deg,
+            out_offsets: out.offsets,
+            out_targets: out.targets,
+            out_weights: out.weights,
+            out_split: out.split,
             amb_out: resolution.amb_out,
         }
     }
 }
 
-fn build_out_edges(
-    node_count: usize,
-    edges: &[(NodeId, NodeId, f32)],
-) -> (Vec<u32>, Vec<NodeId>, Vec<f32>, Vec<f64>) {
+struct OutEdges {
+    offsets: Vec<u32>,
+    targets: Vec<NodeId>,
+    weights: Vec<f32>,
+    split: Vec<bool>,
+    w_out_deg: Vec<f64>,
+}
+
+fn build_out_edges(node_count: usize, edges: &[(NodeId, NodeId, f32, bool)]) -> OutEdges {
     let mut out_offsets = vec![0u32; node_count + 1];
-    for &(from, _, _) in edges {
+    for &(from, _, _, _) in edges {
         out_offsets[from as usize + 1] += 1;
     }
     for i in 0..node_count {
@@ -221,20 +241,27 @@ fn build_out_edges(
 
     let mut out_targets = vec![0u32; edges.len()];
     let mut out_weights = vec![0.0f32; edges.len()];
+    let mut out_split = vec![false; edges.len()];
     let mut w_out_deg = vec![0.0f64; node_count];
     let mut cur = out_offsets[0..node_count].to_vec();
 
-    for &(from, to, w) in edges {
+    for &(from, to, w, is_split) in edges {
         let pos = cur[from as usize] as usize;
         cur[from as usize] += 1;
         out_targets[pos] = to;
         out_weights[pos] = w;
+        out_split[pos] = is_split;
         w_out_deg[from as usize] += w as f64;
     }
 
-    (out_offsets, out_targets, out_weights, w_out_deg)
+    OutEdges {
+        offsets: out_offsets,
+        targets: out_targets,
+        weights: out_weights,
+        split: out_split,
+        w_out_deg,
+    }
 }
-
 fn build_in_edges_csr(node_count: usize, edges: &[(NodeId, NodeId, f32)]) -> CsrMatrix {
     let mut row_offsets = vec![0u32; node_count + 1];
     for &(_, to, _) in edges {
@@ -296,6 +323,7 @@ mod tests {
             crate::resolve::EdgeAcc {
                 conf_sum: 1.0,
                 n_ref: 1,
+                is_split: false,
             },
         );
         resolution.edge_accumulators.insert(
@@ -303,6 +331,7 @@ mod tests {
             crate::resolve::EdgeAcc {
                 conf_sum: 1.0,
                 n_ref: 1,
+                is_split: false,
             },
         );
 

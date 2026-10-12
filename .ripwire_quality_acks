@@ -21,6 +21,7 @@ ack dead-code:new-symbol 52c090f9d0efc961 0 cid=bfb31e838590a044 now=0 was=0 p=t
 ack dead-code:new-symbol 53165f3946b16f9a 0 cid=d3f560283b350c08 now=0 was=0 p=tests/test_quality_delta_gate.rs:139 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol 662a2172035907cd 0 cid=e9eb9772d64f57f0 now=0 was=0 p=src/mcp/edit.rs:217 feat(mcp): complete 33 mcp tools suite
 ack dead-code:new-symbol 795c5808ab0ca979 0 cid=3f603d0498ec0654 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
+ack dead-code:new-symbol 835014cf519abbfd 0 cid=f06d8bcd08de78f7 now=0 was=0 p=tests/test_streaming_xml_serializer.rs:172 cli options and streaming enhancements
 ack dead-code:new-symbol 89cc6ea26e2c5dda 0 cid=9c3a3d5e89523184 now=0 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 8aa03f84e2d2f98a 0 cid=0ef648a45d0b46d6 now=0 was=0 p=tests/test_quality_delta_gate.rs:125 feat(gate): quality baseline and delta gate
 ack dead-code:new-symbol 8b8653693bb10aa5 0 cid=df69e53dd4bd9c95 now=0 was=0 p=src/metrics/readability.rs:232 feat(metrics): compute complexity, readability, and hotspots
@@ -73,61 +74,92 @@ ack params 036578c0c808c522 6 cid=ac65639f5a740595 now=6 was=0 p=src/mcp/retriev
 ack params 49a1c863499fc814 6 cid=d7eb0c7f1a9c096e now=6 was=0 p=src/mcp/edit.rs:139 feat(mcp): complete 33 mcp tools suite
 ack params 54e7136a347d0061 6 cid=abc12525642d7d06 now=6 was=0 p=src/mcp/graph_tools.rs:172 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 facet=ambient p=src/domain.rs:214 feat(metrics): compute complexity, readability, and hotspots
-ack short-horizon-churn 03e609981e51a079 5 cid=1a77de16da933882 now=5 was=0 facet=ambient p=src/cli.rs:17 feat(gate): quality baseline and delta gate | prior: feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn 03e609981e51a079 17 cid=92ae49c978d4d77f now=17 was=0 facet=ambient p=src/cli.rs:17 cli options and streaming enhancements | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn 0dbcc2ebfc642340 7 cid=f7161ab1dbd67c20 now=7 was=0 facet=ambient p=src/ingest.rs:130 feat(gate): pre-commit contract gate and affected test reachability
-ack short-horizon-churn 1171f6ae61619ff2 10 cid=9a6b7e675249426e now=10 was=0 facet=self p=src/cli.rs:836 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 0e1b61952f94ae34 4 cid=4667fc680786ab8b now=4 was=0 facet=self p=src/serialize/xml.rs:58 cli options and streaming enhancements
+ack short-horizon-churn 0f39ab23ef529273 4 cid=cf0afdcfa9c322c3 now=4 was=0 facet=self p=src/serialize/xml.rs:109 cli options and streaming enhancements
+ack short-horizon-churn 1171f6ae61619ff2 17 cid=306b3d7a6b0da943 now=17 was=0 facet=self p=src/cli.rs:1132 cli options and streaming enhancements | prior: refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 1619bf764bb83838 17 cid=2faaa1867545050d now=17 was=0 facet=self p=src/cli.rs:393 cli options and streaming enhancements
 ack short-horizon-churn 170dabfb4d6abeed 12 cid=60632a1424bae51d now=12 was=0 facet=self p=src/cli.rs:319 feat(navigate): format navigation commands as canonical XML
+ack short-horizon-churn 1926d1c1c163abbf 17 cid=a834d850ae68a282 now=17 was=0 facet=ambient p=src/cli.rs:302 cli options and streaming enhancements
 ack short-horizon-churn 1a5e8bf9afe9ee39 7 cid=edfff520d79813ba now=7 was=0 facet=ambient p=src/ingest.rs:339 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn 1e3db6601ccd19d9 5 cid=6d4c472b01a08e40 now=5 was=0 facet=self p=src/mcp/mod.rs:174 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 2033625d6827aa6e 2 cid=760b754621a3a9e8 now=2 was=0 facet=ambient p=src/rank/hits.rs:135 cli options and streaming enhancements
 ack short-horizon-churn 227e269f843cf58d 16 cid=a6650ad250c2929b now=16 was=0 facet=self p=src/cli.rs:946 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 27df363ae0c450b3 5 cid=80b8cd85a4844728 now=5 was=0 facet=self p=src/mcp/mod.rs:318 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 2a74dc8296003db5 5 cid=3db9c4bc1085ab39 now=5 was=0 facet=self p=src/mcp/mod.rs:223 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 2f78d80dc0101330 4 cid=ec5cd2ebb1677793 now=4 was=0 facet=self p=src/serialize/xml.rs:354 cli options and streaming enhancements
+ack short-horizon-churn 37fbf6517ff6ce1b 17 cid=6770921381e4e1a8 now=17 was=0 facet=self p=src/cli.rs:1059 cli options and streaming enhancements
 ack short-horizon-churn 3837a3181097f8ac 3 cid=8596089df645328d now=3 was=0 facet=self p=src/gate/contract.rs:104 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 396b6f2789b0b89c 17 cid=7000b28ef100a6ea now=17 was=0 facet=ambient p=src/cli.rs:310 cli options and streaming enhancements
 ack short-horizon-churn 435a85119ba7ba3f 6 cid=1a6440ee63410c4d now=6 was=0 facet=self p=src/ingest/mod.rs:541 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations | prior: refactor(distribution): rename crate to ripwire and binary to rw
-ack short-horizon-churn 44a561ac8e5656a2 10 cid=d1d6e3ec8cf89e09 now=10 was=0 facet=self p=src/cli.rs:840 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 44a561ac8e5656a2 17 cid=b582def855349035 now=17 was=0 facet=self p=src/cli.rs:1136 cli options and streaming enhancements | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 4590d19cc4031a6d 6 cid=551c876371714bf3 now=6 was=0 facet=self p=src/ingest/mod.rs:209 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 4832c252adf48140 6 cid=23620452b86e415a now=6 was=0 facet=self p=src/ingest/mod.rs:444 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 495e9245f0a62004 16 cid=9d8a216ad61182ef now=16 was=0 facet=self p=src/cli.rs:777 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 4a1230f1cfd095df 6 cid=1ffe7220eae6384a now=6 was=0 facet=self p=src/ingest.rs:430 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 5befe906674d1d04 5 cid=9cebc1cfcad1bd9b now=5 was=0 facet=self p=src/mcp/mod.rs:764 feat(mcp): complete 33 mcp tools suite
-ack short-horizon-churn 5d3030ce205bd4d9 10 cid=48e258ccfccd51d1 now=10 was=0 facet=self p=src/cli.rs:707 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
+ack short-horizon-churn 5d3030ce205bd4d9 17 cid=9339bc41a5e1e324 now=17 was=0 facet=self p=src/cli.rs:995 cli options and streaming enhancements | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 5dd771c9def9da52 5 cid=9284006cc955fafb now=5 was=0 facet=ambient p=src/mcp/mod.rs:693 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 5e62941216009d7d 4 cid=029942f196f0d316 now=4 was=0 facet=self p=src/ingest/mod.rs:323 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 5e69f1155e343c23 5 cid=a62db5d0a8cce6d8 now=5 was=0 facet=ambient p=src/cli.rs:106 feat(gate): quality baseline and delta gate
+ack short-horizon-churn 62e7c8391a4df527 3 cid=7262bea52f91ff2a now=3 was=0 facet=self p=src/gate/quality_delta.rs:248 cli options and streaming enhancements
 ack short-horizon-churn 6592ae6ffe2a9edc 2 now=2 was=0 facet=self p=tests/test_ingest_tier1_fixtures.rs:6 migrate to in-memory fixtures for zero-IO testing
+ack short-horizon-churn 67d2dcee81975bca 5 cid=a4334c84726b2b74 now=5 was=0 facet=ambient p=src/graph.rs:316 cli options and streaming enhancements
 ack short-horizon-churn 6c9b4b9bca1c4eb1 5 cid=29a3c399aaac8a10 now=5 was=0 facet=self p=src/mcp/mod.rs:613 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn 6dcec957b21602d3 9 cid=97aeeecf8b5df765 now=9 was=0 facet=ambient p=src/domain.rs:237 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 7272cbefa18a4549 3 cid=82050217a190c19f now=3 was=0 facet=self p=src/gate/contract.rs:197 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 72c710eba4e4924e 7 cid=2b62c5d5dcaca3ff now=7 was=0 facet=ambient p=src/ingest.rs:117 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 73e3b4916fad8f15 5 cid=6e9ea3a239f75d03 now=5 was=0 facet=self p=src/cli.rs:543 feat(gate): quality baseline and delta gate
 ack short-horizon-churn 7421c569ac4e8bd0 6 cid=aa900cfcdb44761f now=6 was=0 facet=self p=src/ingest/mod.rs:203 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
+ack short-horizon-churn 7444f1b07227393c 4 cid=7e6fe7997e7d48fa now=4 was=0 facet=self p=src/serialize/xml.rs:121 cli options and streaming enhancements
 ack short-horizon-churn 76568d93a351a68d 6 cid=7dcd61687d79d92a now=6 was=0 facet=self p=src/ingest.rs:547 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 768f6f23b404e1ea 4 cid=54638cd40196ed04 now=4 was=0 facet=ambient p=src/serialize/xml.rs:295 cli options and streaming enhancements
+ack short-horizon-churn 7c2731626a1336bc 5 cid=493f0237b7767ff9 now=5 was=0 facet=ambient p=src/graph.rs:144 cli options and streaming enhancements
 ack short-horizon-churn 7e9009f392dd32f9 5 cid=6f38348e5f690815 now=5 was=0 facet=self p=src/mcp/mod.rs:106 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 81c77c529ca6f113 4 cid=8888eff9be14a5c1 now=4 was=0 facet=ambient p=src/resolve.rs:219 cli options and streaming enhancements
 ack short-horizon-churn 86d8fee5fe0cb9ed 4 cid=f7082dc07f519f35 now=4 was=0 facet=self p=src/ingest/mod.rs:308 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 87c838a5561b6421 4 cid=7fb8c3b69f3757a0 now=4 was=0 facet=ambient p=src/resolve.rs:261 cli options and streaming enhancements
 ack short-horizon-churn 88fd47ab6e8b22d3 5 cid=a5aec8c432c7d586 now=5 was=0 facet=self p=src/mcp/mod.rs:723 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 8efcd06933df9f00 5 cid=ab1e9846e0e884b2 now=5 was=0 facet=self p=src/graph.rs:196 cli options and streaming enhancements
 ack short-horizon-churn 93c77c6f3702d249 7 cid=59249848561ffa66 now=7 was=0 facet=self p=src/main.rs:1 refactor(distribution): rename crate to ripwire and binary to rw | prior: delegate main to rwire::run_cli
+ack short-horizon-churn 9586c389ef09f514 4 cid=1334bbec7ccfadc2 now=4 was=0 facet=self p=src/serialize/xml.rs:35 cli options and streaming enhancements
 ack short-horizon-churn 972f728745b11d45 6 cid=4b3c01ada5c9158b now=6 was=0 facet=self p=src/ingest.rs:339 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn a29bdbd875b3bb62 6 cid=b84620de9d471718 now=6 was=0 facet=self p=src/ingest.rs:383 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn a8b62b30beb02329 5 cid=4f50111421bfb6c6 now=5 was=0 facet=self p=src/mcp/mod.rs:96 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn a8d8a8c2b3c692bb 5 cid=8a850df30c972216 now=5 was=0 facet=self p=src/mcp/mod.rs:760 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn aa67274c42eaba44 4 cid=9af0b78481da1999 now=4 was=0 facet=self p=src/serialize/xml.rs:62 cli options and streaming enhancements
 ack short-horizon-churn abbf9013bfc446fc 16 cid=bcbe15acab8c2265 now=16 was=0 facet=self p=src/cli.rs:918 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn af8f8cdf2368bd78 5 cid=a44d1244512278d2 now=5 was=0 facet=self p=src/mcp/mod.rs:265 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn b375ec7d1556994c 5 cid=5325c82e263c650e now=5 was=0 facet=ambient p=src/graph.rs:303 cli options and streaming enhancements
 ack short-horizon-churn b5a40f34ce7656a9 6 cid=f92ea050828bbe61 now=6 was=0 facet=self p=tests/test_cli_and_mcp.rs:28 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
+ack short-horizon-churn b6e897536782cb69 4 cid=ff843607ad22b35e now=4 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:21 cli options and streaming enhancements
 ack short-horizon-churn b77c6cd3287487c1 9 cid=6f8e366ab6d4cd21 now=9 was=0 facet=self p=tests/test_cli_and_mcp.rs:271 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn b88b1ea9b3cfaea8 6 cid=45bade1cbbda7009 now=6 was=0 facet=self p=src/ingest.rs:543 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn c0300ca9ffbbc65c 2 cid=f08fb1b472f9d474 now=2 was=0 facet=self p=src/metrics/hotspots.rs:28 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn c0877650b51b994a 2 cid=5ae3bc85466baf17 now=2 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:42 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn c2491a80cbc08195 2 cid=2148b2f7fdaadc97 now=2 was=0 facet=ambient p=src/rank/hits.rs:119 cli options and streaming enhancements
 ack short-horizon-churn c28be696f55888fe 5 cid=391a26a2b3b563e2 now=5 was=0 facet=self p=src/mcp/mod.rs:203 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn cd6d279e4dbbdbc4 4 cid=44f6ec8edd045c25 now=4 was=0 facet=ambient p=src/serialize/xml.rs:46 cli options and streaming enhancements
 ack short-horizon-churn d3eebdef7a909404 7 cid=13afc9c65d43e4da now=7 was=0 facet=ambient p=src/ingest.rs:565 feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn da149eda75c93291 5 cid=f35a608cb75d4c25 now=5 was=0 facet=ambient p=src/graph.rs:102 cli options and streaming enhancements
 ack short-horizon-churn dbf9873eb051deef 7 cid=f6f66f92d6091196 now=7 was=0 facet=self p=tests/test_cli_and_mcp.rs:143 feat(navigate): format navigation commands as canonical XML | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn df3364bea9738161 5 cid=b6a09e2e51877ccc now=5 was=0 facet=self p=src/mcp/mod.rs:30 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn dfcd6570a7ea4d71 4 cid=1738622f191fa471 now=4 was=0 facet=ambient p=src/resolve.rs:234 cli options and streaming enhancements
+ack short-horizon-churn dfcd8fbfb70d4004 4 cid=cd680760751f2590 now=4 was=0 facet=ambient p=src/serialize/xml.rs:22 cli options and streaming enhancements
+ack short-horizon-churn e334c9d7ea0fb943 4 cid=160f9c9d1f1b307e now=4 was=0 facet=self p=src/serialize/xml.rs:359 cli options and streaming enhancements
 ack short-horizon-churn e424f45b726fc219 6 cid=159212c4747ced54 now=6 was=0 facet=self p=src/ingest/mod.rs:452 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
+ack short-horizon-churn e68c44392a811fd2 4 cid=d39251fdf8116de8 now=4 was=0 facet=self p=src/gate/contract.rs:69 cli options and streaming enhancements
+ack short-horizon-churn eb5eb8bc9f9e78a7 4 cid=be77a8b6faba1225 now=4 was=0 facet=ambient p=src/serialize/xml.rs:12 cli options and streaming enhancements
 ack short-horizon-churn eb913f807b07fad8 3 cid=bd0dd9ade9a75003 now=3 was=0 facet=self p=src/gate/contract.rs:187 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn ec25e04d7a1c792d 5 cid=e4e99ae69f86c7ae now=5 was=0 facet=ambient p=src/mcp/mod.rs:700 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn ecb2368dd4d7311c 17 cid=0bec28715d7c20ea now=17 was=0 facet=self p=src/cli.rs:1190 cli options and streaming enhancements
+ack short-horizon-churn ef0834f2485b47ff 5 cid=051e60b772482121 now=5 was=0 facet=self p=src/graph.rs:233 cli options and streaming enhancements
 ack short-horizon-churn f0ff33b16b71ee4b 7 cid=a2bdbce68e56d287 now=7 was=0 facet=ambient p=src/ingest.rs:531 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn f63ae9b95743e1a1 4 cid=c9ad26e8025e2684 now=4 was=0 facet=self p=src/ingest/mod.rs:405 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn facea9a26b6819c2 5 cid=428a31d751b879a1 now=5 was=0 facet=self p=src/mcp/mod.rs:152 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn faeda1a26b82bcb9 5 cid=029dba1e608c8d9f now=5 was=0 facet=self p=src/mcp/mod.rs:130 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn ff2afe1ec5c50beb 17 cid=7035e8bc40b1bb80 now=17 was=0 facet=self p=src/cli.rs:328 cli options and streaming enhancements
 ack verbosity 21c952917f59fdf2 374 cid=082a96c2f7393aa8 now=374 was=0 p=src/mcp/schema.rs:5 feat(mcp): complete 33 mcp tools suite
 ack verbosity 2976ccc597b56f50 97 cid=547adee2b8442588 now=97 was=0 p=src/gate/affected.rs:270 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 2cdcf0486a28549b 63 cid=1f9ce08aaffe8e8e now=63 was=0 p=src/gate/edit_check.rs:222 feat(gate): pre-commit contract gate and affected test reachability

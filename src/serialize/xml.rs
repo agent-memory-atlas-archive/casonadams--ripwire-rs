@@ -15,6 +15,7 @@ pub struct SerializeOptions {
     pub include_pr: bool,
     pub pack_budget_bytes: Option<usize>,
     pub rank_by: Option<String>,
+    pub emit_legend: bool,
 }
 
 impl Default for SerializeOptions {
@@ -25,6 +26,7 @@ impl Default for SerializeOptions {
             include_pr: true,
             pack_budget_bytes: Some(DEFAULT_PACK_BUDGET_BYTES),
             rank_by: None,
+            emit_legend: false,
         }
     }
 }
@@ -35,7 +37,7 @@ pub struct SymbolRowContext<'a> {
     pub sym_name: &'a str,
     pub rank: f64,
     pub amb: u32,
-    pub callees: &'a [(NodeId, f32)],
+    pub callees: &'a [(NodeId, f32, bool)],
     pub include_pr: bool,
 }
 
@@ -46,33 +48,15 @@ pub struct RootElementContext<'a> {
     pub files: usize,
     pub symbols: usize,
     pub edges: usize,
+    pub shown: usize,
     pub pr_iters: u32,
     pub converged: bool,
     pub rank_by: Option<&'a str>,
 }
 
 /// Write the root `<r ...>` opening element.
-pub fn write_root_open<W: Write>(
-    w: &mut W,
-    root: &str,
-    files: usize,
-    symbols: usize,
-    edges: usize,
-    pr_iters: u32,
-    converged: bool,
-) -> io::Result<()> {
-    write_root_open_with_rank_by(
-        w,
-        &RootElementContext {
-            root,
-            files,
-            symbols,
-            edges,
-            pr_iters,
-            converged,
-            rank_by: None,
-        },
-    )
+pub fn write_root_open<W: Write>(w: &mut W, ctx: &RootElementContext<'_>) -> io::Result<()> {
+    write_root_open_with_rank_by(w, ctx)
 }
 
 pub fn write_root_open_with_rank_by<W: Write>(
@@ -83,8 +67,8 @@ pub fn write_root_open_with_rank_by<W: Write>(
     escape_xml_write(w, ctx.root)?;
     write!(
         w,
-        "\" files=\"{}\" symbols=\"{}\" edges=\"{}\"",
-        ctx.files, ctx.symbols, ctx.edges
+        "\" files=\"{}\" symbols=\"{}\" edges=\"{}\" shown=\"{}\"",
+        ctx.files, ctx.symbols, ctx.edges, ctx.shown
     )?;
     if let Some(rb) = ctx.rank_by {
         write!(w, " rank_by=\"{}\"", rb)?;
@@ -123,9 +107,14 @@ impl<W: Write> Write for CountingWriter<W> {
 
 /// Write the file opening element `<f p="...">`.
 pub fn write_file_header<W: Write>(w: &mut W, path: &str) -> io::Result<()> {
+    let close: &[u8] = if crate::gate::affected::is_test_path(path) {
+        b"\" layer=\"test\">"
+    } else {
+        b"\">"
+    };
     w.write_all(b"<f p=\"")?;
     escape_xml_write(w, path)?;
-    w.write_all(b"\">")
+    w.write_all(close)
 }
 
 /// Write a single symbol row and its outgoing call edges.
@@ -159,16 +148,23 @@ pub fn write_symbol_row<W: Write>(
     w.write_all(b">")?;
 
     let mut seen_callees = std::collections::HashSet::new();
-    for &(callee_id, _) in ctx.callees {
+    for &(callee_id, _, is_split) in ctx.callees {
         let callee_sym = &symbols[callee_id as usize];
         let callee_name = interner.resolve(&callee_sym.name);
         if seen_callees.insert(callee_name) {
-            w.write_all(b"<c n=\"")?;
-            escape_xml_write(w, callee_name)?;
-            w.write_all(b"\"/>")?;
+            write_callee_tag(w, callee_name, is_split)?;
         }
     }
     w.write_all(b"</s>")
+}
+
+fn write_callee_tag<W: Write>(w: &mut W, name: &str, is_split: bool) -> io::Result<()> {
+    write!(
+        w,
+        "<c n=\"{}\"{}>",
+        crate::serialize::escape::escape_xml_str(name),
+        if is_split { " prov=\"split\"/" } else { "/" }
+    )
 }
 
 /// Compute symbol rank ordering and bucket symbols into files.
@@ -239,40 +235,68 @@ pub fn serialize_xml<W: Write>(
     )
 }
 
+pub const SCHEMA_COMMENT: &[u8] = b"<!-- ripwire map schema=ripwire.map/v1: ranked symbol map: <f p= layer=> groups <s t= n= sc= k= amb=> rows (k= rank), <c n=> resolved callees; the header comment is data. est_tokens=: price as emitted (an upper bound under compact). root=: p= relative to it. pr_iters=N: PageRank iterations. declined=K: K calls left unbound (no evidence chose one def). prov=scip|binding|import|split|final-segment: how that <c> edge bound (absent: one unique name); split = one arm of an amb= pick; final-segment = a qualified type matched by last name only. files=/symbols=: files and symbols indexed; edges= distinct call edges; shown= symbols printed, a merged row counting each def; ambiguous= calls split over several defs, corpus-wide; unresolved= calls with in-tree evidence and no edge (defs all language-filtered, or import/pointer binding refused); order= rows by rank (important-first, important-last; (auto:fill) = flipped past a size threshold) or by path (stable). unindexed=ext:N: N text files of that extension no grammar reads (6 extensions at most). sc=: enclosing scope; the full id is p::sc::n (p= of the row or its <f>) and selectors take it. amb=K: K calls split over several defs. -->";
+
+fn serialize_symbol_buckets(
+    ctx: &StreamXmlContext<'_>,
+    file_order: &[u32],
+    buckets: &[Vec<NodeId>],
+    budget: usize,
+    include_pr: bool,
+) -> io::Result<(Vec<u8>, usize)> {
+    let mut body_buf = Vec::with_capacity(budget.min(DEFAULT_STREAM_BUFFER_CAPACITY));
+    let mut file_buf = Vec::new();
+    let mut symbols_shown = 0usize;
+
+    for &f in file_order {
+        if body_buf.len() >= budget {
+            break;
+        }
+        let file_info = &ctx.ingest.files[f as usize];
+        let file_path = ctx.interner.resolve(&file_info.path);
+        file_buf.clear();
+        write_file_header(&mut file_buf, file_path)?;
+
+        let mut file_has_symbols = false;
+        for &sym_id in &buckets[f as usize] {
+            if body_buf.len() + file_buf.len() >= budget {
+                break;
+            }
+            let sym = &ctx.ingest.symbols[sym_id as usize];
+            let sym_name = ctx.interner.resolve(&sym.name);
+            let rank = ctx.ranks.get(sym_id as usize).copied().unwrap_or(0.0);
+            let amb = ctx.graph.ambiguity(sym_id);
+            let callees: Vec<(NodeId, f32, bool)> = ctx.graph.callees_with_prov(sym_id).collect();
+
+            let row_ctx = SymbolRowContext {
+                sym,
+                sym_name,
+                rank,
+                amb,
+                callees: &callees,
+                include_pr,
+            };
+
+            write_symbol_row(&mut file_buf, &row_ctx, ctx.interner, &ctx.ingest.symbols)?;
+            symbols_shown += 1;
+            file_has_symbols = true;
+        }
+
+        if file_has_symbols {
+            file_buf.extend_from_slice(b"</f>");
+            body_buf.extend_from_slice(&file_buf);
+        }
+    }
+
+    Ok((body_buf, symbols_shown))
+}
+
 /// Stream minified XML with custom ranks and budget enforcement.
 pub fn serialize_xml_with_ranks<W: Write>(
     ctx: &StreamXmlContext<'_>,
     writer: &mut W,
     options: &SerializeOptions,
 ) -> io::Result<()> {
-    let buf = BufWriter::with_capacity(DEFAULT_STREAM_BUFFER_CAPACITY, writer);
-    let mut counter = CountingWriter::new(buf);
-
-    if let Some(rb) = options.rank_by.as_deref() {
-        write_root_open_with_rank_by(
-            &mut counter,
-            &RootElementContext {
-                root: &options.root,
-                files: ctx.ingest.file_count(),
-                symbols: ctx.ingest.symbol_count(),
-                edges: ctx.graph.edge_count(),
-                pr_iters: ctx.pr_iters,
-                converged: ctx.pr_converged,
-                rank_by: Some(rb),
-            },
-        )?;
-    } else {
-        write_root_open(
-            &mut counter,
-            &options.root,
-            ctx.ingest.file_count(),
-            ctx.ingest.symbol_count(),
-            ctx.graph.edge_count(),
-            ctx.pr_iters,
-            ctx.pr_converged,
-        )?;
-    }
-
     let (file_order, buckets) = bucket_symbols_by_rank(
         &ctx.ingest.symbols,
         ctx.ingest.files.len(),
@@ -281,40 +305,32 @@ pub fn serialize_xml_with_ranks<W: Write>(
     );
 
     let budget = options.pack_budget_bytes.unwrap_or(usize::MAX);
+    let (body_buf, symbols_shown) =
+        serialize_symbol_buckets(ctx, &file_order, &buckets, budget, options.include_pr)?;
 
-    for f in file_order {
-        if counter.count >= budget {
-            break;
-        }
-        let file_info = &ctx.ingest.files[f as usize];
-        let file_path = ctx.interner.resolve(&file_info.path);
-        write_file_header(&mut counter, file_path)?;
+    let buf = BufWriter::with_capacity(DEFAULT_STREAM_BUFFER_CAPACITY, writer);
+    let mut counter = CountingWriter::new(buf);
 
-        for &sym_id in &buckets[f as usize] {
-            if counter.count >= budget {
-                break;
-            }
-            let sym = &ctx.ingest.symbols[sym_id as usize];
-            let sym_name = ctx.interner.resolve(&sym.name);
-            let rank = ctx.ranks.get(sym_id as usize).copied().unwrap_or(0.0);
-            let amb = ctx.graph.ambiguity(sym_id);
-            let callees: Vec<(NodeId, f32)> = ctx.graph.callees(sym_id).collect();
-
-            let row_ctx = SymbolRowContext {
-                sym,
-                sym_name,
-                rank,
-                amb,
-                callees: &callees,
-                include_pr: options.include_pr,
-            };
-
-            write_symbol_row(&mut counter, &row_ctx, ctx.interner, &ctx.ingest.symbols)?;
-        }
-
-        counter.write_all(b"</f>")?;
+    if options.emit_legend {
+        counter.write_all(SCHEMA_COMMENT)?;
     }
 
+    let root_ctx = RootElementContext {
+        root: &options.root,
+        files: ctx.ingest.file_count(),
+        symbols: ctx.ingest.symbol_count(),
+        edges: ctx.graph.edge_count(),
+        shown: symbols_shown,
+        pr_iters: ctx.pr_iters,
+        converged: ctx.pr_converged,
+        rank_by: options.rank_by.as_deref(),
+    };
+    if root_ctx.rank_by.is_some() {
+        write_root_open_with_rank_by(&mut counter, &root_ctx)?;
+    } else {
+        write_root_open(&mut counter, &root_ctx)?;
+    }
+    counter.write_all(&body_buf)?;
     counter.write_all(b"</r>\n")?;
     counter.flush()
 }
@@ -391,7 +407,7 @@ mod tests {
             &SerializeOptions::default(),
         );
 
-        assert!(xml.starts_with("<r schema=\"ripwire.map/v1\" root=\".\" files=\"1\" symbols=\"2\" edges=\"1\" pr_iters=\"12\">"));
+        assert!(xml.starts_with("<r schema=\"ripwire.map/v1\" root=\".\" files=\"1\" symbols=\"2\" edges=\"1\" shown=\"2\" pr_iters=\"12\">"));
         assert!(xml.contains("<f p=\"src/main.rs\">"));
         assert!(xml.contains("<s t=\"fn\" n=\"run\" k=\"0.6500\"></s>"));
         assert!(xml.contains("<s t=\"fn\" n=\"start\" k=\"0.3500\"><c n=\"run\"/></s>"));

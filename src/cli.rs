@@ -82,6 +82,17 @@ pub struct Cli {
     #[arg(long)]
     pub token_budget: Option<usize>,
 
+    /// Budget the map to ~N tokens (~4 bytes per token, alias for --token-budget)
+    #[arg(long = "max-tokens", value_name = "N")]
+    pub max_tokens: Option<usize>,
+
+    /// Keep only the N highest-ranked symbols (e.g. 200)
+    #[arg(long = "top-k", value_name = "N")]
+    pub top_k: Option<usize>,
+
+    /// Schema legend posture: compact (default, in-context schema comment) or none
+    #[arg(long, default_value = "compact")]
+    pub legend: String,
     /// Top-level symbol navigation flags
     #[command(flatten)]
     pub nav: TopNavArgs,
@@ -292,6 +303,8 @@ pub struct RankedStreamArgs<'a> {
     pub root: &'a str,
     pub rank_by: &'a str,
     pub pack_budget: Option<usize>,
+    pub top_k: Option<usize>,
+    pub emit_legend: bool,
 }
 
 pub fn execute_stream_xml_with<W: io::Write>(
@@ -306,6 +319,8 @@ pub fn execute_stream_xml_with<W: io::Write>(
         root,
         rank_by: "pagerank",
         pack_budget: None,
+        top_k: None,
+        emit_legend: true,
     };
     execute_stream_xml_ranked(&args, ingest, graph, pr, interner, out)
 }
@@ -347,10 +362,11 @@ pub fn execute_stream_xml_ranked<W: io::Write>(
         out,
         &SerializeOptions {
             root: args.root.to_string(),
-            top_k: None,
+            top_k: args.top_k,
             include_pr: true,
             pack_budget_bytes: budget_bytes,
             rank_by: rank_lbl,
+            emit_legend: args.emit_legend,
         },
     )
 }
@@ -377,8 +393,9 @@ fn load_repo_analysis(
 fn compute_effective_budget(
     pack_budget: Option<usize>,
     token_budget: Option<usize>,
+    max_tokens: Option<usize>,
 ) -> Option<usize> {
-    if let Some(tb) = token_budget {
+    if let Some(tb) = token_budget.or(max_tokens) {
         Some(tb.saturating_mul(4))
     } else {
         pack_budget.or(Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES))
@@ -1032,7 +1049,7 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
         return crate::slice::execute_slice_command(root, Some(target), &cli.slice_flow);
     }
 
-    let budget = compute_effective_budget(cli.pack_budget, cli.token_budget);
+    let budget = compute_effective_budget(cli.pack_budget, cli.token_budget, cli.max_tokens);
     match &cli.command {
         Some(cmd) => dispatch_subcommand(cmd),
         None => dispatch_default_run(&cli, root, budget),
@@ -1040,18 +1057,17 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
 }
 
 fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io::Result<()> {
-    if cli.rank_by == "pagerank" && budget == Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES) {
-        execute_stream_xml(root)
-    } else {
-        let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
-        let mut stdout = io::stdout().lock();
-        let args = RankedStreamArgs {
-            root,
-            rank_by: &cli.rank_by,
-            pack_budget: budget,
-        };
-        execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)
-    }
+    let emit_legend = !cli.legend.eq_ignore_ascii_case("none");
+    let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+    let mut stdout = io::stdout().lock();
+    let args = RankedStreamArgs {
+        root,
+        rank_by: &cli.rank_by,
+        pack_budget: budget,
+        top_k: cli.top_k,
+        emit_legend,
+    };
+    execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)
 }
 
 fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
@@ -1121,10 +1137,21 @@ mod tests {
         let help = Cli::try_parse_from(["rw", "--help"]);
         assert!(help.is_err()); // --help exits with help message
 
-        let default_run = Cli::try_parse_from(["rw", "."]).unwrap();
-        assert_eq!(default_run.path, Some(".".into()));
-        assert!(default_run.command.is_none());
-
+        let run = Cli::try_parse_from([
+            "rw",
+            ".",
+            "--top-k",
+            "150",
+            "--max-tokens",
+            "4000",
+            "--legend",
+            "none",
+        ])
+        .unwrap();
+        assert_eq!(run.path, Some(".".into()));
+        assert_eq!(run.top_k, Some(150));
+        assert_eq!(run.max_tokens, Some(4000));
+        assert_eq!(run.legend, "none");
         let mcp_cmd = Cli::try_parse_from(["rw", "mcp"]).unwrap();
         assert_eq!(mcp_cmd.command, Some(Commands::Mcp(McpArgs::default())));
 
@@ -1137,41 +1164,28 @@ mod tests {
     }
     #[test]
     fn test_gate_dispatch_args_is_active() {
-        let empty = GateDispatchArgs::default();
-        assert!(!empty.is_active());
-        assert!(dispatch_gate_command(".", empty).is_none());
-
-        let with_ec = GateDispatchArgs {
-            edit_check: Some("main"),
-            ..Default::default()
+        assert!(!GateDispatchArgs::default().is_active());
+        assert!(dispatch_gate_command(".", GateDispatchArgs::default()).is_none());
+        let chk = |e, a, b, d| {
+            GateDispatchArgs {
+                edit_check: e,
+                affected: a,
+                quality_baseline: b,
+                quality_delta: d,
+            }
+            .is_active()
         };
-        assert!(with_ec.is_active());
-
-        let with_aff = GateDispatchArgs {
-            affected: Some("src/main.rs"),
-            ..Default::default()
-        };
-        assert!(with_aff.is_active());
-
-        let with_qb = GateDispatchArgs {
-            quality_baseline: true,
-            ..Default::default()
-        };
-        assert!(with_qb.is_active());
-
-        let with_qd = GateDispatchArgs {
-            quality_delta: true,
-            ..Default::default()
-        };
-        assert!(with_qd.is_active());
+        assert!(chk(Some("m"), None, false, false) && chk(None, Some("f"), false, false));
+        assert!(chk(None, None, true, false) && chk(None, None, false, true));
     }
 
     #[test]
     fn test_compute_effective_budget() {
-        assert_eq!(compute_effective_budget(Some(1024), None), Some(1024));
-        assert_eq!(compute_effective_budget(None, Some(100)), Some(400));
+        assert_eq!(compute_effective_budget(Some(1024), None, None), Some(1024));
+        assert_eq!(compute_effective_budget(None, Some(100), None), Some(400));
+        assert_eq!(compute_effective_budget(None, None, Some(50)), Some(200));
         assert_eq!(
-            compute_effective_budget(None, None),
+            compute_effective_budget(None, None, None),
             Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES)
         );
     }

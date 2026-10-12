@@ -7,7 +7,20 @@ use ripwire::{
 };
 use serde_json::json;
 
-fn validate_xml_well_formed(xml: &str) {
+fn strip_xml_comments(mut xml: &str) -> String {
+    let mut out = String::with_capacity(xml.len());
+    while let Some(start) = xml.find("<!--") {
+        out.push_str(&xml[..start]);
+        let end = xml[start..].find("-->").expect("unclosed comment") + start + 3;
+        xml = &xml[end..];
+    }
+    out.push_str(xml);
+    out
+}
+
+fn validate_xml_well_formed(raw_xml: &str) {
+    let cleaned = strip_xml_comments(raw_xml);
+    let xml = cleaned.as_str();
     let mut tag_stack: Vec<&str> = Vec::new();
     let mut i = 0;
     let bytes = xml.as_bytes();
@@ -154,6 +167,72 @@ fn test_streaming_xml_serializer() {
     let clean = "clean_func_name";
     let cow = escape_xml_str(clean);
     assert!(matches!(cow, std::borrow::Cow::Borrowed(_)));
+}
+#[test]
+fn test_streaming_xml_layer_test_prov_split_and_shown() {
+    let interner = Interner::new();
+    let paths = ["lib/core.rs", "tests/t1.rs", "tests/t2.rs"];
+    let mut files = Vec::new();
+    for (i, p) in paths.iter().enumerate() {
+        files.push(FileInfo {
+            id: i as u32,
+            path: interner.intern(p),
+            lang: Lang::Rust,
+            line_count: 10 * (i as u32 + 1),
+            byte_size: 100 * (i as u64 + 1),
+        });
+    }
+
+    let mut syms = Vec::new();
+    for (i, (name, fid)) in [("root", 0), ("target", 2), ("target", 2), ("caller", 1)]
+        .iter()
+        .enumerate()
+    {
+        syms.push(Symbol::new(
+            i as u32,
+            interner.intern(name),
+            interner.intern(name),
+            SymKind::Function,
+            Lang::Rust,
+            *fid,
+            i as u32 * 10,
+        ));
+    }
+
+    let ref_call = Reference::new(
+        3,
+        interner.intern("target"),
+        1,
+        35,
+        Lang::Rust,
+        RefRole::Call,
+    );
+    let mut ingest = IngestResult::new();
+    ingest.files = files;
+    ingest.symbols = syms;
+    ingest.references.push(ref_call);
+
+    let graph = Graph::build(&ingest, &interner);
+    let pr = PageRankResult {
+        iterations: 5,
+        converged: true,
+        ranks: vec![0.25; 4],
+    };
+
+    let options = SerializeOptions {
+        root: ".".into(),
+        emit_legend: true,
+        ..Default::default()
+    };
+
+    let xml = serialize_xml_to_string(&ingest, &graph, &pr, &interner, &options);
+    validate_xml_well_formed(&xml);
+
+    assert!(xml.starts_with("<!-- ripwire map schema=ripwire.map/v1"));
+    assert!(xml.contains("<f p=\"tests/t1.rs\" layer=\"test\">"));
+    assert!(xml.contains("<f p=\"lib/core.rs\">"));
+    assert!(xml.contains("shown=\"4\""));
+    assert!(xml.contains("<c n=\"target\" prov=\"split\"/>"));
 }
 
 #[test]
