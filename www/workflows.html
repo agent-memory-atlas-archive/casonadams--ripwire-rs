@@ -63,6 +63,16 @@
   <!-- Workflows Content -->
   <main class="container" style="padding-top: 36px; padding-bottom: 72px;">
 
+    <!-- Quick-Jump Navigation -->
+    <div class="workflows-nav">
+      <a href="#orientation" class="wf-pill">🧭 1. Orientation &amp; Scoping</a>
+      <a href="#navigation" class="wf-pill">🔍 2. Navigation &amp; Blast Radius</a>
+      <a href="#safety-gates" class="wf-pill">🛡️ 3. Pre-Commit &amp; PR Gates</a>
+      <a href="#code-health" class="wf-pill">📈 4. Code Health &amp; Auditing</a>
+      <a href="#agent-context" class="wf-pill">🤖 5. Agent Context Delivery</a>
+      <a href="#ci-cd" class="wf-pill">⚙️ 6. CI / CD &amp; PR Gates</a>
+    </div>
+
     <!-- Workflow 1 -->
     <div class="cmd-card" id="orientation" style="margin-bottom: 32px;">
       <div class="cmd-header">
@@ -74,21 +84,56 @@
       <div class="cmd-body">
         <div class="cmd-field">
           <span class="cmd-label">When &amp; Where</span>
-          <p class="cmd-desc">First time inspecting an unfamiliar codebase, onboarding new engineers, or scoping a task for an AI coding agent without blowing prompt budgets.</p>
+          <ul class="cmd-scenario-list">
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>First time inspecting or onboarding into an unfamiliar codebase.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Starting a new issue or feature request.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Feeding high-level, budget-bounded context to an AI coding agent without blowing prompt token limits.</li>
+          </ul>
         </div>
-        <div class="code-wrap" style="margin: 16px 0;">
-          <code># Architecture map of top 200 ranked symbols by Personalized PageRank
-rw . --top-k=200
-
-# File-by-file structural inventory showing top 3 symbols per file
-rw . --tree
-
-# Task-lens relevance ranking: retrieves ranked declarations relevant to a goal
-rw . --for="implement user authentication"
-
-# Export interactive, self-contained SVG/HTML call graph to open in browser
-rw . --html=graph.html --color-by=community</code>
-          <button class="btn-copy" data-copy="rw . --top-k=200">Copy</button>
+        <div class="cmd-field">
+          <span class="cmd-label">Instructions &amp; Commands</span>
+          <div class="workflow-steps">
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">1</span>
+                <span>Architecture map of top 200 ranked symbols by Personalized PageRank</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --top-k=200</code>
+                <button class="btn-copy" data-copy="rw . --top-k=200">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">2</span>
+                <span>File-by-file structural inventory showing top 3 symbols per file</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --tree</code>
+                <button class="btn-copy" data-copy="rw . --tree">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">3</span>
+                <span>Task-lens relevance ranking: retrieves ranked declarations relevant to a goal</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --for="implement user authentication"</code>
+                <button class="btn-copy" data-copy="rw . --for=&quot;implement user authentication&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">4</span>
+                <span>Export interactive, self-contained SVG/HTML call graph to open in browser</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --html=graph.html --color-by=community</code>
+                <button class="btn-copy" data-copy="rw . --html=graph.html --color-by=community">Copy</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="cmd-field">
           <span class="cmd-label">Why &amp; Key Benefits</span>
@@ -112,27 +157,76 @@ rw . --html=graph.html --color-by=community</code>
       <div class="cmd-body">
         <div class="cmd-field">
           <span class="cmd-label">When &amp; Where</span>
-          <p class="cmd-desc">Before modifying a function signature, during incident investigation to trace caller paths, or when measuring the blast radius of modifying a core data model.</p>
+          <ul class="cmd-scenario-list">
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Before modifying a function signature or renaming a shared symbol.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>During incident investigation to trace caller paths and root causes.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Measuring the blast radius of modifying a core data model or interface.</li>
+          </ul>
         </div>
-        <div class="code-wrap" style="margin: 16px 0;">
-          <code># Query direct 1-hop callers that depend on a symbol
-rw . --callers="Interner::len"
-
-# Query outgoing dependencies called by a function
-rw . --callees="ingest_files"
-
-# Transitive reachability graph: full blast radius across the whole codebase
-rw . --impact="Interner"
-
-# Local ego-graph neighborhood (depth=1..3, fanout=32)
-rw . --around="execute_query" --around-depth=2 --around-fanout=16
-
-# Shortest directed call path between two functions
-rw . --path="parse,serialize"
-
-# ARISE intra-procedural def-use variable dataflow slicing (forward/backward)
-rw . --slice="compute:x" --slice-flow=both</code>
-          <button class="btn-copy" data-copy="rw . --callers=&quot;Interner::len&quot;">Copy</button>
+        <div class="cmd-field">
+          <span class="cmd-label">Instructions &amp; Commands</span>
+          <div class="workflow-steps">
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">1</span>
+                <span>Query direct 1-hop callers that depend on a symbol</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --callers="Interner::len"</code>
+                <button class="btn-copy" data-copy="rw . --callers=&quot;Interner::len&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">2</span>
+                <span>Query outgoing dependencies called by a function</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --callees="ingest_files"</code>
+                <button class="btn-copy" data-copy="rw . --callees=&quot;ingest_files&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">3</span>
+                <span>Transitive reachability graph: full blast radius across the whole codebase</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --impact="Interner"</code>
+                <button class="btn-copy" data-copy="rw . --impact=&quot;Interner&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">4</span>
+                <span>Local ego-graph neighborhood (depth=1..3, fanout=32)</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --around="execute_query" --around-depth=2 --around-fanout=16</code>
+                <button class="btn-copy" data-copy="rw . --around=&quot;execute_query&quot; --around-depth=2 --around-fanout=16">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">5</span>
+                <span>Shortest directed call path between two functions</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --path="parse,serialize"</code>
+                <button class="btn-copy" data-copy="rw . --path=&quot;parse,serialize&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">6</span>
+                <span>ARISE intra-procedural def-use variable dataflow slicing (forward/backward)</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --slice="compute:x" --slice-flow=both</code>
+                <button class="btn-copy" data-copy="rw . --slice=&quot;compute:x&quot; --slice-flow=both">Copy</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="cmd-field">
           <span class="cmd-label">Why &amp; Key Benefits</span>
@@ -156,27 +250,76 @@ rw . --slice="compute:x" --slice-flow=both</code>
       <div class="cmd-body">
         <div class="cmd-field">
           <span class="cmd-label">When &amp; Where</span>
-          <p class="cmd-desc">In local Git pre-commit hooks, pre-push scripts, or automated CI/CD pull request verification gates before merging code.</p>
+          <ul class="cmd-scenario-list">
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>In local Git pre-commit hooks (<code>.git/hooks/pre-commit</code>).</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Before running <code>git push</code> or opening a pull request.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>In automated CI/CD pull request verification gates before merging code.</li>
+          </ul>
         </div>
-        <div class="code-wrap" style="margin: 16px 0;">
-          <code># Verify caller compatibility after modifying a symbol contract
-rw . --edit-check="symbol_name"
-
-# Transitive reachability mapping to affected test suites
-rw . --affected="src/lib.rs"
-
-# Pre-PR gate: names tests to run and untested blast radius (exits with code 4)
-rw . --test-gate
-
-# Situational awareness report for working tree diff: blast radius, tests, co-change
-rw . --situ
-
-# Assess whether a symbol can be safely deleted without breaking callers
-rw . --safe-delete="Interner::len"
-
-# Measure code quality regressions against git HEAD across 10 facets
-rw . --quality-delta</code>
-          <button class="btn-copy" data-copy="rw . --test-gate">Copy</button>
+        <div class="cmd-field">
+          <span class="cmd-label">Instructions &amp; Commands</span>
+          <div class="workflow-steps">
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">1</span>
+                <span>Verify caller compatibility after modifying a symbol contract</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --edit-check="symbol_name"</code>
+                <button class="btn-copy" data-copy="rw . --edit-check=&quot;symbol_name&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">2</span>
+                <span>Transitive reachability mapping to affected test suites</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --affected="src/lib.rs"</code>
+                <button class="btn-copy" data-copy="rw . --affected=&quot;src/lib.rs&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">3</span>
+                <span>Pre-PR gate: names tests to run and untested blast radius (exits with code 4)</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --test-gate</code>
+                <button class="btn-copy" data-copy="rw . --test-gate">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">4</span>
+                <span>Situational awareness report for working tree diff: blast radius, tests, co-change</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --situ</code>
+                <button class="btn-copy" data-copy="rw . --situ">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">5</span>
+                <span>Assess whether a symbol can be safely deleted without breaking callers</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --safe-delete="Interner::len"</code>
+                <button class="btn-copy" data-copy="rw . --safe-delete=&quot;Interner::len&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">6</span>
+                <span>Measure code quality regressions against git HEAD across 10 facets</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --quality-delta</code>
+                <button class="btn-copy" data-copy="rw . --quality-delta">Copy</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="cmd-field">
           <span class="cmd-label">Why &amp; Key Benefits</span>
@@ -200,27 +343,76 @@ rw . --quality-delta</code>
       <div class="cmd-body">
         <div class="cmd-field">
           <span class="cmd-label">When &amp; Where</span>
-          <p class="cmd-desc">During sprint refactoring cycles, technical debt burn-downs, and architectural cleanup reviews.</p>
+          <ul class="cmd-scenario-list">
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>During sprint refactoring cycles and technical debt burn-downs.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Architectural reviews and modularity health checks.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Eliminating dead code, near-miss duplicates, and unreferenced packages.</li>
+          </ul>
         </div>
-        <div class="code-wrap" style="margin: 16px 0;">
-          <code># Detect internal functions with zero incoming callers across the repository
-rw . --dead-code
-
-# Rank repository files by maintenance risk (churn * cognitive complexity)
-rw . --hotspots
-
-# Detect AST code clones and near-miss duplicates (Type-1, Type-2, Type-3)
-rw . --clones --min-tokens=40
-
-# Mine historical Git co-change coupling to identify hidden file coupling
-rw . --cochange
-
-# Partition call graph into cohesive modules via Louvain community detection
-rw . --communities
-
-# Discover symbols referenced in code but never defined (stdlib & external packages)
-rw . --external-surface</code>
-          <button class="btn-copy" data-copy="rw . --dead-code">Copy</button>
+        <div class="cmd-field">
+          <span class="cmd-label">Instructions &amp; Commands</span>
+          <div class="workflow-steps">
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">1</span>
+                <span>Detect internal functions with zero incoming callers across the repository</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --dead-code</code>
+                <button class="btn-copy" data-copy="rw . --dead-code">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">2</span>
+                <span>Rank repository files by maintenance risk (churn * cognitive complexity)</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --hotspots</code>
+                <button class="btn-copy" data-copy="rw . --hotspots">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">3</span>
+                <span>Detect AST code clones and near-miss duplicates (Type-1, Type-2, Type-3)</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --clones --min-tokens=40</code>
+                <button class="btn-copy" data-copy="rw . --clones --min-tokens=40">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">4</span>
+                <span>Mine historical Git co-change coupling to identify hidden file coupling</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --cochange</code>
+                <button class="btn-copy" data-copy="rw . --cochange">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">5</span>
+                <span>Partition call graph into cohesive modules via Louvain community detection</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --communities</code>
+                <button class="btn-copy" data-copy="rw . --communities">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">6</span>
+                <span>Discover symbols referenced in code but never defined (stdlib &amp; external packages)</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --external-surface</code>
+                <button class="btn-copy" data-copy="rw . --external-surface">Copy</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="cmd-field">
           <span class="cmd-label">Why &amp; Key Benefits</span>
@@ -244,74 +436,202 @@ rw . --external-surface</code>
       <div class="cmd-body">
         <div class="cmd-field">
           <span class="cmd-label">When &amp; Where</span>
-          <p class="cmd-desc">Extracting exact function implementations for LLM prompts, debugging compiler error messages, or multi-query agent pipelines.</p>
+          <ul class="cmd-scenario-list">
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Extracting exact function implementations for LLM prompts without token bloat.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Debugging compiler error messages and stack traces against source definitions.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Multi-query agent pipelines and native Model Context Protocol (MCP) tooling.</li>
+          </ul>
         </div>
-        <div class="code-wrap" style="margin: 16px 0;">
-          <code># Expand full source body of symbols and callee signatures in CDATA XML
-rw . --expand="Symbol::new"
-
-# Outline control-flow skeletons of symbols (loops, branches, declarations)
-rw . --outline="Interner::intern"
-
-# Pack source bodies of the top N highest PageRank symbols
-rw . --pack-top-n=5
-
-# Map compiler error / stack trace frames directly onto indexed symbols
-rw . --from-trace=error.log
-
-# Execute up to 16 heterogeneous sub-queries in a single turn
-rw . --batch=queries.txt
-
-# Structured JSON output for navigation queries
-rw . --callers="Interner::len" --json
-
-# Launch native stdio Model Context Protocol (MCP) server for coding agents
-rw mcp
-
-# Install 18 pre-packaged ripwire agent skills to ~/.agents/skills (or custom path)
-rw --add-skills</code>
-          <button class="btn-copy" data-copy="rw --add-skills">Copy</button>
+        <div class="cmd-field">
+          <span class="cmd-label">Instructions &amp; Commands</span>
+          <div class="workflow-steps">
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">1</span>
+                <span>Expand full source body of symbols and callee signatures in CDATA XML</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --expand="Symbol::new"</code>
+                <button class="btn-copy" data-copy="rw . --expand=&quot;Symbol::new&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">2</span>
+                <span>Outline control-flow skeletons of symbols (loops, branches, declarations)</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --outline="Interner::intern"</code>
+                <button class="btn-copy" data-copy="rw . --outline=&quot;Interner::intern&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">3</span>
+                <span>Pack source bodies of the top N highest PageRank symbols</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --pack-top-n=5</code>
+                <button class="btn-copy" data-copy="rw . --pack-top-n=5">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">4</span>
+                <span>Map compiler error / stack trace frames directly onto indexed symbols</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --from-trace=error.log</code>
+                <button class="btn-copy" data-copy="rw . --from-trace=error.log">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">5</span>
+                <span>Execute up to 16 heterogeneous sub-queries in a single turn</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --batch=queries.txt</code>
+                <button class="btn-copy" data-copy="rw . --batch=queries.txt">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">6</span>
+                <span>Structured JSON output for navigation queries</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --callers="Interner::len" --json</code>
+                <button class="btn-copy" data-copy="rw . --callers=&quot;Interner::len&quot; --json">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">7</span>
+                <span>Launch native stdio Model Context Protocol (MCP) server for coding agents</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw mcp</code>
+                <button class="btn-copy" data-copy="rw mcp">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">8</span>
+                <span>Install 18 pre-packaged ripwire agent skills to ~/.agents/skills (or custom path)</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw --add-skills</code>
+                <button class="btn-copy" data-copy="rw --add-skills">Copy</button>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="cmd-field">
           <span class="cmd-label">Why &amp; Key Benefits</span>
           <ul style="padding-left: 20px; color: var(--text-secondary); font-size: 0.95rem; margin-top: 6px;">
             <li><strong>Precision Context Bundles:</strong> Extracts only relevant symbol bodies into CDATA blocks, conserving prompt token budgets.</li>
-            <li><strong>Batching Economy:</strong> <code>--batch</code> executes up to 16 queries in a single turn, eliminating agent tool-call round-trip latency.</li>
+            <li><strong>Batching Economy:</strong> <code>rw . --batch</code> executes up to 16 queries in a single turn, eliminating agent tool-call round-trip latency.</li>
             <li><strong>Native Agent Protocol:</strong> 33 built-in MCP tools accessible over stdio for Claude Desktop, Cursor, and Omp.</li>
-            <li><strong>Instant Agent Skills:</strong> <code>--add-skills</code> provisions 18 standardized skills and active manifest into <code>~/.agents/skills</code> for zero-configuration onboarding.</li>
+            <li><strong>Instant Agent Skills:</strong> <code>rw --add-skills</code> provisions 18 standardized skills and active manifest into <code>~/.agents/skills</code> for zero-configuration onboarding.</li>
           </ul>
+        </div>
       </div>
     </div>
+
     <!-- Workflow 6 -->
     <div class="cmd-card" id="ci-cd" style="margin-bottom: 32px;">
       <div class="cmd-header">
         <div class="cmd-title">
-          <span style="margin-right: 8px;">⚙️</span> 6. Continuous Integration (CI) &amp; Automated PR Gates
+          <span style="margin-right: 8px;">⚙️</span> 6. Continuous Integration (CI) Workflows &amp; Automated PR Gates
         </div>
         <span class="cmd-badge">CI / CD</span>
       </div>
       <div class="cmd-body">
         <div class="cmd-field">
           <span class="cmd-label">When &amp; Where</span>
-          <p class="cmd-desc">In automated GitHub Actions, GitLab CI, or Jenkins pipelines running on every pull request and merge to trunk.</p>
+          <ul class="cmd-scenario-list">
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Automated GitHub Actions (<code>.github/workflows/</code>), GitLab CI, or Jenkins pipelines.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Enforcing pull request quality standards and preventing regressions before merge.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Validating 1:1 behavioral parity against upstream specifications.</li>
+          </ul>
         </div>
-        <div class="code-wrap" style="margin: 16px 0;">
-          <code># PR Gate: names tests to run and untested blast radius (exits 4 on violation)
-rw . --test-gate
+        <div class="cmd-field">
+          <span class="cmd-label">Instructions &amp; Commands</span>
+          <div class="workflow-steps">
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">1</span>
+                <span>PR Gate: names tests to run and untested blast radius (exits 4 on violation)</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --test-gate</code>
+                <button class="btn-copy" data-copy="rw . --test-gate">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">2</span>
+                <span>Quality Regression Gate: checks quality regressions against base branch / HEAD</span>
+              </div>
+              <div class="code-wrap">
+                <code>rw . --quality-delta</code>
+                <button class="btn-copy" data-copy="rw . --quality-delta">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">3</span>
+                <span>Upstream Parity Validation: verifies 1:1 input/output equivalence across 20 commands</span>
+              </div>
+              <div class="code-wrap">
+                <code>make validate REPO=.</code>
+                <button class="btn-copy" data-copy="make validate REPO=.">Copy</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cmd-field">
+          <span class="cmd-label">CI Pipeline Recipe · GitHub Actions Example</span>
+          <div class="workflow-recipe">
+            <div class="recipe-header">
+              <div class="recipe-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                <span>.github/workflows/ripwire-gate.yml</span>
+              </div>
+              <button class="btn-copy" data-copy-target="ghActionsYaml">Copy YAML</button>
+            </div>
+            <pre class="recipe-code"><code id="ghActionsYaml">name: Ripwire PR Safety Gates
+on:
+  pull_request:
+    branches: [main, master]
 
-# Quality Regression Gate: checks quality regressions against base branch / HEAD
-rw . --quality-delta
+jobs:
+  ripwire-gate:
+    name: Ripwire PR Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full git history for diff and quality delta comparison
 
-# Upstream Parity Validation: verifies 1:1 input/output equivalence across 20 commands
-make validate REPO=.</code>
-          <button class="btn-copy" data-copy="rw . --test-gate">Copy</button>
+      - name: Install ripwire CLI (rw)
+        run: cargo install ripwire
+
+      - name: Run Test Reachability Gate
+        run: rw . --test-gate
+
+      - name: Run Quality Regression Delta Gate
+        run: rw . --quality-delta</code></pre>
+          </div>
         </div>
         <div class="cmd-field">
           <span class="cmd-label">Why &amp; Key Benefits</span>
           <ul style="padding-left: 20px; color: var(--text-secondary); font-size: 0.95rem; margin-top: 6px;">
-            <li><strong>Automated Merge Blocking:</strong> Fails PR jobs automatically (exit code 4 on <code>--test-gate</code> or non-zero on <code>--quality-delta</code>) before untested code or architectural rot merges.</li>
+            <li><strong>Automated Merge Blocking:</strong> Fails PR jobs automatically (exit code 4 on <code>rw . --test-gate</code> or non-zero on <code>rw . --quality-delta</code>) before untested code or architectural rot merges.</li>
             <li><strong>Sub-50ms Execution:</strong> Fast in-memory static analysis executes in milliseconds, eliminating slow CI runner bottlenecks.</li>
             <li><strong>Upstream Parity Enforcement:</strong> <code>make validate</code> runs continuous 20-command verification matrices against upstream specifications.</li>
+            <li><strong>Zero Configuration:</strong> Reads native git repository history, remotes, and branch merge bases automatically.</li>
           </ul>
         </div>
       </div>
@@ -339,8 +659,10 @@ make validate REPO=.</code>
     // Copy to clipboard
     document.querySelectorAll('.btn-copy').forEach(btn => {
       btn.addEventListener('click', async () => {
-        const text = btn.dataset.copy;
-        try {
+        const text = btn.dataset.copyTarget
+          ? document.getElementById(btn.dataset.copyTarget)?.textContent
+          : btn.dataset.copy;
+        if (!text) return;
           await navigator.clipboard.writeText(text);
           const orig = btn.textContent;
           btn.textContent = 'Copied!';
