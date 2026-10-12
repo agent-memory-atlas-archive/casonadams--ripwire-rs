@@ -274,6 +274,19 @@ pub fn execute_safety_dispatch<W: Write>(
         execute_safe_delete_query(root, sym, ingest, graph, interner, out)?;
     } else if let Some(testfile) = s.exercises.as_deref() {
         execute_exercises_query(root, testfile, ingest, graph, interner, out)?;
+    } else if s.seams {
+        let rep = crate::gate::seams::find_integration_seams(ingest, graph, interner);
+        crate::gate::seams::serialize_seams_xml(root, &rep, out)?;
+    } else if let Some(ref_opt) = &s.pr_context {
+        let base_ref = ref_opt.as_deref().unwrap_or("HEAD~1");
+        let changed = get_working_tree_changed_files(root);
+        let rep = crate::gate::pr_context::compute_pr_context(
+            &changed, ingest, graph, interner, base_ref,
+        );
+        crate::gate::pr_context::serialize_pr_context_xml(&rep, out)?;
+    } else if let Some(branches) = s.merge_scout.as_deref() {
+        let rep = crate::gate::merge_scout::evaluate_merge_scout(branches, ingest, interner);
+        crate::gate::merge_scout::serialize_merge_scout_xml(&rep, out)?;
     }
     Ok(None)
 }

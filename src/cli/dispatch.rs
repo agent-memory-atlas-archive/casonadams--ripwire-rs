@@ -247,11 +247,16 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
 pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let s = &cli.safety;
-    if s.test_gate.is_none() && s.situ.is_none() && s.safe_delete.is_none() && s.exercises.is_none()
+    if s.test_gate.is_none()
+        && s.situ.is_none()
+        && s.safe_delete.is_none()
+        && s.exercises.is_none()
+        && !s.seams
+        && s.pr_context.is_none()
+        && s.merge_scout.is_none()
     {
         return None;
     }
-
     Some((|| {
         let (ingest, graph, _pr, interner) = load_repo_analysis(root)?;
         let mut stdout = io::stdout().lock();
@@ -326,6 +331,7 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
         pack_budget: budget,
         top_k: cli.top_k,
         emit_legend,
+        map_diff: cli.safety.map_diff,
     };
     execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)
 }

@@ -466,6 +466,7 @@ fn test_top_safety_queries() {
         situ: si,
         safe_delete: sd,
         exercises: ex,
+        ..Default::default()
     };
     assert!(
         execute_safety_dispatch(
@@ -496,10 +497,28 @@ fn test_top_safety_queries() {
             &ingest,
             &graph,
             &interner,
-            &mut out
+            &mut out,
         )
         .is_ok()
     );
+
+    let seams_arg = TopSafetyArgs {
+        seams: true,
+        ..Default::default()
+    };
+    assert!(execute_safety_dispatch(&seams_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
+
+    let pr_arg = TopSafetyArgs {
+        pr_context: Some(Some("HEAD~1".into())),
+        ..Default::default()
+    };
+    assert!(execute_safety_dispatch(&pr_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
+
+    let merge_arg = TopSafetyArgs {
+        merge_scout: Some("main,feat".into()),
+        ..Default::default()
+    };
+    assert!(execute_safety_dispatch(&merge_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
     assert!(
         execute_safety_dispatch(
             &s(None, None, None, Some("tests".into())),

@@ -158,6 +158,18 @@ pub struct TopSafetyArgs {
     /// Show what a test file actually covers: non-test symbols it reaches
     #[arg(long, value_name = "TESTFILE")]
     pub exercises: Option<String>,
+    /// Re-rank map toward git-changed files so recent work floats up
+    #[arg(long = "map-diff")]
+    pub map_diff: bool,
+    /// Cross-directory call edges lacking test coverage
+    #[arg(long = "seams")]
+    pub seams: bool,
+    /// Review bundle per changed file vs base: symbols, callers, blast radius, tests
+    #[arg(long = "pr-context", value_name = "REF")]
+    pub pr_context: Option<Option<String>>,
+    /// Cross-branch symbol conflict predictions across concurrent branch refs
+    #[arg(long = "merge-scout", value_name = "REF1,REF2,...")]
+    pub merge_scout: Option<String>,
 }
 
 /// Top-level architecture and discovery flags.
