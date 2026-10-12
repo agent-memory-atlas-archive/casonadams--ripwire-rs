@@ -72,8 +72,20 @@ rw . --exercises="tests/test_cli_and_mcp.rs"
 # Snapshot code quality baseline at current commit
 rw . --quality-baseline
 
-# Check for quality regressions against baseline or git HEAD
+# Check for quality regressions against baseline or git HEAD (exits 2 on failure)
 rw . --quality-delta
+
+# Re-rank map toward git-changed files so recent work floats up
+rw . --map-diff --top-k=30
+
+# Untested cross-module call boundaries (integration seams)
+rw . --seams
+
+# Composite PR review context bundle vs base ref
+rw . --pr-context=main
+
+# Predict symbol merge conflicts across concurrent branches
+rw . --merge-scout="branch-a,branch-b"
 ```
 * **Benefits:** Catches breaking signature changes, eliminates test suite bloat by running only affected tests, and stops architectural decay before merging.
 
@@ -106,6 +118,27 @@ rw . --cochange
 # Compute maintenance hotspots (churn * cognitive complexity)
 rw . --hotspots
 
+# Enforce architectural layering rules from text file (exits 2 on violation)
+rw . --arch=rules.txt
+
+# Export Mermaid flowchart of module call dependencies
+rw . --mermaid
+
+# Hierarchical Louvain community clustering
+rw . --zoom
+
+# Rank functions by readability volume and size, largest first
+rw . --biggest-first
+
+# Detect functions accessing reachable global / file-static mutable state
+rw . --nonlocal-state
+
+# Scan codebase for AST code smells (complexity spikes, deep nesting, dead functions)
+rw . --lint
+
+# Print built-in AST code smell catalog
+rw . --lint-catalog
+
 # Compute ARISE variable def-use dataflow slice (forward/backward)
 rw . --slice="compute:x" --slice-flow=fwd
 ```
@@ -133,6 +166,25 @@ rw . --callers="Interner::len" --json
 
 # Execute up to 16 heterogeneous sub-queries in a single turn
 rw . --batch=queries.txt
+
+# Resolve innermost symbol chain enclosing FILE:LINE
+rw . --at="src/main.rs:25"
+
+# Formally verify relationship claim (calls, uses, defines, contains)
+rw . --verify="calls(main,run_cli)"
+
+# Single-call orientation task bundle under budget
+rw . --pack-task="search"
+
+# Functional graph query DSL
+rw . --graph-query="callers(main)"
+
+# Self-check diagnostics
+rw . --doctor
+
+# Pinned session gotchas and notes
+rw . --notes
+rw . --note-add="symbol: gotcha note"
 
 # Install 18 pre-packaged ripwire agent skills to ~/.agents/skills (or custom path)
 rw --add-skills

@@ -352,7 +352,9 @@ fn symbol_matches_and_changed(
     state: &McpState,
     baseline: &QualitySnapshot,
 ) -> Option<(String, String)> {
-    let sym_file = state.interner.resolve(&state.ingest.files[sym.file_id as usize].path);
+    let sym_file = state
+        .interner
+        .resolve(&state.ingest.files[sym.file_id as usize].path);
     if sym_file != file_path && !sym_file.ends_with(file_path) {
         return None;
     }
@@ -377,7 +379,8 @@ fn find_preexisting_callable_in_file<'a>(
     baseline: &QualitySnapshot,
 ) -> Option<(&'a crate::domain::Symbol, String, String)> {
     for sym in &state.ingest.symbols {
-        if (sym.kind == crate::domain::SymKind::Function || sym.kind == crate::domain::SymKind::Method)
+        if (sym.kind == crate::domain::SymKind::Function
+            || sym.kind == crate::domain::SymKind::Method)
             && let Some((sym_name, sym_file)) =
                 symbol_matches_and_changed(sym, file_path, state, baseline)
         {

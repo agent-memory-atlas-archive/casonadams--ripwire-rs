@@ -360,7 +360,10 @@ pub fn resolve_symbol_at<'a>(
     let mut candidate = None;
     for sym in &ingest.symbols {
         let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
-        if (p == file_spec || p.ends_with(file_spec)) && sym.line <= line_num && (sym.line + sym.loc) >= line_num {
+        if (p == file_spec || p.ends_with(file_spec))
+            && sym.line <= line_num
+            && (sym.line + sym.loc) >= line_num
+        {
             candidate = Some(sym);
         }
     }
@@ -374,12 +377,39 @@ pub fn serialize_at_xml<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    if let Some(sym) = resolve_symbol_at(file_spec, line_num, ingest, interner) {
-        let name = interner.resolve(&sym.name);
-        writeln!(out, "<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"{name}\"/>")
-    } else {
-        writeln!(out, "<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"\"/>")
+    let exact_match = ingest
+        .files
+        .iter()
+        .any(|f| interner.resolve(&f.path) == file_spec);
+    let suffix_matches: Vec<_> = ingest
+        .files
+        .iter()
+        .filter(|f| {
+            let p = interner.resolve(&f.path);
+            p == file_spec || p.ends_with(file_spec)
+        })
+        .collect();
+
+    if suffix_matches.is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire: the at flag's seed '{file_spec}:{line_num}' named no location"
+        )));
     }
+    if suffix_matches.len() > 1 && !exact_match {
+        return Err(io::Error::other(format!(
+            "ripwire: the at flag's seed '{file_spec}:{line_num}' named no location (ambiguous)"
+        )));
+    }
+    let Some(sym) = resolve_symbol_at(file_spec, line_num, ingest, interner) else {
+        return Err(io::Error::other(format!(
+            "ripwire: the at flag's seed '{file_spec}:{line_num}' named no location (no indexed symbol spans line {line_num})"
+        )));
+    };
+    let name = interner.resolve(&sym.name);
+    writeln!(
+        out,
+        "<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"{name}\"/>"
+    )
 }
 
 fn check_call_relationship(
@@ -419,7 +449,10 @@ pub fn evaluate_verify_claim<W: Write>(
             if check_call_relationship(caller_name, callee_name, ingest, graph, interner) {
                 ("confirmed", format!("{caller_name} -> {callee_name}"))
             } else {
-                ("refuted", format!("no call found between {caller_name} and {callee_name}"))
+                (
+                    "refuted",
+                    format!("no call found between {caller_name} and {callee_name}"),
+                )
             }
         } else {
             ("not-established", "invalid calls() arity".to_string())
@@ -428,7 +461,10 @@ pub fn evaluate_verify_claim<W: Write>(
         ("confirmed", claim.to_string())
     };
 
-    writeln!(out, "<verify schema=\"ripwire.verify/v1\" claim=\"{claim}\" verdict=\"{verdict}\" witness=\"{witness}\"/>")
+    writeln!(
+        out,
+        "<verify schema=\"ripwire.verify/v1\" claim=\"{claim}\" verdict=\"{verdict}\" witness=\"{witness}\"/>"
+    )
 }
 
 pub fn execute_pack_task<W: Write>(
@@ -438,9 +474,12 @@ pub fn execute_pack_task<W: Write>(
     _interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    writeln!(out, "<pack-task schema=\"ripwire.pack-task/v1\" task=\"{task}\" root=\"{root}\">")?;
+    writeln!(
+        out,
+        "<ctx schema=\"ripwire.pack-task/v1\" task=\"{task}\" root=\"{root}\">"
+    )?;
     writeln!(out, "  <task-bundle name=\"{task}\"/>")?;
-    writeln!(out, "</pack-task>")
+    writeln!(out, "</ctx>")
 }
 
 pub fn execute_graph_query_expr<W: Write>(
@@ -450,7 +489,10 @@ pub fn execute_graph_query_expr<W: Write>(
     _interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    writeln!(out, "<graph-query schema=\"ripwire.graph-query/v1\" expr=\"{expr}\" root=\"{root}\" count=\"0\">")?;
+    writeln!(
+        out,
+        "<graph-query schema=\"ripwire.graph-query/v1\" expr=\"{expr}\" root=\"{root}\" count=\"0\">"
+    )?;
     writeln!(out, "</graph-query>")
 }
 #[cfg(test)]

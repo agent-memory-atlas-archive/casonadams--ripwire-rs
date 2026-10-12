@@ -78,7 +78,7 @@ pub fn serialize_nonlocal_state_xml<W: Write>(
 ) -> io::Result<()> {
     writeln!(
         out,
-        "<nonlocal-state schema=\"ripwire.nonlocal-state/v1\" root=\"{root}\" functions=\"{}\">",
+        "<nonlocal_state schema=\"ripwire.nonlocal-state/v1\" root=\"{root}\" functions=\"{}\">",
         funcs.len()
     )?;
     for f in funcs {
@@ -97,5 +97,5 @@ pub fn serialize_nonlocal_state_xml<W: Write>(
         }
         writeln!(out, "  </fn>")?;
     }
-    writeln!(out, "</nonlocal-state>")
+    writeln!(out, "</nonlocal_state>")
 }

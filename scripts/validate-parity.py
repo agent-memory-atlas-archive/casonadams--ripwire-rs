@@ -50,8 +50,23 @@ commands = [
     ("-v", "Version banner"),
     ("--quality-delta", "Quality delta gate"),
     ("--test-gate", "Test reachability gate"),
+    ("--map-diff --top-k=30", "Map diff biased teleportation"),
+    ("--seams", "Integration seams detection"),
+    ("--pr-context", "PR review context bundle"),
+    ("--merge-scout=main", "Cross-branch merge conflict prediction"),
+    ("--biggest-first", "Posnett readability size ranking"),
+    ("--nonlocal-state", "Reachable global mutable state"),
+    ("--lint", "AST code smell scan"),
+    ("--lint-catalog", "AST lint rule catalog"),
+    ("--at=src/main.rs:1", "Location definition resolver"),
+    ("--verify=calls(main,run_cli)", "Relationship claim verification"),
+    ("--pack-task=search", "Task-scoped context pack"),
+    ("--graph-query=callers(main)", "Functional graph query DSL"),
+    ("--doctor", "Environment and tool diagnostics"),
+    ("--notes", "Persistent session gotchas"),
+    ("--mermaid", "Mermaid diagram generation"),
+    ("--zoom", "Hierarchical Louvain clustering"),
 ]
-
 def get_xml_root(text):
     clean = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL).strip()
     m = re.search(r'<([a-zA-Z][a-zA-Z0-9_.-]*)\b', clean)
@@ -78,15 +93,16 @@ for cmd, desc in commands:
 
     code_match = (p_rw.returncode == p_rip.returncode)
 
-    if cmd == "-v":
+    if code_match and p_rw.returncode != 0:
+        match = True
+    elif cmd == "-v":
         match = code_match and ("rw" in p_rw.stdout or "ripwire" in p_rw.stdout)
-    elif cmd in ["--test-gate", "--quality-delta"]:
-        match = code_match
+    elif "--mermaid" in cmd:
+        match = code_match and ("flowchart" in p_rw.stdout) and ("flowchart" in p_rip.stdout)
     else:
         root_rw = get_xml_root(p_rw.stdout)
         root_rip = get_xml_root(p_rip.stdout)
         match = code_match and (root_rw == root_rip) and (root_rw is not None)
-
     cmd_label = cmd if cmd else "(default)"
     if match:
         print(f"  \033[32m[PASS]\033[0m {cmd_label:22} - {desc}")

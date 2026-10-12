@@ -330,7 +330,9 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         } else if a.mermaid {
             crate::graph::generate_mermaid_diagram(&ingest, &graph, &interner, &mut stdout)?;
         } else if a.zoom.is_some() {
+            writeln!(stdout, "<zoom schema=\"ripwire.zoom/v1\" root=\"{root}\">")?;
             execute_communities_query(root, None, &ingest, &graph, &interner, &mut stdout)?;
+            writeln!(stdout, "</zoom>")?;
         } else if a.dead_code {
             execute_dead_code_query(root, &ingest, &graph, &interner, &mut stdout)?;
         } else if a.communities || a.community.is_some() {

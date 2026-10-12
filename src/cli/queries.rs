@@ -162,12 +162,12 @@ fn execute_doc_search_query<W: Write>(
     }
 }
 
-fn execute_session_tools_query<W: Write>(
-    ws: &TopWorkspaceArgs,
-    out: &mut W,
-) -> io::Result<bool> {
+fn execute_session_tools_query<W: Write>(ws: &TopWorkspaceArgs, out: &mut W) -> io::Result<bool> {
     if ws.doctor {
-        writeln!(out, "<doctor schema=\"ripwire.doctor/v1\" git=\"ok\" skills=\"18\" parsers=\"35\"/>")?;
+        writeln!(
+            out,
+            "<doctor schema=\"ripwire.doctor/v1\" git=\"ok\" skills=\"18\" parsers=\"35\"/>"
+        )?;
         Ok(true)
     } else if ws.handoff {
         writeln!(out, "<handoff schema=\"ripwire.handoff/v1\" status=\"ok\">")?;
@@ -176,14 +176,21 @@ fn execute_session_tools_query<W: Write>(
     } else if ws.notes {
         let notes_path = Path::new(".").join(".ripwire_notes");
         let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
-        writeln!(out, "<notes schema=\"ripwire.notes/v1\" count=\"{}\">", content.lines().count())?;
+        writeln!(
+            out,
+            "<ctx schema=\"ripwire.notes/v1\" count=\"{}\" root=\".\">",
+            content.lines().count()
+        )?;
         for line in content.lines() {
             writeln!(out, "  <note text=\"{}\"/>", line.replace('"', "&quot;"))?;
         }
-        writeln!(out, "</notes>")?;
+        writeln!(out, "</ctx>")?;
         Ok(true)
     } else if let Some(note) = ws.note_add.as_deref() {
-        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(".ripwire_notes")?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(".ripwire_notes")?;
         writeln!(file, "{note}")?;
         writeln!(out, "pinned note: {note}")?;
         Ok(true)
@@ -200,17 +207,38 @@ fn execute_symbol_mutation_query<W: Write>(
 ) -> io::Result<bool> {
     if let Some(spec) = ws.replace_symbol_body.as_deref() {
         let (sym, body) = spec.split_once(':').unwrap_or((spec, ""));
-        let res = crate::mcp::edit::perform_atomic_edit(ingest, interner, crate::mcp::edit::EditOp::ReplaceBody, sym, None, body);
+        let res = crate::mcp::edit::perform_atomic_edit(
+            ingest,
+            interner,
+            crate::mcp::edit::EditOp::ReplaceBody,
+            sym,
+            None,
+            body,
+        );
         writeln!(out, "{res}")?;
         Ok(true)
     } else if let Some(spec) = ws.insert_before_symbol.as_deref() {
         let (sym, text) = spec.split_once(':').unwrap_or((spec, ""));
-        let res = crate::mcp::edit::perform_atomic_edit(ingest, interner, crate::mcp::edit::EditOp::InsertBefore, sym, None, text);
+        let res = crate::mcp::edit::perform_atomic_edit(
+            ingest,
+            interner,
+            crate::mcp::edit::EditOp::InsertBefore,
+            sym,
+            None,
+            text,
+        );
         writeln!(out, "{res}")?;
         Ok(true)
     } else if let Some(spec) = ws.insert_after_symbol.as_deref() {
         let (sym, text) = spec.split_once(':').unwrap_or((spec, ""));
-        let res = crate::mcp::edit::perform_atomic_edit(ingest, interner, crate::mcp::edit::EditOp::InsertAfter, sym, None, text);
+        let res = crate::mcp::edit::perform_atomic_edit(
+            ingest,
+            interner,
+            crate::mcp::edit::EditOp::InsertAfter,
+            sym,
+            None,
+            text,
+        );
         writeln!(out, "{res}")?;
         Ok(true)
     } else {

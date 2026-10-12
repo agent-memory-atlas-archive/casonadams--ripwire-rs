@@ -116,7 +116,7 @@ pub fn run_lint_scan(
 
 /// Serialize lint catalog to canonical format.
 pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
-    writeln!(out, "<lint-catalog rules=\"{}\">", LINT_RULES.len())?;
+    writeln!(out, "<lintcatalog rules=\"{}\">", LINT_RULES.len())?;
     for r in LINT_RULES {
         writeln!(
             out,
@@ -124,7 +124,7 @@ pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
             r.name, r.severity, r.category, r.description
         )?;
     }
-    writeln!(out, "</lint-catalog>")
+    writeln!(out, "</lintcatalog>")
 }
 
 /// Serialize lint scan findings to canonical XML format.

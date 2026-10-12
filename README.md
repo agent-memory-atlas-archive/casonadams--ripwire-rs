@@ -38,7 +38,7 @@ rw mcp
 - **Multi-Language AST Analysis**: 35 languages indexed via Tree-Sitter (Rust, TypeScript, JavaScript, Python, Go, C, C++, CUDA, Metal, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS, SQL, Protobuf, GraphQL, Dockerfile).
 - **Personalized PageRank & HITS**: Transitive blast radius and structural authority calculations converging in milliseconds over lock-free sparse matrices.
 - **Pre-Commit Verification Gates**: Parameter arity contract verification (`--edit-check`), surgical test reachability mapping (`--affected`), and code quality regressions vs git HEAD (`--quality-delta`, `--test-gate`).
-- **Git Churn & Coupling Analytics**: Fowler's Shotgun Surgery co-change mining and maintenance hotspot ranking (code churn * cognitive complexity).
+- **Git Churn & Coupling Analytics**: Fowler's Shotgun Surgery co-change mining and maintenance hotspot ranking (code churn &times; cognitive complexity).
 - **Intra-Procedural Dataflow Slicing**: ARISE forward and backward variable def-use slicing.
 - **Model Context Protocol (MCP)**: Native stdio JSON-RPC server exposing 33 context routing and navigation tools directly to AI coding agents.
 
@@ -77,7 +77,7 @@ cd ripwire
 make install
 ```
 
-*Builds release binary and automatically installs manual pages (`man rw`, `man ripwire`).*
+Builds release binary and automatically installs manual pages (`man rw`, `man ripwire`).
 
 ---
 

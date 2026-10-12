@@ -147,7 +147,9 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
 ) -> std::io::Result<()> {
     let mut functions: Vec<(&crate::domain::Symbol, String, String)> = Vec::new();
     for sym in &ingest.symbols {
-        if sym.kind == crate::domain::SymKind::Function || sym.kind == crate::domain::SymKind::Method {
+        if sym.kind == crate::domain::SymKind::Function
+            || sym.kind == crate::domain::SymKind::Method
+        {
             let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
             let n = interner.resolve(&sym.name);
             functions.push((sym, p.to_string(), n.to_string()));
