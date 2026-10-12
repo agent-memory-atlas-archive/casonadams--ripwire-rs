@@ -226,12 +226,16 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         && detail.outline.is_none()
         && detail.pack_top_n.is_none()
         && !detail.tree
+        && !detail.biggest_first
+        && !detail.nonlocal_state
+        && !detail.lint
+        && !detail.lint_catalog
     {
         return None;
     }
 
     Some((|| {
-        let (ingest, _graph, pr, interner) = load_repo_analysis(root)?;
+        let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
         let mut stdout = io::stdout().lock();
 
         if let Some(syms) = detail.expand.as_deref().or(detail.outline.as_deref()) {
@@ -240,6 +244,16 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             execute_pack_top_n_query(root, n, &ingest, &pr, &interner, &mut stdout)?;
         } else if detail.tree {
             execute_tree_query(root, &ingest, &pr, &interner, &mut stdout)?;
+        } else if detail.biggest_first {
+            crate::metrics::readability::execute_biggest_first_query(root, &ingest, &interner, &mut stdout)?;
+        } else if detail.nonlocal_state {
+            let funcs = crate::metrics::nonlocal::find_nonlocal_state(&ingest, &graph, &interner);
+            crate::metrics::nonlocal::serialize_nonlocal_state_xml(root, &funcs, &mut stdout)?;
+        } else if detail.lint {
+            let findings = crate::metrics::lint::run_lint_scan(&ingest, &graph, &interner);
+            crate::metrics::lint::serialize_lint_xml(root, &findings, &mut stdout)?;
+        } else if detail.lint_catalog {
+            crate::metrics::lint::serialize_lint_catalog(&mut stdout)?;
         }
         Ok(())
     })())

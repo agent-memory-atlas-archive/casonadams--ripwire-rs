@@ -141,6 +141,18 @@ pub struct TopDetailArgs {
     /// Orient file by file showing each file's top symbols
     #[arg(long)]
     pub tree: bool,
+    /// Rank functions by readability volume and size, largest first
+    #[arg(long = "biggest-first")]
+    pub biggest_first: bool,
+    /// Reachable nonlocal mutable state read or written per function
+    #[arg(long = "nonlocal-state")]
+    pub nonlocal_state: bool,
+    /// Scan codebase for AST code smells across all symbols
+    #[arg(long = "lint")]
+    pub lint: bool,
+    /// Print built-in AST code smell catalog
+    #[arg(long = "lint-catalog")]
+    pub lint_catalog: bool,
 }
 
 /// Top-level pre-PR safety and verification flags.

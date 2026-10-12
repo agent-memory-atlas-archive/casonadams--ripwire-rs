@@ -138,6 +138,39 @@ pub fn compute_readability(code: &str) -> ReadabilityMetrics {
     }
 }
 
+/// Output biggest functions first based on volume and lines.
+pub fn execute_biggest_first_query<W: std::io::Write>(
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    interner: &crate::domain::Interner,
+    out: &mut W,
+) -> std::io::Result<()> {
+    let mut functions: Vec<(&crate::domain::Symbol, String, String)> = Vec::new();
+    for sym in &ingest.symbols {
+        if sym.kind == crate::domain::SymKind::Function || sym.kind == crate::domain::SymKind::Method {
+            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+            let n = interner.resolve(&sym.name);
+            functions.push((sym, p.to_string(), n.to_string()));
+        }
+    }
+
+    functions.sort_by(|a, b| b.0.loc.cmp(&a.0.loc).then_with(|| b.0.ccx.cmp(&a.0.ccx)));
+
+    writeln!(
+        out,
+        "<readability schema=\"ripwire.readability/v1\" root=\"{root}\" functions=\"{}\">",
+        functions.len()
+    )?;
+    for (sym, p, n) in functions.iter().take(40) {
+        writeln!(
+            out,
+            "  <fn p=\"{p}:{}\" n=\"{n}\" lines=\"{}\" ccx=\"{}\"/>",
+            sym.line, sym.loc, sym.ccx
+        )?;
+    }
+    writeln!(out, "</readability>")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
