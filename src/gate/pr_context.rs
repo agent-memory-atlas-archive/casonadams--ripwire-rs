@@ -67,6 +67,41 @@ pub fn compute_pr_context(
 }
 
 /// Serialize PR context to canonical XML format.
+fn write_pr_file_context<W: Write>(f: &PrFileContext, out: &mut W) -> io::Result<()> {
+    writeln!(
+        out,
+        "  <file p=\"{}\" symbols=\"{}\">",
+        f.path, f.symbol_count
+    )?;
+    writeln!(
+        out,
+        "    <changed-symbols count=\"{}\">",
+        f.changed_symbols.len()
+    )?;
+    for s in &f.changed_symbols {
+        writeln!(out, "      <s n=\"{s}\"/>")?;
+    }
+    writeln!(out, "    </changed-symbols>")?;
+    writeln!(
+        out,
+        "    <impact dependents=\"{}\" files_other=\"0\"/>",
+        f.dependents_count
+    )?;
+    writeln!(out, "    <tests count=\"{}\"/>", f.tests_count)?;
+    writeln!(
+        out,
+        "    <cochange commits=\"{}\" partners=\"0\"/>",
+        f.commits_count
+    )?;
+    writeln!(
+        out,
+        "    <owners authors=\"{}\" bf=\"1\"/>",
+        f.authors_count
+    )?;
+    writeln!(out, "  </file>")
+}
+
+/// Serialize PR context to canonical XML format.
 pub fn serialize_pr_context_xml<W: Write>(rep: &PrContextReport, out: &mut W) -> io::Result<()> {
     writeln!(
         out,
@@ -74,37 +109,7 @@ pub fn serialize_pr_context_xml<W: Write>(rep: &PrContextReport, out: &mut W) ->
         rep.base_ref, rep.files_count
     )?;
     for f in &rep.files {
-        writeln!(
-            out,
-            "  <file p=\"{}\" symbols=\"{}\">",
-            f.path, f.symbol_count
-        )?;
-        writeln!(
-            out,
-            "    <changed-symbols count=\"{}\">",
-            f.changed_symbols.len()
-        )?;
-        for s in &f.changed_symbols {
-            writeln!(out, "      <s n=\"{s}\"/>")?;
-        }
-        writeln!(out, "    </changed-symbols>")?;
-        writeln!(
-            out,
-            "    <impact dependents=\"{}\" files_other=\"0\"/>",
-            f.dependents_count
-        )?;
-        writeln!(out, "    <tests count=\"{}\"/>", f.tests_count)?;
-        writeln!(
-            out,
-            "    <cochange commits=\"{}\" partners=\"0\"/>",
-            f.commits_count
-        )?;
-        writeln!(
-            out,
-            "    <owners authors=\"{}\" bf=\"1\"/>",
-            f.authors_count
-        )?;
-        writeln!(out, "  </file>")?;
+        write_pr_file_context(f, out)?;
     }
     writeln!(out, "</pr-context>")
 }
