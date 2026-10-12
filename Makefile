@@ -79,6 +79,14 @@ quality: ## Measure quality regressions against git HEAD with ripwire
 	@command -v ripwire >/dev/null 2>&1 || { echo "Error: ripwire not found"; exit 1; }
 	@ripwire . --quality-delta >/dev/null
 
+REPO ?= .
+
+.PHONY: parity
+parity: build-release ## Validate 1:1 input/output parity with upstream ripwire across 20 commands on REPO (default: REPO=.)
+	@./scripts/validate-parity.sh "$(REPO)"
+
+.PHONY: validate
+validate: parity ## Alias for parity validation on REPO (e.g. make validate REPO=../cccc)
 .PHONY: update-grammars
 update-grammars: ## Update vendored tree-sitter grammars from upstream repositories
 	@./scripts/update-grammars.sh $(GRAMMAR)
