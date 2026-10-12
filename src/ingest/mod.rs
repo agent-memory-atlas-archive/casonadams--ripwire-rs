@@ -77,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_35_grammars() {
+    fn test_all_36_grammars() {
         let reg = LanguageRegistry::new().unwrap();
         let fixtures: Vec<(&str, Lang, &str, usize, usize)> = vec![
             ("src/main.rs", Lang::Rust, "fn main() { run(); }", 1, 1),
@@ -306,6 +306,13 @@ mod tests {
                 "FROM alpine:latest AS builder\nRUN apk add git",
                 1,
                 0,
+            ),
+            (
+                "src/widget.m",
+                Lang::ObjC,
+                "#import \"widget.h\"\n@interface Widget\n- (void)paint;\n@end\n@implementation Widget\n- (void)paint { [self draw]; }\n@end",
+                3,
+                1,
             ),
         ];
 

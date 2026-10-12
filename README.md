@@ -2,7 +2,7 @@
 
 High-throughput agent context router and deterministic static analysis engine.
 
-`ripwire` (`rw`) analyzes source code across 35 languages to construct precise call graphs, calculate symbol impact via PageRank and HITS, mine co-change patterns, slice intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a standalone CLI or as a Model Context Protocol (MCP) server over stdio for AI coding agents.
+`ripwire` (`rw`) analyzes source code across 36 languages to construct precise call graphs, calculate symbol impact via PageRank and HITS, mine co-change patterns, slice intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a standalone CLI or as a Model Context Protocol (MCP) server over stdio for AI coding agents.
 
 ---
 
@@ -45,7 +45,7 @@ rw mcp
 
 ## Features
 
-- **Multi-Language AST Analysis**: 35 languages indexed via Tree-Sitter (Rust, TypeScript, JavaScript, Python, Go, C, C++, CUDA, Metal, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS, SQL, Protobuf, GraphQL, Dockerfile).
+- **Multi-Language AST Analysis**: 36 languages indexed via Tree-Sitter (Rust, TypeScript, JavaScript, Python, Go, C, C++, CUDA, Metal, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS, SQL, Protobuf, GraphQL, Dockerfile, Objective-C/C++).
 - **Personalized PageRank & HITS**: Transitive blast radius and structural authority calculations converging in milliseconds over lock-free sparse matrices.
 - **Pre-Commit & Pre-PR Verification Gates**: Parameter arity contract verification (`--edit-check`), surgical test reachability mapping (`--affected`), test execution gate (`--test-gate`), git-changed re-ranking (`--map-diff`), integration seams (`--seams`), composite PR review context (`--pr-context`), merge conflict scouting (`--merge-scout`), and code quality regressions vs git HEAD (`--quality-delta`).
 - **Code Health & Architecture Enforcement**: Dead code detection (`--dead-code`), clone detection (`--clones`), Louvain community clustering (`--communities`), architectural layering rules (`--arch`), Mermaid flowchart export (`--mermaid`), hierarchical zoom (`--zoom`), AST code smell linter (`--lint`, `--lint-catalog`), and nonlocal mutable state tracking (`--nonlocal-state`).

@@ -283,3 +283,74 @@ RUN apk add git
     assert!(sym_names.contains(&"User".to_string()));
     assert!(sym_names.contains(&"builder".to_string()));
 }
+
+#[test]
+fn test_objective_c_and_cpp_dialects() {
+    let objc_code = r#"
+#import "Renderer.h"
+
+@protocol Renderable
+- (void)render;
+@end
+
+@interface Renderer : NSObject <Renderable>
+- (void)drawMesh;
+@end
+
+@implementation Renderer
+- (void)drawMesh {
+    [self render];
+}
+- (void)render {
+    setup_pipeline();
+}
+@end
+
+void setup_pipeline(void) {
+    // C helper
+}
+"#;
+
+    let objcpp_code = r#"
+#import "Engine.h"
+
+class CoreEngine {
+public:
+    void boot() {}
+};
+
+@implementation Controller
+- (void)start {
+    CoreEngine engine;
+    engine.boot();
+}
+@end
+"#;
+
+    let files = [
+        ("src/Renderer.m", Lang::ObjC, objc_code.as_bytes()),
+        ("src/Controller.mm", Lang::ObjC, objcpp_code.as_bytes()),
+    ];
+
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let ingest = ingest_in_memory_files(&files, &registry, &interner);
+
+    let sym_names: Vec<String> = ingest
+        .symbols
+        .iter()
+        .map(|s| interner.resolve(&s.name).to_string())
+        .collect();
+
+    assert!(sym_names.contains(&"Renderable".to_string()));
+    assert!(sym_names.contains(&"Renderer".to_string()));
+    assert!(sym_names.contains(&"drawMesh".to_string()));
+    assert!(sym_names.contains(&"render".to_string()));
+    assert!(sym_names.contains(&"setup_pipeline".to_string()));
+    assert!(sym_names.contains(&"Controller".to_string()));
+    assert!(sym_names.contains(&"start".to_string()));
+
+    let graph = Graph::build(&ingest, &interner);
+    assert!(graph.node_count() >= 5);
+    assert!(graph.edge_count() >= 1);
+}

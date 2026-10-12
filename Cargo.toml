@@ -57,6 +57,7 @@ tree-sitter-scala = "0.25.1"
 tree-sitter-erlang = "0.21.0"
 tree-sitter-html = "0.23"
 tree-sitter-css = "0.25"
+tree-sitter-objc = "3.0.2"
 
 [build-dependencies]
 cc = "1.7.0"

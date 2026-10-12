@@ -129,15 +129,16 @@ pub enum Lang {
     Proto,
     Graphql,
     Dockerfile,
+    ObjC,
     Unknown,
 }
 impl Lang {
     #[inline]
     pub const fn tag(self) -> &'static str {
-        const TAGS: [&str; 36] = [
+        const TAGS: [&str; 37] = [
             "rs", "ts", "js", "py", "go", "c", "cpp", "cuda", "metal", "java", "cs", "swift", "sh",
             "rb", "php", "lua", "ex", "dart", "kt", "gd", "json", "toml", "yaml", "md", "zig",
-            "sol", "hcl", "scala", "erl", "html", "css", "sql", "proto", "gql", "docker", "?",
+            "sol", "hcl", "scala", "erl", "html", "css", "sql", "proto", "gql", "docker", "m", "?",
         ];
         TAGS[self as usize]
     }
@@ -168,6 +169,8 @@ impl Lang {
             ("cu", Lang::Cuda),
             ("cuh", Lang::Cuda),
             ("metal", Lang::Metal),
+            ("m", Lang::ObjC),
+            ("mm", Lang::ObjC),
             ("java", Lang::Java),
             ("cs", Lang::CSharp),
             ("swift", Lang::Swift),
@@ -232,7 +235,12 @@ impl Lang {
         if self == other {
             return true;
         }
-        let is_c_family = |l| matches!(l, Self::C | Self::Cpp | Self::Cuda | Self::Metal);
+        let is_c_family = |l| {
+            matches!(
+                l,
+                Self::C | Self::Cpp | Self::Cuda | Self::Metal | Self::ObjC
+            )
+        };
         if is_c_family(self) && is_c_family(other) {
             return true;
         }
@@ -284,6 +292,7 @@ impl Lang {
                 | Self::Sql
                 | Self::Proto
                 | Self::Graphql
+                | Self::ObjC
         )
     }
     /// True if both languages are dependency capable and share dialect compatibility.
@@ -447,10 +456,12 @@ mod tests {
         assert_eq!(SymKind::Function.tag(), "fn");
         assert_eq!(RefRole::Call.tag(), "call");
         assert_eq!(Lang::Rust.tag(), "rs");
-        assert_eq!(Lang::from_extension("rs"), Lang::Rust);
-        assert_eq!(Lang::from_extension("unknown"), Lang::Unknown);
-        assert!(Lang::Rust.is_compatible(Lang::Rust));
-        assert!(Lang::C.is_compatible(Lang::Cpp));
+        assert_eq!(Lang::ObjC.tag(), "m");
+        assert!(Lang::from_extension("rs") == Lang::Rust);
+        assert!(Lang::from_extension("m") == Lang::ObjC);
+        assert!(Lang::from_extension("mm") == Lang::ObjC);
+        assert!(Lang::from_extension("unknown") == Lang::Unknown);
+        assert!(Lang::C.is_compatible(Lang::ObjC));
         assert!(!Lang::Rust.is_compatible(Lang::Python));
     }
 

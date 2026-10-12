@@ -38,7 +38,7 @@ thread_local! {
     ));
 }
 
-static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 35] = [
+static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 36] = [
     lang_entry!(
         tree_sitter_rust::LANGUAGE.into(),
         include_str!("../queries/rust/tags.scm")
@@ -176,13 +176,17 @@ static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 35] = [
         unsafe { Language::from_raw(tree_sitter_dockerfile()) },
         include_str!("../queries/dockerfile/tags.scm")
     ),
+    lang_entry!(
+        tree_sitter_objc::LANGUAGE.into(),
+        include_str!("../queries/objc/tags.scm")
+    ),
 ];
 /// Registry of supported Tree-Sitter languages and compiled queries.
 #[derive(Default, Clone, Copy)]
 pub struct LanguageRegistry;
 
 impl LanguageRegistry {
-    /// Initialize registry with all supported 35 languages.
+    /// Initialize registry with all supported 36 languages.
     pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         Ok(Self)
     }

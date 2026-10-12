@@ -53,16 +53,44 @@
   cognitive complexity <= 15 via cccc, quality regression delta via ripwire, and
   tests under test code coverage with CRAP <= 30 gating).
 
+## Adding and maintaining tree-sitter languages
+
+- **Shared capture vocabulary**: All `queries/<lang>/tags.scm` files MUST
+  strictly use the standardized capture vocabulary:
+  - Definitions: `@name`,
+    `@definition.{function,method,class,struct,interface,type,constant,module,macro,var,field}`.
+    Never invent language-prefixed capture tags (e.g.
+    `@definition.objc_interface`).
+  - References: `@name`, `@reference.{call,import,implementation,type}`.
+  - Imports: `@import.path` or standardized `@reference.import`.
+- **Selector and multi-segment names**: When a language grammar splits compound
+  identifiers or selectors (such as Objective-C selector keywords), anchor `.`
+  the pattern on the primary identifier to produce exactly one symbol per
+  method, avoiding fragmented names.
+- **Dialect compatibility**: Ensure cross-language resolution groups are updated
+  in `Lang::is_compatible` (e.g., C-family: C, C++, CUDA, Metal, Objective-C;
+  JVM: Java, Kotlin, Scala; Web: TypeScript, JavaScript; Erlang/Elixir;
+  HTML/CSS).
+- **Dependency capability**: Only mark `Lang::is_dependency_capable()` when
+  syntax-backed import/include resolution is implemented, so dependency-density
+  denominators remain accurate.
+- **Enum ordering & serialization**: Append new entries to `enum Lang` before
+  `Lang::Unknown`. Never reorder existing values because `Lang` is serialized
+  across internal indices and caches.
+- **Disclose blind spots**: Acknowledge dynamic dispatch (e.g. dynamic message
+  sends, `performSelector:`, metatable magic) and dialect limits in tests and
+  documentation.
+
 ## Documentation and manual page synchronization
 
-- Whenever adding or updating CLI flags, options, subcommands, defaults, or
-  MCP tool definitions, the repository documentation (`README.md`, `docs/CLI.md`,
+- Whenever adding or updating CLI flags, options, subcommands, defaults, or MCP
+  tool definitions, the repository documentation (`README.md`, `docs/CLI.md`,
   `docs/`), the static GitHub Pages showcase in `www/` (`www/index.html`,
   `www/docs.html`), AND the manual pages in `man/man1/` (`man/man1/rw.1`,
   `man/man1/ripwire.1`) MUST be updated and synchronized in the same commit.
 - Ensure all relative links, code examples, synopsis syntax, tool names, command
-  names (`rw`, `ripwire`), and feature lists stay fully aligned across repository
-  docs, the `www/` site, and roff manual pages.
+  names (`rw`, `ripwire`), and feature lists stay fully aligned across
+  repository docs, the `www/` site, and roff manual pages.
 
 ## Completion
 
