@@ -77,7 +77,7 @@ pub fn is_keyword(w: &str) -> bool {
     )
 }
 
-fn skip_whitespace(bytes: &[u8], i: &mut usize) {
+pub(crate) fn skip_whitespace(bytes: &[u8], i: &mut usize) {
     while *i < bytes.len() && bytes[*i].is_ascii_whitespace() {
         *i += 1;
     }
@@ -123,7 +123,7 @@ fn skip_comment(bytes: &[u8], i: &mut usize, hash_comments: bool) -> bool {
     skip_slash_comment(bytes, i) || (hash_comments && skip_hash_comment(bytes, i))
 }
 
-fn scan_string_literal(bytes: &[u8], i: &mut usize) -> String {
+pub(crate) fn scan_string_literal(bytes: &[u8], i: &mut usize) -> String {
     let quote = bytes[*i];
     let start = *i;
     *i += 1;
@@ -141,7 +141,7 @@ fn scan_string_literal(bytes: &[u8], i: &mut usize) -> String {
     String::from_utf8_lossy(&bytes[start..(*i).min(bytes.len())]).to_string()
 }
 
-fn scan_number_literal(bytes: &[u8], i: &mut usize) -> String {
+pub(crate) fn scan_number_literal(bytes: &[u8], i: &mut usize) -> String {
     let start = *i;
     while *i < bytes.len() && (bytes[*i].is_ascii_alphanumeric() || bytes[*i] == b'.') {
         *i += 1;
@@ -149,7 +149,7 @@ fn scan_number_literal(bytes: &[u8], i: &mut usize) -> String {
     String::from_utf8_lossy(&bytes[start..*i]).to_string()
 }
 
-fn scan_identifier_or_keyword(bytes: &[u8], i: &mut usize) -> String {
+pub(crate) fn scan_identifier_or_keyword(bytes: &[u8], i: &mut usize) -> String {
     let start = *i;
     while *i < bytes.len() && (bytes[*i].is_ascii_alphanumeric() || bytes[*i] == b'_') {
         *i += 1;
@@ -157,9 +157,8 @@ fn scan_identifier_or_keyword(bytes: &[u8], i: &mut usize) -> String {
     String::from_utf8_lossy(&bytes[start..*i]).to_string()
 }
 
-fn scan_operator(bytes: &[u8], i: &mut usize) -> String {
+pub(crate) fn scan_operator(bytes: &[u8], i: &mut usize) -> String {
     let multi_ops: &[&[u8]] = &[
-        b"...", b"<<=", b">>=", b"===", b"!==", b"<=", b">=", b"==", b"!=", b"&&", b"||", b"+=",
         b"-=", b"*=", b"/=", b"%=", b"&=", b"|=", b"^=", b"->", b"=>", b"::", b"..", b"++", b"--",
         b"??", b"?.",
     ];

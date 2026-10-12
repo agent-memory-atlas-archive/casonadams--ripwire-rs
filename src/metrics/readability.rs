@@ -1,5 +1,8 @@
+use crate::clones::token_stream::{
+    is_keyword, scan_identifier_or_keyword, scan_number_literal, scan_operator,
+    scan_string_literal, skip_whitespace,
+};
 use std::collections::HashMap;
-
 pub const POSNETT_INTERCEPT: f64 = 8.87;
 pub const POSNETT_VOLUME: f64 = -0.033;
 pub const POSNETT_LINES: f64 = 0.40;
@@ -36,118 +39,19 @@ enum TokenKind {
     Operand,
 }
 
-fn is_keyword(s: &str) -> bool {
-    matches!(
-        s,
-        "fn" | "function"
-            | "def"
-            | "func"
-            | "let"
-            | "mut"
-            | "var"
-            | "const"
-            | "if"
-            | "else"
-            | "for"
-            | "while"
-            | "loop"
-            | "match"
-            | "switch"
-            | "case"
-            | "return"
-            | "break"
-            | "continue"
-            | "struct"
-            | "class"
-            | "enum"
-            | "impl"
-            | "trait"
-            | "interface"
-            | "pub"
-            | "public"
-            | "private"
-            | "protected"
-            | "import"
-            | "use"
-            | "from"
-            | "as"
-            | "type"
-            | "async"
-            | "await"
-            | "try"
-            | "catch"
-            | "throw"
-    )
-}
-
-fn scan_readability_string(bytes: &[u8], i: &mut usize) -> String {
-    let quote = bytes[*i];
-    let start = *i;
-    *i += 1;
-    let mut escaped = false;
-    for &b in &bytes[*i..] {
-        *i += 1;
-        if escaped {
-            escaped = false;
-        } else if b == b'\\' {
-            escaped = true;
-        } else if b == quote {
-            break;
-        }
-    }
-    String::from_utf8_lossy(&bytes[start..*i]).into_owned()
-}
-
-fn scan_readability_word(bytes: &[u8], i: &mut usize) -> String {
-    let start = *i;
-    let len = bytes[*i..]
-        .iter()
-        .take_while(|&&b| b.is_ascii_alphanumeric() || b == b'_')
-        .count();
-    *i += len;
-    String::from_utf8_lossy(&bytes[start..*i]).into_owned()
-}
-
-fn scan_readability_symbol(bytes: &[u8], i: &mut usize) -> String {
-    if *i + 1 < bytes.len() {
-        let op = match &bytes[*i..*i + 2] {
-            b"==" => "==",
-            b"!=" => "!=",
-            b"<=" => "<=",
-            b">=" => ">=",
-            b"&&" => "&&",
-            b"||" => "||",
-            b"::" => "::",
-            b"->" => "->",
-            b"=>" => "=>",
-            b"+=" => "+=",
-            b"-=" => "-=",
-            _ => "",
-        };
-        if !op.is_empty() {
-            *i += 2;
-            return op.to_string();
-        }
-    }
-    let start = *i;
-    *i += 1;
-    String::from_utf8_lossy(&bytes[start..*i]).into_owned()
-}
-
 fn tokenize_code(code: &str) -> Vec<(String, TokenKind)> {
     let bytes = code.as_bytes();
     let mut tokens = Vec::new();
     let mut i = 0;
-
     while i < bytes.len() {
         let b = bytes[i];
         if b.is_ascii_whitespace() {
-            i += 1;
+            skip_whitespace(bytes, &mut i);
         } else if b == b'"' || b == b'\'' {
-            let lit = scan_readability_string(bytes, &mut i);
+            let lit = scan_string_literal(bytes, &mut i);
             tokens.push((lit, TokenKind::Operand));
         } else if b.is_ascii_alphabetic() || b == b'_' {
-            let word = scan_readability_word(bytes, &mut i);
+            let word = scan_identifier_or_keyword(bytes, &mut i);
             let kind = if is_keyword(&word) {
                 TokenKind::Operator
             } else {
@@ -155,10 +59,10 @@ fn tokenize_code(code: &str) -> Vec<(String, TokenKind)> {
             };
             tokens.push((word, kind));
         } else if b.is_ascii_digit() {
-            let num = scan_readability_word(bytes, &mut i);
+            let num = scan_number_literal(bytes, &mut i);
             tokens.push((num, TokenKind::Operand));
         } else {
-            let sym = scan_readability_symbol(bytes, &mut i);
+            let sym = scan_operator(bytes, &mut i);
             tokens.push((sym, TokenKind::Operator));
         }
     }
