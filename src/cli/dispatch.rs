@@ -364,7 +364,7 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
         root,
         rank_by: &cli.rank_by,
         pack_budget: budget,
-        top_k: cli.top_k,
+        top_k: cli.top_k.or(Some(200)),
         emit_legend,
         map_diff: cli.safety.map_diff,
     };
