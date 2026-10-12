@@ -1,0 +1,616 @@
+use super::args::{AroundConfig, TopRetrievalArgs, TopWorkspaceArgs};
+use crate::domain::{IngestResult, Interner, NodeId};
+use crate::graph::Graph;
+use crate::rank::PageRankResult;
+use std::io::{self, Write};
+use std::path::Path;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavMode {
+    Callers,
+    Callees,
+    Impact,
+    Uses,
+    FindSymbol,
+}
+
+pub struct NavContext<'a> {
+    pub ingest: &'a IngestResult,
+    pub graph: &'a Graph,
+    pub ranks: &'a [f64],
+    pub interner: &'a Interner,
+}
+
+pub fn serialize_1hop_mode<W: Write>(
+    sym: &str,
+    mode: NavMode,
+    nav: &crate::navigate::NavNeighborhood,
+    out: &mut W,
+) -> io::Result<()> {
+    match mode {
+        NavMode::Callers => crate::navigate::serialize_callers_xml(sym, &nav.callers, out),
+        NavMode::Callees => crate::navigate::serialize_callees_xml(sym, &nav.callees, out),
+        NavMode::FindSymbol => crate::navigate::serialize_find_symbol_xml(nav, out),
+        _ => Ok(()),
+    }
+}
+
+pub fn execute_nav_symbol_query<W: Write>(
+    sym: &str,
+    mode: NavMode,
+    ingest: &IngestResult,
+    graph: &Graph,
+    ranks: &[f64],
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let ids = crate::navigate::find_symbols_by_name(sym, ingest, interner);
+    let Some(&id) = ids.first() else {
+        let flag = match mode {
+            NavMode::Callers => "--callers",
+            NavMode::Callees => "--callees",
+            NavMode::Impact => "--impact",
+            NavMode::Uses => "--uses",
+            NavMode::FindSymbol => "--find-symbol",
+        };
+        return Err(io::Error::other(format!(
+            "ripwire: {flag} symbol not found: {sym}"
+        )));
+    };
+    match mode {
+        NavMode::Uses => crate::navigate::serialize_uses_xml(sym, ingest, interner, out),
+        NavMode::Impact => {
+            let impact =
+                crate::navigate::transitive_impact(id, ingest, graph, ranks, interner, None);
+            crate::navigate::serialize_impact_xml(sym, &impact, out)
+        }
+        NavMode::Callers | NavMode::Callees | NavMode::FindSymbol => {
+            if let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner) {
+                serialize_1hop_mode(sym, mode, &nav, out)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+pub fn execute_connect_query<W: Write>(
+    syms: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let sym_list: Vec<String> = syms
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    for s in &sym_list {
+        if crate::navigate::find_symbols_by_name(s, ingest, interner).is_empty() {
+            return Err(io::Error::other(format!(
+                "ripwire: --connect symbol not found: {s}"
+            )));
+        }
+    }
+    let val = crate::mcp::graph_tools::call_connect(ingest, graph, interner, &sym_list);
+    crate::serialize::serialize_connect_xml(&val, out)
+}
+
+pub fn split_endpoint_pair(pair: &str) -> (&str, &str) {
+    if let Some((from, to)) = pair.split_once(',') {
+        (from.trim(), to.trim())
+    } else if let Some((from, to)) = pair.split_once("->") {
+        (from.trim(), to.trim())
+    } else if let Some((from, to)) = pair.split_once(':') {
+        (from.trim(), to.trim())
+    } else {
+        (pair.trim(), "")
+    }
+}
+
+pub fn execute_path_query<W: Write>(
+    pair: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (from, to) = split_endpoint_pair(pair);
+    if crate::navigate::find_symbols_by_name(from, ingest, interner).is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire: --path endpoint not found: {from}"
+        )));
+    }
+    if crate::navigate::find_symbols_by_name(to, ingest, interner).is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire: --path endpoint not found: {to}"
+        )));
+    }
+    let val = crate::mcp::graph_tools::call_path_between(ingest, graph, interner, from, to);
+    crate::serialize::serialize_path_between_xml(&val, out)
+}
+
+pub fn execute_workspace_doc_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    if let Some(sym) = ws.whereis.as_deref() {
+        let val = crate::mcp::doc_tools::call_whereis(ingest, interner, sym);
+        crate::serialize::serialize_whereis_xml(&val, out)?;
+    } else if ws.doc_drift {
+        let val = crate::mcp::doc_tools::call_doc_drift(ingest, interner);
+        crate::serialize::serialize_doc_drift_xml(&val, out)?;
+    } else if ws.flags {
+        let val = crate::mcp::doc_tools::call_flags(ingest, interner);
+        crate::serialize::serialize_flags_xml(&val, out)?;
+    } else if let Some(sym) = ws.mentions.as_deref() {
+        if crate::navigate::find_symbols_by_name(sym, ingest, interner).is_empty() {
+            return Err(io::Error::other(format!(
+                "ripwire: --mentions symbol not found: {sym}"
+            )));
+        }
+        let val = crate::mcp::doc_tools::call_mentions(ingest, interner, sym);
+        crate::serialize::serialize_mentions_xml(&val, out)?;
+    }
+    Ok(())
+}
+
+pub fn extract_symbol_body<'a>(
+    sym: &'a crate::domain::Symbol,
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+    root_path: &Path,
+) -> Option<(&'a crate::domain::Symbol, &'a str, &'a str, String)> {
+    let name = interner.resolve(&sym.name);
+    let rel_path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+    let bytes = std::fs::read(root_path.join(rel_path)).ok()?;
+    let start = (sym.sig_start_byte as usize).min(bytes.len());
+    let end = (sym.end_byte as usize).min(bytes.len());
+    if start < end {
+        let body = String::from_utf8_lossy(&bytes[start..end]).to_string();
+        Some((sym, name, rel_path, body))
+    } else {
+        None
+    }
+}
+
+pub fn execute_expand_query<W: Write>(
+    root: &str,
+    syms_spec: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let sym_names: Vec<&str> = syms_spec
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    let mut expanded_items = Vec::new();
+    let root_path = Path::new(root);
+
+    for sym_name in sym_names {
+        let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
+        if ids.is_empty() {
+            return Err(io::Error::other(format!(
+                "ripwire: --expand symbol not found: {sym_name}"
+            )));
+        }
+        for &id in &ids {
+            if let Some(item) =
+                extract_symbol_body(&ingest.symbols[id as usize], ingest, interner, root_path)
+            {
+                expanded_items.push(item);
+            }
+        }
+    }
+
+    let items_slice: Vec<(&crate::domain::Symbol, &str, &str, &str)> = expanded_items
+        .iter()
+        .map(|(s, n, p, b)| (*s, *n, *p, b.as_str()))
+        .collect();
+
+    crate::serialize::serialize_expand_xml(root, &items_slice, out)
+}
+
+pub fn execute_pack_top_n_query<W: Write>(
+    root: &str,
+    n: usize,
+    ingest: &IngestResult,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (file_order, buckets) = crate::serialize::bucket_symbols_by_rank(
+        &ingest.symbols,
+        ingest.files.len(),
+        &pr.ranks,
+        Some(n),
+    );
+    let root_path = Path::new(root);
+    let mut bodies = Vec::new();
+    let mut count = 0;
+
+    for f in file_order {
+        if count >= n {
+            break;
+        }
+        let rel_path = interner.resolve(&ingest.files[f as usize].path);
+        let file_disk_path = root_path.join(rel_path);
+        if let Ok(bytes) = std::fs::read(&file_disk_path) {
+            let content = String::from_utf8_lossy(&bytes).to_string();
+            bodies.push((rel_path, content));
+            count += buckets[f as usize].len();
+        }
+    }
+
+    let bodies_slice: Vec<(&str, &str)> = bodies.iter().map(|(p, c)| (*p, c.as_str())).collect();
+    crate::serialize::serialize_pack_top_n_xml(root, &bodies_slice, out)
+}
+
+pub fn execute_tree_query<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (file_order, buckets) = crate::serialize::bucket_symbols_by_rank(
+        &ingest.symbols,
+        ingest.files.len(),
+        &pr.ranks,
+        None,
+    );
+
+    let mut file_symbols = Vec::new();
+    for f in file_order {
+        let rel_path = interner.resolve(&ingest.files[f as usize].path);
+        let bucket = &buckets[f as usize];
+        let mut top3 = Vec::new();
+        for &sym_id in bucket.iter().take(3) {
+            let sym = &ingest.symbols[sym_id as usize];
+            top3.push((sym.kind.tag(), interner.resolve(&sym.name)));
+        }
+        file_symbols.push(crate::serialize::TreeFileSymbols {
+            path: rel_path,
+            total_symbols: bucket.len(),
+            top_symbols: top3,
+        });
+    }
+
+    crate::serialize::serialize_tree_xml(root, &file_symbols, pr.iterations, out)
+}
+
+pub fn execute_dead_code_query<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut dead = Vec::new();
+    for sym in &ingest.symbols {
+        if (sym.kind == crate::domain::SymKind::Function
+            || sym.kind == crate::domain::SymKind::Method)
+            && graph.in_degree(sym.id) == 0
+        {
+            let n = interner.resolve(&sym.name);
+            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+            dead.push((n, sym.kind.tag(), p, sym.line));
+        }
+    }
+    crate::serialize::serialize_dead_code_xml(root, &dead, out)
+}
+
+pub fn build_community_module<'a>(
+    id: u32,
+    nodes: &[NodeId],
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+) -> crate::serialize::CommunityModule<'a> {
+    let mut members = Vec::new();
+    let mut top_dir = "";
+    let mut top_label = "";
+    for &nid in nodes {
+        if let Some(s) = ingest.symbols.get(nid as usize) {
+            let n = interner.resolve(&s.name);
+            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+            if top_dir.is_empty() {
+                top_dir = p;
+            }
+            if top_label.is_empty() {
+                top_label = n;
+            }
+            members.push((s.kind.tag(), n, p, s.line));
+        }
+    }
+    crate::serialize::CommunityModule {
+        id,
+        size: members.len(),
+        dir: top_dir,
+        label: top_label,
+        members,
+    }
+}
+
+pub fn execute_communities_query<W: Write>(
+    root: &str,
+    target_id: Option<u32>,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let comms = graph.communities();
+    let mut by_comm: std::collections::HashMap<u32, Vec<NodeId>> = std::collections::HashMap::new();
+    for (node, &c) in comms.comm.iter().enumerate() {
+        if target_id.is_none() || target_id == Some(c) {
+            by_comm.entry(c).or_default().push(node as u32);
+        }
+    }
+
+    let mut comm_ids: Vec<u32> = by_comm.keys().copied().collect();
+    comm_ids.sort_unstable();
+
+    let modules: Vec<crate::serialize::CommunityModule<'_>> = comm_ids
+        .into_iter()
+        .map(|id| build_community_module(id, &by_comm[&id], ingest, interner))
+        .collect();
+
+    crate::serialize::serialize_communities_xml(root, &modules, out)
+}
+
+pub fn execute_around_query<W: Write>(
+    root: &str,
+    sym_name: &str,
+    cfg: AroundConfig,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
+    if ids.is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire: --around symbol not found: {sym_name}"
+        )));
+    }
+    let sym_id = ids[0];
+    let mut visited = std::collections::HashSet::new();
+    let mut queue = std::collections::VecDeque::new();
+    visited.insert(sym_id);
+    queue.push_back((sym_id, 0u32));
+
+    let mut result_syms = Vec::new();
+
+    while let Some((curr, curr_d)) = queue.pop_front() {
+        if let Some(s) = ingest.symbols.get(curr as usize) {
+            let n = interner.resolve(&s.name);
+            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+            result_syms.push((n, s.kind.tag(), p, s.line));
+        }
+        if curr_d >= cfg.depth {
+            continue;
+        }
+        for (callee_id, _) in graph.callees(curr).take(cfg.fanout) {
+            if visited.insert(callee_id) {
+                queue.push_back((callee_id, curr_d + 1));
+            }
+        }
+    }
+
+    crate::serialize::serialize_around_xml(root, sym_name, cfg.depth, cfg.fanout, &result_syms, out)
+}
+
+pub fn execute_external_surface_query<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let by_name = crate::resolve::index_symbols_by_name(&ingest.symbols);
+    let mut ext_counts: std::collections::HashMap<(lasso::Spur, crate::domain::Lang), usize> =
+        std::collections::HashMap::new();
+
+    for r in &ingest.references {
+        if !by_name.contains_key(&r.callee_name) {
+            *ext_counts.entry((r.callee_name, r.lang)).or_default() += 1;
+        }
+    }
+
+    let mut items: Vec<(&str, &str, usize)> = ext_counts
+        .iter()
+        .map(|(&(n, l), &c)| (interner.resolve(&n), l.tag(), c))
+        .collect();
+    items.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.cmp(b.0)));
+
+    crate::serialize::serialize_external_surface_xml(root, &items, out)
+}
+
+pub fn execute_deps_query<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut file_inc = vec![0usize; ingest.files.len()];
+    let mut file_aff = vec![0usize; ingest.files.len()];
+
+    for u in 0..graph.node_count() as NodeId {
+        let uf = ingest.symbols[u as usize].file_id as usize;
+        for (v, _) in graph.callees(u) {
+            let vf = ingest.symbols[v as usize].file_id as usize;
+            if uf != vf && uf < file_inc.len() && vf < file_aff.len() {
+                file_inc[uf] += 1;
+                file_aff[vf] += 1;
+            }
+        }
+    }
+
+    let mut file_deps = Vec::new();
+    for (i, f) in ingest.files.iter().enumerate() {
+        let p = interner.resolve(&f.path);
+        file_deps.push((p, file_inc[i], file_aff[i]));
+    }
+    file_deps.sort_by_key(|a| std::cmp::Reverse(a.1 + a.2));
+
+    crate::serialize::serialize_deps_xml(root, &file_deps, out)
+}
+
+pub fn run_batch_subquery<W: Write>(
+    line: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let Some((verb, arg)) = line.split_once(':') else {
+        return Ok(());
+    };
+    let a = arg.trim();
+    let mut sub_buf = Vec::new();
+    match verb.trim() {
+        "callers" => {
+            let _ = execute_nav_symbol_query(
+                a,
+                NavMode::Callers,
+                ingest,
+                graph,
+                &pr.ranks,
+                interner,
+                &mut sub_buf,
+            );
+        }
+        "callees" => {
+            let _ = execute_nav_symbol_query(
+                a,
+                NavMode::Callees,
+                ingest,
+                graph,
+                &pr.ranks,
+                interner,
+                &mut sub_buf,
+            );
+        }
+        "impact" => {
+            let _ = execute_nav_symbol_query(
+                a,
+                NavMode::Impact,
+                ingest,
+                graph,
+                &pr.ranks,
+                interner,
+                &mut sub_buf,
+            );
+        }
+        "uses" => {
+            let _ = execute_nav_symbol_query(
+                a,
+                NavMode::Uses,
+                ingest,
+                graph,
+                &pr.ranks,
+                interner,
+                &mut sub_buf,
+            );
+        }
+        "grep" => {
+            let val = crate::mcp::retrieval::call_grep(ingest, interner, a, None);
+            let _ = crate::serialize::serialize_grep_xml(&val, &mut sub_buf);
+        }
+        "for" => {
+            let val = crate::mcp::retrieval::call_for_task(ingest, interner, &pr.ranks, a, None);
+            let _ = crate::serialize::serialize_for_xml(&val, &mut sub_buf);
+        }
+        _ => {}
+    }
+    writeln!(out, "  <result query=\"{line}\">")?;
+    out.write_all(&sub_buf)?;
+    writeln!(out, "  </result>")
+}
+
+pub fn execute_batch_content<W: Write>(
+    root: &str,
+    content: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let lines: Vec<&str> = content
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty() && !s.starts_with('#'))
+        .take(16)
+        .collect();
+
+    writeln!(
+        out,
+        "<batch schema=\"ripwire.batch/v1\" root=\"{root}\" count=\"{}\">",
+        lines.len()
+    )?;
+    for line in lines {
+        run_batch_subquery(line, ingest, graph, pr, interner, out)?;
+    }
+    writeln!(out, "</batch>")
+}
+
+pub fn execute_batch_file<W: Write>(
+    root: &str,
+    file_path: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let content = if file_path == "-" {
+        let mut buf = String::new();
+        io::Read::read_to_string(&mut io::stdin(), &mut buf)?;
+        buf
+    } else {
+        std::fs::read_to_string(file_path)?
+    };
+    execute_batch_content(root, &content, ingest, graph, pr, interner, out)
+}
+
+pub fn execute_retrieval_dispatch<W: Write>(
+    ret: &TopRetrievalArgs,
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    if let Some(task) = ret.task_for.as_deref() {
+        let val = crate::mcp::retrieval::call_for_task(ingest, interner, &pr.ranks, task, None);
+        crate::serialize::serialize_for_xml(&val, out)?;
+    } else if let Some(pat) = ret.grep.as_deref() {
+        let val = crate::mcp::retrieval::call_grep(ingest, interner, pat, None);
+        crate::serialize::serialize_grep_xml(&val, out)?;
+    } else if let Some(syms) = ret.connect.as_deref() {
+        execute_connect_query(syms, ingest, graph, interner, out)?;
+    } else if let Some(pair) = ret.path_between.as_deref() {
+        execute_path_query(pair, ingest, graph, interner, out)?;
+    } else if let Some(ex) = ret.exemplar.as_deref() {
+        let val = crate::mcp::retrieval::call_exemplar(ingest, interner, &pr.ranks, ex);
+        crate::serialize::serialize_exemplar_xml(root, &val, out)?;
+    } else if let Some(iface) = ret.lego.as_deref() {
+        let val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
+        crate::serialize::serialize_lego_xml(root, &val, out)?;
+    } else if let Some(rec) = ret.recall.as_deref() {
+        let val = crate::mcp::retrieval::call_memory_recall(ingest, interner, rec, None);
+        crate::serialize::serialize_recall_xml(root, rec, &val, out)?;
+    } else if let Some(tr) = ret.from_trace.as_deref() {
+        let trace_text = std::fs::read_to_string(tr).unwrap_or_else(|_| tr.to_string());
+        let val = crate::mcp::graph_tools::call_from_trace(ingest, interner, &trace_text);
+        crate::serialize::serialize_from_trace_xml(&val, out)?;
+    }
+    Ok(())
+}
