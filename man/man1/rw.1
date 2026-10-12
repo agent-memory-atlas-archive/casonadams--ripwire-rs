@@ -1,4 +1,4 @@
-.TH RW 1 "October 2026" "ripwire 0.2.0" "User Commands"
+.TH RW 1 "2026-10-12" "ripwire 0.3.0" "User Commands"
 .SH NAME
 rw, ripwire \- high-throughput agent context router and deterministic static analysis engine
 .SH SYNOPSIS
@@ -160,8 +160,70 @@ Show which non-test domain symbols a specific test harness file reaches.
 Pin a code quality baseline stamped with git \fBHEAD\fR to \fB.ripwire_quality_baseline\fR.
 .TP
 .B \-\-quality\-delta
-Measure code quality regressions against git \fBHEAD\fR (or pinned baseline) across cognitive complexity, cyclomatic complexity, code duplication, and contract breaks. Exits non-zero if gating regressions are detected.
-
+Measure code quality regressions against git \fBHEAD\fR (or pinned baseline) across 10 facets (cognitive complexity, cyclomatic complexity, dead code, duplicates, nesting, params, churn, and arity breaks). Exits non-zero (\fB2\fR) if gating regressions are detected.
+.TP
+.B \-\-map\-diff
+Re-rank the architecture map toward git-changed files so recent work automatically floats to the top of the context window.
+.TP
+.B \-\-seams
+Discover untested cross-module call boundaries (integration seams) across directory and subsystem boundaries.
+.TP
+.BI \-\-pr\-context [=BASE]
+Generate a composite pull request review context bundle against base reference \fIBASE\fR (default: \fBmain\fR or \fBmaster\fR), including changed symbols, impact, tests, co-change, and authors.
+.TP
+.BI \-\-merge\-scout= REFS
+Predict semantic and symbol merge conflicts across concurrent divergent branches \fIREFS\fR before attempting a git merge or rebase.
+.TP
+.BI \-\-arch= FILE
+Enforce architectural layering rules from file \fIFILE\fR. Exits with code \fB2\fR if any forbidden cross-layer call dependency is introduced.
+.TP
+.B \-\-mermaid
+Export a Mermaid flowchart diagram of module call dependency topology to stdout.
+.TP
+.B \-\-zoom
+Hierarchical Louvain community clustering view.
+.TP
+.B \-\-biggest\-first
+Rank functions by readability volume and physical size, largest first.
+.TP
+.B \-\-nonlocal\-state
+Detect functions reading or mutating reachable global or file-static state.
+.TP
+.B \-\-lint
+Scan codebase for AST code smells (complexity spikes, deep nesting, dead functions).
+.TP
+.B \-\-lint\-catalog
+Print built-in AST code smell catalog with severity rankings.
+.TP
+.BI \-\-at= FILE:LINE
+Resolve innermost symbol definition enclosing \fIFILE:LINE\fR. Exits 1 if no symbol spans line.
+.TP
+.BI \-\-verify= CLAIM
+Formally verify relationship claim between symbols (e.g. \fBcalls(A,B)\fR, \fBuses(A,B)\fR).
+.TP
+.BI \-\-pack\-task= TASK
+Assemble single-call orientation task bundle under budget tailored to task description.
+.TP
+.BI \-\-graph\-query= QUERY
+Evaluate functional graph query expression (e.g. \fBcallers(main)\fR).
+.TP
+.B \-\-doctor
+Run self-check diagnostics, verifying grammar integrity, git health, and baseline presence.
+.TP
+.B \-\-notes
+Display pinned session gotchas and notes.
+.TP
+.BI \-\-note\-add= NOTE
+Append a pinned session gotcha note.
+.TP
+.BI \-\-replace\-symbol\-body= BODY
+Atomically replace an entire symbol definition with new source code body.
+.TP
+.BI \-\-insert\-before\-symbol= TEXT
+Atomically insert source code immediately before a symbol definition.
+.TP
+.BI \-\-insert\-after\-symbol= TEXT
+Atomically insert source code immediately after a symbol definition.
 .SH ARCHITECTURE & CODE INTELLIGENCE
 .TP
 .B \-\-dead\-code
@@ -274,7 +336,6 @@ Disambiguates by file path prefix/suffix and symbol name (e.g. \fBsrc/domain.rs:
 Fully qualified canonical identifier (e.g. \fBsrc/domain.rs::Interner::len\fR).
 
 .SH EXAMPLES
-.PP
 Expand full body of an interned method:
 .RS
 .B rw . \-\-expand="Interner::len"

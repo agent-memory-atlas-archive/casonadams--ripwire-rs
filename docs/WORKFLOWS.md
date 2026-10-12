@@ -1,6 +1,6 @@
 # Real-World Workflows: When, Where, & Why to Use ripwire
 
-`ripwire` (`rw`) provides static analysis, call graph navigation, and pre-commit verification gates. Rather than running commands in isolation, `rw` is designed around 5 high-impact development and agentic workflows.
+`ripwire` (`rw`) provides static analysis, call graph navigation, and pre-commit verification gates. Rather than running commands in isolation, `rw` is designed around 6 high-impact development and agentic workflows.
 
 ---
 
@@ -51,20 +51,23 @@ rw . --callees="ingest_files"
 # Transitive reachability graph: full blast radius across the whole codebase
 rw . --impact="Interner"
 
-# Local ego-graph neighborhood (depth=1..3, fanout=32)
-rw . --around="execute_query" --around-depth=2 --around-fanout=16
+# Extract ego-graph around a symbol (depth 1, fanout 32)
+rw . --around="Interner::new" --around-depth=2 --around-fanout=16
 
-# Shortest directed call path between two functions
-rw . --path="parse,serialize"
+# Shortest directed call path between two symbols
+rw . --path-between="main:execute"
 
-# ARISE intra-procedural def-use variable dataflow slicing (forward/backward)
+# Minimal connecting subgraph relating 2..16 symbols
+rw . --connect="main,resolve_symbol,emit_xml"
+
+# Intra-procedural def-use variable dataflow slicing (ARISE)
 rw . --slice="compute:x" --slice-flow=both
 ```
 
 ### Benefits
-- **Zero Surprise Breakages**: Answers *"Can I safely change this?"* with mathematical graph reachability instead of text search (`grep`/`rg`) guesses.
-- **Ambiguity Transparency**: Emits `prov="split"` on ambiguous call targets to alert developers and agents when a call site cannot be resolved to a single unique definition.
-- **Deep Disambiguation**: Supports flexible selectors (`bare_name`, `Scope::name`, `file:name`, `file::Scope::name`).
+- **Full Transitive Impact**: Identifies downstream callers up to 16 hops deep ranked by Personalized PageRank.
+- **Root-Cause Tracing**: `--path-between` and `--connect` expose the exact sequence of intermediary function calls bridging two components.
+- **Side-Effect Verification**: ARISE slicing isolates exact variable lifetimes and mutation points inside a function.
 
 ---
 
@@ -92,14 +95,27 @@ rw . --situ
 # Assess whether a symbol can be safely deleted without breaking callers
 rw . --safe-delete="Interner::len"
 
-# Measure code quality regressions against git HEAD across 10 facets
+# Measure code quality regressions against git HEAD across 10 facets (exits with code 2)
 rw . --quality-delta
+
+# Re-rank architecture map toward git-changed files so active work floats up
+rw . --map-diff --top-k=30
+
+# Discover untested cross-module call boundaries (integration seams)
+rw . --seams
+
+# Generate composite PR review context bundle vs base branch
+rw . --pr-context=main
+
+# Predict symbol merge conflicts across concurrent divergent branches
+rw . --merge-scout="branch-a,branch-b"
 ```
 
 ### Benefits
 - **Surgical Test Execution**: Identifies the exact test files that transitively reach your changes, letting you run a 5-second test subset instead of a 20-minute test suite.
 - **Contract Enforcement**: Detects parameter count additions, removals, and visibility changes that break existing callers before you commit.
 - **Fowler's Shotgun Surgery Protection**: `--situ` surfaces companion files historically edited together with your diff that you may have forgotten to touch.
+- **Proactive Conflict Detection**: `--merge-scout` warns of semantic conflicts across branches before rebasing.
 
 ---
 
@@ -127,14 +143,33 @@ rw . --cochange
 # Partition call graph into cohesive modules via Louvain community detection
 rw . --communities
 
+# Hierarchical Louvain community zoom clustering
+rw . --zoom
+
+# Enforce architectural layering constraints from a rules file (exits 2 on violation)
+rw . --arch=rules.txt
+
+# Export Mermaid flowchart of module dependency topology
+rw . --mermaid
+
 # Discover symbols referenced in code but never defined (stdlib & external packages)
 rw . --external-surface
+
+# Rank functions by readability volume and size, largest first
+rw . --biggest-first
+
+# Detect functions accessing reachable global / file-static mutable state
+rw . --nonlocal-state
+
+# Scan codebase for AST code smells (complexity spikes, deep nesting, dead code)
+rw . --lint
+rw . --lint-catalog
 ```
 
 ### Benefits
 - **Data-Driven Refactoring**: Prioritizes refactoring on code hotspots where maintenance pain and churn intersect with high complexity.
 - **Dead-Weight Removal**: Pinpoints zero-caller functions safely without manual grep sweeps.
-- **Architectural Clarity**: Identifies tangled module boundaries and cyclic dependencies.
+- **Architectural Clarity**: Enforces strict layering boundaries via `--arch` and visualizes modular topologies with `--mermaid`.
 
 ---
 
@@ -156,6 +191,18 @@ rw . --outline="Interner::intern"
 # Pack source bodies of the top N highest PageRank symbols
 rw . --pack-top-n=5
 
+# Resolve innermost symbol chain enclosing a specific FILE:LINE
+rw . --at="src/main.rs:25"
+
+# Formally verify relationship claim between two symbols (calls, uses, defines)
+rw . --verify="calls(main,run_cli)"
+
+# Single-call orientation task bundle tailored to a task description
+rw . --pack-task="search"
+
+# Functional graph query DSL
+rw . --graph-query="callers(main)"
+
 # Map compiler error / stack trace frames directly onto indexed symbols
 rw . --from-trace=error.log
 
@@ -164,6 +211,13 @@ rw . --batch=queries.txt
 
 # Structured JSON output for navigation queries
 rw . --callers="Interner::len" --json
+
+# Engine self-diagnostics and repository health check
+rw . --doctor
+
+# Pinned session gotchas and notes
+rw . --notes
+rw . --note-add="symbol: gotcha note"
 
 # Launch native stdio Model Context Protocol (MCP) server for coding agents
 rw mcp
@@ -191,10 +245,10 @@ rw --add-skills
 # PR Gate: names tests to run and untested blast radius (exits 4 on violation)
 rw . --test-gate
 
-# Quality Regression Gate: checks quality regressions against base branch / HEAD
+# Quality Regression Gate: checks quality regressions against base branch / HEAD (exits 2 on violation)
 rw . --quality-delta
 
-# Upstream Parity Validation: verifies 1:1 input/output equivalence across 20 commands
+# Upstream Parity Validation: verifies 1:1 input/output equivalence across 36 commands
 make validate REPO=.
 ```
 
@@ -225,6 +279,6 @@ jobs:
 ```
 
 ### Benefits
-- **Automated Merge Blocking**: Fails PR jobs automatically (exit code 4 on `--test-gate` or non-zero on `--quality-delta`) before untested changes or architectural rot merge into production branches.
+- **Automated Merge Blocking**: Fails PR jobs automatically (exit code 4 on `--test-gate` or exit code 2 on `--quality-delta`) before untested changes or architectural rot merge into production branches.
 - **Microsecond Gate Execution**: Executes static analysis and graph traversals in milliseconds, eliminating slow CI runner bottlenecks.
 - **Zero Configuration**: Reads native git repository history, remotes, and branch merge bases automatically.

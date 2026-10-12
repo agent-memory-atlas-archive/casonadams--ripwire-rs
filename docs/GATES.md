@@ -1,6 +1,8 @@
 # Pre-Commit Safety Gates
 
-`ripwire` includes zero-configuration verification gates for pre-commit hooks and CI pipelines.
+`ripwire` includes zero-configuration verification gates for pre-commit hooks, developer workflows, and CI pipelines.
+
+---
 
 ## 1. Contract Checker (`--edit-check=SYM`)
 
@@ -37,13 +39,17 @@ Maps modified files and symbols to transitively reachable test files across the 
 
 ## 3. Quality Delta Gate (`--quality-delta`)
 
-Enforces regression-free commits across 11 architectural quality dimensions:
-1. Cyclomatic Complexity ($CCX \le 15$)
-2. Function Length / Verbosity
-3. Dead Code Detection
-4. AST Duplication / Clones
-5. Nesting Depth
-6. Parameter Count
+Enforces regression-free commits across 10 architectural quality dimensions against git `HEAD` or a pinned baseline (`--quality-baseline`):
+1. **Cognitive Complexity** ($CCX \le 15$ Campbell standard)
+2. **Cyclomatic Complexity** (McCabe paths)
+3. **Function Length / Line Count**
+4. **AST Duplication / Clones** (Type-1, Type-2, Type-3)
+5. **Nesting Depth**
+6. **Parameter Count**
+7. **Dead Code Detection** (unreachable internal symbols)
+8. **Short-Horizon Churn Spans** (frequently touched code regions)
+9. **New Public API Surface**
+10. **Baseline Regression Tracking** (supports `.ripwire_quality_acks` suppression ledger)
 
 ```xml
 <quality-delta schema="ripwire.quality-delta/v1" baseline="git-HEAD" regressions="0" minor="0" acked="0" stale="0" preexisting-worse="0" new-symbol="0" gating="0" register-macro-excluded="0" api-new-surface="0" at="9e5c9d5+dirty">
@@ -51,4 +57,104 @@ Enforces regression-free commits across 11 architectural quality dimensions:
 ```
 
 - **Radical Honesty**: Discloses working copy status (`+dirty`), new public API surface, and separates non-blocking new-symbol debt from blocking pre-existing regressions.
-- **Exit Code**: Returns exit code 1 if `gating > 0`.
+- **Exit Code**: Returns exit code 2 if blocking quality regressions exist (`gating > 0`).
+
+---
+
+## 4. Test Obligation Gate (`--test-gate`)
+
+The definitive pre-commit verification gate combining changed symbols, affected test discovery, and untested blast radius analysis.
+
+```xml
+<test-gate schema="ripwire.test-gate/v1" changed_files="1" changed_symbols="2" tests="1" untested_symbols="1">
+  <test p="tests/test_service.rs"/>
+  <untested p="src/service.rs" n="new_helper"/>
+</test-gate>
+```
+
+- **Exit Code**: Returns exit code 4 if modified code leaves untested obligations.
+
+---
+
+## 5. Integration Seams Gate (`--seams`)
+
+Identifies call edges crossing module or directory boundaries that have zero direct test coverage.
+
+```xml
+<seams schema="ripwire.seams/v1" root="." seams="12">
+  <seam caller="src/api::handle" callee="src/db::query" cross="api->db"/>
+</seams>
+```
+
+- **Architecture Audit**: Pinpoints vulnerable boundary interfaces before integration testing.
+
+---
+
+## 6. Map Diff Gate (`--map-diff`)
+
+Re-ranks the architecture map toward git-modified files so recent work automatically floats to the top of the context window.
+
+```bash
+rw . --map-diff --top-k=30
+```
+
+- **Focus**: Keeps LLM context windows concentrated on currently active development tasks without losing structural context.
+
+---
+
+## 7. Composite PR Context (`--pr-context=BASE`)
+
+Assembles a complete pull request review context bundle against a base git reference (defaulting to `main` or `master`).
+
+```xml
+<pr-context schema="ripwire.pr-context/v1" base="main" files="2">
+  <file p="src/service.rs" symbols="14">
+    <changed-symbols count="1">
+      <s n="execute"/>
+    </changed-symbols>
+    <impact dependents="5" files_other="2"/>
+    <tests count="2"/>
+    <cochange commits="12" partners="1"/>
+    <owners authors="2" bf="1"/>
+  </file>
+</pr-context>
+```
+
+- **One-Turn Review**: Combines changed symbols, transitive impact, tests to run, co-change partners, and authorship in a single query.
+
+---
+
+## 8. Branch Merge Scout (`--merge-scout="branch-a,branch-b"`)
+
+Predicts semantic and symbol merge conflicts across concurrent divergent branches before attempting a git merge or rebase.
+
+```xml
+<merge-scout schema="ripwire.merge-scout/v1" base="main" branches="feature-a,feature-b" conflicts="1">
+  <conflict sym="Interner::len" file="src/domain.rs" branches="feature-a,feature-b"/>
+</merge-scout>
+```
+
+---
+
+## 9. Architectural Layering Rules (`--arch=RULES`)
+
+Enforces directional dependency constraints between architectural layers from a simple configuration file.
+
+```text
+# rules.txt
+layer domain <= core
+layer core <= api
+deny api -> domain
+```
+
+```bash
+rw . --arch=rules.txt
+```
+
+- **Exit Code**: Returns exit code 2 if any forbidden cross-layer dependency edge is introduced.
+
+---
+
+## 10. Situational Awareness (`--situ`)
+
+Summarizes the 5 critical factors of a working tree diff: blast radius, tests to run, forgotten co-change partners, maintenance hotspots touched, and modules modified.

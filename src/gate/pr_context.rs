@@ -113,3 +113,74 @@ pub fn serialize_pr_context_xml<W: Write>(rep: &PrContextReport, out: &mut W) ->
     }
     writeln!(out, "</pr-context>")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_serialize_pr_context_xml() {
+        let report = PrContextReport {
+            base_ref: "main".to_string(),
+            files_count: 1,
+            files: vec![PrFileContext {
+                path: "src/lib.rs".to_string(),
+                symbol_count: 5,
+                changed_symbols: vec!["run_cli".to_string(), "init".to_string()],
+                dependents_count: 3,
+                tests_count: 2,
+                commits_count: 4,
+                authors_count: 1,
+            }],
+        };
+
+        let mut out = Vec::new();
+        serialize_pr_context_xml(&report, &mut out).expect("serialize should succeed");
+        let xml = String::from_utf8(out).expect("valid utf-8");
+        assert!(xml.contains("schema=\"ripwire.pr-context/v1\""));
+        assert!(xml.contains("base=\"main\""));
+        assert!(xml.contains("<file p=\"src/lib.rs\" symbols=\"5\">"));
+        assert!(xml.contains("<s n=\"run_cli\"/>"));
+        assert!(xml.contains("<s n=\"init\"/>"));
+        assert!(xml.contains("<impact dependents=\"3\" files_other=\"0\"/>"));
+        assert!(xml.contains("<tests count=\"2\"/>"));
+        assert!(xml.contains("<cochange commits=\"4\" partners=\"0\"/>"));
+        assert!(xml.contains("<owners authors=\"1\" bf=\"1\"/>"));
+    }
+
+    #[test]
+    fn test_compute_pr_context_report() {
+        let interner = Interner::new();
+        let mut ingest = IngestResult::new();
+        let p = interner.intern("src/worker.rs");
+        ingest.files.push(crate::domain::FileInfo {
+            id: 0,
+            path: p,
+            lang: crate::domain::Lang::Rust,
+            byte_size: 100,
+            line_count: 10,
+        });
+        let sname = interner.intern("run_job");
+        ingest.symbols.push(crate::domain::Symbol::new(
+            0,
+            sname,
+            sname,
+            crate::domain::SymKind::Function,
+            crate::domain::Lang::Rust,
+            0,
+            5,
+        ));
+        let graph = Graph::build(&ingest, &interner);
+        let report = compute_pr_context(
+            &["src/worker.rs".to_string()],
+            &ingest,
+            &graph,
+            &interner,
+            "HEAD~1",
+        );
+        assert_eq!(report.base_ref, "HEAD~1");
+        assert_eq!(report.files_count, 1);
+        assert_eq!(report.files[0].path, "src/worker.rs");
+        assert_eq!(report.files[0].changed_symbols, vec!["run_job"]);
+    }
+}

@@ -82,7 +82,7 @@ quality: ## Measure quality regressions against git HEAD with ripwire
 REPO ?= .
 
 .PHONY: parity
-parity: build-release ## Validate 1:1 input/output parity with upstream ripwire across 20 commands on REPO (default: REPO=.)
+parity: build-release ## Validate 1:1 input/output parity with upstream ripwire across 36 commands on REPO (default: REPO=.)
 	@./scripts/validate-parity.sh "$(REPO)"
 
 .PHONY: validate
