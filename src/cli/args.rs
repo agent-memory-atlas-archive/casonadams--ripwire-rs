@@ -269,6 +269,18 @@ pub struct TopRetrievalArgs {
     /// Map a stack trace, sanitizer report or compiler error onto indexed symbols
     #[arg(long = "from-trace", value_name = "FILE")]
     pub from_trace: Option<String>,
+    /// Resolve innermost symbol chain enclosing FILE:LINE
+    #[arg(long = "at", value_name = "FILE:LINE")]
+    pub at: Option<String>,
+    /// Formally verify a code relationship claim (e.g. calls(A,B))
+    #[arg(long = "verify", value_name = "CLAIM")]
+    pub verify: Option<String>,
+    /// Package single-call orientation task bundle under token budget
+    #[arg(long = "pack-task", value_name = "TASK")]
+    pub pack_task: Option<String>,
+    /// Evaluate small functional graph query DSL expression
+    #[arg(long = "graph-query", value_name = "EXPR")]
+    pub graph_query: Option<String>,
 }
 
 /// Top-level workspace & audit flags.

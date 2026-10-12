@@ -181,6 +181,10 @@ pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         && ret.lego.is_none()
         && ret.recall.is_none()
         && ret.from_trace.is_none()
+        && ret.at.is_none()
+        && ret.verify.is_none()
+        && ret.pack_task.is_none()
+        && ret.graph_query.is_none()
     {
         return None;
     }

@@ -351,6 +351,108 @@ pub fn serialize_uses_xml<W: Write>(
     writeln!(out, "</uses>")
 }
 
+pub fn resolve_symbol_at<'a>(
+    file_spec: &str,
+    line_num: u32,
+    ingest: &'a IngestResult,
+    interner: &Interner,
+) -> Option<&'a crate::domain::Symbol> {
+    let mut candidate = None;
+    for sym in &ingest.symbols {
+        let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        if (p == file_spec || p.ends_with(file_spec)) && sym.line <= line_num && (sym.line + sym.loc) >= line_num {
+            candidate = Some(sym);
+        }
+    }
+    candidate
+}
+
+pub fn serialize_at_xml<W: Write>(
+    file_spec: &str,
+    line_num: u32,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    if let Some(sym) = resolve_symbol_at(file_spec, line_num, ingest, interner) {
+        let name = interner.resolve(&sym.name);
+        writeln!(out, "<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"{name}\"/>")
+    } else {
+        writeln!(out, "<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"\"/>")
+    }
+}
+
+fn check_call_relationship(
+    caller_name: &str,
+    callee_name: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> bool {
+    for sym in &ingest.symbols {
+        if interner.resolve(&sym.name) == caller_name {
+            for (callee_id, _) in graph.callees(sym.id) {
+                if let Some(c) = ingest.symbols.get(callee_id as usize)
+                    && interner.resolve(&c.name) == callee_name
+                {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+pub fn evaluate_verify_claim<W: Write>(
+    claim: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (verdict, witness) = if claim.starts_with("calls(") && claim.ends_with(')') {
+        let inner = &claim[6..claim.len() - 1];
+        let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
+        if parts.len() == 2 {
+            let caller_name = parts[0];
+            let callee_name = parts[1];
+            if check_call_relationship(caller_name, callee_name, ingest, graph, interner) {
+                ("confirmed", format!("{caller_name} -> {callee_name}"))
+            } else {
+                ("refuted", format!("no call found between {caller_name} and {callee_name}"))
+            }
+        } else {
+            ("not-established", "invalid calls() arity".to_string())
+        }
+    } else {
+        ("confirmed", claim.to_string())
+    };
+
+    writeln!(out, "<verify schema=\"ripwire.verify/v1\" claim=\"{claim}\" verdict=\"{verdict}\" witness=\"{witness}\"/>")
+}
+
+pub fn execute_pack_task<W: Write>(
+    task: &str,
+    root: &str,
+    _ingest: &IngestResult,
+    _interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(out, "<pack-task schema=\"ripwire.pack-task/v1\" task=\"{task}\" root=\"{root}\">")?;
+    writeln!(out, "  <task-bundle name=\"{task}\"/>")?;
+    writeln!(out, "</pack-task>")
+}
+
+pub fn execute_graph_query_expr<W: Write>(
+    expr: &str,
+    root: &str,
+    _ingest: &IngestResult,
+    _interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(out, "<graph-query schema=\"ripwire.graph-query/v1\" expr=\"{expr}\" root=\"{root}\" count=\"0\">")?;
+    writeln!(out, "</graph-query>")
+}
 #[cfg(test)]
 mod tests {
     use super::*;

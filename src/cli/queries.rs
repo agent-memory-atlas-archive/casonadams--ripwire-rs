@@ -611,6 +611,16 @@ pub fn execute_retrieval_dispatch<W: Write>(
         let trace_text = std::fs::read_to_string(tr).unwrap_or_else(|_| tr.to_string());
         let val = crate::mcp::graph_tools::call_from_trace(ingest, interner, &trace_text);
         crate::serialize::serialize_from_trace_xml(&val, out)?;
+    } else if let Some(at_spec) = ret.at.as_deref() {
+        let (file, line_str) = at_spec.split_once(':').unwrap_or((at_spec, "1"));
+        let line: u32 = line_str.parse().unwrap_or(1);
+        crate::navigate::serialize_at_xml(file, line, ingest, interner, out)?;
+    } else if let Some(claim) = ret.verify.as_deref() {
+        crate::navigate::evaluate_verify_claim(claim, ingest, graph, interner, out)?;
+    } else if let Some(task) = ret.pack_task.as_deref() {
+        crate::navigate::execute_pack_task(task, root, ingest, interner, out)?;
+    } else if let Some(expr) = ret.graph_query.as_deref() {
+        crate::navigate::execute_graph_query_expr(expr, root, ingest, interner, out)?;
     }
     Ok(())
 }
