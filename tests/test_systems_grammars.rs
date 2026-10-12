@@ -186,6 +186,22 @@ resource "aws_s3_bucket" "b" {
 }
 "#;
 
+    let scala_code = r#"
+object MainApp {
+  def processOrder(id: Int): Unit = {
+    println(id)
+  }
+}
+"#;
+
+    let erlang_code = r#"
+-module(server).
+-export([start/0]).
+
+start() ->
+    ok.
+"#;
+
     let files = [
         ("src/math.zig", Lang::Zig, zig_code.as_bytes()),
         (
@@ -194,6 +210,8 @@ resource "aws_s3_bucket" "b" {
             solidity_code.as_bytes(),
         ),
         ("infra/main.tf", Lang::Hcl, hcl_code.as_bytes()),
+        ("src/MainApp.scala", Lang::Scala, scala_code.as_bytes()),
+        ("src/server.erl", Lang::Erlang, erlang_code.as_bytes()),
     ];
     let interner = Interner::new();
     let registry = LanguageRegistry::new().unwrap();
@@ -209,4 +227,6 @@ resource "aws_s3_bucket" "b" {
     assert!(sym_names.contains(&"Token".to_string()));
     assert!(sym_names.contains(&"transfer".to_string()));
     assert!(sym_names.contains(&"resource".to_string()));
+    assert!(sym_names.contains(&"MainApp".to_string()));
+    assert!(sym_names.contains(&"start".to_string()));
 }

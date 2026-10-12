@@ -121,15 +121,17 @@ pub enum Lang {
     Zig,
     Solidity,
     Hcl,
+    Scala,
+    Erlang,
     Unknown,
 }
 impl Lang {
     #[inline]
     pub const fn tag(self) -> &'static str {
-        const TAGS: [&str; 28] = [
+        const TAGS: [&str; 30] = [
             "rs", "ts", "js", "py", "go", "c", "cpp", "cuda", "metal", "java", "cs", "swift", "sh",
             "rb", "php", "lua", "ex", "dart", "kt", "gd", "json", "toml", "yaml", "md", "zig",
-            "sol", "hcl", "?",
+            "sol", "hcl", "scala", "erl", "?",
         ];
         TAGS[self as usize]
     }
@@ -163,6 +165,8 @@ impl Lang {
             "zig" | "zon" => Self::Zig,
             "sol" => Self::Solidity,
             "tf" | "hcl" | "tfvars" => Self::Hcl,
+            "scala" | "sc" => Self::Scala,
+            "erl" | "hrl" => Self::Erlang,
             _ => Self::Unknown,
         }
     }
@@ -181,6 +185,10 @@ impl Lang {
                 | (Self::JavaScript, Self::TypeScript)
                 | (Self::Java, Self::Kotlin)
                 | (Self::Kotlin, Self::Java)
+                | (Self::Java, Self::Scala)
+                | (Self::Scala, Self::Java)
+                | (Self::Elixir, Self::Erlang)
+                | (Self::Erlang, Self::Elixir)
         )
     }
 
@@ -211,6 +219,8 @@ impl Lang {
                 | Self::Zig
                 | Self::Solidity
                 | Self::Hcl
+                | Self::Scala
+                | Self::Erlang
         )
     }
     /// True if both languages are dependency capable and share dialect compatibility.
