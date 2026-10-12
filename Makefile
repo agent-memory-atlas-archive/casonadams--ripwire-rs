@@ -82,3 +82,13 @@ quality: ## Measure quality regressions against git HEAD with ripwire
 .PHONY: update-grammars
 update-grammars: ## Update vendored tree-sitter grammars from upstream repositories
 	@./scripts/update-grammars.sh $(GRAMMAR)
+.PHONY: install-man
+install-man: ## Install manual pages into candidate man directory
+	@MAN_DIR=$$(test -w /opt/homebrew/share/man/man1 2>/dev/null && echo /opt/homebrew/share/man/man1 || echo ~/.local/share/man/man1); \
+	mkdir -p "$$MAN_DIR"; \
+	cp man/man1/rw.1 man/man1/ripwire.1 "$$MAN_DIR/"; \
+	echo "Installed man pages to $$MAN_DIR"
+
+.PHONY: install
+install: build-release install-man ## Build release binary and install to cargo bin and man pages
+	$(CARGO) install --path .

@@ -15,6 +15,7 @@ include = [
     "src/**/*",
     "vendor/grammars/**/*.c",
     "vendor/grammars/**/*.h",
+    "man/**/*",
     "build.rs",
     "Cargo.toml",
     "README.md",
