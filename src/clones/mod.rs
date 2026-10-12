@@ -21,8 +21,13 @@ pub fn execute_clones_command(root: &str, min_tokens: usize) -> io::Result<()> {
         &crate::crawler::CrawlerOptions::default(),
     );
     let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
-
-    let clones = find_clones(&ingest, &interner, min_tokens, None);
+    let clones = find_clones_in_root(
+        &ingest,
+        &interner,
+        min_tokens,
+        None,
+        Some(std::path::Path::new(root)),
+    );
     let xml = render_clones_xml(&clones, &ingest, &interner);
     print!("{xml}");
     Ok(())

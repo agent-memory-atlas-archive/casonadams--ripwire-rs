@@ -881,6 +881,18 @@ pub fn execute_connect_query<W: io::Write>(
     crate::serialize::serialize_connect_xml(&val, out)
 }
 
+fn split_endpoint_pair(pair: &str) -> (&str, &str) {
+    if let Some((from, to)) = pair.split_once(',') {
+        (from.trim(), to.trim())
+    } else if let Some((from, to)) = pair.split_once("->") {
+        (from.trim(), to.trim())
+    } else if let Some((from, to)) = pair.split_once(':') {
+        (from.trim(), to.trim())
+    } else {
+        (pair.trim(), "")
+    }
+}
+
 pub fn execute_path_query<W: io::Write>(
     pair: &str,
     ingest: &crate::domain::IngestResult,
@@ -888,9 +900,7 @@ pub fn execute_path_query<W: io::Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let parts: Vec<&str> = pair.split([',', ':']).collect();
-    let from = parts.first().copied().unwrap_or("");
-    let to = parts.get(1).copied().unwrap_or("");
+    let (from, to) = split_endpoint_pair(pair);
     if crate::navigate::find_symbols_by_name(from, ingest, interner).is_empty() {
         return Err(io::Error::other(format!(
             "ripwire: --path endpoint not found: {from}"
@@ -1188,5 +1198,9 @@ mod tests {
             compute_effective_budget(None, None, None),
             Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES)
         );
+        assert_eq!(split_endpoint_pair("a,b"), ("a", "b"));
+        assert_eq!(split_endpoint_pair("a:b"), ("a", "b"));
+        assert_eq!(split_endpoint_pair("a->b"), ("a", "b"));
+        assert_eq!(split_endpoint_pair("single"), ("single", ""));
     }
 }

@@ -117,6 +117,7 @@ fn get_or_load_file_bytes<'a>(
     ingest: &IngestResult,
     interner: &Interner,
     sources: Option<&HashMap<String, Vec<u8>>>,
+    root: Option<&std::path::Path>,
     file_cache: &'a mut [Option<Vec<u8>>],
 ) -> Option<&'a [u8]> {
     if file_cache[file_id].is_none() {
@@ -124,6 +125,8 @@ fn get_or_load_file_bytes<'a>(
         let file_path = interner.resolve(&file_info.path);
         let bytes = if let Some(map) = sources {
             map.get(file_path).cloned()
+        } else if let Some(r) = root {
+            std::fs::read(r.join(file_path)).ok()
         } else {
             std::fs::read(file_path).ok()
         };
@@ -137,6 +140,7 @@ fn extract_candidate_bodies(
     interner: &Interner,
     min_tokens: usize,
     sources: Option<&HashMap<String, Vec<u8>>>,
+    root: Option<&std::path::Path>,
 ) -> Vec<BodyTokens> {
     let mut candidates = Vec::new();
     let mut file_cache: Vec<Option<Vec<u8>>> = vec![None; ingest.files.len()];
@@ -154,7 +158,7 @@ fn extract_candidate_bodies(
         }
 
         let Some(file_bytes) =
-            get_or_load_file_bytes(fid, ingest, interner, sources, &mut file_cache)
+            get_or_load_file_bytes(fid, ingest, interner, sources, root, &mut file_cache)
         else {
             continue;
         };
@@ -330,7 +334,19 @@ pub fn find_clones(
     min_tokens: usize,
     sources: Option<&HashMap<String, Vec<u8>>>,
 ) -> Vec<CloneGroup> {
-    let candidates = extract_candidate_bodies(ingest, interner, min_tokens, sources);
+    find_clones_in_root(ingest, interner, min_tokens, sources, None)
+}
+
+/// Detect all Type-1, Type-2, and Type-3 clones across the codebase in target root.
+#[must_use]
+pub fn find_clones_in_root(
+    ingest: &IngestResult,
+    interner: &Interner,
+    min_tokens: usize,
+    sources: Option<&HashMap<String, Vec<u8>>>,
+    root: Option<&std::path::Path>,
+) -> Vec<CloneGroup> {
+    let candidates = extract_candidate_bodies(ingest, interner, min_tokens, sources, root);
     let mut exact_groups = group_exact_clones(&candidates);
 
     let mut exact_matched = HashMap::new();
