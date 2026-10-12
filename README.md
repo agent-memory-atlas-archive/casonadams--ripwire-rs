@@ -1,9 +1,7 @@
 # ripwire
 
 High-throughput agent context router and deterministic static analysis engine.
-
-`ripwire` (`rw`) analyzes source code across 24 languages to construct precise call graphs, calculate symbol impact via PageRank and HITS, mine co-change patterns, slice intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a standalone CLI or as a Model Context Protocol (MCP) server over stdio for AI coding agents.
-
+`ripwire` (`rw`) analyzes source code across 31 languages to construct precise call graphs, calculate symbol impact via PageRank and HITS, mine co-change patterns, slice intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a standalone CLI or as a Model Context Protocol (MCP) server over stdio for AI coding agents.
 ---
 
 ## Quickstart
@@ -37,8 +35,7 @@ rw mcp
 ---
 
 ## Features
-
-- **Multi-Language AST Analysis**: 24 languages indexed via Tree-Sitter (Rust, TypeScript, JavaScript, Python, Go, C, C++, CUDA, Metal, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown).
+- **Multi-Language AST Analysis**: 31 languages indexed via Tree-Sitter (Rust, TypeScript, JavaScript, Python, Go, C, C++, CUDA, Metal, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS).
 - **Personalized PageRank & HITS**: Transitive blast radius and structural authority calculations converging in milliseconds over lock-free sparse matrices.
 - **Pre-Commit Verification Gates**: Parameter arity contract verification (`--edit-check`), surgical test reachability mapping (`--affected`), and code quality regressions vs git HEAD (`--quality-delta`, `--test-gate`).
 - **Git Churn & Coupling Analytics**: Fowler's Shotgun Surgery co-change mining and maintenance hotspot ranking (code churn * cognitive complexity).

@@ -14,7 +14,7 @@
            │
            ▼
 ┌──────────────────────┐
-│ Parallel AST Ingest  │  24 Tree-Sitter grammars, lock-free lasso interning, SoA tables
+│ Parallel AST Ingest  │  31 Tree-Sitter grammars, lock-free lasso interning, SoA tables
 └──────────┬───────────┘
            │
            ▼

@@ -29,7 +29,7 @@ rw . --html=graph.html --color-by=community
 ### Benefits
 - **Zero Hallucinated Dependencies**: Produces an in-context AST schema dictionary teaching agents the meaning of minified attributes (`t`, `n`, `sc`, `k`, `c`).
 - **Prompt Token Savings**: Emits `shown="K"` truncation markers so LLMs know absence in a top-K slice does not mean absence in the codebase.
-- **Sub-Second Speed**: Renders complete repository topologies across 24 languages in ~25 ms.
+- **Sub-Second Speed**: Renders complete repository topologies across 31 languages in ~25 ms.
 
 ---
 

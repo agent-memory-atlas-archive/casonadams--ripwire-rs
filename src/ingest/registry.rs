@@ -163,7 +163,7 @@ static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 31] = [
 pub struct LanguageRegistry;
 
 impl LanguageRegistry {
-    /// Initialize registry with all supported 24 languages.
+    /// Initialize registry with all supported 31 languages.
     pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         Ok(Self)
     }

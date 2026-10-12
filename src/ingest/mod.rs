@@ -77,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_24_grammars() {
+    fn test_all_31_grammars() {
         let reg = LanguageRegistry::new().unwrap();
         let fixtures: Vec<(&str, Lang, &str, usize, usize)> = vec![
             ("src/main.rs", Lang::Rust, "fn main() { run(); }", 1, 1),
@@ -228,6 +228,55 @@ mod tests {
                 Lang::Markdown,
                 "# Project\nOverview\n## Architecture\nDetails",
                 3,
+                0,
+            ),
+            (
+                "src/main.zig",
+                Lang::Zig,
+                "pub fn add(a: i32, b: i32) i32 { return a + b; }\npub fn run() void { _ = add(1, 2); }",
+                2,
+                1,
+            ),
+            (
+                "contracts/Token.sol",
+                Lang::Solidity,
+                "contract Token { function transfer() public { doTransfer(); } }",
+                2,
+                1,
+            ),
+            (
+                "infra/main.tf",
+                Lang::Hcl,
+                "resource \"aws_s3_bucket\" \"b\" { bucket = \"my-bucket\" }",
+                1,
+                0,
+            ),
+            (
+                "src/Main.scala",
+                Lang::Scala,
+                "object Main { def run(): Unit = { execute() } }",
+                2,
+                1,
+            ),
+            (
+                "src/app.erl",
+                Lang::Erlang,
+                "-module(app).\nstart() -> run().",
+                1,
+                1,
+            ),
+            (
+                "index.html",
+                Lang::Html,
+                "<html><body><div id=\"app\"></div></body></html>",
+                1,
+                0,
+            ),
+            (
+                "style.css",
+                Lang::Css,
+                ".card { display: flex; }\n@keyframes spin { from { transform: rotate(0deg); } }",
+                2,
                 0,
             ),
         ];
