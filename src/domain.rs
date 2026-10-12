@@ -118,19 +118,21 @@ pub enum Lang {
     Toml,
     Yaml,
     Markdown,
+    Zig,
+    Solidity,
+    Hcl,
     Unknown,
 }
-
 impl Lang {
     #[inline]
     pub const fn tag(self) -> &'static str {
-        const TAGS: [&str; 25] = [
+        const TAGS: [&str; 28] = [
             "rs", "ts", "js", "py", "go", "c", "cpp", "cuda", "metal", "java", "cs", "swift", "sh",
-            "rb", "php", "lua", "ex", "dart", "kt", "gd", "json", "toml", "yaml", "md", "?",
+            "rb", "php", "lua", "ex", "dart", "kt", "gd", "json", "toml", "yaml", "md", "zig",
+            "sol", "hcl", "?",
         ];
         TAGS[self as usize]
     }
-
     /// Map file extensions to their corresponding language.
     pub fn from_extension(ext: &str) -> Self {
         match ext {
@@ -158,10 +160,12 @@ impl Lang {
             "toml" => Self::Toml,
             "yml" | "yaml" => Self::Yaml,
             "md" | "markdown" | "rst" | "adoc" | "org" | "mdx" => Self::Markdown,
+            "zig" | "zon" => Self::Zig,
+            "sol" => Self::Solidity,
+            "tf" | "hcl" | "tfvars" => Self::Hcl,
             _ => Self::Unknown,
         }
     }
-
     /// True if these two languages are compatible for cross-symbol resolution.
     pub fn is_compatible(self, other: Self) -> bool {
         if self == other {
@@ -204,9 +208,11 @@ impl Lang {
                 | Self::Elixir
                 | Self::Dart
                 | Self::Kotlin
+                | Self::Zig
+                | Self::Solidity
+                | Self::Hcl
         )
     }
-
     /// True if both languages are dependency capable and share dialect compatibility.
     #[must_use]
     pub fn is_pair_dependency_capable(self, other: Self) -> bool {

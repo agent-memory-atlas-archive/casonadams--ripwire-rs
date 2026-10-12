@@ -34,7 +34,7 @@ thread_local! {
     ));
 }
 
-static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 24] = [
+static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 27] = [
     lang_entry!(
         tree_sitter_rust::LANGUAGE.into(),
         include_str!("../queries/rust/tags.scm")
@@ -128,6 +128,18 @@ static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 24] = [
         include_str!("../queries/yaml/tags.scm")
     ),
     lang_entry!(unsafe { Language::from_raw(tree_sitter_markdown()) }, ""),
+    lang_entry!(
+        tree_sitter_zig::LANGUAGE.into(),
+        include_str!("../queries/zig/tags.scm")
+    ),
+    lang_entry!(
+        tree_sitter_solidity::LANGUAGE.into(),
+        include_str!("../queries/solidity/tags.scm")
+    ),
+    lang_entry!(
+        tree_sitter_hcl::LANGUAGE.into(),
+        include_str!("../queries/hcl/tags.scm")
+    ),
 ];
 
 /// Registry of supported Tree-Sitter languages and compiled queries.

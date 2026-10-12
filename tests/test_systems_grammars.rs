@@ -160,3 +160,53 @@ init_environment
         graph.edge_count()
     );
 }
+#[test]
+fn test_tier1_cloud_and_systems_grammars() {
+    let zig_code = r#"
+pub fn add(a: i32, b: i32) i32 {
+    return a + b;
+}
+
+pub fn calculate() i32 {
+    return add(10, 20);
+}
+"#;
+
+    let solidity_code = r#"
+contract Token {
+    function transfer(address to, uint amount) public {
+        emitTransfer(to, amount);
+    }
+}
+"#;
+
+    let hcl_code = r#"
+resource "aws_s3_bucket" "b" {
+  bucket = "my-tf-test-bucket"
+}
+"#;
+
+    let files = [
+        ("src/math.zig", Lang::Zig, zig_code.as_bytes()),
+        (
+            "contracts/Token.sol",
+            Lang::Solidity,
+            solidity_code.as_bytes(),
+        ),
+        ("infra/main.tf", Lang::Hcl, hcl_code.as_bytes()),
+    ];
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let ingest = ingest_in_memory_files(&files, &registry, &interner);
+    let sym_names: Vec<String> = ingest
+        .symbols
+        .iter()
+        .map(|s| interner.resolve(&s.name).to_string())
+        .collect();
+
+    assert!(sym_names.contains(&"add".to_string()));
+    assert!(sym_names.contains(&"calculate".to_string()));
+    assert!(sym_names.contains(&"Token".to_string()));
+    assert!(sym_names.contains(&"transfer".to_string()));
+    assert!(sym_names.contains(&"resource".to_string()));
+}

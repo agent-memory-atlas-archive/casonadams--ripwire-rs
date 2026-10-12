@@ -50,7 +50,9 @@ tree-sitter-python = "0.25.0"
 tree-sitter-rust = "0.24.2"
 tree-sitter-swift = "0.7"
 tree-sitter-typescript = "0.23.2"
+tree-sitter-zig = "1.1"
+tree-sitter-solidity = "1.2"
+tree-sitter-hcl = "1.1"
 
 [build-dependencies]
 cc = "1.7.0"
-
