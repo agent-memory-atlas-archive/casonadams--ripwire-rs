@@ -1,8 +1,9 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 pub mod community;
-
+pub mod mermaid;
 use crate::rank::{PageRankConfig, PageRankResult, page_rank, uniform_teleport};
 use crate::resolve::{ResolutionResult, resolve_all_references};
+pub use mermaid::generate_mermaid_diagram;
 use std::ops::Range;
 
 /// Compressed Sparse Row (CSR) matrix representation.

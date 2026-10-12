@@ -1,4 +1,5 @@
 pub mod affected;
+pub mod arch;
 pub mod baseline;
 pub mod contract;
 pub mod edit_check;
@@ -7,6 +8,7 @@ pub mod pr_context;
 pub mod quality_delta;
 pub mod seams;
 pub use affected::{AffectedReport, AffectedTest, find_affected_tests, is_test_path};
+pub use arch::{ArchConfig, ArchRule, ArchViolation, check_architecture_rules, serialize_arch_xml};
 pub use baseline::{
     DEFAULT_BASELINE_FILE, QualitySnapshot, compute_snapshot, read_baseline_file,
     write_baseline_file,

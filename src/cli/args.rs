@@ -211,6 +211,15 @@ pub struct TopArchitectureArgs {
     /// Names used but never defined in the index (external stdlib/deps surface)
     #[arg(long = "external-surface")]
     pub external_surface: bool,
+    /// Enforce architectural layering rules from file (exits 2 on violation)
+    #[arg(long = "arch", value_name = "RULES_FILE")]
+    pub arch: Option<String>,
+    /// Emit Mermaid flowchart diagram of module call graph
+    #[arg(long = "mermaid")]
+    pub mermaid: bool,
+    /// Multi-level hierarchical Louvain community clustering
+    #[arg(long = "zoom", value_name = "DEPTH")]
+    pub zoom: Option<Option<u32>>,
 }
 
 /// Top-level global modifiers and batching flags.

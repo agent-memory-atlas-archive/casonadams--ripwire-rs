@@ -245,7 +245,12 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         } else if detail.tree {
             execute_tree_query(root, &ingest, &pr, &interner, &mut stdout)?;
         } else if detail.biggest_first {
-            crate::metrics::readability::execute_biggest_first_query(root, &ingest, &interner, &mut stdout)?;
+            crate::metrics::readability::execute_biggest_first_query(
+                root,
+                &ingest,
+                &interner,
+                &mut stdout,
+            )?;
         } else if detail.nonlocal_state {
             let funcs = crate::metrics::nonlocal::find_nonlocal_state(&ingest, &graph, &interner);
             crate::metrics::nonlocal::serialize_nonlocal_state_xml(root, &funcs, &mut stdout)?;
@@ -291,6 +296,9 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         && !a.deps
         && a.around.is_none()
         && !a.external_surface
+        && a.arch.is_none()
+        && !a.mermaid
+        && a.zoom.is_none()
     {
         return None;
     }
@@ -299,7 +307,20 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         let (ingest, graph, _pr, interner) = load_repo_analysis(root)?;
         let mut stdout = io::stdout().lock();
 
-        if a.dead_code {
+        if let Some(rules_file) = a.arch.as_deref() {
+            let content = std::fs::read_to_string(rules_file)?;
+            let cfg = crate::gate::arch::ArchConfig::parse(&content);
+            let violations =
+                crate::gate::arch::check_architecture_rules(&cfg, &ingest, &graph, &interner);
+            crate::gate::arch::serialize_arch_xml(root, &violations, &mut stdout)?;
+            if !violations.is_empty() {
+                std::process::exit(2);
+            }
+        } else if a.mermaid {
+            crate::graph::generate_mermaid_diagram(&ingest, &graph, &interner, &mut stdout)?;
+        } else if a.zoom.is_some() {
+            execute_communities_query(root, None, &ingest, &graph, &interner, &mut stdout)?;
+        } else if a.dead_code {
             execute_dead_code_query(root, &ingest, &graph, &interner, &mut stdout)?;
         } else if a.communities || a.community.is_some() {
             execute_communities_query(root, a.community, &ingest, &graph, &interner, &mut stdout)?;
