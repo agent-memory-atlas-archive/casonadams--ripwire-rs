@@ -81,8 +81,15 @@ fn process_crawl_entry(
         return None;
     }
 
+    let file_name = path.file_name().and_then(|e| e.to_str()).unwrap_or("");
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang = Lang::from_extension(ext);
+    let lang = if file_name.eq_ignore_ascii_case("dockerfile")
+        || file_name.eq_ignore_ascii_case("containerfile")
+    {
+        Lang::Dockerfile
+    } else {
+        Lang::from_extension(ext)
+    };
     if lang == Lang::Unknown {
         return None;
     }

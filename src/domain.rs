@@ -125,15 +125,19 @@ pub enum Lang {
     Erlang,
     Html,
     Css,
+    Sql,
+    Proto,
+    Graphql,
+    Dockerfile,
     Unknown,
 }
 impl Lang {
     #[inline]
     pub const fn tag(self) -> &'static str {
-        const TAGS: [&str; 32] = [
+        const TAGS: [&str; 36] = [
             "rs", "ts", "js", "py", "go", "c", "cpp", "cuda", "metal", "java", "cs", "swift", "sh",
             "rb", "php", "lua", "ex", "dart", "kt", "gd", "json", "toml", "yaml", "md", "zig",
-            "sol", "hcl", "scala", "erl", "html", "css", "?",
+            "sol", "hcl", "scala", "erl", "html", "css", "sql", "proto", "gql", "docker", "?",
         ];
         TAGS[self as usize]
     }
@@ -208,6 +212,12 @@ impl Lang {
             ("scss", Lang::Css),
             ("sass", Lang::Css),
             ("less", Lang::Css),
+            ("sql", Lang::Sql),
+            ("proto", Lang::Proto),
+            ("graphql", Lang::Graphql),
+            ("gql", Lang::Graphql),
+            ("dockerfile", Lang::Dockerfile),
+            ("containerfile", Lang::Dockerfile),
         ];
 
         for &(e, l) in EXT_MAP {
@@ -271,6 +281,9 @@ impl Lang {
                 | Self::Erlang
                 | Self::Html
                 | Self::Css
+                | Self::Sql
+                | Self::Proto
+                | Self::Graphql
         )
     }
     /// True if both languages are dependency capable and share dialect compatibility.

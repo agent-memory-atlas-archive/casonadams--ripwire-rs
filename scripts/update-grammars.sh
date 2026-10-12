@@ -22,6 +22,10 @@ GRAMMARS=(
     "toml|https://github.com/tree-sitter-grammars/tree-sitter-toml|master|src"
     "yaml|https://github.com/tree-sitter-grammars/tree-sitter-yaml|master|src"
     "markdown|https://github.com/tree-sitter-grammars/tree-sitter-markdown|split_parser|tree-sitter-markdown/src"
+    "proto|https://github.com/mitchellh/tree-sitter-proto|main|src"
+    "graphql|https://github.com/bkegley/tree-sitter-graphql|master|src"
+    "dockerfile|https://github.com/camdencheek/tree-sitter-dockerfile|main|src"
+    "sql|https://github.com/DerekStride/tree-sitter-sql|gh-pages|src"
 )
 
 TARGET_FILTER="${1:-all}"

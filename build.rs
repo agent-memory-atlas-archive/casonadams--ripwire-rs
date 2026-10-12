@@ -41,6 +41,10 @@ fn main() {
         ("toml", &["parser.c", "scanner.c"], &[]),
         ("yaml", &["parser.c", "scanner.c", "schema.core.c"], &[]),
         ("markdown", &["parser.c", "scanner.c"], &[]),
+        ("proto", &["parser.c"], &[]),
+        ("graphql", &["parser.c"], &[]),
+        ("dockerfile", &["parser.c", "scanner.c"], &[]),
+        ("sql", &["parser.c", "scanner.c"], &[]),
     ];
 
     for (name, files, extra_includes) in grammars {

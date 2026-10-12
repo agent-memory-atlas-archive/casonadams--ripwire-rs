@@ -220,6 +220,32 @@ start() ->
 }
 "#;
 
+    let sql_code = "CREATE TABLE users ( id INT );";
+    let proto_code = r#"
+syntax = "proto3";
+service UserService {
+    rpc GetUser (UserRequest) returns (UserResponse);
+}
+message UserRequest {
+    int32 id = 1;
+}
+"#;
+
+    let gql_code = r#"
+type Query {
+    me: User
+}
+type User {
+    id: ID!
+    name: String!
+}
+"#;
+
+    let dockerfile_code = r#"
+FROM alpine:latest AS builder
+RUN apk add git
+"#;
+
     let files = [
         ("src/math.zig", Lang::Zig, zig_code.as_bytes()),
         (
@@ -232,6 +258,10 @@ start() ->
         ("src/server.erl", Lang::Erlang, erlang_code.as_bytes()),
         ("index.html", Lang::Html, html_code.as_bytes()),
         ("styles.css", Lang::Css, css_code.as_bytes()),
+        ("schema.sql", Lang::Sql, sql_code.as_bytes()),
+        ("api.proto", Lang::Proto, proto_code.as_bytes()),
+        ("schema.graphql", Lang::Graphql, gql_code.as_bytes()),
+        ("Dockerfile", Lang::Dockerfile, dockerfile_code.as_bytes()),
     ];
     let interner = Interner::new();
     let registry = LanguageRegistry::new().unwrap();
@@ -249,7 +279,7 @@ start() ->
     assert!(sym_names.contains(&"resource".to_string()));
     assert!(sym_names.contains(&"MainApp".to_string()));
     assert!(sym_names.contains(&"start".to_string()));
-    assert!(
-        sym_names.contains(&"fadeIn".to_string()) || sym_names.contains(&".container".to_string())
-    );
+    assert!(sym_names.contains(&"UserService".to_string()));
+    assert!(sym_names.contains(&"User".to_string()));
+    assert!(sym_names.contains(&"builder".to_string()));
 }

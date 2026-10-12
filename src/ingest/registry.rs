@@ -15,6 +15,10 @@ unsafe extern "C" {
     fn tree_sitter_toml() -> *const tree_sitter::ffi::TSLanguage;
     fn tree_sitter_yaml() -> *const tree_sitter::ffi::TSLanguage;
     fn tree_sitter_markdown() -> *const tree_sitter::ffi::TSLanguage;
+    fn tree_sitter_sql() -> *const tree_sitter::ffi::TSLanguage;
+    fn tree_sitter_proto() -> *const tree_sitter::ffi::TSLanguage;
+    fn tree_sitter_graphql() -> *const tree_sitter::ffi::TSLanguage;
+    fn tree_sitter_dockerfile() -> *const tree_sitter::ffi::TSLanguage;
 }
 
 macro_rules! lang_entry {
@@ -34,7 +38,7 @@ thread_local! {
     ));
 }
 
-static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 31] = [
+static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 35] = [
     lang_entry!(
         tree_sitter_rust::LANGUAGE.into(),
         include_str!("../queries/rust/tags.scm")
@@ -156,14 +160,29 @@ static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 31] = [
         tree_sitter_css::LANGUAGE.into(),
         include_str!("../queries/css/tags.scm")
     ),
+    lang_entry!(
+        unsafe { Language::from_raw(tree_sitter_sql()) },
+        include_str!("../queries/sql/tags.scm")
+    ),
+    lang_entry!(
+        unsafe { Language::from_raw(tree_sitter_proto()) },
+        include_str!("../queries/proto/tags.scm")
+    ),
+    lang_entry!(
+        unsafe { Language::from_raw(tree_sitter_graphql()) },
+        include_str!("../queries/graphql/tags.scm")
+    ),
+    lang_entry!(
+        unsafe { Language::from_raw(tree_sitter_dockerfile()) },
+        include_str!("../queries/dockerfile/tags.scm")
+    ),
 ];
-
 /// Registry of supported Tree-Sitter languages and compiled queries.
 #[derive(Default, Clone, Copy)]
 pub struct LanguageRegistry;
 
 impl LanguageRegistry {
-    /// Initialize registry with all supported 31 languages.
+    /// Initialize registry with all supported 35 languages.
     pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         Ok(Self)
     }

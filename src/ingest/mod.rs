@@ -77,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_31_grammars() {
+    fn test_all_35_grammars() {
         let reg = LanguageRegistry::new().unwrap();
         let fixtures: Vec<(&str, Lang, &str, usize, usize)> = vec![
             ("src/main.rs", Lang::Rust, "fn main() { run(); }", 1, 1),
@@ -277,6 +277,34 @@ mod tests {
                 Lang::Css,
                 ".card { display: flex; }\n@keyframes spin { from { transform: rotate(0deg); } }",
                 2,
+                0,
+            ),
+            (
+                "schema.sql",
+                Lang::Sql,
+                "CREATE TABLE users ( id INT );",
+                1,
+                0,
+            ),
+            (
+                "api.proto",
+                Lang::Proto,
+                "syntax = \"proto3\"; service Svc { rpc Call() returns (); } message Msg {}",
+                2,
+                0,
+            ),
+            (
+                "schema.graphql",
+                Lang::Graphql,
+                "type User { id: ID! }",
+                1,
+                0,
+            ),
+            (
+                "Dockerfile",
+                Lang::Dockerfile,
+                "FROM alpine:latest AS builder\nRUN apk add git",
+                1,
                 0,
             ),
         ];
