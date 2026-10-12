@@ -351,6 +351,11 @@ pub fn serialize_uses_xml<W: Write>(
     writeln!(out, "</uses>")
 }
 
+#[inline]
+fn symbol_spans_line(sym: &crate::domain::Symbol, line_num: u32) -> bool {
+    sym.line <= line_num && (sym.line + sym.loc) >= line_num
+}
+
 pub fn resolve_symbol_at<'a>(
     file_spec: &str,
     line_num: u32,
@@ -360,10 +365,7 @@ pub fn resolve_symbol_at<'a>(
     let mut candidate = None;
     for sym in &ingest.symbols {
         let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
-        if (p == file_spec || p.ends_with(file_spec))
-            && sym.line <= line_num
-            && (sym.line + sym.loc) >= line_num
-        {
+        if (p == file_spec || p.ends_with(file_spec)) && symbol_spans_line(sym, line_num) {
             candidate = Some(sym);
         }
     }
@@ -420,13 +422,15 @@ fn check_call_relationship(
     interner: &Interner,
 ) -> bool {
     for sym in &ingest.symbols {
-        if interner.resolve(&sym.name) == caller_name {
-            for (callee_id, _) in graph.callees(sym.id) {
-                if let Some(c) = ingest.symbols.get(callee_id as usize)
-                    && interner.resolve(&c.name) == callee_name
-                {
-                    return true;
-                }
+        if interner.resolve(&sym.name) != caller_name {
+            continue;
+        }
+        for (callee_id, _) in graph.callees(sym.id) {
+            let Some(c) = ingest.symbols.get(callee_id as usize) else {
+                continue;
+            };
+            if interner.resolve(&c.name) == callee_name {
+                return true;
             }
         }
     }

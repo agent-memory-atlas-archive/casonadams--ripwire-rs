@@ -77,6 +77,10 @@ struct EdgeEndpoint<'a> {
     layer: &'a str,
     sym: &'a str,
 }
+#[inline]
+fn layer_matches(pattern: &str, layer: &str) -> bool {
+    pattern == "*" || pattern == layer
+}
 
 fn check_edge_violation(
     from: EdgeEndpoint<'_>,
@@ -93,8 +97,8 @@ fn check_edge_violation(
             from: r_from,
             to: r_to,
         } = rule
-            && (r_from == "*" || r_from == from.layer)
-            && (r_to == "*" || r_to == to.layer)
+            && layer_matches(r_from, from.layer)
+            && layer_matches(r_to, to.layer)
         {
             violations.push(ArchViolation {
                 from_layer: from.layer.to_string(),
@@ -187,5 +191,27 @@ allow cli -> domain
         assert_eq!(cfg.rules.len(), 2);
         assert_eq!(cfg.assign_layer("src/domain.rs"), Some("domain"));
         assert_eq!(cfg.assign_layer("src/cli/args.rs"), Some("cli"));
+    }
+    #[test]
+    fn test_check_edge_violation() {
+        let rules = [ArchRule::Deny {
+            from: "cli".into(),
+            to: "domain".into(),
+        }];
+        let mut viols = Vec::new();
+        let from = EdgeEndpoint {
+            file: "src/cli/args.rs",
+            layer: "cli",
+            sym: "parse",
+        };
+        let to = EdgeEndpoint {
+            file: "src/domain.rs",
+            layer: "domain",
+            sym: "intern",
+        };
+        check_edge_violation(from, to, &rules, &mut viols);
+        assert_eq!(viols.len(), 1);
+        assert_eq!(viols[0].from_layer, "cli");
+        assert_eq!(viols[0].to_layer, "domain");
     }
 }

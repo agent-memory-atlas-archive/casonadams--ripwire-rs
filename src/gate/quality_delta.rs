@@ -1,3 +1,4 @@
+use crate::domain::{IngestResult, Interner};
 use crate::gate::baseline::{
     DEFAULT_BASELINE_FILE, QualitySnapshot, compute_snapshot, read_baseline_file,
 };
@@ -346,22 +347,24 @@ fn load_head_baseline(root: &str, state: &McpState, head_sha: &str) -> QualitySn
     compute_snapshot(&head_ingest, &head_graph, &head_interner, head_sha)
 }
 
+fn matches_path(path: &str, file: &str) -> bool {
+    path == file || path.ends_with(file)
+}
+
 fn symbol_matches_and_changed(
     sym: &crate::domain::Symbol,
     file_path: &str,
-    state: &McpState,
+    ingest: &IngestResult,
+    interner: &Interner,
     baseline: &QualitySnapshot,
 ) -> Option<(String, String)> {
-    let sym_file = state
-        .interner
-        .resolve(&state.ingest.files[sym.file_id as usize].path);
-    if sym_file != file_path && !sym_file.ends_with(file_path) {
+    let sym_file = interner.resolve(&ingest.files[sym.file_id as usize].path);
+    if !matches_path(sym_file, file_path) {
         return None;
     }
-    let sym_name = state.interner.resolve(&sym.name);
-    let scope = sym.scope.map(|sc| state.interner.resolve(&sc));
-    let key = match scope {
-        Some(sc) => format!("{sym_file}::{sc}::{sym_name}"),
+    let sym_name = interner.resolve(&sym.name);
+    let key = match sym.scope {
+        Some(sc) => format!("{sym_file}::{}::{sym_name}", interner.resolve(&sc)),
         None => format!("{sym_file}::{sym_name}"),
     };
     let &was_ccx = baseline.ccx_by_sym.get(&key)?;
@@ -382,7 +385,7 @@ fn find_preexisting_callable_in_file<'a>(
         if (sym.kind == crate::domain::SymKind::Function
             || sym.kind == crate::domain::SymKind::Method)
             && let Some((sym_name, sym_file)) =
-                symbol_matches_and_changed(sym, file_path, state, baseline)
+                symbol_matches_and_changed(sym, file_path, &state.ingest, &state.interner, baseline)
         {
             return Some((sym, sym_name, sym_file));
         }
@@ -579,5 +582,46 @@ mod tests {
         assert_eq!(report.regressions.len(), 1);
         assert_eq!(report.gating_count, 0); // suppressed by ack!
         assert!(!report.has_gating_failures());
+    }
+    #[test]
+    fn test_symbol_matches_and_changed() {
+        use crate::domain::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
+
+        let mut baseline = QualitySnapshot::default();
+        baseline
+            .ccx_by_sym
+            .insert("src/math.rs::calc".to_string(), 10);
+        baseline
+            .loc_by_sym
+            .insert("src/math.rs::calc".to_string(), 20);
+
+        let interner = Interner::new();
+        let sym_name = interner.intern("calc");
+        let path = interner.intern("src/math.rs");
+        let mut sym = Symbol::new(
+            0,
+            sym_name,
+            interner.intern("src/math.rs::calc"),
+            SymKind::Function,
+            Lang::Rust,
+            0,
+            10,
+        );
+        sym.loc = 30; // changed from 20!
+        sym.ccx = 10;
+        let ingest = IngestResult {
+            files: vec![FileInfo {
+                id: 0,
+                path,
+                lang: Lang::Rust,
+                byte_size: 100,
+                line_count: 100,
+            }],
+            symbols: vec![sym],
+            references: Vec::new(),
+        };
+        let changed =
+            symbol_matches_and_changed(&sym, "src/math.rs", &ingest, &interner, &baseline);
+        assert!(changed.is_some());
     }
 }

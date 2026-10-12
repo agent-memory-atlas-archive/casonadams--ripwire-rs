@@ -327,6 +327,23 @@ pub struct TopWorkspaceArgs {
     pub insert_after_symbol: Option<String>,
 }
 
+impl TopWorkspaceArgs {
+    pub fn is_active(&self) -> bool {
+        self.whereis.is_some()
+            || self.owners
+            || self.doc_drift
+            || self.flags
+            || self.stray_content
+            || self.mentions.is_some()
+            || self.doctor
+            || self.handoff
+            || self.notes
+            || self.note_add.is_some()
+            || self.replace_symbol_body.is_some()
+            || self.insert_before_symbol.is_some()
+            || self.insert_after_symbol.is_some()
+    }
+}
 /// Categorized workflow command groups.
 #[derive(Subcommand, Debug, PartialEq)]
 pub enum Commands {

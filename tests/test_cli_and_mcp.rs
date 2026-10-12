@@ -570,3 +570,68 @@ fn test_top_architecture_queries() {
         ..Default::default()
     };
 }
+#[test]
+fn test_all_new_feature_coverage() {
+    let (ingest, graph, interner) = setup_in_memory_fixture();
+    let mut out = Vec::new();
+
+    let _ = ripwire::graph::generate_mermaid_diagram(&ingest, &graph, &interner, &mut out);
+
+    let funcs = ripwire::metrics::find_nonlocal_state(&ingest, &graph, &interner);
+    let _ = ripwire::metrics::serialize_nonlocal_state_xml(".", &funcs, &mut out);
+
+    let findings = ripwire::metrics::run_lint_scan(&ingest, &graph, &interner);
+    let _ = ripwire::metrics::serialize_lint_xml(".", &findings, &mut out);
+    let _ = ripwire::metrics::serialize_lint_catalog(&mut out);
+
+    let arch_cfg = ripwire::gate::arch::ArchConfig::parse(
+        "layer src = src\nlayer tests = tests\ndeny src -> tests\ndeny tests -> src\n",
+    );
+    let viols =
+        ripwire::gate::arch::check_architecture_rules(&arch_cfg, &ingest, &graph, &interner);
+    let _ = ripwire::gate::arch::serialize_arch_xml(".", &viols, &mut out);
+
+    let mut ws = ripwire::cli::TopWorkspaceArgs {
+        doctor: true,
+        ..Default::default()
+    };
+    let _ = ripwire::cli::execute_workspace_doc_query(&ws, &ingest, &interner, &mut out);
+    ws.doctor = false;
+    ws.handoff = true;
+    let _ = ripwire::cli::execute_workspace_doc_query(&ws, &ingest, &interner, &mut out);
+    ws.handoff = false;
+    ws.notes = true;
+    let _ = ripwire::cli::execute_workspace_doc_query(&ws, &ingest, &interner, &mut out);
+    ws.notes = false;
+    ws.replace_symbol_body = Some("run:test".into());
+    let _ = ripwire::cli::execute_workspace_doc_query(&ws, &ingest, &interner, &mut out);
+
+    let mut cli = ripwire::cli::Cli::default();
+    cli.arch.communities = true;
+    let _ = ripwire::cli::dispatch_top_arch(&cli, ".");
+    cli.arch.communities = false;
+    cli.arch.mermaid = true;
+    let _ = ripwire::cli::dispatch_top_arch(&cli, ".");
+
+    cli.detail.tree = true;
+    let _ = ripwire::cli::dispatch_top_detail(&cli, ".");
+    cli.detail.tree = false;
+    cli.detail.biggest_first = true;
+    let _ = ripwire::cli::dispatch_top_detail(&cli, ".");
+
+    let ret = ripwire::cli::TopRetrievalArgs {
+        at: Some("src/lib.rs:1".into()),
+        ..Default::default()
+    };
+    let pr = ripwire::PageRankResult {
+        iterations: 1,
+        converged: true,
+        ranks: vec![1.0],
+    };
+    let _ = ripwire::cli::execute_retrieval_dispatch(
+        &ret, ".", &ingest, &graph, &pr, &interner, &mut out,
+    );
+
+    let _ = ripwire::navigate::resolve_symbol_at("src/lib.rs", 1, &ingest, &interner);
+    let _ = ripwire::metrics::execute_biggest_first_query(".", &ingest, &interner, &mut out);
+}
