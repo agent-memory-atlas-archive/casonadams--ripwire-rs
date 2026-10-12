@@ -53,14 +53,16 @@
   cognitive complexity <= 15 via cccc, quality regression delta via ripwire, and
   tests under test code coverage with CRAP <= 30 gating).
 
-## Documentation synchronization
+## Documentation and manual page synchronization
 
-- Whenever updating documentation (`README.md`, `docs/`, CLI flags, subcommands,
-  or MCP tool definitions), the static GitHub Pages showcase and documentation
-  site in `www/` (`www/index.html`, `www/docs.html`) MUST be updated and
-  synchronized in the same commit.
-- Ensure all relative links, code examples, tool names, command names (`rw`),
-  and feature lists stay aligned between repository docs and the `www/` site.
+- Whenever adding or updating CLI flags, options, subcommands, defaults, or
+  MCP tool definitions, the repository documentation (`README.md`, `docs/CLI.md`,
+  `docs/`), the static GitHub Pages showcase in `www/` (`www/index.html`,
+  `www/docs.html`), AND the manual pages in `man/man1/` (`man/man1/rw.1`,
+  `man/man1/ripwire.1`) MUST be updated and synchronized in the same commit.
+- Ensure all relative links, code examples, synopsis syntax, tool names, command
+  names (`rw`, `ripwire`), and feature lists stay fully aligned across repository
+  docs, the `www/` site, and roff manual pages.
 
 ## Completion
 
