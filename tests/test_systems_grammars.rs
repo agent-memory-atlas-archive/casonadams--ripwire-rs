@@ -202,6 +202,24 @@ start() ->
     ok.
 "#;
 
+    let html_code = r#"
+<!DOCTYPE html>
+<html>
+  <body>
+    <div id="app"></div>
+  </body>
+</html>
+"#;
+
+    let css_code = r#"
+.container {
+  display: flex;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+}
+"#;
+
     let files = [
         ("src/math.zig", Lang::Zig, zig_code.as_bytes()),
         (
@@ -212,6 +230,8 @@ start() ->
         ("infra/main.tf", Lang::Hcl, hcl_code.as_bytes()),
         ("src/MainApp.scala", Lang::Scala, scala_code.as_bytes()),
         ("src/server.erl", Lang::Erlang, erlang_code.as_bytes()),
+        ("index.html", Lang::Html, html_code.as_bytes()),
+        ("styles.css", Lang::Css, css_code.as_bytes()),
     ];
     let interner = Interner::new();
     let registry = LanguageRegistry::new().unwrap();
@@ -229,4 +249,7 @@ start() ->
     assert!(sym_names.contains(&"resource".to_string()));
     assert!(sym_names.contains(&"MainApp".to_string()));
     assert!(sym_names.contains(&"start".to_string()));
+    assert!(
+        sym_names.contains(&"fadeIn".to_string()) || sym_names.contains(&".container".to_string())
+    );
 }

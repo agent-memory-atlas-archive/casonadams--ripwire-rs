@@ -34,7 +34,7 @@ thread_local! {
     ));
 }
 
-static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 29] = [
+static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 31] = [
     lang_entry!(
         tree_sitter_rust::LANGUAGE.into(),
         include_str!("../queries/rust/tags.scm")
@@ -147,6 +147,14 @@ static LANG_TABLE: [LazyLock<(Language, Arc<Query>)>; 29] = [
     lang_entry!(
         tree_sitter_erlang::LANGUAGE.into(),
         include_str!("../queries/erlang/tags.scm")
+    ),
+    lang_entry!(
+        tree_sitter_html::LANGUAGE.into(),
+        include_str!("../queries/html/tags.scm")
+    ),
+    lang_entry!(
+        tree_sitter_css::LANGUAGE.into(),
+        include_str!("../queries/css/tags.scm")
     ),
 ];
 

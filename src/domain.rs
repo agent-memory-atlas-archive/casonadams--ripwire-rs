@@ -123,15 +123,17 @@ pub enum Lang {
     Hcl,
     Scala,
     Erlang,
+    Html,
+    Css,
     Unknown,
 }
 impl Lang {
     #[inline]
     pub const fn tag(self) -> &'static str {
-        const TAGS: [&str; 30] = [
+        const TAGS: [&str; 32] = [
             "rs", "ts", "js", "py", "go", "c", "cpp", "cuda", "metal", "java", "cs", "swift", "sh",
             "rb", "php", "lua", "ex", "dart", "kt", "gd", "json", "toml", "yaml", "md", "zig",
-            "sol", "hcl", "scala", "erl", "?",
+            "sol", "hcl", "scala", "erl", "html", "css", "?",
         ];
         TAGS[self as usize]
     }
@@ -167,6 +169,8 @@ impl Lang {
             "tf" | "hcl" | "tfvars" => Self::Hcl,
             "scala" | "sc" => Self::Scala,
             "erl" | "hrl" => Self::Erlang,
+            "html" | "htm" => Self::Html,
+            "css" | "scss" | "sass" | "less" => Self::Css,
             _ => Self::Unknown,
         }
     }
@@ -189,9 +193,10 @@ impl Lang {
                 | (Self::Scala, Self::Java)
                 | (Self::Elixir, Self::Erlang)
                 | (Self::Erlang, Self::Elixir)
+                | (Self::Html, Self::Css)
+                | (Self::Css, Self::Html)
         )
     }
-
     /// True if this language has syntax-backed dependency / import capability.
     #[must_use]
     pub fn is_dependency_capable(self) -> bool {
@@ -221,6 +226,8 @@ impl Lang {
                 | Self::Hcl
                 | Self::Scala
                 | Self::Erlang
+                | Self::Html
+                | Self::Css
         )
     }
     /// True if both languages are dependency capable and share dialect compatibility.
