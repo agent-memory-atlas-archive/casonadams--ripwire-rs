@@ -140,7 +140,7 @@ pub fn execute_test_gate_query<W: Write>(
     let specs: Vec<&str> = files.iter().map(String::as_str).collect();
     let report = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
     crate::serialize::serialize_test_gate_xml(root, &report.tests, report.reached_symbols, out)?;
-    Ok(!report.tests.is_empty() || report.reached_symbols > 0)
+    Ok(report.seed_count > 0 && (!report.tests.is_empty() || report.reached_symbols > 0))
 }
 
 pub fn format_situ_list<W: Write>(

@@ -26,14 +26,14 @@ rw mcp
 
 ## Real-World Workflows
 
-`rw` is designed around 5 high-impact workflows. See the complete **[Workflow Guide](docs/WORKFLOWS.md)** (or online at **[ripwire Workflows](https://casonadams.github.io/ripwire/workflows.html)**) for detailed scenarios, commands, and benefits:
+`rw` is designed around 6 high-impact workflows. See the complete **[Workflow Guide](docs/WORKFLOWS.md)** (or online at **[ripwire Workflows](https://casonadams.github.io/ripwire/workflows.html)**) for detailed scenarios, commands, and benefits:
 
 1. **[Orientation & Scoping](docs/WORKFLOWS.md#1-orientation--scoping-landing-cold-in-a-repository)**: Landing cold in an unfamiliar codebase without burning prompt token budgets (`--top-k`, `--tree`, `--for`, `--html`).
 2. **[Navigation & Blast Radius](docs/WORKFLOWS.md#2-navigation--blast-radius-safe-refactoring--impact-analysis)**: Safe refactoring and dependency tracing before modifying code (`--callers`, `--callees`, `--impact`, `--around`, `--path`, `--slice`).
 3. **[Pre-Commit & PR Safety Gates](docs/WORKFLOWS.md#3-pre-commit--pr-safety-gates-zero-broken-contracts)**: Catching broken API contracts and verifying test reachability before push or merge (`--edit-check`, `--affected`, `--test-gate`, `--situ`, `--quality-delta`).
 4. **[Code Health & Technical Debt](docs/WORKFLOWS.md#4-code-health--technical-debt-auditing)**: Identifying dead code, high-maintenance hotspots, and hidden coupling (`--dead-code`, `--hotspots`, `--clones`, `--cochange`, `--communities`, `--external-surface`).
 5. **[Deep Inspection & Agent Context](docs/WORKFLOWS.md#5-deep-inspection--agent-context-delivery)**: Precision prompting and batching for coding agents (`--expand`, `--outline`, `--pack-top-n`, `--from-trace`, `--batch`, `--json`).
-
+6. **[Continuous Integration (CI) & PR Gates](docs/WORKFLOWS.md#6-continuous-integration-ci-workflows--automated-pr-gates)**: Automated test gating, zero quality regressions, and upstream parity checks in CI/CD pipelines (`rw . --test-gate`, `rw . --quality-delta`, `make validate`).
 ---
 
 ## Features
@@ -49,8 +49,7 @@ rw mcp
 
 ## Documentation
 
-- **[Workflow Guide](docs/WORKFLOWS.md)** — In-depth guide to the 5 primary workflows: when, where, and why to use each command.
-- **[CLI Reference](docs/CLI.md)** — Complete command catalog, top-level flags, streaming budgets, and selector syntax.
+- **[Workflow Guide](docs/WORKFLOWS.md)** — In-depth guide to the 6 primary workflows: when, where, and why to use each command.
 - **[Pre-Commit Safety Gates](docs/GATES.md)** — Verification gates (`--edit-check`, `--affected`, `--quality-delta`, `--test-gate`).
 - **[Model Context Protocol (MCP)](docs/MCP.md)** — Reference for all 33 MCP tools and agent configuration.
 - **[Architecture & Pipeline](docs/ARCHITECTURE.md)** — Tree-Sitter grammars, lock-free interning, CSR in-edge graph, and streaming XML.

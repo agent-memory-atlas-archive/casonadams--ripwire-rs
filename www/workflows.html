@@ -52,10 +52,10 @@
   <!-- Header -->
   <header class="docs-header">
     <div class="container">
-      <div class="badge"><span>PRACTICAL GUIDE · 5 PRIMARY WORKFLOWS</span></div>
+      <div class="badge"><span>PRACTICAL GUIDE · 6 PRIMARY WORKFLOWS</span></div>
       <h1 style="font-size: 2.5rem; font-weight: 800; margin-top: 12px; margin-bottom: 12px;">When, Where, &amp; Why to Use ripwire</h1>
       <p style="color: var(--text-secondary); max-width: 780px; font-size: 1.1rem;">
-        <code>ripwire</code> is engineered around high-impact workflows: from landing cold in a foreign codebase to surgical test execution and pre-commit PR merge verification.
+        <code>ripwire</code> is engineered around high-impact workflows: from landing cold in a foreign codebase to surgical test execution and automated CI/CD PR verification.
       </p>
     </div>
   </header>
@@ -280,6 +280,40 @@ rw --add-skills</code>
             <li><strong>Native Agent Protocol:</strong> 33 built-in MCP tools accessible over stdio for Claude Desktop, Cursor, and Omp.</li>
             <li><strong>Instant Agent Skills:</strong> <code>--add-skills</code> provisions 18 standardized skills and active manifest into <code>~/.agents/skills</code> for zero-configuration onboarding.</li>
           </ul>
+      </div>
+    </div>
+    <!-- Workflow 6 -->
+    <div class="cmd-card" id="ci-cd" style="margin-bottom: 32px;">
+      <div class="cmd-header">
+        <div class="cmd-title">
+          <span style="margin-right: 8px;">⚙️</span> 6. Continuous Integration (CI) &amp; Automated PR Gates
+        </div>
+        <span class="cmd-badge">CI / CD</span>
+      </div>
+      <div class="cmd-body">
+        <div class="cmd-field">
+          <span class="cmd-label">When &amp; Where</span>
+          <p class="cmd-desc">In automated GitHub Actions, GitLab CI, or Jenkins pipelines running on every pull request and merge to trunk.</p>
+        </div>
+        <div class="code-wrap" style="margin: 16px 0;">
+          <code># PR Gate: names tests to run and untested blast radius (exits 4 on violation)
+rw . --test-gate
+
+# Quality Regression Gate: checks quality regressions against base branch / HEAD
+rw . --quality-delta
+
+# Upstream Parity Validation: verifies 1:1 input/output equivalence across 20 commands
+make validate REPO=.</code>
+          <button class="btn-copy" data-copy="rw . --test-gate">Copy</button>
+        </div>
+        <div class="cmd-field">
+          <span class="cmd-label">Why &amp; Key Benefits</span>
+          <ul style="padding-left: 20px; color: var(--text-secondary); font-size: 0.95rem; margin-top: 6px;">
+            <li><strong>Automated Merge Blocking:</strong> Fails PR jobs automatically (exit code 4 on <code>--test-gate</code> or non-zero on <code>--quality-delta</code>) before untested code or architectural rot merges.</li>
+            <li><strong>Sub-50ms Execution:</strong> Fast in-memory static analysis executes in milliseconds, eliminating slow CI runner bottlenecks.</li>
+            <li><strong>Upstream Parity Enforcement:</strong> <code>make validate</code> runs continuous 20-command verification matrices against upstream specifications.</li>
+          </ul>
+        </div>
       </div>
     </div>
 

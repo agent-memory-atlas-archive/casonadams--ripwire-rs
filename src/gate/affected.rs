@@ -95,7 +95,10 @@ fn match_file_seeds(
         }
     } else {
         for s in &ingest.symbols {
-            if s.file_id == f.id {
+            if s.file_id == f.id
+                && (s.kind == crate::domain::SymKind::Function
+                    || s.kind == crate::domain::SymKind::Method)
+            {
                 seeds.seed_nodes.push(s.id);
             }
         }

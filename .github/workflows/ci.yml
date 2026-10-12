@@ -118,3 +118,24 @@ jobs:
 
       - name: Gate on CRAP threshold
         run: cargo crap --path . --lcov target/lcov.info --threshold 30 --fail-above
+
+  validate-parity:
+    name: Parity Validation
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || github.event.action != 'edited'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch vendored grammars
+        run: ./scripts/update-grammars.sh
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Install upstream ripwire binary
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl -sSL "https://github.com/redhat-et/ripwire/releases/download/v0.6.5/ripwire-0.6.5-linux-x64.tar.gz" | tar -xz --strip-components=1 -C "$HOME/.local/bin" ripwire-0.6.5-linux-x64/ripwire
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Run 1:1 Parity Validation Matrix
+        run: make validate
