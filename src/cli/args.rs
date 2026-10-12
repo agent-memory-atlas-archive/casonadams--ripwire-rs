@@ -94,7 +94,13 @@ pub struct Cli {
     /// Top-level global modifiers and batching flags
     #[command(flatten)]
     pub modifiers: TopModifierArgs,
-
+    /// Install ripwire agent skills to ~/.agents/skills (or custom path)
+    #[arg(
+        long = "add-skills",
+        visible_alias = "install-skills",
+        value_name = "DIR"
+    )]
+    pub add_skills: Option<Option<String>>,
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
@@ -270,6 +276,8 @@ pub enum Commands {
     Slice(SliceArgs),
     /// Launch stdio JSON-RPC Model Context Protocol server
     Mcp(McpArgs),
+    /// Manage and install ripwire agent skills
+    Skills(SkillsArgs),
 }
 
 #[derive(Args, Debug, Default, PartialEq)]
@@ -356,6 +364,12 @@ pub struct SliceArgs {
 pub struct McpArgs {
     /// Target workspace root to pin
     #[arg(value_name = "PATH")]
+    pub path: Option<String>,
+}
+#[derive(Args, Debug, Default, PartialEq)]
+pub struct SkillsArgs {
+    /// Target directory (default: ~/.agents/skills)
+    #[arg(value_name = "DIR")]
     pub path: Option<String>,
 }
 

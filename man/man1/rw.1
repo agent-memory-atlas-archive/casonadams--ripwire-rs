@@ -32,9 +32,14 @@ rw, ripwire \- high-throughput agent context router and deterministic static ana
 .B rw
 [\fIPATH\fR] [\fB\-\-clones\fR] [\fB\-\-hotspots\fR] [\fB\-\-slice\fR \fISYM[:VAR]\fR] [\fB\-\-cochange\fR] [\fB\-\-json\fR] [\fB\-\-batch\fR \fIFILE\fR]
 .br
+.B rw
+[\fB\-\-add\-skills\fR [\fIDIR\fR]]
+.br
 .B rw mcp
 [\fIPATH\fR]
-.SH DESCRIPTION
+.br
+.B rw skills
+[\fIDIR\fR]
 \fBrw\fR (also accessible as \fBripwire\fR) is a high-throughput context router and deterministic static analysis engine designed for AI coding agents, developer CLI workflows, and automated CI/CD safety gates.
 .PP
 It indexes codebases across 24 programming languages using multi-threaded parallel Tree-Sitter grammar queries, builds a resolved workspace call graph with multi-tier scoping precedence, executes Personalized PageRank over compressed sparse row (CSR) transpose matrices with dangling node mass redistribution, and streams dense, token-budgeted XML representations to stdout.
@@ -216,7 +221,9 @@ Emit JSON instead of XML for navigation and query commands.
 .TP
 .BI \-\-batch= FILE
 Execute up to 16 heterogeneous sub-queries sequentially from a newline-delimited \fIverb:arg\fR specification file (\fI-\fR for stdin).
-
+.TP
+.BI \-\-add\-skills [=DIR]
+Install 18 pre-packaged ripwire agent skills and active manifest (\fB.ripwire\-manifest\-v1\fR) to \fI~/.agents/skills\fR (or custom \fIDIR\fR). Replaces stale or broken symlinks safely. Alias: \fB\-\-install\-skills\fR.
 .SH VISUALIZATION OPTIONS
 .TP
 .BI \-\-html [=FILE]
@@ -244,7 +251,9 @@ Intra-procedural def-use slicing.
 .TP
 .B rw mcp \fR[\fIPATH\fR]
 Launch native Model Context Protocol (MCP) JSON-RPC 2.0 server over standard input/output.
-
+.TP
+.B rw skills \fR[\fIDIR\fR]
+Install and manage 18 ripwire agent skills into the cross-agent discovery directory (default: \fI~/.agents/skills\fR).
 .SH SYMBOL SELECTOR SYNTAX
 When querying symbols via \fB\-\-callers\fR, \fB\-\-callees\fR, \fB\-\-impact\fR, \fB\-\-uses\fR, \fB\-\-expand\fR, or \fB\-\-edit\-check\fR, \fBrw\fR accepts several selector formats:
 .TP

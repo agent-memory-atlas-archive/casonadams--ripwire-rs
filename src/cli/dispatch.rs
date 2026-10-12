@@ -369,12 +369,36 @@ pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
             let target = slice_args.target.as_deref();
             crate::slice::execute_slice_command(".", target, &slice_args.flow)
         }
+        Commands::Skills(skills_args) => {
+            let target = skills_args.path.as_deref();
+            execute_skills_install(target)
+        }
     }
+}
+pub fn execute_skills_install(target: Option<&str>) -> io::Result<()> {
+    let report = crate::skills::install_skills(target)?;
+    println!(
+        "Installed {} ripwire agent skills to {}",
+        report.installed_count,
+        report.destination.display()
+    );
+    println!(
+        "Active manifest written to {}",
+        report.destination.join(".ripwire-manifest-v1").display()
+    );
+    for skill in &report.skills {
+        println!("  - {skill}");
+    }
+    Ok(())
 }
 
 /// Execute CLI from parsed options.
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     let root = cli.path.as_deref().unwrap_or(".");
+    if let Some(target_opt) = &cli.add_skills {
+        let target = target_opt.as_deref();
+        return execute_skills_install(target);
+    }
     if let Some(res) = dispatch_top_flags(&cli, root) {
         return res;
     }

@@ -12,8 +12,8 @@ pub mod navigate;
 pub mod rank;
 pub mod resolve;
 pub mod serialize;
+pub mod skills;
 pub mod slice;
-
 pub use cli::{Cli, Commands, run_cli, run_cli_args};
 pub use clones::{
     CloneGroup, CloneIdiom, CloneType, DEFAULT_MIN_CLONE_TOKENS, execute_clones_command,
@@ -74,6 +74,7 @@ pub use serialize::{
     serialize_test_gate_xml, serialize_tree_xml, serialize_whereis_xml, serialize_xml,
     serialize_xml_to_string, serialize_xml_with_ranks, write_call_graph_html,
 };
+pub use skills::{SkillInstallReport, default_skills_dir, install_skills, resolve_skills_dir};
 pub use slice::{
     OccRole, SliceFlowDir, SliceStep, VariableOcc, compute_dataflow_slice, execute_slice,
     parse_slice_target,

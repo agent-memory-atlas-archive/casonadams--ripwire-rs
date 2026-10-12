@@ -30,6 +30,7 @@ rw . --html=callgraph.html --color-by=community
 
 ## Detail Ladder & Progressive Expansion
 
+**When & Where:** When drilling down from architectural map summaries to implementation details of specific functions, methods, or critical hot paths.
 ```bash
 # Expand full source body of symbols and callee signatures
 rw . --expand="Symbol::new"
@@ -43,9 +44,12 @@ rw . --pack-top-n=5
 # Orient file by file with top 3 symbols per file
 rw . --tree
 ```
+* **Benefits:** Delivers exact function bodies with zero boilerplate, eliding irrelevant lines while preserving full type signatures and callee interfaces.
 
+---
 ## Pre-Commit Verification & Safety Gates
 
+**When & Where:** Local git pre-commit hooks, pre-push checks, or automated CI/CD pull request verification.
 ```bash
 # Verify caller compatibility after editing a symbol contract
 rw . --edit-check="symbol_name"
@@ -71,9 +75,12 @@ rw . --quality-baseline
 # Check for quality regressions against baseline or git HEAD
 rw . --quality-delta
 ```
+* **Benefits:** Catches breaking signature changes, eliminates test suite bloat by running only affected tests, and stops architectural decay before merging.
 
+---
 ## Architecture & Code Intelligence
 
+**When & Where:** Sprint refactoring, architectural reviews, or technical debt auditing.
 ```bash
 # Detect internal functions with zero incoming callers across the tree
 rw . --dead-code
@@ -102,9 +109,12 @@ rw . --hotspots
 # Compute ARISE variable def-use dataflow slice (forward/backward)
 rw . --slice="compute:x" --slice-flow=fwd
 ```
+* **Benefits:** Focuses engineering attention directly on defect-prone hotspots, hidden file coupling, and dead code with mathematical precision.
 
+---
 ## Task Retrieval & Batching
 
+**When & Where:** Debugging compiler errors/stack traces, precision prompting for AI agents, or multi-query workflows.
 ```bash
 # Find best-in-class existing implementation of kind to imitate
 rw . --exemplar="parser"
@@ -123,8 +133,13 @@ rw . --callers="Interner::len" --json
 
 # Execute up to 16 heterogeneous sub-queries in a single turn
 rw . --batch=queries.txt
-```
 
+# Install 18 pre-packaged ripwire agent skills to ~/.agents/skills (or custom path)
+rw --add-skills
+```
+* **Benefits:** Minimal prompt token consumption with maximum semantic density for coding agents.
+
+---
 ## Workflow Subcommands
 
 - `rw orient [PATH]`: Codebase orientation and structural summaries.
@@ -133,3 +148,4 @@ rw . --batch=queries.txt
 - `rw metrics [PATH] [--hotspots|--complexity|--clones]`: Code health metrics.
 - `rw slice [PATH] --symbol <SYM> --var <VAR>`: Intra-procedural slicing.
 - `rw mcp`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
+- `rw skills [DIR]`: Install and manage 18 ripwire agent skills in `~/.agents/skills`.
