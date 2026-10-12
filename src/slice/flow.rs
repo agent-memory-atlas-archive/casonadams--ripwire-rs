@@ -77,25 +77,63 @@ fn find_reaching_defs<'a>(
     }
     last_def.into_iter().collect()
 }
-
-fn find_stmt_defined_vars(occs: &[VariableOcc], stmt_line: u32, current_var: &str) -> Vec<String> {
+fn find_stmt_vars_matching(
+    occs: &[VariableOcc],
+    stmt_line: u32,
+    current_var: &str,
+    want_def: bool,
+) -> Vec<String> {
     let mut out = Vec::new();
     for occ in occs {
-        if occ.stmt_line == stmt_line && occ.role.is_def() && occ.var_name != current_var {
+        let matches_role = if want_def {
+            occ.role.is_def()
+        } else {
+            occ.role.is_use()
+        };
+        if occ.stmt_line == stmt_line && matches_role && occ.var_name != current_var {
             out.push(occ.var_name.clone());
         }
     }
     out
 }
 
-fn find_stmt_used_vars(occs: &[VariableOcc], stmt_line: u32, current_var: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    for occ in occs {
-        if occ.stmt_line == stmt_line && occ.role.is_use() && occ.var_name != current_var {
-            out.push(occ.var_name.clone());
+#[derive(Copy, Clone, PartialEq, Eq)]
+enum TraversalDirection {
+    Forward,
+    Backward,
+}
+
+impl TraversalDirection {
+    fn is_seed_role(self, role: OccRole) -> bool {
+        match self {
+            Self::Forward => role.is_def(),
+            Self::Backward => role.is_use(),
         }
     }
-    out
+
+    fn find_reaching<'a>(
+        self,
+        occs: &'a [VariableOcc],
+        var: &str,
+        line: u32,
+    ) -> Vec<&'a VariableOcc> {
+        match self {
+            Self::Forward => find_reaching_uses(occs, var, line),
+            Self::Backward => find_reaching_defs(occs, var, line),
+        }
+    }
+
+    fn find_stmt_hop_vars(
+        self,
+        occs: &[VariableOcc],
+        stmt_line: u32,
+        current_var: &str,
+    ) -> Vec<String> {
+        match self {
+            Self::Forward => find_stmt_vars_matching(occs, stmt_line, current_var, true),
+            Self::Backward => find_stmt_vars_matching(occs, stmt_line, current_var, false),
+        }
+    }
 }
 
 struct FlowQueueItem {
@@ -104,17 +142,18 @@ struct FlowQueueItem {
     depth: u32,
 }
 
-fn run_forward_flow(
+fn run_directional_flow(
     occs: &[VariableOcc],
     seed_var: &str,
     max_depth: u32,
+    direction: TraversalDirection,
     steps: &mut Vec<SliceStep>,
 ) {
     let mut queue = VecDeque::new();
     let mut visited = HashSet::new();
 
     for occ in occs {
-        if occ.var_name == seed_var && occ.role.is_def() {
+        if occ.var_name == seed_var && direction.is_seed_role(occ.role) {
             queue.push_back(FlowQueueItem {
                 var: seed_var.to_string(),
                 line: occ.line,
@@ -135,100 +174,47 @@ fn run_forward_flow(
         if item.depth >= max_depth {
             continue;
         }
-        for u in find_reaching_uses(occs, &item.var, item.line) {
-            expand_forward_use(occs, u, &item, steps, &mut queue, &mut visited);
+        for target in direction.find_reaching(occs, &item.var, item.line) {
+            expand_flow_target(
+                occs,
+                target,
+                &item,
+                direction,
+                steps,
+                &mut queue,
+                &mut visited,
+            );
         }
     }
 }
 
-fn expand_forward_use(
+fn expand_flow_target(
     occs: &[VariableOcc],
-    u: &VariableOcc,
+    target: &VariableOcc,
     item: &FlowQueueItem,
+    direction: TraversalDirection,
     steps: &mut Vec<SliceStep>,
     queue: &mut VecDeque<FlowQueueItem>,
     visited: &mut HashSet<(String, u32, OccRole)>,
 ) {
-    if visited.insert((u.var_name.clone(), u.line, u.role)) {
+    if visited.insert((target.var_name.clone(), target.line, target.role)) {
         steps.push(SliceStep {
-            line: u.line,
-            var_name: u.var_name.clone(),
-            role: u.role,
+            line: target.line,
+            var_name: target.var_name.clone(),
+            role: target.role,
             depth: item.depth + 1,
             from_line: item.line,
         });
-        for def_var in find_stmt_defined_vars(occs, u.stmt_line, &u.var_name) {
+        for next_var in direction.find_stmt_hop_vars(occs, target.stmt_line, &target.var_name) {
             queue.push_back(FlowQueueItem {
-                var: def_var,
-                line: u.line,
+                var: next_var,
+                line: target.line,
                 depth: item.depth + 1,
             });
         }
     }
 }
 
-fn run_backward_flow(
-    occs: &[VariableOcc],
-    seed_var: &str,
-    max_depth: u32,
-    steps: &mut Vec<SliceStep>,
-) {
-    let mut queue = VecDeque::new();
-    let mut visited = HashSet::new();
-
-    for occ in occs {
-        if occ.var_name == seed_var && occ.role.is_use() {
-            queue.push_back(FlowQueueItem {
-                var: seed_var.to_string(),
-                line: occ.line,
-                depth: 0,
-            });
-            steps.push(SliceStep {
-                line: occ.line,
-                var_name: seed_var.to_string(),
-                role: occ.role,
-                depth: 0,
-                from_line: 0,
-            });
-            visited.insert((seed_var.to_string(), occ.line, occ.role));
-        }
-    }
-
-    while let Some(item) = queue.pop_front() {
-        if item.depth >= max_depth {
-            continue;
-        }
-        for d in find_reaching_defs(occs, &item.var, item.line) {
-            expand_backward_def(occs, d, &item, steps, &mut queue, &mut visited);
-        }
-    }
-}
-
-fn expand_backward_def(
-    occs: &[VariableOcc],
-    d: &VariableOcc,
-    item: &FlowQueueItem,
-    steps: &mut Vec<SliceStep>,
-    queue: &mut VecDeque<FlowQueueItem>,
-    visited: &mut HashSet<(String, u32, OccRole)>,
-) {
-    if visited.insert((d.var_name.clone(), d.line, d.role)) {
-        steps.push(SliceStep {
-            line: d.line,
-            var_name: d.var_name.clone(),
-            role: d.role,
-            depth: item.depth + 1,
-            from_line: item.line,
-        });
-        for used_var in find_stmt_used_vars(occs, d.stmt_line, &d.var_name) {
-            queue.push_back(FlowQueueItem {
-                var: used_var,
-                line: d.line,
-                depth: item.depth + 1,
-            });
-        }
-    }
-}
 /// Compute dataflow slice steps from the seed variable.
 #[must_use]
 pub fn compute_dataflow_slice(
@@ -240,12 +226,23 @@ pub fn compute_dataflow_slice(
     let mut steps = Vec::new();
 
     if dir == SliceFlowDir::Fwd || dir == SliceFlowDir::Both {
-        run_forward_flow(occs, seed_var, max_depth, &mut steps);
+        run_directional_flow(
+            occs,
+            seed_var,
+            max_depth,
+            TraversalDirection::Forward,
+            &mut steps,
+        );
     }
     if dir == SliceFlowDir::Back || dir == SliceFlowDir::Both {
-        run_backward_flow(occs, seed_var, max_depth, &mut steps);
+        run_directional_flow(
+            occs,
+            seed_var,
+            max_depth,
+            TraversalDirection::Backward,
+            &mut steps,
+        );
     }
-
     steps.sort_by(|a, b| {
         a.depth
             .cmp(&b.depth)
