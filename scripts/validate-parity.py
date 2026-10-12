@@ -29,6 +29,14 @@ if not ripwire_bin:
         print("Error: 'ripwire' binary not found in PATH or ~/.local/bin/ripwire.", file=sys.stderr)
         sys.exit(1)
 
+def get_merge_ref(repo_dir):
+    for candidate in ["main", "master", "HEAD"]:
+        res = subprocess.run(f"git -C {repo_dir} rev-parse --verify {candidate}^{{commit}}", shell=True, capture_output=True)
+        if res.returncode == 0:
+            return candidate
+    return "HEAD"
+
+merge_ref = get_merge_ref(repo)
 commands = [
     ("", "Default ranked map"),
     ("--top-k=50", "Top 50 symbols"),
@@ -53,7 +61,7 @@ commands = [
     ("--map-diff --top-k=30", "Map diff biased teleportation"),
     ("--seams", "Integration seams detection"),
     ("--pr-context", "PR review context bundle"),
-    ("--merge-scout=main", "Cross-branch merge conflict prediction"),
+    (f"--merge-scout={merge_ref}", "Cross-branch merge conflict prediction"),
     ("--biggest-first", "Posnett readability size ranking"),
     ("--nonlocal-state", "Reachable global mutable state"),
     ("--lint", "AST code smell scan"),

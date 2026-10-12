@@ -254,6 +254,59 @@ pub fn execute_exercises_query<W: Write>(
     crate::serialize::serialize_exercises_xml(root, test_path, &reached, out)
 }
 
+fn validate_merge_scout_branches(root: &str, branches: &str) -> bool {
+    let repo_path = std::path::Path::new(root);
+    for branch in branches.split(',').map(str::trim).filter(|b| !b.is_empty()) {
+        let ref_exists = if let Ok(repo) = gix::open(repo_path) {
+            repo.rev_parse_single(branch).is_ok() || repo.find_reference(branch).is_ok()
+        } else {
+            false
+        };
+        let git_ok = ref_exists
+            || std::process::Command::new("git")
+                .args(["-C", root, "rev-parse", "--verify", &format!("{branch}^{{commit}}")])
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+        if !git_ok {
+            eprintln!("ripwire: --merge-scout: unknown ref '{branch}'");
+            return false;
+        }
+    }
+    true
+}
+
+fn execute_merge_scout_dispatch<W: Write>(
+    root: &str,
+    branches: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<Option<i32>> {
+    if !validate_merge_scout_branches(root, branches) {
+        return Ok(Some(1));
+    }
+    let rep = crate::gate::merge_scout::evaluate_merge_scout(branches, ingest, interner);
+    crate::gate::merge_scout::serialize_merge_scout_xml(&rep, out)?;
+    Ok(None)
+}
+
+fn execute_pr_context_dispatch<W: Write>(
+    root: &str,
+    ref_opt: Option<&str>,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let base_ref = ref_opt.unwrap_or("HEAD~1");
+    let changed = get_working_tree_changed_files(root);
+    let rep = crate::gate::pr_context::compute_pr_context(
+        &changed, ingest, graph, interner, base_ref,
+    );
+    crate::gate::pr_context::serialize_pr_context_xml(&rep, out)
+}
+
 pub fn execute_safety_dispatch<W: Write>(
     s: &TopSafetyArgs,
     root: &str,
@@ -278,15 +331,9 @@ pub fn execute_safety_dispatch<W: Write>(
         let rep = crate::gate::seams::find_integration_seams(ingest, graph, interner);
         crate::gate::seams::serialize_seams_xml(root, &rep, out)?;
     } else if let Some(ref_opt) = &s.pr_context {
-        let base_ref = ref_opt.as_deref().unwrap_or("HEAD~1");
-        let changed = get_working_tree_changed_files(root);
-        let rep = crate::gate::pr_context::compute_pr_context(
-            &changed, ingest, graph, interner, base_ref,
-        );
-        crate::gate::pr_context::serialize_pr_context_xml(&rep, out)?;
+        execute_pr_context_dispatch(root, ref_opt.as_deref(), ingest, graph, interner, out)?;
     } else if let Some(branches) = s.merge_scout.as_deref() {
-        let rep = crate::gate::merge_scout::evaluate_merge_scout(branches, ingest, interner);
-        crate::gate::merge_scout::serialize_merge_scout_xml(&rep, out)?;
+        return execute_merge_scout_dispatch(root, branches, ingest, interner, out);
     }
     Ok(None)
 }
