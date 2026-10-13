@@ -109,6 +109,10 @@ validate: parity ## Alias for parity validation on REPO (e.g. make validate REPO
 .PHONY: bench
 bench: build-release ## Run comprehensive speed and memory benchmark against upstream ripwire on REPO (default: REPO=.)
 	@python3 ./scripts/benchmark-performance.py "$(REPO)"
+
+.PHONY: bench-pipeline
+bench-pipeline: ## Run Cargo in-memory pipeline micro-benchmarks
+	@$(CARGO) bench --bench bench_pipeline
 .PHONY: update-grammars
 update-grammars: ## Update vendored tree-sitter grammars from upstream repositories
 	@./scripts/update-grammars.sh $(GRAMMAR)
