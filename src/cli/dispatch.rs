@@ -441,6 +441,9 @@ pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
             let target = skills_args.path.as_deref();
             execute_skills_install(target)
         }
+        Commands::Wrap(wrap_args) => {
+            crate::cli::queries::execute_wrap_command(&wrap_args.agent, wrap_args.force)
+        }
     }
 }
 pub fn execute_skills_install(target: Option<&str>) -> io::Result<()> {

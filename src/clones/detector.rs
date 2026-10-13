@@ -289,7 +289,11 @@ fn find_type3_pairs_seq(
         if exact_matched.contains_key(&ca.id) {
             continue;
         }
-        for cb in &candidates[i + 1..] {
+        let max_len_b = ((ca.norm_tokens.len() as f64) / 0.70) as usize;
+        for cb in candidates[i + 1..]
+            .iter()
+            .take_while(|cb| cb.norm_tokens.len() <= max_len_b)
+        {
             if exact_matched.contains_key(&cb.id) {
                 continue;
             }
@@ -314,8 +318,10 @@ fn find_type3_pairs(
         .enumerate()
         .filter(|(_, ca)| !exact_matched.contains_key(&ca.id))
         .flat_map(|(i, ca)| {
+            let max_len_b = ((ca.norm_tokens.len() as f64) / 0.70) as usize;
             candidates[i + 1..]
                 .iter()
+                .take_while(move |cb| cb.norm_tokens.len() <= max_len_b)
                 .filter(|cb| !exact_matched.contains_key(&cb.id))
                 .filter_map(|cb| evaluate_candidate_pair(ca, cb))
                 .collect::<Vec<_>>()
@@ -343,7 +349,8 @@ pub fn find_clones_in_root(
     sources: Option<&HashMap<String, Vec<u8>>>,
     root: Option<&std::path::Path>,
 ) -> Vec<CloneGroup> {
-    let candidates = extract_candidate_bodies(ingest, interner, min_tokens, sources, root);
+    let mut candidates = extract_candidate_bodies(ingest, interner, min_tokens, sources, root);
+    candidates.sort_unstable_by_key(|c| c.norm_tokens.len());
     let mut exact_groups = group_exact_clones(&candidates);
 
     let mut exact_matched = HashMap::new();

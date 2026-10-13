@@ -147,6 +147,10 @@ pub fn select_precedence_tier(
 
 /// Resolve a single reference according to the precedence ladder.
 #[must_use]
+fn is_candidate_compatible(sym: &Symbol, r: &Reference) -> bool {
+    sym.lang.is_compatible(r.lang) && (!r.arg_count_known || r.arg_count <= sym.params)
+}
+
 pub fn filter_candidates(
     all_cands: &[NodeId],
     r: &Reference,
@@ -154,7 +158,7 @@ pub fn filter_candidates(
 ) -> Option<CandBuffer> {
     let mut cands = CandBuffer::new();
     for &id in all_cands {
-        if symbols[id as usize].lang.is_compatible(r.lang) {
+        if is_candidate_compatible(&symbols[id as usize], r) {
             cands.push(id);
         }
     }

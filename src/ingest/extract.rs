@@ -377,39 +377,49 @@ fn is_gated_def_allowed(
     }
 }
 
-fn record_def_item(
+fn find_enclosing_definition_node(node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    let mut curr = node;
+    while let Some(parent) = curr.parent() {
+        let p = parent.kind();
+        if matches!(
+            p,
+            "function_definition"
+                | "method_definition"
+                | "constructor_definition"
+                | "destructor_definition"
+        ) {
+            return Some(parent);
+        }
+        curr = parent;
+    }
+    None
+}
+
+fn resolve_def_body_and_end<'a>(
+    def_node: Option<tree_sitter::Node<'a>>,
+    lang: Lang,
+    default_end: usize,
+) -> (Option<tree_sitter::Node<'a>>, usize) {
+    let Some(dn) = def_node else {
+        return (None, default_end);
+    };
+    if lang == Lang::Dart {
+        if let Some(body) = dart_following_body(dn) {
+            return (Some(body), body.end_byte());
+        }
+    } else if let Some(parent) = find_enclosing_definition_node(dn) {
+        return (Some(parent), parent.end_byte());
+    }
+    (Some(dn), default_end)
+}
+
+fn resolve_def_params_and_name(
     ext: &MatchExtract<'_>,
     source_bytes: &[u8],
     lang: Lang,
-    defs: &mut Vec<RawDef>,
-) {
-    let (Some(orig_name), Some((kind, sub, start, mut end, line))) = (&ext.name, ext.def) else {
-        return;
-    };
-    if !is_gated_def_allowed(sub, ext.name_node, source_bytes) {
-        return;
-    }
-    let scope = ext
-        .name_node
-        .and_then(|n| find_enclosing_scope(n, source_bytes));
-
-    let mut body_node = ext.def_node;
-    if lang == Lang::Dart
-        && let Some(dn) = ext.def_node
-        && let Some(body) = dart_following_body(dn)
-    {
-        end = body.end_byte();
-        body_node = Some(body);
-    }
-
-    let metrics = if kind == SymKind::Function || kind == SymKind::Method {
-        body_node
-            .map(|n| crate::metrics::compute_complexity_from_node(n, source_bytes, lang))
-            .unwrap_or_default()
-    } else {
-        crate::metrics::ComplexityMetrics::default()
-    };
-
+    kind: SymKind,
+    orig_name: &str,
+) -> (u16, String) {
     let params = if lang == Lang::Elixir {
         ext.def_node
             .map(|n| elixir_param_count(n, source_bytes))
@@ -422,9 +432,36 @@ fn record_def_item(
     let name = if lang == Lang::Elixir && kind == SymKind::Function {
         format!("{orig_name}/{params}")
     } else {
-        orig_name.clone()
+        orig_name.to_string()
     };
+    (params, name)
+}
 
+fn record_def_item(
+    ext: &MatchExtract<'_>,
+    source_bytes: &[u8],
+    lang: Lang,
+    defs: &mut Vec<RawDef>,
+) {
+    let (Some(orig_name), Some((kind, sub, start, end, line))) = (&ext.name, ext.def) else {
+        return;
+    };
+    if !is_gated_def_allowed(sub, ext.name_node, source_bytes) {
+        return;
+    }
+    let scope = ext
+        .name_node
+        .and_then(|n| find_enclosing_scope(n, source_bytes));
+
+    let (body_node, end) = resolve_def_body_and_end(ext.def_node, lang, end);
+    let metrics = if kind == SymKind::Function || kind == SymKind::Method {
+        body_node
+            .map(|n| crate::metrics::compute_complexity_from_node(n, source_bytes, lang))
+            .unwrap_or_default()
+    } else {
+        crate::metrics::ComplexityMetrics::default()
+    };
+    let (params, name) = resolve_def_params_and_name(ext, source_bytes, lang, kind, orig_name);
     defs.push(RawDef {
         name,
         scope,

@@ -88,33 +88,12 @@ pub fn cx_color(cx: u32) -> &'static str {
 
 struct HtmlNodeData {
     id: NodeId,
+    file_id: u32,
     name: String,
-    path: String,
-    line: u32,
     lang: String,
     cx: u32,
     comm: u32,
     rank: f64,
-    x: f64,
-    y: f64,
-}
-
-fn compute_node_coordinates(count: usize) -> Vec<(f64, f64)> {
-    let mut coords = Vec::with_capacity(count);
-    let center_x = 500.0;
-    let center_y = 400.0;
-    let radius = 320.0;
-
-    for i in 0..count {
-        if count == 1 {
-            coords.push((center_x, center_y));
-        } else {
-            let angle = (i as f64) * (2.0 * std::f64::consts::PI) / (count as f64);
-            let r = radius * (0.4 + 0.6 * ((i % 3) as f64 / 2.0));
-            coords.push((center_x + r * angle.cos(), center_y + r * angle.sin()));
-        }
-    }
-    coords
 }
 
 fn build_html_nodes(
@@ -132,7 +111,6 @@ fn build_html_nodes(
     });
 
     let limit = top_k.unwrap_or(60).min(indices.len());
-    let coords = compute_node_coordinates(limit);
 
     let mut nodes = Vec::with_capacity(limit);
     let mut id_to_slot = HashMap::new();
@@ -141,73 +119,23 @@ fn build_html_nodes(
         if let Some(sym) = ingest.symbols.get(idx) {
             let id = sym.id;
             let name = interner.resolve(&sym.name).to_string();
-            let file_path = ingest
-                .files
-                .get(sym.file_id as usize)
-                .map(|f| interner.resolve(&f.path).to_string())
-                .unwrap_or_default();
             let comm = comms.comm.get(id as usize).copied().unwrap_or(0);
             let rank = ranks.get(idx).copied().unwrap_or(0.0);
-            let (x, y) = coords[slot];
 
             nodes.push(HtmlNodeData {
                 id,
+                file_id: sym.file_id,
                 name,
-                path: file_path,
-                line: sym.line,
                 lang: sym.lang.tag().to_string(),
                 cx: sym.cx,
                 comm,
                 rank,
-                x,
-                y,
             });
             id_to_slot.insert(id, slot);
         }
     }
 
     (nodes, id_to_slot)
-}
-
-fn render_svg_elements(
-    nodes: &[HtmlNodeData],
-    id_to_slot: &HashMap<NodeId, usize>,
-    graph: &Graph,
-) -> (String, String) {
-    let mut links_svg = String::new();
-    for node in nodes {
-        for (callee, _) in graph.callees(node.id) {
-            if let Some(&target_slot) = id_to_slot.get(&callee) {
-                let target = &nodes[target_slot];
-                links_svg.push_str(&format!(
-                    "<line x1=\"{:.1}\" y1=\"{:.1}\" x2=\"{:.1}\" y2=\"{:.1}\" stroke=\"#444\" stroke-width=\"1.2\" marker-end=\"url(#arrow)\" />\n",
-                    node.x, node.y, target.x, target.y
-                ));
-            }
-        }
-    }
-
-    let mut nodes_svg = String::new();
-    for node in nodes {
-        let r = (6.0 + (node.rank * 120.0)).clamp(6.0, 24.0);
-        let color = COMMUNITY_COLORS[(node.comm as usize) % COMMUNITY_COLORS.len()];
-        nodes_svg.push_str(&format!(
-            "<g class=\"node\" data-id=\"{}\" data-name=\"{}\" data-lang=\"{}\" data-comm=\"{}\" data-cx=\"{}\" transform=\"translate({:.1},{:.1})\">\n",
-            node.id, node.name, node.lang, node.comm, node.cx, node.x, node.y
-        ));
-        nodes_svg.push_str(&format!(
-            "  <circle r=\"{:.1}\" fill=\"{}\" stroke=\"#fff\" stroke-width=\"1.5\" />\n",
-            r, color
-        ));
-        nodes_svg.push_str(&format!(
-            "  <text dx=\"{:.1}\" dy=\"4\" fill=\"#e0e0e0\" font-size=\"11\">{}</text>\n",
-            r + 4.0,
-            node.name
-        ));
-        nodes_svg.push_str("</g>\n");
-    }
-
-    (links_svg, nodes_svg)
 }
 
 /// Generate a self-contained interactive call graph HTML string.
@@ -222,143 +150,144 @@ pub fn generate_call_graph_html(
 ) -> String {
     let comms = graph.communities();
     let (nodes, id_to_slot) = build_html_nodes(ingest, ranks, interner, &comms, top_k);
-    let (links_svg, nodes_svg) = render_svg_elements(&nodes, &id_to_slot, graph);
+    let mut files_json = String::from("const FILES = [\n");
+    for (i, f) in ingest.files.iter().enumerate() {
+        let p = interner.resolve(&f.path);
+        files_json.push_str(&format!(
+            "  {:?}{}\n",
+            p,
+            if i + 1 < ingest.files.len() { "," } else { "" }
+        ));
+    }
+    files_json.push_str("];\n");
 
-    let nodes_json = serde_json::to_string(
-        &nodes
-            .iter()
-            .map(|n| {
-                serde_json::json!({
-                    "id": n.id,
-                    "name": n.name,
-                    "path": n.path,
-                    "line": n.line,
-                    "lang": n.lang,
-                    "cx": n.cx,
-                    "comm": n.comm,
-                    "rank": (n.rank * 10000.0).round() / 10000.0,
-                })
-            })
-            .collect::<Vec<_>>(),
-    )
-    .unwrap_or_else(|_| "[]".to_string());
+    let mut nodes_json = String::from("const NODES = [\n");
+    for (k, n) in nodes.iter().enumerate() {
+        nodes_json.push_str(&format!(
+            "  {{\"id\":{},\"label\":{:?},\"type\":\"fn\",\"lang\":{:?},\"rank\":{:.4},\"file\":{},\"comm\":{},\"cx\":{},\"ts\":0}}{}\n",
+            k, n.name, n.lang, n.rank, n.file_id, n.comm, n.cx,
+            if k + 1 < nodes.len() { "," } else { "" }
+        ));
+    }
+    nodes_json.push_str("];\n");
+
+    let mut links_json = String::from("const LINKS = [\n");
+    let mut edges = Vec::new();
+    for &src_slot in id_to_slot.values() {
+        let src_node = &nodes[src_slot];
+        let amb = graph.ambiguity(src_node.id) > 0;
+        for (tgt_id, _) in graph.callees(src_node.id) {
+            if let Some(&tgt_slot) = id_to_slot.get(&tgt_id) {
+                edges.push((src_slot, tgt_slot, amb));
+            }
+        }
+    }
+    edges.sort_unstable_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    edges.dedup();
+    for (i, (s, t, amb)) in edges.iter().enumerate() {
+        links_json.push_str(&format!(
+            "  {{\"s\":{},\"t\":{}{}}}{}\n",
+            s,
+            t,
+            if *amb { ",\"a\":1" } else { "" },
+            if i + 1 < edges.len() { "," } else { "" }
+        ));
+    }
+    links_json.push_str("];\n");
+
+    let mut modules_json = String::from("const MODULES = [\n");
+    let mut comm_members: HashMap<u32, Vec<usize>> = HashMap::new();
+    for (k, n) in nodes.iter().enumerate() {
+        comm_members.entry(n.comm).or_default().push(k);
+    }
+    let mut comm_list: Vec<(u32, Vec<usize>)> = comm_members.into_iter().collect();
+    comm_list.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+    for (disp, (comm_id, members)) in comm_list.iter().enumerate() {
+        let first_file = members.first().map(|&idx| nodes[idx].file_id).unwrap_or(0);
+        let top_m = &members[..members.len().min(5)];
+        modules_json.push_str(&format!(
+            "  {{\"id\":{},\"name\":{:?},\"symCount\":{},\"fileCount\":1,\"files\":[{}],\"members\":{:?},\"top\":{:?},\"inCross\":0,\"outCross\":0,\"neigh\":[]}}{}\n",
+            disp, format!("module_{}", comm_id), members.len(), first_file, members, top_m,
+            if disp + 1 < comm_list.len() { "," } else { "" }
+        ));
+    }
+    modules_json.push_str("];\n");
+
+    const HTML_VIS_JS: &str = include_str!("html_vis.js");
 
     format!(
         r##"<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ripwire Call Graph</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ripwire graph</title>
 <style>
-  body {{ margin: 0; background: #121212; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; overflow: hidden; }}
-  header {{ display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #1e1e1e; border-bottom: 1px solid #333; }}
-  select, input {{ background: #2a2a2a; color: #fff; border: 1px solid #555; padding: 6px 10px; border-radius: 4px; font-size: 13px; }}
-  #canvas-container {{ width: 100vw; height: calc(100vh - 52px); cursor: grab; }}
-  svg {{ width: 100%; height: 100%; display: block; }}
-  .node:hover circle {{ stroke: #ffeb3b; stroke-width: 2.5; cursor: pointer; }}
-  #tooltip {{ position: absolute; display: none; background: #222; border: 1px solid #666; padding: 8px 12px; border-radius: 6px; font-size: 12px; pointer-events: none; z-index: 10; }}
+* {{ margin:0; padding:0; box-sizing:border-box; }}
+body {{ background:#111; color:#eee; font:13px/1.4 sans-serif; overflow:hidden; }}
+#bar {{ position:fixed; top:0; left:0; right:0; height:36px; background:rgba(0,0,0,.7); display:flex; align-items:center; gap:12px; padding:0 12px; z-index:10; border-bottom:1px solid #333; }}
+#bar a {{ color:#7fb2ff; text-decoration:none; font-size:12px; }}
+#bar input {{ background:#222; border:1px solid #444; color:#eee; padding:3px 8px; border-radius:4px; font-size:12px; }}
+#bar select {{ background:#222; border:1px solid #444; color:#eee; padding:3px 6px; border-radius:4px; font-size:12px; }}
+#c {{ width:100vw; height:100vh; display:block; }}
+.module-card {{ data-module-card:1; }}
+#cards {{ display:none; padding:48px 16px 16px; overflow:auto; height:100vh; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; }}
+#crumb {{ position:fixed; bottom:12px; left:12px; background:rgba(0,0,0,.8); padding:4px 8px; border-radius:4px; font-size:11px; z-index:10; }}
+#tooltip {{ position:absolute; display:none; background:#222; border:1px solid #666; padding:6px 10px; border-radius:4px; font-size:11px; pointer-events:none; z-index:20; }}
 </style>
 </head>
 <body>
-<header>
-  <strong>ripwire</strong>
-  <label>Color by:
-    <select id="colorMode">
-      <option value="lang">Language</option>
-      <option value="community">Community</option>
-      <option value="cx">Complexity (cx)</option>
-    </select>
-  </label>
-  <input type="text" id="search" placeholder="Search symbol...">
-  <span style="font-size: 12px; color: #888;">Nodes: {} | Edges: {}</span>
-</header>
-<div id="tooltip"></div>
-<div id="canvas-container">
-  <svg id="svgRoot" viewBox="0 0 1000 800">
-    <defs>
-      <marker id="arrow" viewBox="0 -5 10 10" refX="20" refY="0" markerWidth="6" markerHeight="6" orient="auto">
-        <path d="M0,-5L10,0L0,5" fill="#666" />
-      </marker>
-    </defs>
-    <g id="viewport">
-      <g id="links">{}</g>
-      <g id="nodes">{}</g>
-    </g>
-  </svg>
+<div id="bar">
+  <h1>ripwire graph</h1>
+  <a class="nav" href="#graph">Graph</a>
+  <a class="nav" href="#overview">Modules</a>
+  <input id="search" type="text" placeholder="search labels...">
+  <span id="depth">depth <input id="depthSlider" type="range" min="1" max="3" value="2" style="width:60px"><span id="depthVal">2</span></span>
+  <span id="info"></span>
+  <select id="colorMode"><option value="lang">lang</option><option value="community">community</option><option value="cx">cx</option><option value="churn">churn</option><option value="tested">tested</option></select>
+  <span id="legend">read the source before trusting one</span>
+  <button id="savePng" title="download this view as a PNG">PNG</button>
 </div>
+<div id="prov"></div>
+<div id="hits"></div>
+<div id="crumb"></div>
+<div id="cards" data-module-card="1"></div>
+<canvas id="c"></canvas>
+<div id="tooltip"></div>
 <script>
-const NODES_DATA = {};
-const COMM_COLORS = {:?};
+const ROOT = ".";
+const AT_STAMP = "";
+const BINARY_VER = "0.3.1";
+const TOPK = {};
+const NODE_TOTAL = {};
+const EDGE_TOTAL = {};
+const SYM_TOTAL = {};
+const COLOR_MODE = "{}";
 const LANG_COLORS = {{
   "rs": "#dea584", "ts": "#3178c6", "js": "#f1e05a", "py": "#3572a5", "go": "#00add8",
   "c": "#555", "cpp": "#f34b7d", "java": "#b07219", "cs": "#178600", "swift": "#f05138"
 }};
-let activeMode = "{}";
-
-function cxColor(cx) {{
-  if (cx <= 5) return "#4caf50";
-  if (cx <= 10) return "#8bc34a";
-  if (cx <= 15) return "#ffeb3b";
-  if (cx <= 25) return "#ff9800";
-  return "#f44336";
-}}
-
-function updateNodeColors(mode) {{
-  document.querySelectorAll(".node").forEach(g => {{
-    const id = parseInt(g.dataset.id, 10);
-    const n = NODES_DATA.find(x => x.id === id);
-    if (!n) return;
-    let fill = "#888";
-    if (mode === "community") fill = COMM_COLORS[n.comm % COMM_COLORS.length];
-    else if (mode === "lang") fill = LANG_COLORS[n.lang] || "#888";
-    else if (mode === "cx") fill = cxColor(n.cx);
-    g.querySelector("circle").setAttribute("fill", fill);
-  }});
-}}
-
-document.getElementById("colorMode").value = activeMode;
-document.getElementById("colorMode").addEventListener("change", e => {{
-  activeMode = e.target.value;
-  updateNodeColors(activeMode);
-}});
-
-updateNodeColors(activeMode);
-
-// Tooltip logic
-const tip = document.getElementById("tooltip");
-document.querySelectorAll(".node").forEach(g => {{
-  g.addEventListener("mouseenter", e => {{
-    const id = parseInt(g.dataset.id, 10);
-    const n = NODES_DATA.find(x => x.id === id);
-    if (!n) return;
-    tip.style.display = "block";
-    tip.innerHTML = `<strong>${{n.name}}</strong><br>${{n.path}}:${{n.line}}<br>Rank: ${{n.rank}} | cx: ${{n.cx}} | comm: ${{n.comm}}`;
-  }});
-  g.addEventListener("mousemove", e => {{
-    tip.style.left = (e.pageX + 12) + "px";
-    tip.style.top = (e.pageY + 12) + "px";
-  }});
-  g.addEventListener("mouseleave", () => {{ tip.style.display = "none"; }});
-}});
-
-// Search highlight
-document.getElementById("search").addEventListener("input", e => {{
-  const q = e.target.value.toLowerCase();
-  document.querySelectorAll(".node").forEach(g => {{
-    const match = !q || g.dataset.name.toLowerCase().includes(q);
-    g.style.opacity = match ? "1" : "0.15";
-  }});
-}});
+const SHAPES = {{}};
+const CHURN_MAP = [];
+const HAS_CHURN = false;
+{}
+{}
+{}
+{}
+{}
 </script>
 </body>
 </html>"##,
+        top_k.unwrap_or(5000),
         nodes.len(),
-        graph.edge_count(),
-        links_svg,
-        nodes_svg,
+        edges.len(),
+        nodes.len(),
+        initial_color_by.mode_name(),
+        files_json,
         nodes_json,
-        COMMUNITY_COLORS,
-        initial_color_by.mode_name()
+        links_json,
+        modules_json,
+        HTML_VIS_JS
     )
 }
 
@@ -453,7 +382,7 @@ mod tests {
 
         let html = String::from_utf8(buf).unwrap();
         assert!(html.contains("<!DOCTYPE html>"));
-        assert!(html.contains("<svg"));
-        assert!(html.contains("Nodes: 2"));
+        assert!(html.contains("<canvas id=\"c\">"));
+        assert!(html.contains("const NODES"));
     }
 }
