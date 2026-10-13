@@ -79,15 +79,31 @@ pub fn execute_navigate(args: &NavigateArgs) -> io::Result<()> {
     execute_navigate_with(args, &ctx, &mut stdout)
 }
 
-pub fn execute_html_export(root: &str, out_file: &str, color_by_str: &str) -> io::Result<()> {
+pub fn execute_html_export(
+    root: &str,
+    out_file: Option<&str>,
+    color_by_str: &str,
+) -> io::Result<()> {
     let color_by = crate::serialize::ColorBy::from_str_opt(color_by_str)
         .unwrap_or(crate::serialize::ColorBy::Lang);
     let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
-    let mut file = std::fs::File::create(out_file)?;
-    crate::serialize::html::write_call_graph_html(
-        &mut file, &ingest, &graph, &pr.ranks, &interner, color_by, None,
-    )?;
-    println!("ripwire: wrote interactive HTML call graph to {out_file}");
+    if let Some(path) = out_file {
+        let mut file = std::fs::File::create(path)?;
+        crate::serialize::html::write_call_graph_html(
+            &mut file, &ingest, &graph, &pr.ranks, &interner, color_by, None,
+        )?;
+    } else {
+        let mut stdout = io::stdout().lock();
+        crate::serialize::html::write_call_graph_html(
+            &mut stdout,
+            &ingest,
+            &graph,
+            &pr.ranks,
+            &interner,
+            color_by,
+            None,
+        )?;
+    }
     Ok(())
 }
 
@@ -484,8 +500,7 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     }
 
     if let Some(html_opt) = cli.html {
-        let out_file = html_opt.unwrap_or_else(|| "ripwire.html".to_string());
-        return execute_html_export(root, &out_file, &cli.color_by);
+        return execute_html_export(root, html_opt.as_deref(), &cli.color_by);
     }
 
     if let Some(Commands::Slice(slice_args)) = &cli.command {

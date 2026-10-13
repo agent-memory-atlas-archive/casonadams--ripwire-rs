@@ -62,6 +62,7 @@ struct BodyTokens {
     id: NodeId,
     raw_hash: u64,
     norm_hash: u64,
+    norm_token_ids: Vec<u32>,
     norm_tokens: Vec<String>,
     kgrams: Vec<u64>,
 }
@@ -112,27 +113,43 @@ fn check_group_idiom(members: &[&BodyTokens]) -> CloneIdiom {
     first
 }
 
-fn get_or_load_file_bytes<'a>(
-    file_id: usize,
-    ingest: &IngestResult,
-    interner: &Interner,
-    sources: Option<&HashMap<String, Vec<u8>>>,
-    root: Option<&std::path::Path>,
-    file_cache: &'a mut [Option<Vec<u8>>],
-) -> Option<&'a [u8]> {
-    if file_cache[file_id].is_none() {
-        let file_info = ingest.files.get(file_id)?;
-        let file_path = interner.resolve(&file_info.path);
-        let bytes = if let Some(map) = sources {
-            map.get(file_path).cloned()
-        } else if let Some(r) = root {
-            std::fs::read(r.join(file_path)).ok()
-        } else {
-            std::fs::read(file_path).ok()
-        };
-        file_cache[file_id] = bytes;
+struct RawCandidate {
+    id: NodeId,
+    raw_hash: u64,
+    norm_hash: u64,
+    norm_tokens: Vec<String>,
+    kgrams: Vec<u64>,
+}
+
+fn extract_file_candidates(
+    file_bytes: &[u8],
+    syms: &[&crate::domain::Symbol],
+    min_tokens: usize,
+) -> Vec<RawCandidate> {
+    let mut out = Vec::new();
+    for sym in syms {
+        let start = (sym.sig_start_byte as usize).min(file_bytes.len());
+        let end = (sym.end_byte as usize).min(file_bytes.len());
+        if start >= end {
+            continue;
+        }
+        let body_bytes = &file_bytes[start..end];
+        let (raw_tokens, norm_tokens) = tokenize_body(body_bytes, sym.lang);
+        if norm_tokens.len() < min_tokens {
+            continue;
+        }
+        let raw_hash = hash_tokens(&raw_tokens);
+        let norm_hash = hash_tokens(&norm_tokens);
+        let kgrams = compute_kgrams(&norm_tokens, 5);
+        out.push(RawCandidate {
+            id: sym.id,
+            raw_hash,
+            norm_hash,
+            norm_tokens,
+            kgrams,
+        });
     }
-    file_cache[file_id].as_deref()
+    out
 }
 
 fn extract_candidate_bodies(
@@ -142,53 +159,58 @@ fn extract_candidate_bodies(
     sources: Option<&HashMap<String, Vec<u8>>>,
     root: Option<&std::path::Path>,
 ) -> Vec<BodyTokens> {
-    let mut candidates = Vec::new();
-    let mut file_cache: Vec<Option<Vec<u8>>> = vec![None; ingest.files.len()];
-
+    let mut symbols_by_file: Vec<Vec<&crate::domain::Symbol>> =
+        vec![Vec::new(); ingest.files.len()];
     for sym in &ingest.symbols {
-        if (sym.kind != SymKind::Function && sym.kind != SymKind::Method)
-            || sym.end_byte <= sym.sig_start_byte
+        if (sym.kind == SymKind::Function || sym.kind == SymKind::Method)
+            && sym.end_byte > sym.sig_start_byte
         {
-            continue;
+            let fid = sym.file_id as usize;
+            if fid < symbols_by_file.len() {
+                symbols_by_file[fid].push(sym);
+            }
         }
-
-        let fid = sym.file_id as usize;
-        if fid >= file_cache.len() {
-            continue;
-        }
-
-        let Some(file_bytes) =
-            get_or_load_file_bytes(fid, ingest, interner, sources, root, &mut file_cache)
-        else {
-            continue;
-        };
-
-        let start = (sym.sig_start_byte as usize).min(file_bytes.len());
-        let end = (sym.end_byte as usize).min(file_bytes.len());
-        if start >= end {
-            continue;
-        }
-
-        let body_bytes = &file_bytes[start..end];
-        let (raw_tokens, norm_tokens) = tokenize_body(body_bytes, sym.lang);
-        if norm_tokens.len() < min_tokens {
-            continue;
-        }
-
-        let raw_hash = hash_tokens(&raw_tokens);
-        let norm_hash = hash_tokens(&norm_tokens);
-        let kgrams = compute_kgrams(&norm_tokens, 5);
-
-        candidates.push(BodyTokens {
-            id: sym.id,
-            raw_hash,
-            norm_hash,
-            norm_tokens,
-            kgrams,
-        });
     }
 
-    candidates
+    let raw_candidates: Vec<RawCandidate> = symbols_by_file
+        .into_par_iter()
+        .enumerate()
+        .filter(|(_, syms)| !syms.is_empty())
+        .flat_map(|(fid, syms)| {
+            let file_info = ingest.files.get(fid)?;
+            let file_path = interner.resolve(&file_info.path);
+            let file_bytes = if let Some(map) = sources {
+                map.get(file_path).cloned()
+            } else if let Some(r) = root {
+                std::fs::read(r.join(file_path)).ok()
+            } else {
+                std::fs::read(file_path).ok()
+            }?;
+            Some(extract_file_candidates(&file_bytes, &syms, min_tokens))
+        })
+        .flatten()
+        .collect();
+
+    let mut rodeo = lasso::Rodeo::default();
+    raw_candidates
+        .into_iter()
+        .map(|c| {
+            use lasso::Key;
+            let norm_token_ids = c
+                .norm_tokens
+                .iter()
+                .map(|t| rodeo.get_or_intern(t).into_usize() as u32)
+                .collect();
+            BodyTokens {
+                id: c.id,
+                raw_hash: c.raw_hash,
+                norm_hash: c.norm_hash,
+                norm_token_ids,
+                norm_tokens: c.norm_tokens,
+                kgrams: c.kgrams,
+            }
+        })
+        .collect()
 }
 
 fn group_exact_clones(candidates: &[BodyTokens]) -> Vec<CloneGroup> {
@@ -227,30 +249,6 @@ fn group_exact_clones(candidates: &[BodyTokens]) -> Vec<CloneGroup> {
     groups
 }
 
-fn intern_tokens_to_ids(a: &[String], b: &[String]) -> (Vec<u32>, Vec<u32>) {
-    let mut dict: HashMap<String, u32> = HashMap::new();
-    let mut next_id = 0u32;
-
-    let mut map_slice = |slice: &[String]| -> Vec<u32> {
-        let mut ids = Vec::with_capacity(slice.len());
-        for s in slice {
-            let id = if let Some(&id) = dict.get(s) {
-                id
-            } else {
-                let id = next_id;
-                next_id += 1;
-                dict.insert(s.clone(), id);
-                id
-            };
-            ids.push(id);
-        }
-        ids
-    };
-    let a_ids = map_slice(a);
-    let b_ids = map_slice(b);
-    (a_ids, b_ids)
-}
-
 fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGroup> {
     let len_a = ca.norm_tokens.len();
     let len_b = cb.norm_tokens.len();
@@ -264,8 +262,7 @@ fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGrou
         return None;
     }
 
-    let (a_ids, b_ids) = intern_tokens_to_ids(&ca.norm_tokens, &cb.norm_tokens);
-    let lcs = compute_lcs_len(&a_ids, &b_ids);
+    let lcs = compute_lcs_len(&ca.norm_token_ids, &cb.norm_token_ids);
     let similarity = (2.0 * lcs as f64) / (len_a + len_b) as f64;
 
     if (0.80..1.0).contains(&similarity) {

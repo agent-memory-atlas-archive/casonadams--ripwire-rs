@@ -11,12 +11,14 @@ if not os.path.exists(repo):
     print(f"Error: repository path '{repo}' does not exist", file=sys.stderr)
     sys.exit(1)
 
-# Find rw binary
-rw_bin = os.path.abspath("target/release/rw")
+# Find ripwire-rs binary
+rw_bin = os.path.abspath("target/release/ripwire-rs")
 if not os.path.exists(rw_bin):
-    rw_bin = shutil.which("rw")
+    rw_bin = os.path.abspath("target/release/rw")
+if not os.path.exists(rw_bin):
+    rw_bin = shutil.which("ripwire-rs") or shutil.which("rw")
     if not rw_bin:
-        print("Error: 'rw' binary not found. Run 'make build-release' first.", file=sys.stderr)
+        print("Error: 'ripwire-rs' binary not found. Run 'make build-release' first.", file=sys.stderr)
         sys.exit(1)
 
 # Find ripwire binary

@@ -3,7 +3,7 @@ use clap::{Args, Parser, Subcommand};
 /// CLI command line options.
 #[derive(Parser, Debug, Default, PartialEq)]
 #[command(
-    name = "rw",
+    name = "ripwire-rs",
     version,
     about = "High-throughput agent context router and static analysis engine"
 )]
@@ -72,6 +72,12 @@ pub struct Cli {
     /// Schema legend posture: compact (default, in-context schema comment) or none
     #[arg(long, default_value = "compact")]
     pub legend: String,
+    /// Compact brief report mode
+    #[arg(long = "brief")]
+    pub brief: bool,
+    /// Overlay SCIP compiler-backed index
+    #[arg(long = "scip", value_name = "FILE")]
+    pub scip: Option<String>,
 
     /// Top-level symbol navigation flags
     #[command(flatten)]
@@ -153,6 +159,15 @@ pub struct TopDetailArgs {
     /// Print built-in AST code smell catalog
     #[arg(long = "lint-catalog")]
     pub lint_catalog: bool,
+    /// External YAML ast-grep lint rules directory
+    #[arg(long = "lint-rules", value_name = "DIR")]
+    pub lint_rules: Option<String>,
+    /// Check local-variable naming consistency
+    #[arg(long = "naming-locals")]
+    pub naming_locals: bool,
+    /// Naming convention consistency check
+    #[arg(long = "naming-consistency")]
+    pub naming_consistency: bool,
 }
 
 /// Top-level pre-PR safety and verification flags.
@@ -182,6 +197,18 @@ pub struct TopSafetyArgs {
     /// Cross-branch symbol conflict predictions across concurrent branch refs
     #[arg(long = "merge-scout", value_name = "REF1,REF2,...")]
     pub merge_scout: Option<String>,
+    /// Acknowledge findings in quality-delta
+    #[arg(long = "quality-ack", value_name = "REASON")]
+    pub quality_ack: Option<Option<String>>,
+    /// Narrow quality-ack to specific kinds or facets
+    #[arg(long = "ack-only", value_name = "SUBSTR")]
+    pub ack_only: Option<String>,
+    /// Allow quality-baseline on a dirty working tree
+    #[arg(long = "allow-dirty")]
+    pub allow_dirty: bool,
+    /// Partition quality-delta by ownership scope
+    #[arg(long = "scope", value_name = "GLOB")]
+    pub scope: Option<String>,
 }
 
 /// Top-level architecture and discovery flags.
@@ -220,6 +247,15 @@ pub struct TopArchitectureArgs {
     /// Multi-level hierarchical Louvain community clustering
     #[arg(long = "zoom", value_name = "DEPTH")]
     pub zoom: Option<Option<u32>>,
+    /// Max depth levels for --zoom
+    #[arg(long = "zoom-levels", value_name = "N")]
+    pub zoom_levels: Option<u32>,
+    /// Include built-in functions in external-surface
+    #[arg(long = "include-builtins")]
+    pub include_builtins: bool,
+    /// SARIF format export for lint
+    #[arg(long = "sarif")]
+    pub sarif: bool,
 }
 impl TopArchitectureArgs {
     pub fn is_active(&self) -> bool {
@@ -300,6 +336,30 @@ pub struct TopRetrievalArgs {
     /// Evaluate small functional graph query DSL expression
     #[arg(long = "graph-query", value_name = "EXPR")]
     pub graph_query: Option<String>,
+    /// AST pattern query expression
+    #[arg(long = "match", value_name = "QUERY")]
+    pub ast_match: Option<String>,
+    /// Code-shaped structural pattern search
+    #[arg(long = "pattern", value_name = "PAT")]
+    pub pattern: Option<String>,
+    /// Regular expression search
+    #[arg(long = "regex", value_name = "PAT")]
+    pub regex: Option<String>,
+    /// Emit only signatures without bodies
+    #[arg(long = "signatures-only")]
+    pub signatures_only: bool,
+    /// Connecting radius for --connect
+    #[arg(long = "connect-radius", default_value_t = 2)]
+    pub connect_radius: u32,
+    /// Lines before grep hit
+    #[arg(long = "grep-before", value_name = "N")]
+    pub grep_before: Option<usize>,
+    /// Lines after grep hit
+    #[arg(long = "grep-after", value_name = "N")]
+    pub grep_after: Option<usize>,
+    /// Lines around grep hit
+    #[arg(long = "grep-context", value_name = "N")]
+    pub grep_context: Option<usize>,
 }
 impl TopRetrievalArgs {
     pub fn is_active(&self) -> bool {
@@ -354,6 +414,24 @@ pub struct TopWorkspaceArgs {
     /// Pin gotcha note to .ripwire_notes (e.g. --note-add="SYM: text")
     #[arg(long = "note-add", value_name = "NOTE")]
     pub note_add: Option<String>,
+    /// Scan blast radius of toggling a feature flag
+    #[arg(long = "flip", value_name = "GATE")]
+    pub flip: Option<String>,
+    /// Gateability check for doc-drift
+    #[arg(long = "gateability")]
+    pub gateability: bool,
+    /// Check ABI byte layout across branches in stray-content
+    #[arg(long = "abi")]
+    pub abi: bool,
+    /// Generate landing plan in stray-content
+    #[arg(long = "plan")]
+    pub plan: bool,
+    /// Lint structure of a PLAN file
+    #[arg(long = "plan-lint", value_name = "FILE")]
+    pub plan_lint: Option<String>,
+    /// List files skipped due to size limits
+    #[arg(long = "skipped")]
+    pub skipped: bool,
     /// Replace symbol definition body with text
     #[arg(long = "replace-symbol-body", value_name = "SYM:BODY")]
     pub replace_symbol_body: Option<String>,

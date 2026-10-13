@@ -86,6 +86,17 @@ quality: ## Measure quality regressions against git HEAD with ripwire-rs
 		echo "Error: ripwire-rs not found"; exit 1; \
 	fi
 
+UPSTREAM_DIR ?= ../ripwire
+
+.PHONY: upstream-parity
+upstream-parity: build-release ## Run upstream regression.sh against target/release/ripwire-rs
+	@if [ ! -d "$(UPSTREAM_DIR)" ]; then \
+		echo "Error: Upstream repository not found at $(UPSTREAM_DIR)"; \
+		exit 1; \
+	fi
+	@echo "Running upstream regression test suite..."
+	@RIPWIRE_BIN="$$(pwd)/target/release/ripwire-rs" bash "$(UPSTREAM_DIR)/test/regression.sh"
+
 REPO ?= .
 
 .PHONY: parity

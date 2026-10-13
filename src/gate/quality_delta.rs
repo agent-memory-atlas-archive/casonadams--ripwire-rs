@@ -40,11 +40,18 @@ pub fn parse_acks_content(content: &str) -> QualityAcks {
             let kind = parts[1].split(':').next().unwrap_or(parts[1]).to_string();
             let key = parts[2].to_string();
             let val = parts[3].parse::<u32>().unwrap_or(0);
-            acks.insert((kind.clone(), key), val);
+            acks.entry((kind.clone(), key))
+                .and_modify(|v: &mut u32| *v = (*v).max(val))
+                .or_insert(val);
             for p in &parts[4..] {
                 if let Some(path_part) = p.strip_prefix("p=") {
                     let sym_or_path = path_part.split(':').next().unwrap_or(path_part);
-                    acks.insert((kind.clone(), sym_or_path.to_string()), val);
+                    acks.entry((kind.clone(), sym_or_path.to_string()))
+                        .and_modify(|v: &mut u32| *v = (*v).max(val))
+                        .or_insert(val);
+                    acks.entry((kind.clone(), path_part.to_string()))
+                        .and_modify(|v: &mut u32| *v = (*v).max(val))
+                        .or_insert(val);
                 }
             }
         }
@@ -242,8 +249,10 @@ pub fn compute_quality_delta(
 
 fn apply_quality_acks(regressions: &mut [QualityRegression], ledger: &QualityAcks) {
     for r in regressions {
+        let file = r.file_path.split(':').next().unwrap_or(&r.file_path);
         if ledger.is_acknowledged(&r.kind, &r.sym_name, r.now_val)
             || ledger.is_acknowledged(&r.kind, &r.file_path, r.now_val)
+            || ledger.is_acknowledged(&r.kind, file, r.now_val)
         {
             r.is_gating = false;
         }
@@ -422,7 +431,7 @@ fn check_churn_regressions(
                 file_path: sym_file,
                 line: sym.line,
                 was_val: 0,
-                now_val: (commit_count * 8) as u32,
+                now_val: commit_count as u32,
                 is_gating: true,
                 is_new_symbol: false,
             });
@@ -469,8 +478,10 @@ pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<Qualit
     check_churn_regressions(root, state, &baseline, &mut report.regressions);
     if let Some(ledger) = &acks {
         for r in &mut report.regressions {
+            let file = r.file_path.split(':').next().unwrap_or(&r.file_path);
             if ledger.is_acknowledged(&r.kind, &r.sym_name, r.now_val)
                 || ledger.is_acknowledged(&r.kind, &r.file_path, r.now_val)
+                || ledger.is_acknowledged(&r.kind, file, r.now_val)
             {
                 r.is_gating = false;
             }

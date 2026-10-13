@@ -1,7 +1,15 @@
 # ripwire quality acks v1 — written by --quality-ack; a finding stays suppressed until it worsens past its acked magnitude
 # format: ack <kind> <16-hex-key> <ackNow> [cid=<16-hex-content-id>] [by=<scope that acked it>] [now=<uint> was=<uint>] [prov=recon] [facet=<token>] [p=<path>:<line>] <reason to end of line> — one per line, kept SORTED by (kind,key) on every write (merge-friendly)
 # PROVENANCE: now=/was=/facet=/p= exist only on rows a provenance-aware binary WROTE OR REFRESHED (2026-09-22+); a legacy row heals FORWARD on its next --quality-ack. prov=recon marks a row a backfill RECONSTRUCTED from the CURRENT tree rather than measured when it was accepted: it answers 'would this be gating now', NOT 'was it gating then'. A recon row is a CACHE, not a dated record — every --quality-ack re-derives the ones whose clone group it can still find, so a checkable value is never older than the last ack; one whose group this run did NOT find is left untouched and counted as unverified on stderr, because not finding a group is a floor (scoped scan, capped file, different tree), never proof it is gone. Absent prov= means measured live, and a measurement is never overwritten by a reconstruction. Only the two clone kinds can be reconstructed (their key is a member-set hash, so today's idiom verdict is recomputable); a numeric row's was= still needs the commit that accepted it, which no field here records.
+ack complexity 0b0aeb3f76498a27 31 cid=e26d8b06f2a93110 now=31 was=0 p=src/serialize/html_vis.js:133 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack complexity 27f4b1ab6e5e745c 21 cid=92d73295f1f195a2 now=21 was=0 p=src/serialize/html_vis.js:1551 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack complexity 70a00a1f5e885d55 15 cid=e15879c9e432177c now=15 was=5 p=src/cli.rs:949 cli flag expansion
+ack complexity 7608c305c2a4aa31 27 cid=68b1ecf989f36b5d now=27 was=0 p=src/serialize/html_vis.js:211 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack complexity 7a85d3d58b3d5639 52 cid=7ffc97d878b6d486 now=52 was=0 p=src/serialize/html_vis.js:1415 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack complexity 8b123e3592ca5a14 43 cid=5080069f77b72216 now=43 was=0 p=src/serialize/html_vis.js:580 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack complexity d627843460d82904 115 cid=a8ed17a2a1f9a757 now=115 was=0 p=src/serialize/html_vis.js:885 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack complexity e5467b59283b7d80 37 cid=984a4712ea404e5d now=37 was=0 p=src/serialize/html_vis.js:412 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack complexity e643bbccdfd3a9ea 17 cid=375ac9ea7f9e5dd3 now=17 was=0 p=src/serialize/html_vis.js:1627 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack dead-code:new-symbol 02107e7a94d4e0b1 0 cid=c2775e3b91fa030d now=0 was=0 p=tests/test_edit_check_arity_break.rs:158 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 03e1e8ac408c0bb8 0 cid=89f4caf669115726 now=0 was=0 p=tests/test_edit_check_arity_break.rs:201 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 158549e63da54ccf 0 cid=5482b5a9f78fded4 now=0 was=0 p=src/mcp/retrieval.rs:344 feat(mcp): complete 33 mcp tools suite
@@ -11,6 +19,7 @@ ack dead-code:new-symbol 1c8671734e52adf1 0 cid=f97e8d0ab3e8ed75 now=0 was=0 p=s
 ack dead-code:new-symbol 21c952917f59fdf2 0 cid=082a96c2f7393aa8 now=0 was=0 p=src/mcp/schema.rs:5 feat(mcp): complete 33 mcp tools suite
 ack dead-code:new-symbol 24c5da8702b29a78 0 cid=93ccc5cd1f34abf8 now=0 was=0 p=src/cache.rs:124 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack dead-code:new-symbol 2976ccc597b56f50 0 cid=547adee2b8442588 now=0 was=0 p=src/gate/affected.rs:270 feat(gate): pre-commit contract gate and affected test reachability
+ack dead-code:new-symbol 2a09c48742cd67d8 0 cid=1ce4d540a6b83a66 now=0 was=0 p=src/serialize/html_vis.js:780 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack dead-code:new-symbol 2cdcf0486a28549b 0 cid=1f9ce08aaffe8e8e now=0 was=0 p=src/gate/edit_check.rs:222 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 32b6ca88b6e044b4 0 cid=807ca8586b721cc1 now=0 was=0 p=src/mcp/edit.rs:206 feat(mcp): complete 33 mcp tools suite
 ack dead-code:new-symbol 33437bf5b1f3eb6a 0 cid=11849eb7f31a7fe0 now=0 was=0 p=tests/test_edit_check_arity_break.rs:107 feat(gate): pre-commit contract gate and affected test reachability
@@ -95,6 +104,7 @@ ack duplication cddca65fd31797b1 132 now=132 was=0 p=src/serialize/query_xml.rs:
 ack duplication dd4c31cb7409343d 47 now=47 was=0 p=src/serialize/query_xml.rs:367 retrieval dispatch routing
 ack duplication e3697d8c8dc449f9 277 now=277 was=0 p=src/gate/quality_delta.rs:231 feat(gate): quality baseline and delta gate
 ack duplication f67ca71a54fe23e3 56 now=56 was=0 p=src/gate/contract.rs:160 feat(gate): pre-commit contract gate and affected test reachability
+ack duplication fd017b6932c3f08b 21 now=21 was=0 p=src/serialize/html_vis.js:1418 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack nesting c9bcc01a8ee00ea7 5 cid=c6e6d6517e1bc166 now=5 was=0 p=src/mcp/edit.rs:30 feat(mcp): complete 33 mcp tools suite
 ack nesting d8d0bab89c9e3dd3 5 cid=dd2347d8763dc1d0 now=5 was=0 p=src/cli.rs:1323 safety dispatch routing
 ack params 036578c0c808c522 6 cid=ac65639f5a740595 now=6 was=0 p=src/mcp/retrieval.rs:86 feat(mcp): complete 33 mcp tools suite
@@ -115,8 +125,9 @@ ack params eb0335dc263eb7d1 6 cid=84009aee2033ef82 now=6 was=0 p=src/cli.rs:1242
 ack params fe114e977e970be6 6 cid=4347f70dcc10924c now=6 was=0 p=src/serialize/query_xml.rs:412 retrieval dispatch routing
 ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 facet=ambient p=src/domain.rs:214 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 03e609981e51a079 19 cid=12f34c9cbed57c34 now=19 was=0 facet=ambient p=src/cli.rs:17 safety dispatch routing | prior: cli options and streaming enhancements
-ack short-horizon-churn 05417ac6ba678f95 8 cid=c77a015a626a6fb8 now=8 was=0 facet=self p=src/cli/args.rs:10 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 05417ac6ba678f95 9 cid=b828ed667b0f11d5 now=9 was=0 facet=ambient p=src/cli/args.rs:10 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 0b16726d64758d18 2 cid=a318748ecc1b89cd now=2 was=0 facet=self p=src/skills.rs:153 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 0c91e0d2f0baa95e 5 cid=2b1b4d1d796190b4 now=5 was=0 facet=self p=src/serialize/xml.rs:240 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 0cff0726cbe86b67 8 cid=bff3c8ff8779c603 now=8 was=0 facet=self p=src/cli/args.rs:387 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 0d17cb230565e92a 5 cid=e4e99ae69f86c7ae now=5 was=0 facet=ambient p=src/mcp/mod.rs:700 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 0dbcc2ebfc642340 7 cid=f7161ab1dbd67c20 now=7 was=0 facet=ambient p=src/ingest.rs:130 feat(gate): pre-commit contract gate and affected test reachability
@@ -134,11 +145,13 @@ ack short-horizon-churn 1ab4e544641e0e08 8 cid=9dfe7a7f16d70181 now=8 was=0 face
 ack short-horizon-churn 1b14ebd540a7f7a0 4 cid=8888eff9be14a5c1 now=4 was=0 facet=ambient p=src/resolve.rs:219 cli options and streaming enhancements
 ack short-horizon-churn 1e3db6601ccd19d9 5 cid=6d4c472b01a08e40 now=5 was=0 facet=self p=src/mcp/mod.rs:174 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 2033625d6827aa6e 2 cid=760b754621a3a9e8 now=2 was=0 facet=ambient p=src/rank/hits.rs:135 cli options and streaming enhancements
+ack short-horizon-churn 20bd39fbd6c933fe 9 cid=0be97549f4bd488c now=9 was=0 facet=ambient p=src/cli/args.rs:216 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 227e269f843cf58d 16 cid=a6650ad250c2929b now=16 was=0 facet=self p=src/cli.rs:946 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 27df363ae0c450b3 5 cid=80b8cd85a4844728 now=5 was=0 facet=self p=src/mcp/mod.rs:318 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 2a74dc8296003db5 5 cid=3db9c4bc1085ab39 now=5 was=0 facet=self p=src/mcp/mod.rs:223 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 2d239cc7bb872512 4 cid=1738622f191fa471 now=4 was=0 facet=ambient p=src/resolve.rs:234 cli options and streaming enhancements
-ack short-horizon-churn 2f78d80dc0101330 4 cid=ec5cd2ebb1677793 now=4 was=0 facet=self p=src/serialize/xml.rs:354 cli options and streaming enhancements
+ack short-horizon-churn 2f78d80dc0101330 5 cid=2b87816e47bd895a now=5 was=0 facet=self p=src/serialize/xml.rs:366 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: cli options and streaming enhancements
+ack short-horizon-churn 2fcf922794d2ea7c 11 cid=3d734924a49ce7d8 now=11 was=0 facet=self p=src/cli/dispatch.rs:464 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 37fbf6517ff6ce1b 17 cid=6770921381e4e1a8 now=17 was=0 facet=self p=src/cli.rs:1059 cli options and streaming enhancements
 ack short-horizon-churn 3837a3181097f8ac 3 cid=8596089df645328d now=3 was=0 facet=self p=src/gate/contract.rs:104 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 3873965730b5abf7 2 cid=36ef75088a9afe03 now=2 was=0 facet=ambient p=src/git/history.rs:360 perf(cache): implement persistent on-disk binary cache and parallel git mining
@@ -148,13 +161,16 @@ ack short-horizon-churn 3a07b4ac500d91f6 10 cid=10b4c091207c2266 now=10 was=0 fa
 ack short-horizon-churn 3bc166f2d687d5e0 10 cid=96a499e17974cdcf now=10 was=0 facet=self p=src/cli/dispatch.rs:217 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 3c8424377bc0287c 5 cid=4f50111421bfb6c6 now=5 was=0 facet=self p=src/mcp/mod.rs:96 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn 3e5d89483b9ae82c 6 cid=1d3d607091f1ae70 now=6 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:303 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 3ff5983328204de0 2 cid=2749d1e2f0830ec7 now=2 was=0 facet=self p=src/serialize/html.rs:208 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 4495e320775c8df7 10 cid=4f05796358cc6a1a now=10 was=0 facet=self p=src/cli/dispatch.rs:309 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 44a561ac8e5656a2 17 cid=b582def855349035 now=17 was=0 facet=self p=src/cli.rs:1136 cli options and streaming enhancements | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 4590d19cc4031a6d 6 cid=551c876371714bf3 now=6 was=0 facet=self p=src/ingest/mod.rs:209 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 495e9245f0a62004 16 cid=9d8a216ad61182ef now=16 was=0 facet=self p=src/cli.rs:777 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
+ack short-horizon-churn 49b31aa11c7b1d12 6 cid=aa504106bffca2c8 now=6 was=0 facet=ambient p=src/clones/detector.rs:61 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 4a1230f1cfd095df 6 cid=1ffe7220eae6384a now=6 was=0 facet=self p=src/ingest.rs:430 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 4a4fd6eb7a392c4a 5 cid=a5aec8c432c7d586 now=5 was=0 facet=self p=src/mcp/mod.rs:723 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 575939d532c70d23 7 cid=73fba400e72ce452 now=7 was=0 facet=self p=build.rs:63 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 58bb8313b30aac1c 3 cid=59b6a28cbb76af43 now=3 was=0 facet=self p=scripts/validate-parity.py:15 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 5befe906674d1d04 5 cid=9cebc1cfcad1bd9b now=5 was=0 facet=self p=src/mcp/mod.rs:764 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 5d1c47d7ed0abe51 13 cid=d8101647936f4e4c now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:535 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 5d3030ce205bd4d9 19 cid=35ff8e83a3c0e9db now=19 was=0 facet=self p=src/cli.rs:1398 safety dispatch routing | prior: cli options and streaming enhancements
@@ -162,9 +178,12 @@ ack short-horizon-churn 5e69f1155e343c23 5 cid=a62db5d0a8cce6d8 now=5 was=0 face
 ack short-horizon-churn 5f19ad8a0ce66046 6 cid=159212c4747ced54 now=6 was=0 facet=self p=src/ingest/mod.rs:452 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 6136e693f658207a 6 cid=1a6440ee63410c4d now=6 was=0 facet=self p=src/ingest/mod.rs:541 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 62e7c8391a4df527 3 cid=7262bea52f91ff2a now=3 was=0 facet=self p=src/gate/quality_delta.rs:248 cli options and streaming enhancements
+ack short-horizon-churn 63cb0b37532087a4 9 cid=23145d6348ee7f33 now=9 was=0 facet=ambient p=src/cli/args.rs:386 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 6592ae6ffe2a9edc 2 now=2 was=0 facet=self p=tests/test_ingest_tier1_fixtures.rs:6 migrate to in-memory fixtures for zero-IO testing
 ack short-horizon-churn 66aa2d758f791cf2 5 cid=b6a09e2e51877ccc now=5 was=0 facet=self p=src/mcp/mod.rs:30 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 67b95f17a1d8adb4 11 cid=52b08873148acefc now=11 was=0 facet=self p=src/cli/dispatch.rs:82 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 67d2dcee81975bca 5 cid=a4334c84726b2b74 now=5 was=0 facet=ambient p=src/graph.rs:316 cli options and streaming enhancements
+ack short-horizon-churn 68d4bb810ced6451 9 cid=dfffe9e782fe2568 now=9 was=0 facet=ambient p=src/cli/args.rs:302 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 68f171ed9d5920c6 6 cid=d9b4e9525f0177ba now=6 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:361 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 6dcec957b21602d3 9 cid=97aeeecf8b5df765 now=9 was=0 facet=ambient p=src/domain.rs:237 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 70a00a1f5e885d55 19 cid=e15879c9e432177c now=19 was=0 facet=ambient p=src/cli.rs:949 cli flag expansion
@@ -174,15 +193,18 @@ ack short-horizon-churn 73e3b4916fad8f15 5 cid=6e9ea3a239f75d03 now=5 was=0 face
 ack short-horizon-churn 7421c569ac4e8bd0 6 cid=aa900cfcdb44761f now=6 was=0 facet=self p=src/ingest/mod.rs:203 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 7444f1b07227393c 4 cid=7e6fe7997e7d48fa now=4 was=0 facet=self p=src/serialize/xml.rs:121 cli options and streaming enhancements
 ack short-horizon-churn 76568d93a351a68d 6 cid=7dcd61687d79d92a now=6 was=0 facet=self p=src/ingest.rs:547 feat(metrics): compute complexity, readability, and hotspots
-ack short-horizon-churn 768f6f23b404e1ea 4 cid=54638cd40196ed04 now=4 was=0 facet=ambient p=src/serialize/xml.rs:295 cli options and streaming enhancements
+ack short-horizon-churn 768f6f23b404e1ea 5 cid=f8343e8eb9cd86b9 now=5 was=0 facet=self p=src/serialize/xml.rs:297 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: cli options and streaming enhancements
+ack short-horizon-churn 776ac9b29f07b78f 9 cid=8af3229d1ee45492 now=9 was=0 facet=ambient p=src/cli/args.rs:175 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 7878be76ade52e8d 10 cid=503cda1f3f2b5e3a now=10 was=0 facet=self p=src/cli/dispatch.rs:285 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 7c2731626a1336bc 5 cid=493f0237b7767ff9 now=5 was=0 facet=ambient p=src/graph.rs:144 cli options and streaming enhancements
 ack short-horizon-churn 7dd9d37f97a49ab9 6 cid=34da8b7eee17478f now=6 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:403 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 7e7824006b9b6b06 7 cid=b6925f19e3a79f92 now=7 was=0 facet=self p=src/cli/safety.rs:55 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 7e9009f392dd32f9 5 cid=6f38348e5f690815 now=5 was=0 facet=self p=src/mcp/mod.rs:106 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 822d826a559b1750 4 cid=f7082dc07f519f35 now=4 was=0 facet=self p=src/ingest/mod.rs:308 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 82d6b64ad9325602 10 cid=7622b7e69156f766 now=10 was=0 facet=self p=src/cli/dispatch.rs:353 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 83ff6d3192e3aaaf 2 cid=996d0bf9ce4d5bcd now=2 was=0 facet=self p=src/skills.rs:109 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 87bbfd4149647d6a 4 cid=c9ad26e8025e2684 now=4 was=0 facet=self p=src/ingest/mod.rs:405 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 87e4f675f0e092cb 2 cid=2a9df016f19d29c4 now=2 was=0 facet=self p=src/serialize/html.rs:119 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 87fc87dba6c4a49f 13 cid=f279e7ceb83ad0f2 now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:574 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 8adcf2961fb567e2 7 cid=f9e83614110caea5 now=7 was=0 facet=self p=build.rs:57 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 8bc4a88d7407cbda 10 cid=a824ce059c6691b0 now=10 was=0 facet=self p=src/cli/dispatch.rs:241 perf(cache): implement persistent on-disk binary cache and parallel git mining
@@ -194,10 +216,12 @@ ack short-horizon-churn 9586c389ef09f514 4 cid=1334bbec7ccfadc2 now=4 was=0 face
 ack short-horizon-churn 972f728745b11d45 6 cid=4b3c01ada5c9158b now=6 was=0 facet=self p=src/ingest.rs:339 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 9b1c44c5d3a24728 13 cid=68166e150b958b52 now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:444 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn a1db9b8f4081edb3 5 cid=9284006cc955fafb now=5 was=0 facet=ambient p=src/mcp/mod.rs:693 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn a1e90284a8399e78 6 cid=f101bbdea5dab319 now=6 was=0 facet=self p=src/clones/detector.rs:155 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn a29bdbd875b3bb62 6 cid=b84620de9d471718 now=6 was=0 facet=self p=src/ingest.rs:383 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn a84d42f7098b2b60 9 cid=7baf6fa5727f8686 now=9 was=0 facet=ambient p=src/cli/args.rs:137 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn a8d8a8c2b3c692bb 5 cid=8a850df30c972216 now=5 was=0 facet=self p=src/mcp/mod.rs:760 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn a8f8a5f239f73c3e 4 cid=7fb8c3b69f3757a0 now=4 was=0 facet=ambient p=src/resolve.rs:261 cli options and streaming enhancements
-ack short-horizon-churn aa67274c42eaba44 4 cid=9af0b78481da1999 now=4 was=0 facet=self p=src/serialize/xml.rs:62 cli options and streaming enhancements
+ack short-horizon-churn aa67274c42eaba44 5 cid=58ba098c841edcf3 now=5 was=0 facet=self p=src/serialize/xml.rs:64 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: cli options and streaming enhancements
 ack short-horizon-churn abbf9013bfc446fc 19 cid=2afd56d18715568a now=19 was=0 facet=self p=src/cli.rs:1082 retrieval dispatch routing | prior: fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn af8f8cdf2368bd78 5 cid=a44d1244512278d2 now=5 was=0 facet=self p=src/mcp/mod.rs:265 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn b375ec7d1556994c 5 cid=5325c82e263c650e now=5 was=0 facet=ambient p=src/graph.rs:303 cli options and streaming enhancements
@@ -213,14 +237,17 @@ ack short-horizon-churn c0877650b51b994a 2 cid=5ae3bc85466baf17 now=2 was=0 face
 ack short-horizon-churn c2491a80cbc08195 2 cid=2148b2f7fdaadc97 now=2 was=0 facet=ambient p=src/rank/hits.rs:119 cli options and streaming enhancements
 ack short-horizon-churn c28be696f55888fe 5 cid=391a26a2b3b563e2 now=5 was=0 facet=self p=src/mcp/mod.rs:203 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn c33f3abef5794893 13 cid=0b0307947103a814 now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:330 perf(cache): implement persistent on-disk binary cache and parallel git mining
-ack short-horizon-churn cd6d279e4dbbdbc4 4 cid=44f6ec8edd045c25 now=4 was=0 facet=ambient p=src/serialize/xml.rs:46 cli options and streaming enhancements
+ack short-horizon-churn cc565e00b39a1695 7 cid=299db252a3a3b52b now=7 was=0 facet=self p=src/cli/safety.rs:135 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn cd6d279e4dbbdbc4 5 cid=8097521923c77744 now=5 was=0 facet=ambient p=src/serialize/xml.rs:46 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: cli options and streaming enhancements
+ack short-horizon-churn ce7dc13d985503fe 6 cid=e70c803c962344fe now=6 was=0 facet=self p=src/clones/detector.rs:252 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn d3eebdef7a909404 7 cid=13afc9c65d43e4da now=7 was=0 facet=ambient p=src/ingest.rs:565 feat(gate): pre-commit contract gate and affected test reachability
 ack short-horizon-churn d644d739704097d8 13 cid=28148c94e6a7d144 now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:347 perf(cache): implement persistent on-disk binary cache and parallel git mining | prior: safety queries test suite
 ack short-horizon-churn d719c3f8536d1aa6 2 cid=bdcf0bc1ef881672 now=2 was=0 facet=self p=src/skills.rs:68 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn da13dd9f78129be8 2 cid=a0a55375e088cacc now=2 was=0 facet=self p=src/serialize/html.rs:89 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn da149eda75c93291 5 cid=f35a608cb75d4c25 now=5 was=0 facet=ambient p=src/graph.rs:102 cli options and streaming enhancements
 ack short-horizon-churn dbf9873eb051deef 13 cid=858c02abbd515b96 now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:144 perf(cache): implement persistent on-disk binary cache and parallel git mining | prior: feat(navigate): format navigation commands as canonical XML
 ack short-horizon-churn dfcd8fbfb70d4004 4 cid=cd680760751f2590 now=4 was=0 facet=ambient p=src/serialize/xml.rs:22 cli options and streaming enhancements
-ack short-horizon-churn e334c9d7ea0fb943 4 cid=160f9c9d1f1b307e now=4 was=0 facet=self p=src/serialize/xml.rs:359 cli options and streaming enhancements
+ack short-horizon-churn e334c9d7ea0fb943 5 cid=07dac40999a2e9c3 now=5 was=0 facet=self p=src/serialize/xml.rs:371 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: cli options and streaming enhancements
 ack short-horizon-churn e676baff641bf844 10 cid=a6cbaa49094c060c now=10 was=0 facet=self p=src/cli/dispatch.rs:150 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn e68c44392a811fd2 4 cid=d39251fdf8116de8 now=4 was=0 facet=self p=src/gate/contract.rs:69 cli options and streaming enhancements
 ack short-horizon-churn ea36d3b69d5342f9 6 cid=1410a297cc9ae313 now=6 was=0 facet=self p=src/cli/safety.rs:84 perf(cache): implement persistent on-disk binary cache and parallel git mining
@@ -235,13 +262,16 @@ ack short-horizon-churn faeda1a26b82bcb9 5 cid=029dba1e608c8d9f now=5 was=0 face
 ack short-horizon-churn ff13a7414cb0f2f1 10 cid=dcf9d0ad774171a1 now=10 was=0 facet=self p=src/cli/dispatch.rs:198 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn ff2afe1ec5c50beb 17 cid=7035e8bc40b1bb80 now=17 was=0 facet=self p=src/cli.rs:328 cli options and streaming enhancements
 ack verbosity 03e609981e51a079 62 cid=844fd93f87304958 now=62 was=50 p=src/cli.rs:17 cli flag expansion
+ack verbosity 05417ac6ba678f95 72 cid=b828ed667b0f11d5 now=72 was=68 p=src/cli/args.rs:10 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 21c952917f59fdf2 374 cid=082a96c2f7393aa8 now=374 was=0 p=src/mcp/schema.rs:5 feat(mcp): complete 33 mcp tools suite
 ack verbosity 2976ccc597b56f50 97 cid=547adee2b8442588 now=97 was=0 p=src/gate/affected.rs:270 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 2cdcf0486a28549b 63 cid=1f9ce08aaffe8e8e now=63 was=0 p=src/gate/edit_check.rs:222 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 35864867e9f930b2 86 cid=34b59eab7cf163b4 now=86 was=0 p=tests/test_mcp_33_tools.rs:6 feat(mcp): complete 33 mcp tools suite
 ack verbosity 38e4fa4960049db5 69 cid=4cb1a2afbe738a56 now=69 was=0 p=tests/test_edit_check_arity_break.rs:11 feat(gate): pre-commit contract gate and affected test reachability
+ack verbosity 3ff5983328204de0 146 cid=2749d1e2f0830ec7 now=146 was=139 p=src/serialize/html.rs:208 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 54e7136a347d0061 66 cid=abc12525642d7d06 now=66 was=0 p=src/mcp/graph_tools.rs:172 feat(mcp): complete 33 mcp tools suite
 ack verbosity 795c5808ab0ca979 90 cid=3f603d0498ec0654 now=90 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
+ack verbosity 7a85d3d58b3d5639 62 cid=7ffc97d878b6d486 now=62 was=0 p=src/serialize/html_vis.js:1415 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 89cc6ea26e2c5dda 67 cid=9c3a3d5e89523184 now=67 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity 94a134e1f8eb53b9 74 cid=29a3c399aaac8a10 now=74 was=66 p=src/mcp/mod.rs:613 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack verbosity 9b1c44c5d3a24728 69 cid=da43663267325b02 now=69 was=0 p=tests/test_cli_and_mcp.rs:396 safety queries test suite
@@ -250,7 +280,9 @@ ack verbosity b5a40f34ce7656a9 80 cid=f92ea050828bbe61 now=80 was=78 p=tests/tes
 ack verbosity c0877650b51b994a 89 cid=5ae3bc85466baf17 now=89 was=86 p=tests/test_streaming_xml_serializer.rs:42 refactor(distribution): rename crate to ripwire and binary to rw
 ack verbosity c3b002fb7273923c 72 cid=28450cd46cffbbf4 now=72 was=0 p=src/cli.rs:1732 cli flag expansion
 ack verbosity c7651463abe73266 185 cid=0a1e9a3c96ea5a06 now=185 was=0 p=src/mcp/mod.rs:425 feat(mcp): complete 33 mcp tools suite
+ack verbosity d627843460d82904 187 cid=a8ed17a2a1f9a757 now=187 was=0 p=src/serialize/html_vis.js:885 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity d644d739704097d8 93 cid=4cc565e7575f30b2 now=93 was=55 p=tests/test_cli_and_mcp.rs:347 retrieval dispatch routing
 ack verbosity dbf9873eb051deef 110 cid=f6f66f92d6091196 now=110 was=90 p=tests/test_cli_and_mcp.rs:143 feat(navigate): format navigation commands as canonical XML | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack verbosity e0ab848c5d67d7ae 72 cid=510934f45e78e30e now=72 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
+ack verbosity e5467b59283b7d80 68 cid=984a4712ea404e5d now=68 was=0 p=src/serialize/html_vis.js:412 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity ef626e7fbdac48cf 83 cid=c560a4919f395ede now=83 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability

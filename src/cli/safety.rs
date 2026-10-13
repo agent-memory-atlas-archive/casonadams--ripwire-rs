@@ -56,10 +56,15 @@ pub fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<i
     if !args.is_active() {
         return None;
     }
-    let state = match crate::mcp::McpState::load(root) {
+    let mut state = match crate::mcp::McpState::load(root) {
         Some(s) => s,
         None => return Some(Err(io::Error::other("failed to load repository"))),
     };
+    if args.quality_delta {
+        let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 12);
+        state.commits =
+            crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
+    }
     let mut stdout = io::stdout().lock();
     execute_gate_action(args, &state, &mut stdout)
 }
@@ -146,8 +151,9 @@ pub fn execute_test_gate_query<W: Write>(
     };
     let specs: Vec<&str> = files.iter().map(String::as_str).collect();
     let report = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
-    crate::serialize::serialize_test_gate_xml(root, &report.tests, report.reached_symbols, out)?;
-    Ok(report.seed_count > 0 && (!report.tests.is_empty() || report.reached_symbols > 0))
+    let untested = report.reached_symbols.saturating_sub(report.seed_count);
+    crate::serialize::serialize_test_gate_xml(root, &report.tests, untested, out)?;
+    Ok(report.seed_count > 0 && (!report.tests.is_empty() || untested > 0))
 }
 
 pub fn format_situ_list<W: Write>(

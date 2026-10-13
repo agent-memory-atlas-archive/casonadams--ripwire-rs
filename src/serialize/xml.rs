@@ -52,6 +52,8 @@ pub struct RootElementContext<'a> {
     pub pr_iters: u32,
     pub converged: bool,
     pub rank_by: Option<&'a str>,
+    pub ambiguous: usize,
+    pub unresolved: usize,
 }
 
 /// Write the root `<r ...>` opening element.
@@ -67,8 +69,8 @@ pub fn write_root_open_with_rank_by<W: Write>(
     escape_xml_write(w, ctx.root)?;
     write!(
         w,
-        "\" files=\"{}\" symbols=\"{}\" edges=\"{}\" shown=\"{}\"",
-        ctx.files, ctx.symbols, ctx.edges, ctx.shown
+        "\" files=\"{}\" symbols=\"{}\" edges=\"{}\" shown=\"{}\" ambiguous=\"{}\" unresolved=\"{}\"",
+        ctx.files, ctx.symbols, ctx.edges, ctx.shown, ctx.ambiguous, ctx.unresolved
     )?;
     if let Some(rb) = ctx.rank_by {
         write!(w, " rank_by=\"{}\"", rb)?;
@@ -235,7 +237,7 @@ pub fn serialize_xml<W: Write>(
     )
 }
 
-pub const SCHEMA_COMMENT: &[u8] = b"<!-- ripwire map schema=ripwire.map/v1: ranked symbol map: <f p= layer=> groups <s t= n= sc= k= amb=> rows (k= rank), <c n=> resolved callees; the header comment is data. est_tokens=: price as emitted (an upper bound under compact). root=: p= relative to it. pr_iters=N: PageRank iterations. declined=K: K calls left unbound (no evidence chose one def). prov=scip|binding|import|split|final-segment: how that <c> edge bound (absent: one unique name); split = one arm of an amb= pick; final-segment = a qualified type matched by last name only. files=/symbols=: files and symbols indexed; edges= distinct call edges; shown= symbols printed, a merged row counting each def; ambiguous= calls split over several defs, corpus-wide; unresolved= calls with in-tree evidence and no edge (defs all language-filtered, or import/pointer binding refused); order= rows by rank (important-first, important-last; (auto:fill) = flipped past a size threshold) or by path (stable). unindexed=ext:N: N text files of that extension no grammar reads (6 extensions at most). sc=: enclosing scope; the full id is p::sc::n (p= of the row or its <f>) and selectors take it. amb=K: K calls split over several defs. -->";
+pub const SCHEMA_COMMENT: &[u8] = b"<!-- ripwire map schema=ripwire.map/v1: ranked symbol map: <f p= layer=> groups <s t= n= sc= k= amb=> rows (k= rank), <c n=> resolved callees; the header comment is data. est_tokens=: price as emitted (an upper bound under compact). root=: p= relative to it. pr_iters=N: PageRank iterations. declined=K: K calls left unbound (no evidence chose one def). prov=scip|binding|import|split|final-segment: how that <c> edge bound (absent: one unique name); split = one arm of an amb= pick; final-segment = a qualified type matched by last name only. files=/symbols=: files and symbols indexed; edges= distinct call edges; shown= symbols printed, a merged row counting each def; ambiguous= calls split over several defs, corpus-wide; unresolved= calls with in-tree evidence and no edge (defs all language-filtered, or import/pointer binding refused); order= rows by rank (important-first, important-last; (auto:fill) = flipped past a size threshold) or by path (stable). unindexed=ext:N: N text files of that extension no grammar reads (6 extensions at most). sc=: enclosing scope; the full id is p::sc::n (p= of the row or its <f>) and selectors take it. amb=K: K calls split over several defs.";
 
 fn serialize_symbol_buckets(
     ctx: &StreamXmlContext<'_>,
@@ -310,11 +312,19 @@ pub fn serialize_xml_with_ranks<W: Write>(
 
     let buf = BufWriter::with_capacity(DEFAULT_STREAM_BUFFER_CAPACITY, writer);
     let mut counter = CountingWriter::new(buf);
-
+    let ambiguous = ctx.graph.amb_out.iter().map(|&a| a as usize).sum::<usize>();
     if options.emit_legend {
         counter.write_all(SCHEMA_COMMENT)?;
+        write!(
+            counter,
+            " files={} symbols={} edges={} shown={} ambiguous={} unresolved=0 -->",
+            ctx.ingest.file_count(),
+            ctx.ingest.symbol_count(),
+            ctx.graph.edge_count(),
+            symbols_shown,
+            ambiguous
+        )?;
     }
-
     let root_ctx = RootElementContext {
         root: &options.root,
         files: ctx.ingest.file_count(),
@@ -324,6 +334,8 @@ pub fn serialize_xml_with_ranks<W: Write>(
         pr_iters: ctx.pr_iters,
         converged: ctx.pr_converged,
         rank_by: options.rank_by.as_deref(),
+        ambiguous,
+        unresolved: 0,
     };
     if root_ctx.rank_by.is_some() {
         write_root_open_with_rank_by(&mut counter, &root_ctx)?;
@@ -407,7 +419,7 @@ mod tests {
             &SerializeOptions::default(),
         );
 
-        assert!(xml.starts_with("<r schema=\"ripwire.map/v1\" root=\".\" files=\"1\" symbols=\"2\" edges=\"1\" shown=\"2\" pr_iters=\"12\">"));
+        assert!(xml.starts_with("<r schema=\"ripwire.map/v1\" root=\".\" files=\"1\" symbols=\"2\" edges=\"1\" shown=\"2\" ambiguous=\"0\" unresolved=\"0\" pr_iters=\"12\">"));
         assert!(xml.contains("<f p=\"src/main.rs\">"));
         assert!(xml.contains("<s t=\"fn\" n=\"run\" k=\"0.6500\"></s>"));
         assert!(xml.contains("<s t=\"fn\" n=\"start\" k=\"0.3500\"><c n=\"run\"/></s>"));
