@@ -1,0 +1,10 @@
+ripwire-rs
+Copyright 2026 Cason Adams
+
+This product is an independent Rust port and rewrite of ripwire,
+originally created and authored by David Brewster at Red Hat Emerging Technologies.
+Original project: https://github.com/redhat-et/ripwire
+Copyright 2026 David Brewster
+
+This distribution includes derived documentation, agent skills, and workflow
+specifications modified under the terms of the Apache License, Version 2.0.

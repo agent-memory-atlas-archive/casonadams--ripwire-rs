@@ -23,7 +23,7 @@ ripwire-rs . --test-gate
 # 4. Quality Delta: check 10 quality dimensions against git HEAD (exit 2 on regression)
 ripwire-rs . --quality-delta
 
-# 5. Agent Skills: install 18 ripwire-rs agent skills to ~/.agents/skills
+# 5. Agent Skills: install 17 ripwire-rs agent skills to ~/.agents/skills
 ripwire-rs --add-skills
 
 # 6. Agent Context: launch native JSON-RPC Model Context Protocol (MCP) server
@@ -54,7 +54,7 @@ ripwire-rs mcp
 - **Git Churn & Coupling Analytics**: Fowler's Shotgun Surgery co-change mining, maintenance hotspot ranking (code churn &times; cognitive complexity), bus-factor author ownership (`--owners`), and divergent branch tracking (`--stray-content`, `--whereis`).
 - **Advanced Navigation & Query DSL**: ARISE def-use dataflow slicing (`--slice`), innermost definition resolution (`--at`), formal relationship claim verification (`--verify`), graph query DSL (`--graph-query`), and composite bundles (`--pack-task`).
 - **Atomic AST Code Mutations**: Surgical symbol body replacement (`--replace-symbol-body`) and before/after insertions (`--insert-before-symbol`, `--insert-after-symbol`) with verified byte rollback.
-- **Model Context Protocol (MCP) & 18 Agent Skills**: Native stdio JSON-RPC server exposing 33 context routing and navigation tools, plus automated agent skill installation (`ripwire-rs --add-skills`).
+- **Model Context Protocol (MCP) & 17 Agent Skills**: Native stdio JSON-RPC server exposing 33 context routing and navigation tools, plus automated agent skill installation (`ripwire-rs --add-skills`).
 
 ---
 

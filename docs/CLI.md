@@ -200,4 +200,4 @@ ripwire-rs --add-skills
 - `ripwire-rs metrics [PATH] [--hotspots|--complexity|--clones]`: Code health metrics.
 - `ripwire-rs slice [PATH] --symbol <SYM> --var <VAR>`: Intra-procedural slicing.
 - `ripwire-rs mcp`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
-- `ripwire-rs skills [DIR]`: Install and manage 18 ripwire-rs agent skills in `~/.agents/skills`.
+- `ripwire-rs skills [DIR]`: Install and manage 17 ripwire-rs agent skills in `~/.agents/skills`.

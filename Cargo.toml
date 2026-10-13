@@ -17,7 +17,7 @@ include = [
     "vendor/grammars/**/*.h",
     "man/**/*",
     "skills/**/*",
-    "hooks/**/*",
+    "NOTICE",
     "build.rs",
     "Cargo.toml",
     "README.md",
@@ -65,3 +65,8 @@ tree-sitter-objc = "3.0.2"
 
 [build-dependencies]
 cc = "1.7.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
