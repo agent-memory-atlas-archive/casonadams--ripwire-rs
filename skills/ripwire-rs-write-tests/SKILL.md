@@ -1,10 +1,8 @@
 ---
 name: ripwire-rs-write-tests
 description: >
-  Write tests for EXISTING code that has none — 'this is untested, add coverage', 'add a safety
-  net first'; also verify a new test reaches its intended code. Finds what no test reaches: --seams
-  ranks untested cross-module edges, --callers gives the outside contract. Diff test selection →
-  change-check. For one target one --seams or --callers pass suffices.
+  Identify untested code, cross-module integration seams, and missing safety nets.
+  Verifies test reachability with --exercises and targets high-risk unexercised paths.
 allowed-tools: Bash, Read
 ---
 

@@ -1,10 +1,8 @@
 ---
 name: ripwire-rs-find-bug
 description: >
-  You have a SYMPTOM — crash, exception, wrong output, failing test, error string — and don't know
-  which code is responsible. Ranks candidates; a stack trace or sanitizer output maps onto frames
-  innermost-first; 'it worked yesterday' / 'my last edit broke it' → --situ. One clear hit plus one
-  focused read is enough.
+  Locate root cause from symptoms, error strings, crashes, or stack traces.
+  Maps error frames innermost-first and ranks suspect symbols by relevance and risk.
 allowed-tools: Bash, Read
 ---
 

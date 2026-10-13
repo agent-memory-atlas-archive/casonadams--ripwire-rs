@@ -1,11 +1,8 @@
 ---
 name: ripwire-rs-orient
 description: >
-  Landing COLD in an unfamiliar repo or subsystem, or about to open several files for one question:
-  map first, read only what it ranks highest — main subsystems, entry points, 'how does X work /
-  where is Y'. Also recover context after compaction, retrieve saved docs (--recall), divide code for
-  subagents (--partition), save gotchas (--note-add). NAMED symbol → navigate. Stop at the first rung
-  that answers.
+  Orient on unfamiliar repositories, codebases, or subsystems. Generate architecture
+  summaries, entry points, and task-relevant maps before reading whole files.
 allowed-tools: Bash, Read
 ---
 

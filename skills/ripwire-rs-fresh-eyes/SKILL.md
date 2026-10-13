@@ -1,10 +1,8 @@
 ---
 name: ripwire-rs-fresh-eyes
 description: >
-  Maintenance risk in code you did NOT write — inheriting a module, planning a refactor, a suspected
-  god object, 'what's gnarly / where's the rot / safe to touch?': hotspots, dead or inactive code,
-  switches/defaults (--flags), clones, a function's real shape, bus factor, co-change. Naming the fix
-  or judging YOUR new code → quality-bar. A single-lens question is a single call.
+  Audit maintenance risk and technical debt in unfamiliar code: identify hotspots,
+  dead code, AST clones, bus-factor ownership risks, and hidden coupling before refactoring.
 allowed-tools: Bash, Read
 ---
 

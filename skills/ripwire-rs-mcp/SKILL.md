@@ -1,9 +1,8 @@
 ---
 name: ripwire-rs-mcp
 description: >
-  Wire ripwire into an agent as an MCP server — `ripwire-rs wrap AGENT` (Claude Code, Cursor, Codex,
-  Gemini…) — and choose the server verb mid-task. Also tool HEALTH: a symbol you expected is missing
-  from the ranked output, the index feels stale after a rebase, 'is my ripwire setup broken?'
+  Configure ripwire-rs as a stdio Model Context Protocol (MCP) server. Generate client recipes
+  with `ripwire-rs wrap <agent>` and diagnose MCP tool health with `ripwire-rs --doctor`.
 allowed-tools: Bash, Read
 ---
 

@@ -1,10 +1,8 @@
 ---
 name: ripwire-rs-navigate
 description: >
-  You can NAME the symbol: who calls it, what it calls, the path from A to B, its full body, or an
-  exact literal/regex match. 'Safe to change or rename X — what breaks downstream?' = the transitive
-  blast radius, not 1-hop callers. Three or more symbols → --connect. Run the one verb that fits, then
-  stop.
+  Navigate code symbols: direct callers, callees, transitive blast radius, execution paths,
+  and literal searches. Use when tracing symbol impact before renaming or modifying code.
 allowed-tools: Bash, Read
 ---
 

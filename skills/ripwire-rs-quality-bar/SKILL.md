@@ -1,10 +1,8 @@
 ---
 name: ripwire-rs-quality-bar
 description: >
-  Code QUALITY of what YOU just wrote, before commit or 'done', or a cleanup: --quality-delta
-  lists what got WORSE in 12 kinds, exit 2 if old code got worse (new-symbol rows never gate,
-  except defect-shape format-arity); the fix a measured shape (humps/deep, tangle) calls for.
-  Merge safety → change-check. Even a single-line leaf fix runs it.
+  Measure code quality regressions against git HEAD before commit. Checks complexity,
+  nesting, parameters, clones, and dead code with --quality-delta (exit 2 on regressions).
 allowed-tools: Bash, Read
 ---
 

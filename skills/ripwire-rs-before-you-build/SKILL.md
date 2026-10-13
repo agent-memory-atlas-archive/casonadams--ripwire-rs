@@ -1,10 +1,8 @@
 ---
 name: ripwire-rs-before-you-build
 description: >
-  Starting a FEATURE (multi-symbol work): the plan, the API boundary, the scope — how big does
-  this change get — from the codebase's real structure. Implementing an EXISTING interface?
-  --lego=Iface lists its contract and current implementors. ONE standalone symbol → reuse-first.
-  A small feature with an obvious home needs none of this.
+  Scope and architect multi-symbol features: define API boundaries, identify reusable components,
+  inspect interface contracts, and assess integration seams before writing code.
 allowed-tools: Bash, Read
 ---
 

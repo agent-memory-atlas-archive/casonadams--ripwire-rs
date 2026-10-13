@@ -1,9 +1,8 @@
 ---
 name: ripwire-rs-layers
 description: >
-  Architecture HEALTH and ENFORCEMENT — 'is this a dependency mess / does the UI reach into the
-  database / enforce module boundaries in CI?': cycles, the godfile, propagation cost (how far a touch
-  ripples), --arch rules with a baseline gate. Overview without gating → orient. One pass answers it.
+  Enforce architectural boundaries and audit dependency health. Detect cyclic dependencies,
+  god-files, propagation cost, and CI layering rules with --arch (exit 2 on violations).
 allowed-tools: Bash, Read
 ---
 

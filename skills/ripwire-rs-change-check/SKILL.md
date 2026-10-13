@@ -1,10 +1,8 @@
 ---
 name: ripwire-rs-change-check
 description: >
-  Merge-SAFETY of an existing diff — yours before you push, or a PR you review: blast radius, tests to
-  run, a broken contract (--edit-check=SYM), branch conflicts and landing order, unmerged work
-  stranded on old branches, which ref defines it. Code QUALITY → quality-bar. Even a one-line leaf fix
-  runs --edit-check.
+  Verify merge safety of an existing diff: blast radius, tests to run, broken
+  contracts, and merge conflicts. Trigger before push or when reviewing a PR.
 allowed-tools: Bash, Read
 ---
 

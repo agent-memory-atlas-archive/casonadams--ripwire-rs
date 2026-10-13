@@ -1,10 +1,8 @@
 ---
 name: ripwire-rs-graph-query
 description: >
-  A call-graph question the fixed verbs can't phrase — 'which high-complexity functions can reach X?',
-  'what has 10+ callers in src/?', 'untested symbols within one hop of main'. --graph-query: a small
-  closed expression language — kind, complexity, fan-in, tested filters; a file or cluster; bounded
-  hops; and/or/not.
+  Execute functional call-graph queries combining complexity, fan-in, file paths, and bounded
+  reachability filters with `ripwire-rs <dir> --graph-query='EXPR'`.
 allowed-tools: Bash, Read
 ---
 
