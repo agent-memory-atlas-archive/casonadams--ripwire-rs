@@ -635,8 +635,8 @@ jobs:
         with:
           fetch-depth: 0  # Full git history for diff and quality delta comparison
 
-      - name: Install ripwire CLI (rw)
-        run: cargo install ripwire
+      - name: Install ripwire-rs CLI
+        run: cargo install ripwire-rs
 
       - name: Run Test Reachability Gate
         run: ripwire-rs . --test-gate
@@ -669,8 +669,8 @@ jobs:
         <a href="./">Home</a>
         <a href="workflows.html">Workflows</a>
         <a href="docs.html">Docs</a>
-        <a href="https://crates.io/crates/ripwire-rs-rs" target="_blank" rel="noopener">Crates.io</a>
-        <a href="https://github.com/casonadams/ripwire-rs-rs" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://crates.io/crates/ripwire-rs" target="_blank" rel="noopener">Crates.io</a>
+        <a href="https://github.com/casonadams/ripwire-rs" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>
   </footer>
