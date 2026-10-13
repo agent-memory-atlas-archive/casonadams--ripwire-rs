@@ -92,6 +92,7 @@ pub fn execute_stream_xml_ranked<W: Write>(
             pack_budget_bytes: budget_bytes,
             rank_by: rank_lbl,
             emit_legend: args.emit_legend,
+            metrics: false,
         },
     )
 }

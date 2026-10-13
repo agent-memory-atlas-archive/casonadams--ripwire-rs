@@ -1,8 +1,27 @@
+pub mod analysis_lenses;
 pub mod complexity;
+pub mod dmm;
+pub mod eval;
 pub mod hotspots;
+pub mod layout;
 pub mod lint;
 pub mod nonlocal;
+pub mod quality_panel;
 pub mod readability;
+
+pub use analysis_lenses::{
+    compute_comment_coherence, compute_context_ratio, compute_ensemble,
+    serialize_comment_coherence_xml, serialize_context_ratio_xml, serialize_ensemble_xml,
+};
+pub use dmm::{DmmProperty, DmmReport, compute_dmm_report, serialize_dmm_xml};
+pub use eval::{run_cochange_eval, run_retrieval_eval};
+pub use layout::{
+    FieldLayout, StructLayoutDef, StructLayoutReport, compute_layout_report,
+    serialize_field_affinity_xml, serialize_layout_xml,
+};
+pub use quality_panel::{
+    QualityPanelReport, QualityPanelRow, compute_quality_panel_report, serialize_quality_panel_xml,
+};
 
 pub use complexity::{
     ComplexityMetrics, NESTING_BAR, compute_complexity, compute_complexity_from_node,

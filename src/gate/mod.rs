@@ -3,6 +3,7 @@ pub mod arch;
 pub mod baseline;
 pub mod contract;
 pub mod edit_check;
+pub mod lanes;
 pub mod merge_scout;
 pub mod pr_context;
 pub mod quality_delta;
@@ -19,6 +20,7 @@ pub use contract::{
 pub use edit_check::{
     CallerCheckResult, EditCheckReport, IncompatibleCallSite, check_symbol_contract,
 };
+pub use lanes::compute_plan_lanes;
 pub use merge_scout::{MergeScoutReport, evaluate_merge_scout, serialize_merge_scout_xml};
 pub use pr_context::{PrContextReport, compute_pr_context, serialize_pr_context_xml};
 pub use quality_delta::{

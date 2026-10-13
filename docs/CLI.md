@@ -86,7 +86,15 @@ ripwire-rs . --pr-context=main
 
 # Predict symbol merge conflicts across concurrent branches
 ripwire-rs . --merge-scout="branch-a,branch-b"
-```
+
+# Delta Maintainability Model (DMM) scalar in [0,1] measuring healthy code churn
+ripwire-rs . --dmm
+
+# Pre-hoc parallel branch collision forecasting before writing code
+ripwire-rs . --plan-lanes=3 --task="refactor parser"
+
+# Security audit of agent skill files for exfiltration or command injection
+ripwire-rs . --scan-skills
 * **Benefits:** Catches breaking signature changes, eliminates test suite bloat by running only affected tests, and stops architectural decay before merging.
 
 ---
@@ -141,7 +149,27 @@ ripwire-rs . --lint-catalog
 
 # Compute ARISE variable def-use dataflow slice (forward/backward)
 ripwire-rs . --slice="compute:x" --slice-flow=fwd
-```
+
+# Annotate every symbol with fan-in, fan-out, complexity, and change-amplification
+ripwire-rs . --metrics
+
+# Entire quality panel in one report across 6 evidence families (strict|default|lenient)
+ripwire-rs . --quality-panel=default
+
+# Show struct memory layout with computed LP64 field offsets and alignment padding
+ripwire-rs . --layout="Symbol"
+
+# Cache-conscious struct field affinity analysis against 64-byte lines
+ripwire-rs . --field-affinity="Symbol"
+
+# Local-reasoning lens measuring share of context outside a unit's file
+ripwire-rs . --context-ratio
+
+# Four orthogonal evidence families joined, ranked by distinct families fired
+ripwire-rs . --ensemble
+
+# Doc comment to identifier coherence verification
+ripwire-rs . --comment-coherence
 * **Benefits:** Focuses engineering attention directly on defect-prone hotspots, hidden file coupling, and dead code with mathematical precision.
 
 ---
@@ -186,6 +214,24 @@ ripwire-rs . --doctor
 ripwire-rs . --notes
 ripwire-rs . --note-add="symbol: gotcha note"
 
+# Importance-weighted detail: full bodies for top N symbols, signatures for rest
+ripwire-rs . --for="parser" --detail=5
+
+# Cut returned set at the relevance cliff (Adaptive-k)
+ripwire-rs . --for="parser" --adaptive
+
+# Print declaration skeletons with bodies elided (~80% token savings)
+ripwire-rs . --for="parser" --pack-signatures
+
+# Find which local branch defines or mentions a symbol (HEAD first, with git history oracle)
+ripwire-rs . --whereis="Symbol" --with-history
+
+# Sweep local branches for divergent authored work vs merge-base with HEAD
+ripwire-rs . --stray-content
+
+# Self-evaluations: co-change recall and known-item retrieval benchmarks
+ripwire-rs . --eval
+ripwire-rs . --eval-retrieval
 # Install 17 pre-packaged ripwire-rs agent skills to ~/.agents/skills (or custom path)
 ripwire-rs --add-skills
 ```

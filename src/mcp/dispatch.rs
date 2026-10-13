@@ -350,12 +350,16 @@ pub fn dispatch_read_tools(
         "for" => {
             let task = args["task"].as_str().unwrap_or("");
             let budget = args["budget_tokens"].as_u64().map(|b| b as usize);
+            let detail = args["detail"].as_u64().map(|d| d as usize);
+            let adaptive = args["adaptive"].as_bool().unwrap_or(false);
             Ok(retrieval::call_for_task(
                 &state.ingest,
                 &state.interner,
                 &state.ranks,
                 task,
                 budget,
+                detail,
+                adaptive,
             ))
         }
         "fetch_body" => {
@@ -517,13 +521,25 @@ pub fn dispatch_graph_and_doc_tools(
         "flags" => Ok(doc_tools::call_flags(&state.ingest, &state.interner)),
         "owners" => {
             let path = args["path"].as_str().or_else(|| args["file"].as_str());
-            Ok(doc_tools::call_owners(state.commits.as_deref(), path))
+            Ok(doc_tools::call_owners(
+                state.commits.as_deref(),
+                path,
+                None,
+                None,
+            ))
         }
         "whereis" => {
             let sym = args["symbol"].as_str().unwrap_or("");
-            Ok(doc_tools::call_whereis(&state.ingest, &state.interner, sym))
+            let with_hist = args["with_history"].as_bool().unwrap_or(false);
+            Ok(doc_tools::call_whereis(
+                &state.ingest,
+                &state.interner,
+                &state.root,
+                sym,
+                with_hist,
+            ))
         }
-        "stray_content" => Ok(doc_tools::call_stray_content(state.commits.as_deref())),
+        "stray_content" => Ok(doc_tools::call_stray_content(&state.root)),
         _ => Err(format!("unknown tool: {tool_name}")),
     }
 }

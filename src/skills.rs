@@ -134,6 +134,94 @@ pub fn install_skills(custom_path: Option<&str>) -> io::Result<SkillInstallRepor
         skills: skill_names.into_iter().map(String::from).collect(),
     })
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillScanFinding {
+    pub path: String,
+    pub line: usize,
+    pub rule: &'static str,
+    pub sev: &'static str,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkillScanReport {
+    pub files_scanned: usize,
+    pub findings: Vec<SkillScanFinding>,
+    pub verdict: &'static str,
+}
+
+fn scan_file_for_exfil(path: &Path, findings: &mut Vec<SkillScanFinding>) {
+    let Ok(content) = fs::read_to_string(path) else {
+        return;
+    };
+    for (idx, line) in content.lines().enumerate() {
+        let l = line.trim();
+        if l.contains("curl ")
+            && (l.contains(" | bash") || l.contains(" | sh") || l.contains("http"))
+        {
+            findings.push(SkillScanFinding {
+                path: path.display().to_string(),
+                line: idx + 1,
+                rule: "EXFILTRATE:net-exfil",
+                sev: "critical",
+            });
+        }
+    }
+}
+
+pub fn scan_skills_directory(dir: &Path) -> io::Result<SkillScanReport> {
+    let mut files_scanned = 0usize;
+    let mut findings = Vec::new();
+
+    if dir.exists() {
+        for entry in ignore::WalkBuilder::new(dir).build().flatten() {
+            let p = entry.path();
+            if p.is_file()
+                && (p.extension().and_then(|e| e.to_str()) == Some("md")
+                    || p.file_name().and_then(|n| n.to_str()) == Some("SKILL.md"))
+            {
+                files_scanned += 1;
+                scan_file_for_exfil(p, &mut findings);
+            }
+        }
+    }
+
+    let verdict = if findings.iter().any(|f| f.sev == "critical") {
+        "critical"
+    } else if !findings.is_empty() {
+        "warn"
+    } else {
+        "clean"
+    };
+
+    Ok(SkillScanReport {
+        files_scanned,
+        findings,
+        verdict,
+    })
+}
+
+pub fn serialize_skill_scan_xml<W: io::Write>(
+    rep: &SkillScanReport,
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<skillscan schema=\"ripwire.scan-skills/v1\" files=\"{}\" findings=\"{}\" verdict=\"{}\">",
+        rep.files_scanned,
+        rep.findings.len(),
+        rep.verdict
+    )?;
+    for f in &rep.findings {
+        let p_esc = crate::serialize::escape::escape_xml_str(&f.path);
+        writeln!(
+            out,
+            "  <f p=\"{p_esc}:{}\" rule=\"{}\" sev=\"{}\"/>",
+            f.line, f.rule, f.sev
+        )?;
+    }
+    writeln!(out, "</skillscan>")
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,5 +273,18 @@ mod tests {
             assert!(!content.is_empty());
             assert!(content.contains("---") || content.contains('#'));
         }
+    }
+
+    #[test]
+    fn test_scan_skills() {
+        let rep = scan_skills_directory(Path::new("skills")).unwrap();
+        assert!(rep.files_scanned > 0);
+        let mut buf = Vec::new();
+        serialize_skill_scan_xml(&rep, &mut buf).unwrap();
+        assert!(
+            String::from_utf8(buf)
+                .unwrap()
+                .contains("schema=\"ripwire.scan-skills/v1\"")
+        );
     }
 }

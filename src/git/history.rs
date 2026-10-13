@@ -449,6 +449,25 @@ pub fn walk_repository_history_scoped(
     let metas = collect_commit_metas(rev_walk, cutoff_timestamp)?;
     process_commits_parallel(&repo, metas)
 }
+
+/// Compute the canonical git stamp `sha[+dirty]` for a repository root.
+#[must_use]
+pub fn compute_git_at_stamp(root: &str) -> Option<String> {
+    let path = Path::new(root);
+    if let Ok(repo) = gix::open(path)
+        && let Ok(head) = repo.head_commit()
+    {
+        let full_id = head.id().to_string();
+        let short_sha = &full_id[..9.min(full_id.len())];
+        let dirty = !crate::cli::safety::get_working_tree_changed_files(root).is_empty();
+        return Some(if dirty {
+            format!("{short_sha}+dirty")
+        } else {
+            short_sha.to_string()
+        });
+    }
+    None
+}
 #[cfg(test)]
 mod tests {
     use super::*;

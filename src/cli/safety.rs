@@ -80,23 +80,15 @@ where
     let path = Path::new(root);
     let commits_vec = crate::git::history::walk_repository_history_scoped(path, cutoff).ok();
     let commits = commits_vec.as_deref().unwrap_or(&[]);
-    let files = crate::crawler::crawl_directory(path, &crate::crawler::CrawlerOptions::default());
-    let registry =
-        crate::ingest::LanguageRegistry::new().map_err(|e| io::Error::other(e.to_string()))?;
-    let interner = crate::domain::Interner::new();
-    let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
-    let graph = crate::graph::Graph::build(&ingest, &interner);
+    let (ingest, graph, pr, interner) =
+        crate::cli::dispatch::load_repo_analysis_cached(root, None, false)?;
     let state = crate::mcp::McpState {
         root: root.to_string(),
         ingest,
         graph,
-        ranks: Vec::new(),
+        ranks: pr.ranks.clone(),
         interner,
-        pr: crate::rank::PageRankResult {
-            ranks: Vec::new(),
-            iterations: 0,
-            converged: true,
-        },
+        pr,
         commits: None,
     };
     let mut stdout = io::stdout().lock();
@@ -342,7 +334,63 @@ fn execute_pr_context_dispatch<W: Write>(
     crate::gate::pr_context::serialize_pr_context_xml(&rep, out)
 }
 
-pub fn execute_safety_dispatch<W: Write>(
+fn execute_tool_safety_queries<W: Write>(
+    s: &TopSafetyArgs,
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
+    if let Some(_range_opt) = &s.dmm {
+        let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
+        let short_sha = &head_sha[..9.min(head_sha.len())];
+        let working_snap =
+            crate::gate::baseline::compute_snapshot(ingest, graph, interner, short_sha);
+        let baseline_snap = crate::gate::baseline::read_baseline_file(std::path::Path::new(root))
+            .unwrap_or_else(|_| working_snap.clone());
+        let rep = crate::metrics::compute_dmm_report(
+            &baseline_snap,
+            &working_snap,
+            "working-tree",
+            &head_sha,
+        );
+        crate::metrics::serialize_dmm_xml(&rep, out)?;
+        return Ok(true);
+    }
+    if let Some(lanes_opt) = &s.plan_lanes {
+        let requested = lanes_opt.unwrap_or(2);
+        let task = s.task.as_deref().unwrap_or("general refactoring");
+        let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
+        let val = crate::gate::lanes::compute_plan_lanes(
+            root, requested, task, ingest, graph, &pr, interner,
+        );
+        serde_json::to_writer_pretty(&mut *out, &val)?;
+        writeln!(out)?;
+        return Ok(true);
+    }
+    if let Some(dir_opt) = &s.scan_skills {
+        let path_str = if dir_opt.as_deref().unwrap_or("").is_empty() {
+            "skills"
+        } else {
+            dir_opt.as_deref().unwrap()
+        };
+        let rep = crate::skills::scan_skills_directory(std::path::Path::new(path_str))?;
+        crate::skills::serialize_skill_scan_xml(&rep, out)?;
+        return Ok(true);
+    }
+    if let Some(plan) = s.edit_plan.as_deref().or(s.edit_payload.as_deref()) {
+        writeln!(
+            out,
+            "<edit dry_run=\"{}\" force=\"{}\">{}</edit>",
+            s.dry_run, s.force, plan
+        )?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+fn execute_verification_queries<W: Write>(
     s: &TopSafetyArgs,
     root: &str,
     ingest: &IngestResult,
@@ -367,8 +415,31 @@ pub fn execute_safety_dispatch<W: Write>(
         crate::gate::seams::serialize_seams_xml(root, &rep, out)?;
     } else if let Some(ref_opt) = &s.pr_context {
         execute_pr_context_dispatch(root, ref_opt.as_deref(), ingest, graph, interner, out)?;
-    } else if let Some(branches) = s.merge_scout.as_deref() {
+    } else {
+        return Ok(None);
+    }
+    Ok(Some(0))
+}
+
+pub fn execute_safety_dispatch<W: Write>(
+    s: &TopSafetyArgs,
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<Option<i32>> {
+    if let Some(code) = execute_verification_queries(s, root, ingest, graph, interner, out)? {
+        if code > 0 {
+            return Ok(Some(code));
+        }
+        return Ok(None);
+    }
+    if let Some(branches) = s.merge_scout.as_deref() {
         return execute_merge_scout_dispatch(root, branches, ingest, interner, out);
+    }
+    if execute_tool_safety_queries(s, root, ingest, graph, interner, out)? {
+        return Ok(None);
     }
     Ok(None)
 }
@@ -418,28 +489,42 @@ pub fn print_cochange_partners<W: Write>(
     writeln!(out, "</f>")
 }
 
+fn format_copair_row(p: &crate::git::cochange::CoPair) -> String {
+    let a_esc = crate::serialize::escape::escape_xml_str(&p.file_a);
+    let b_esc = crate::serialize::escape::escape_xml_str(&p.file_b);
+    let mut row = format!(
+        "  <pair a=\"{a_esc}\" b=\"{b_esc}\" together=\"{}\" deg=\"{:.2}\" conf_ab=\"{:.2}\" conf_ba=\"{:.2}\" driver=\"{}\" recur=\"{}\"",
+        p.together, p.deg, p.conf_ab, p.conf_ba, p.driver, p.recur
+    );
+    if !p.dep_capable {
+        row.push_str(" dep_capable=\"0\"");
+    }
+    if p.surprising {
+        row.push_str(" surprising=\"1\"");
+    }
+    row.push_str("/>");
+    row
+}
+
 pub fn print_cochange_pairs<W: Write>(
+    root: &str,
     pairs: &[crate::git::cochange::CoPair],
     out: &mut W,
 ) -> io::Result<()> {
+    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
+    let at_attr = match at_stamp.is_empty() {
+        false => format!(" at=\"{at_stamp}\""),
+        true => String::new(),
+    };
+    let total = pairs.len();
+    let shown = total.min(30);
+    let capped = if total > 30 { 1 } else { 0 };
     writeln!(
         out,
-        "<cochange schema=\"ripwire.cochange/v1\" pairs=\"{}\">",
-        pairs.len()
+        "<cochange schema=\"ripwire.cochange/v1\" pairs=\"{total}\" window=\"18mo@HEAD\" sub_windows=\"3\" shown=\"{shown}\" capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" root=\"{root}\"{at_attr}>",
     )?;
-    for p in pairs {
-        let attr = if !p.dep_capable {
-            " dep_capable=\"0\""
-        } else if p.surprising {
-            " surprising=\"1\""
-        } else {
-            ""
-        };
-        writeln!(
-            out,
-            "  <pair a=\"{}\" b=\"{}\" together=\"{}\" deg=\"{:.2}\" recur=\"{}\"{} />",
-            p.file_a, p.file_b, p.together, p.deg, p.recur, attr
-        )?;
+    for p in pairs.iter().take(shown) {
+        writeln!(out, "{}", format_copair_row(p))?;
     }
     writeln!(out, "</cochange>")
 }
@@ -479,7 +564,7 @@ pub fn execute_cochange_with<W: Write>(
             Some(&state.interner),
             &opts,
         );
-        print_cochange_pairs(&pairs, out)
+        print_cochange_pairs(&state.root, &pairs, out)
     }
 }
 

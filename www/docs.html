@@ -285,6 +285,39 @@
           </div>
         </div>
       </div>
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs --dmm [REV|A..B]</code></div>
+          <span class="cmd-badge">Quality</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Computes the Delta Maintainability Model (DMM) scalar in [0,1], quantifying the proportion of code volume churn that made the codebase healthier.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">In CI gates or wave reviews to track whether refactorings genuinely reduced unit risk or introduced new technical debt.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs --quality-panel [PRESET]</code></div>
+          <span class="cmd-badge">Panel</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Runs the unified 6-family quality panel (structural, lexical, confusion, historical, colocation, state) in one report ranked by distinct families fired.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Before major code convergence to perform a wide-angle sanity check across all quality evidence families simultaneously.</p>
+          </div>
+        </div>
+      </div>
 
       <div class="cmd-card">
         <div class="cmd-header">

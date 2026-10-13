@@ -41,6 +41,9 @@ pub struct CoPair {
     pub file_b: String,
     pub together: u32,
     pub deg: f64,
+    pub conf_ab: f64,
+    pub conf_ba: f64,
+    pub driver: &'static str,
     pub recur: u32,
     pub surprising: bool,
     pub dep_capable: bool,
@@ -467,6 +470,21 @@ where
     pairs
 }
 
+fn order_pair_conf(
+    fa: &str,
+    fb: &str,
+    deg_a: f64,
+    deg_b: f64,
+) -> (String, String, f64, f64, &'static str) {
+    if fa < fb {
+        let driver = if deg_b >= deg_a { "b" } else { "a" };
+        (fa.to_string(), fb.to_string(), deg_a, deg_b, driver)
+    } else {
+        let driver = if deg_a >= deg_b { "b" } else { "a" };
+        (fb.to_string(), fa.to_string(), deg_b, deg_a, driver)
+    }
+}
+
 fn build_copair(
     key: u64,
     stats: &FileCommitStats,
@@ -491,22 +509,20 @@ fn build_copair(
     let dep_capable = check_pair_dependency_capability(fa, fb, ingest, interner);
     let is_coupled = coupling.is_some_and(|c| c.is_coupled(fa, fb));
     let surprising = dep_capable && !is_coupled;
-    let (file_a, file_b) = if fa < fb {
-        (fa.to_string(), fb.to_string())
-    } else {
-        (fb.to_string(), fa.to_string())
-    };
+    let (file_a, file_b, conf_ab, conf_ba, driver) = order_pair_conf(fa, fb, deg_a, deg_b);
     Some(CoPair {
         file_a,
         file_b,
         together: stats.together,
         deg,
+        conf_ab,
+        conf_ba,
+        driver,
         recur,
         surprising,
         dep_capable,
     })
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;

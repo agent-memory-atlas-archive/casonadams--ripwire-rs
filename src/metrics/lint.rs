@@ -116,7 +116,11 @@ pub fn run_lint_scan(
 
 /// Serialize lint catalog to canonical format.
 pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
-    writeln!(out, "<lintcatalog rules=\"{}\">", LINT_RULES.len())?;
+    writeln!(
+        out,
+        "<lintcatalog schema=\"ripwire.lint-catalog/v1\" rules=\"{}\">",
+        LINT_RULES.len()
+    )?;
     for r in LINT_RULES {
         writeln!(
             out,

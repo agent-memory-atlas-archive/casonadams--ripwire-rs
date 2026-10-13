@@ -396,7 +396,8 @@ fn test_cli_cochange_execution_and_xml_output() {
         .expect("execute repo cochange");
 
     let repo_xml = String::from_utf8(repo_buf.into_inner()).unwrap();
-    assert!(repo_xml.contains("<cochange schema=\"ripwire.cochange/v1\" pairs=\"1\">"));
+    assert!(repo_xml.contains("schema=\"ripwire.cochange/v1\""));
+    assert!(repo_xml.contains("pairs=\"1\""));
     assert!(repo_xml.contains("<pair a=\"src/caller.rs\" b=\"src/unrelated.rs\" together=\"3\""));
 }
 

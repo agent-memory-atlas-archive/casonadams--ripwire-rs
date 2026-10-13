@@ -367,8 +367,10 @@ fn test_top_retrieval_and_workspace_queries() {
     assert!(
         execute_workspace_doc_query(
             &chk(Some("run_cli".into()), false, false, None),
+            ".",
             &ingest,
             &interner,
+            false,
             &mut out
         )
         .is_ok()
@@ -376,8 +378,10 @@ fn test_top_retrieval_and_workspace_queries() {
     assert!(
         execute_workspace_doc_query(
             &chk(None, true, true, Some("run_cli".into())),
+            ".",
             &ingest,
             &interner,
+            false,
             &mut out
         )
         .is_ok()
@@ -385,8 +389,10 @@ fn test_top_retrieval_and_workspace_queries() {
     assert!(
         execute_workspace_doc_query(
             &chk(None, false, false, Some("missing".into())),
+            ".",
             &ingest,
             &interner,
+            false,
             &mut out
         )
         .is_err()
@@ -595,16 +601,20 @@ fn test_all_new_feature_coverage() {
         doctor: true,
         ..Default::default()
     };
-    let _ = ripwire_rs::cli::execute_workspace_doc_query(&ws, &ingest, &interner, &mut out);
+    let _ =
+        ripwire_rs::cli::execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
     ws.doctor = false;
     ws.handoff = true;
-    let _ = ripwire_rs::cli::execute_workspace_doc_query(&ws, &ingest, &interner, &mut out);
+    let _ =
+        ripwire_rs::cli::execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
     ws.handoff = false;
     ws.notes = true;
-    let _ = ripwire_rs::cli::execute_workspace_doc_query(&ws, &ingest, &interner, &mut out);
+    let _ =
+        ripwire_rs::cli::execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
     ws.notes = false;
     ws.replace_symbol_body = Some("run:test".into());
-    let _ = ripwire_rs::cli::execute_workspace_doc_query(&ws, &ingest, &interner, &mut out);
+    let _ =
+        ripwire_rs::cli::execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
 
     let mut cli = ripwire_rs::cli::Cli::default();
     cli.arch.communities = true;

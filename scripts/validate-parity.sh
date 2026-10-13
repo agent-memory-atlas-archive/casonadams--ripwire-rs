@@ -73,30 +73,30 @@ declare -a COMMANDS=(
     "--tree^File inventory tree^xml^.tree[\"+@schema\"] == \"ripwire.tree/v1\""
     "--dead-code^Dead code detection^xml^.[\"dead-code\"][\"+@schema\"] == \"ripwire.dead-code/v1\""
     "--communities^Community clustering^xml^.communities[\"+@schema\"] == \"ripwire.communities/v1\""
-    "--external-surface^External API surface^xml^.surface[\"+@schema\"] == \"ripwire.surface/v1\""
+    "--external-surface^External API surface^xml^.\"external-surface\"[\"+@schema\"] == \"ripwire.external-surface/v1\""
     "--deps^File dependencies^xml^.deps[\"+@schema\"] == \"ripwire.deps/v1\""
     "--hotspots^Maintenance hotspots^xml^.hotspots[\"+@schema\"] == \"ripwire.hotspots/v1\""
     "--cochange^Shotgun surgery co-change mining^xml^.cochange[\"+@schema\"] == \"ripwire.cochange/v1\" and (.cochange[\"+@pairs\"] | tonumber) > 0"
     "--clones^Clone detection^xml^.clones[\"+@schema\"] == \"ripwire.clones/v1\""
     "-v^Version banner^text^version"
-    "--quality-delta^Quality delta gate^xml^.delta[\"+@schema\"] == \"ripwire.quality-delta/v1\""
-    "--test-gate^Test reachability gate^xml^.gate[\"+@schema\"] == \"ripwire.test-gate/v1\""
+    "--quality-delta^Quality delta gate^xml^.\"quality-delta\"[\"+@schema\"] == \"ripwire.quality-delta/v1\""
+    "--test-gate^Test reachability gate^xml^.\"test-gate\"[\"+@schema\"] == \"ripwire.test-gate/v1\""
     "--map-diff --top-k=30^Map diff biased teleportation^xml^.r[\"+@schema\"] == \"ripwire.map/v1\""
     "--seams^Integration seams detection^xml^.seams[\"+@schema\"] == \"ripwire.seams/v1\""
     "--pr-context^PR review context bundle^xml^.\"pr-context\"[\"+@schema\"] == \"ripwire.pr-context/v1\""
     "--merge-scout=${MERGE_REF}^Cross-branch merge conflict prediction^xml^.\"merge-scout\"[\"+@schema\"] == \"ripwire.merge-scout/v1\""
-    "--biggest-first^Posnett readability size ranking^xml^.r[\"+@schema\"] == \"ripwire.map/v1\""
+    "--biggest-first^Posnett readability size ranking^xml^.readability[\"+@schema\"] == \"ripwire.readability/v1\""
     "--nonlocal-state^Reachable global mutable state^xml^.\"nonlocal-state\"[\"+@schema\"] == \"ripwire.nonlocal-state/v1\""
     "--lint^AST code smell scan^xml^.lint[\"+@schema\"] == \"ripwire.lint/v1\""
-    "--lint-catalog^AST lint rule catalog^xml^.\"lint-catalog\"[\"+@schema\"] == \"ripwire.lint-catalog/v1\""
+    "--lint-catalog^AST lint rule catalog^xml^.lintcatalog[\"+@schema\"] == \"ripwire.lint-catalog/v1\""
     "--at=src/main.rs:1^Location definition resolver^xml^.at[\"+@schema\"] == \"ripwire.at/v1\""
     "--verify=calls(main,run_cli)^Relationship claim verification^xml^.verify[\"+@schema\"] == \"ripwire.verify/v1\""
-    "--pack-task=search^Task-scoped context pack^xml^.\"pack-task\"[\"+@schema\"] == \"ripwire.pack-task/v1\""
-    "--graph-query=callers(name(\"main\"))^Functional graph query DSL^xml^.\"graph-query\"[\"+@schema\"] == \"ripwire.graph-query/v1\""
+    "--pack-task=search^Task-scoped context pack^xml^.ctx[\"+@schema\"] == \"ripwire.pack-task/v1\""
+    "--graph-query=callers(name(\"main\"))^Functional graph query DSL^xml^.query[\"+@schema\"] == \"ripwire.graph-query/v1\""
     "--exemplar=fn^Best-in-class style exemplar^xml^.exemplar[\"+@schema\"] == \"ripwire.exemplar/v1\" and (.exemplar[\"+@candidates\"] | tonumber) > 0"
     "--owners^Git author ownership per file^xml^.owners[\"+@schema\"] == \"ripwire.owners/v1\" and (.owners[\"+@files\"] | tonumber) > 0"
     "--doctor^Environment and tool diagnostics^xml^.doctor[\"+@schema\"] == \"ripwire.doctor/v1\""
-    "--notes^Persistent session gotchas^xml^.notes[\"+@schema\"] == \"ripwire.notes/v1\""
+    "--notes^Persistent session gotchas^xml^.ctx[\"+@schema\"] == \"ripwire.notes/v1\""
     "--mermaid^Mermaid diagram generation^text^mermaid"
     "--zoom^Hierarchical Louvain clustering^xml^.zoom[\"+@schema\"] == \"ripwire.zoom/v1\""
     "--html^Interactive HTML visualizer export^text^html"
@@ -148,22 +148,22 @@ for entry in "${COMMANDS[@]}"; do
         fi
     elif [[ "$type" == "text" ]]; then
         if [[ "$assert_expr" == "version" ]]; then
-            if ! echo "$out_rw" | grep -qE "ripwire-rs|rw"; then
+            if [[ "$out_rw" != *"ripwire-rs"* && "$out_rw" != *"rw"* ]]; then
                 test_passed=false
                 fail_reason="Missing version banner"
             fi
         elif [[ "$assert_expr" == "mermaid" ]]; then
-            if ! echo "$out_rw" | grep -q "flowchart"; then
+            if [[ "$out_rw" != *"flowchart"* ]]; then
                 test_passed=false
                 fail_reason="Missing mermaid flowchart syntax"
             fi
         elif [[ "$assert_expr" == "html" ]]; then
-            if ! echo "$out_rw" | grep -q "<!DOCTYPE html>"; then
+            if [[ "$out_rw" != *"<!DOCTYPE html>"* ]]; then
                 test_passed=false
                 fail_reason="Missing HTML doctype"
             fi
         elif [[ "$assert_expr" == "wrap" ]]; then
-            if ! echo "$out_rw" | grep -q "claude mcp add"; then
+            if [[ "$out_rw" != *"claude mcp add"* ]]; then
                 test_passed=false
                 fail_reason="Missing claude mcp add instruction"
             fi

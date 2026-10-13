@@ -82,7 +82,8 @@ pub fn serialize_nonlocal_state_xml<W: Write>(
         funcs.len()
     )?;
     for f in funcs {
-        let p_esc = crate::serialize::escape::escape_xml_str(&format!("{}:{}", f.path, f.line));
+        let p_raw = format!("{}:{}", f.path, f.line);
+        let p_esc = crate::serialize::escape::escape_xml_str(&p_raw);
         let n_esc = crate::serialize::escape::escape_xml_str(&f.sym_name);
         writeln!(
             out,
@@ -92,7 +93,8 @@ pub fn serialize_nonlocal_state_xml<W: Write>(
         for c in &f.cells {
             let mode = if c.is_write { "w" } else { "r" };
             let cell_n = crate::serialize::escape::escape_xml_str(&c.cell_name);
-            let cell_p = crate::serialize::escape::escape_xml_str(&format!("{}:{}", c.path, c.line));
+            let cell_p_raw = format!("{}:{}", c.path, c.line);
+            let cell_p = crate::serialize::escape::escape_xml_str(&cell_p_raw);
             writeln!(
                 out,
                 "    <cell n=\"{cell_n}\" p=\"{cell_p}\" dir=\"{mode}\"/>",

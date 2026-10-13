@@ -141,7 +141,6 @@ pub struct TopDetailArgs {
     /// Expand full symbol bodies and callee signatures (SYM,SYM...)
     #[arg(long, value_name = "SYMS")]
     pub expand: Option<String>,
-    /// Outline control-flow skeletons of symbols (SYM,SYM...)
     #[arg(long, value_name = "SYMS")]
     pub outline: Option<String>,
     /// Pack bodies of the top N highest-ranked symbols
@@ -210,8 +209,34 @@ pub struct TopSafetyArgs {
     #[arg(long = "allow-dirty")]
     pub allow_dirty: bool,
     /// Partition quality-delta by ownership scope
-    #[arg(long = "scope", value_name = "GLOB")]
     pub scope: Option<String>,
+    /// Delta Maintainability Model scalar in [0,1]
+    #[arg(long = "dmm", num_args = 0..=1, default_missing_value = "", value_name = "REV|A..B")]
+    pub dmm: Option<Option<String>>,
+    /// Plan parallel worktree lanes before code (split across N worktrees)
+    #[arg(long = "plan-lanes", num_args = 0..=1, default_missing_value = "2", value_name = "N")]
+    pub plan_lanes: Option<Option<usize>>,
+    /// Goal or task description for --plan-lanes
+    #[arg(long = "task", value_name = "GOAL")]
+    pub task: Option<String>,
+    /// Security audit scanner for agent skill files
+    #[arg(long = "scan-skills", num_args = 0..=1, default_missing_value = "", value_name = "DIR")]
+    pub scan_skills: Option<Option<String>>,
+    /// Apply atomic code mutations
+    #[arg(long = "apply")]
+    pub apply: bool,
+    /// Validate edits without mutating files
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
+    /// Force edits bypassing safety checks
+    #[arg(long = "force")]
+    pub force: bool,
+    /// Execute versioned edit plan
+    #[arg(long = "edit-plan", value_name = "PLAN_JSON")]
+    pub edit_plan: Option<String>,
+    /// Execute JSON edit payload
+    #[arg(long = "edit-payload", value_name = "PAYLOAD_JSON")]
+    pub edit_payload: Option<String>,
 }
 
 /// Top-level architecture and discovery flags.
@@ -259,6 +284,27 @@ pub struct TopArchitectureArgs {
     /// SARIF format export for lint
     #[arg(long = "sarif")]
     pub sarif: bool,
+    /// Annotate every symbol with fan-in, fan-out, complexity, and change-amplification
+    #[arg(long = "metrics")]
+    pub metrics: bool,
+    /// Entire quality panel in one report (strict|default|lenient)
+    #[arg(long = "quality-panel", num_args = 0..=1, default_missing_value = "default", value_name = "PRESET")]
+    pub quality_panel: Option<Option<String>>,
+    /// Show one struct's memory layout with computed field offsets and padding
+    #[arg(long = "layout", value_name = "STRUCT")]
+    pub layout: Option<String>,
+    /// Cache-conscious field affinity analysis
+    #[arg(long = "field-affinity", num_args = 0..=1, default_missing_value = "", value_name = "STRUCT")]
+    pub field_affinity: Option<Option<String>>,
+    /// Local-reasoning lens measuring share of context outside a unit's file
+    #[arg(long = "context-ratio")]
+    pub context_ratio: bool,
+    /// Four orthogonal evidence families joined, ranked by distinct families fired
+    #[arg(long = "ensemble")]
+    pub ensemble: bool,
+    /// Comment-to-identifier coherence check
+    #[arg(long = "comment-coherence")]
+    pub comment_coherence: bool,
 }
 impl TopArchitectureArgs {
     pub fn is_active(&self) -> bool {
@@ -271,6 +317,13 @@ impl TopArchitectureArgs {
             || self.arch.is_some()
             || self.mermaid
             || self.zoom.is_some()
+            || self.metrics
+            || self.quality_panel.is_some()
+            || self.layout.is_some()
+            || self.field_affinity.is_some()
+            || self.context_ratio
+            || self.ensemble
+            || self.comment_coherence
     }
 }
 
@@ -298,12 +351,49 @@ pub struct TopModifierArgs {
     /// Disable on-disk binary auto-caching (force cold parse)
     #[arg(long = "no-cache")]
     pub no_cache: bool,
+    /// Select output format (e.g. candidates, columnar, json)
+    #[arg(long = "format", value_name = "FORMAT")]
+    pub format: Option<String>,
+    /// Run co-change recall vs lexical rankers self-evaluation
+    #[arg(long = "eval")]
+    pub eval: bool,
+    /// Known-item retrieval benchmark (MRR, recall@1/5/10)
+    #[arg(long = "eval-retrieval")]
+    pub eval_retrieval: bool,
+    /// Run daemon listener
+    #[arg(long = "listen")]
+    pub listen: bool,
 }
 
 /// Top-level retrieval & architecture flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
 pub struct TopRetrievalArgs {
-    /// Task-lens relevance ranking
+    /// Importance-weighted detail: full bodies for top N symbols, or lift collapsed rows
+    #[arg(long = "detail", num_args = 0..=1, default_missing_value = "1", value_name = "N")]
+    pub detail: Option<usize>,
+    /// Cut returned set at the relevance cliff instead of fixed top-k
+    #[arg(long = "adaptive")]
+    pub adaptive: bool,
+    /// Let --doc-drift and --whereis consult git history for deleted names
+    #[arg(long = "with-history")]
+    pub with_history: bool,
+    /// Skip query-shape router and force plain subtoken+body BM25
+    #[arg(long = "no-route")]
+    pub no_route: bool,
+    /// Disable query-mention anchor score lifting
+    #[arg(long = "no-mention-boost")]
+    pub no_mention_boost: bool,
+    /// Disable doc-mention backtick surfacing
+    #[arg(long = "no-doc-mention")]
+    pub no_doc_mention: bool,
+    /// Restore automatic body walk on the conceptual route
+    #[arg(long = "auto-bodies")]
+    pub auto_bodies: bool,
+    /// Opt in to full lego and compose sections (lego,compose)
+    #[arg(long = "sections", value_name = "SECTIONS")]
+    pub sections: Option<String>,
+    #[arg(long = "pack-signatures")]
+    pub pack_signatures: bool,
     #[arg(long = "for", value_name = "TASK")]
     pub task_for: Option<String>,
     /// Literal trigram text search
@@ -380,7 +470,7 @@ impl TopRetrievalArgs {
             &self.pack_task,
             &self.graph_query,
         ];
-        opts.iter().any(|o| o.is_some())
+        opts.iter().any(|o| o.is_some()) || self.pack_signatures
     }
 }
 

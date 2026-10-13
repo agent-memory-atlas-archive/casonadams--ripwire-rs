@@ -16,6 +16,7 @@ pub struct SerializeOptions {
     pub pack_budget_bytes: Option<usize>,
     pub rank_by: Option<String>,
     pub emit_legend: bool,
+    pub metrics: bool,
 }
 
 impl Default for SerializeOptions {
@@ -27,6 +28,7 @@ impl Default for SerializeOptions {
             pack_budget_bytes: Some(DEFAULT_PACK_BUDGET_BYTES),
             rank_by: None,
             emit_legend: false,
+            metrics: false,
         }
     }
 }
@@ -39,6 +41,10 @@ pub struct SymbolRowContext<'a> {
     pub amb: u32,
     pub callees: &'a [(NodeId, f32, bool)],
     pub include_pr: bool,
+    pub metrics: bool,
+    pub in_degree: usize,
+    pub out_degree: usize,
+    pub amp: usize,
 }
 
 /// Write the root `<r ...>` opening element.
@@ -54,6 +60,7 @@ pub struct RootElementContext<'a> {
     pub rank_by: Option<&'a str>,
     pub ambiguous: usize,
     pub unresolved: usize,
+    pub schema: Option<&'a str>,
 }
 
 /// Write the root `<r ...>` opening element.
@@ -65,7 +72,8 @@ pub fn write_root_open_with_rank_by<W: Write>(
     w: &mut W,
     ctx: &RootElementContext<'_>,
 ) -> io::Result<()> {
-    w.write_all(b"<r schema=\"ripwire.map/v1\" root=\"")?;
+    let schema = ctx.schema.unwrap_or("ripwire.map/v1");
+    write!(w, "<r schema=\"{schema}\" root=\"")?;
     escape_xml_write(w, ctx.root)?;
     write!(
         w,
@@ -119,6 +127,21 @@ pub fn write_file_header<W: Write>(w: &mut W, path: &str) -> io::Result<()> {
     w.write_all(close)
 }
 
+fn write_symbol_metrics_tag<W: Write>(w: &mut W, ctx: &SymbolRowContext<'_>) -> io::Result<()> {
+    write!(
+        w,
+        " in=\"{}\" out=\"{}\" cx=\"{}\" ccx=\"{}\" loc=\"{}\" params=\"{}\" nest=\"{}\" amp=\"{}\"",
+        ctx.in_degree,
+        ctx.out_degree,
+        ctx.sym.cx,
+        ctx.sym.ccx,
+        ctx.sym.loc,
+        ctx.sym.params,
+        ctx.sym.max_nest,
+        ctx.amp,
+    )
+}
+
 /// Write a single symbol row and its outgoing call edges.
 pub fn write_symbol_row<W: Write>(
     w: &mut W,
@@ -147,17 +170,29 @@ pub fn write_symbol_row<W: Write>(
     if ctx.amb > 0 {
         write!(w, " amb=\"{}\"", ctx.amb)?;
     }
+    if ctx.metrics {
+        write_symbol_metrics_tag(w, ctx)?;
+    }
     w.write_all(b">")?;
+    write_callees_tags(w, ctx.callees, interner, symbols)?;
+    w.write_all(b"</s>")
+}
 
+fn write_callees_tags<W: Write>(
+    w: &mut W,
+    callees: &[(NodeId, f32, bool)],
+    interner: &Interner,
+    symbols: &[Symbol],
+) -> io::Result<()> {
     let mut seen_callees = std::collections::HashSet::new();
-    for &(callee_id, _, is_split) in ctx.callees {
+    for &(callee_id, _, is_split) in callees {
         let callee_sym = &symbols[callee_id as usize];
         let callee_name = interner.resolve(&callee_sym.name);
         if seen_callees.insert(callee_name) {
             write_callee_tag(w, callee_name, is_split)?;
         }
     }
-    w.write_all(b"</s>")
+    Ok(())
 }
 
 fn write_callee_tag<W: Write>(w: &mut W, name: &str, is_split: bool) -> io::Result<()> {
@@ -239,12 +274,43 @@ pub fn serialize_xml<W: Write>(
 
 pub const SCHEMA_COMMENT: &[u8] = b"<!-- ripwire map schema=ripwire.map/v1: ranked symbol map: <f p= layer=> groups <s t= n= sc= k= amb=> rows (k= rank), <c n=> resolved callees; the header comment is data. est_tokens=: price as emitted (an upper bound under compact). root=: p= relative to it. pr_iters=N: PageRank iterations. declined=K: K calls left unbound (no evidence chose one def). prov=scip|binding|import|split|final-segment: how that <c> edge bound (absent: one unique name); split = one arm of an amb= pick; final-segment = a qualified type matched by last name only. files=/symbols=: files and symbols indexed; edges= distinct call edges; shown= symbols printed, a merged row counting each def; ambiguous= calls split over several defs, corpus-wide; unresolved= calls with in-tree evidence and no edge (defs all language-filtered, or import/pointer binding refused); order= rows by rank (important-first, important-last; (auto:fill) = flipped past a size threshold) or by path (stable). unindexed=ext:N: N text files of that extension no grammar reads (6 extensions at most). sc=: enclosing scope; the full id is p::sc::n (p= of the row or its <f>) and selectors take it. amb=K: K calls split over several defs.";
 
+fn build_symbol_row_context<'a>(
+    sym: &'a Symbol,
+    sym_id: NodeId,
+    ctx: &'a StreamXmlContext<'_>,
+    callees: &'a [(NodeId, f32, bool)],
+    include_pr: bool,
+    metrics: bool,
+) -> SymbolRowContext<'a> {
+    let sym_name = ctx.interner.resolve(&sym.name);
+    let rank = ctx.ranks.get(sym_id as usize).copied().unwrap_or(0.0);
+    let amb = ctx.graph.ambiguity(sym_id);
+    let (in_degree, out_degree) = if metrics {
+        (ctx.graph.in_degree(sym_id), ctx.graph.out_degree(sym_id))
+    } else {
+        (0, 0)
+    };
+    SymbolRowContext {
+        sym,
+        sym_name,
+        rank,
+        amb,
+        callees,
+        include_pr,
+        metrics,
+        in_degree,
+        out_degree,
+        amp: in_degree,
+    }
+}
+
 fn serialize_symbol_buckets(
     ctx: &StreamXmlContext<'_>,
     file_order: &[u32],
     buckets: &[Vec<NodeId>],
     budget: usize,
     include_pr: bool,
+    metrics: bool,
 ) -> io::Result<(Vec<u8>, usize)> {
     let mut body_buf = Vec::with_capacity(budget.min(DEFAULT_STREAM_BUFFER_CAPACITY));
     let mut file_buf = Vec::new();
@@ -265,25 +331,13 @@ fn serialize_symbol_buckets(
                 break;
             }
             let sym = &ctx.ingest.symbols[sym_id as usize];
-            let sym_name = ctx.interner.resolve(&sym.name);
-            let rank = ctx.ranks.get(sym_id as usize).copied().unwrap_or(0.0);
-            let amb = ctx.graph.ambiguity(sym_id);
             let callees: Vec<(NodeId, f32, bool)> = ctx.graph.callees_with_prov(sym_id).collect();
-
-            let row_ctx = SymbolRowContext {
-                sym,
-                sym_name,
-                rank,
-                amb,
-                callees: &callees,
-                include_pr,
-            };
+            let row_ctx = build_symbol_row_context(sym, sym_id, ctx, &callees, include_pr, metrics);
 
             write_symbol_row(&mut file_buf, &row_ctx, ctx.interner, &ctx.ingest.symbols)?;
             symbols_shown += 1;
             file_has_symbols = true;
         }
-
         if file_has_symbols {
             file_buf.extend_from_slice(b"</f>");
             body_buf.extend_from_slice(&file_buf);
@@ -307,8 +361,14 @@ pub fn serialize_xml_with_ranks<W: Write>(
     );
 
     let budget = options.pack_budget_bytes.unwrap_or(usize::MAX);
-    let (body_buf, symbols_shown) =
-        serialize_symbol_buckets(ctx, &file_order, &buckets, budget, options.include_pr)?;
+    let (body_buf, symbols_shown) = serialize_symbol_buckets(
+        ctx,
+        &file_order,
+        &buckets,
+        budget,
+        options.include_pr,
+        options.metrics,
+    )?;
 
     let buf = BufWriter::with_capacity(DEFAULT_STREAM_BUFFER_CAPACITY, writer);
     let mut counter = CountingWriter::new(buf);
@@ -336,6 +396,11 @@ pub fn serialize_xml_with_ranks<W: Write>(
         rank_by: options.rank_by.as_deref(),
         ambiguous,
         unresolved: 0,
+        schema: if options.metrics {
+            Some("ripwire.metrics/v1")
+        } else {
+            None
+        },
     };
     if root_ctx.rank_by.is_some() {
         write_root_open_with_rank_by(&mut counter, &root_ctx)?;

@@ -30,12 +30,39 @@ fn score_symbol_match(name: &str, scope: Option<&str>, terms: &[&str], rank: f64
 }
 
 /// Execute `for` task-lens ranking tool.
+pub fn compute_adaptive_cut(scores: &[f64], floor: usize, ceiling: usize) -> (usize, usize, f64) {
+    let limit = ceiling.min(scores.len());
+    if limit <= floor {
+        return (limit, limit, 0.0);
+    }
+    let mut max_gap = 0.0;
+    let mut best_k = limit;
+    for k in floor..limit {
+        let prev = scores[k - 1];
+        let curr = scores[k];
+        if prev > 0.0 {
+            let gap = (prev - curr) / prev;
+            if gap > max_gap {
+                max_gap = gap;
+                best_k = k;
+            }
+        }
+    }
+    if max_gap >= 0.25 {
+        (best_k, best_k, max_gap)
+    } else {
+        (limit, limit, max_gap)
+    }
+}
+
 pub fn call_for_task(
     ingest: &IngestResult,
     interner: &Interner,
     ranks: &[f64],
     task: &str,
     budget_tokens: Option<usize>,
+    detail: Option<usize>,
+    adaptive: bool,
 ) -> Value {
     let raw_terms: Vec<&str> = task
         .split_whitespace()
@@ -55,31 +82,50 @@ pub fn call_for_task(
     }
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    let limit = budget_tokens.unwrap_or(25).min(scored.len());
-
+    let mut limit = budget_tokens.unwrap_or(25).min(scored.len());
+    let mut adaptive_info = None;
+    if adaptive && scored.len() > 5 {
+        let scores: Vec<f64> = scored.iter().map(|s| s.0).collect();
+        let (kept, _cliff, gap) = compute_adaptive_cut(&scores, 5, limit);
+        adaptive_info = Some((kept, scored.len(), gap));
+        limit = kept;
+    }
+    let detail_count = detail.unwrap_or(0).min(limit);
     let symbols_json: Vec<Value> = scored[..limit]
         .iter()
-        .map(|(score, sym)| {
+        .enumerate()
+        .map(|(idx, (score, sym))| {
             let name = interner.resolve(&sym.name);
             let path = ingest
                 .files
                 .get(sym.file_id as usize)
                 .map(|f| interner.resolve(&f.path))
                 .unwrap_or("");
-            json!({
+            let mut obj = json!({
                 "name": name,
                 "kind": sym.kind.tag(),
                 "path": path,
                 "line": sym.line,
                 "score": (score * 100.0).round() / 100.0
-            })
+            });
+            if idx < detail_count
+                && let Ok(bytes) = fs::read(path)
+            {
+                let start = (sym.sig_start_byte as usize).min(bytes.len());
+                let end = (sym.end_byte as usize).min(bytes.len());
+                let body = String::from_utf8_lossy(&bytes[start..end]).to_string();
+                obj["body"] = Value::String(body);
+            }
+            obj
         })
         .collect();
 
     json!({
         "task": task,
         "symbols": symbols_json,
-        "count": symbols_json.len()
+        "count": symbols_json.len(),
+        "detail": detail_count,
+        "adaptive": adaptive_info.map(|(k, t, g)| json!({ "kept": k, "total": t, "gap": g }))
     })
 }
 
@@ -406,5 +452,24 @@ mod tests {
         assert_eq!(target_kind_from_role("interface"), SymKind::Interface);
         assert_eq!(target_kind_from_role("section"), SymKind::Section);
         assert_eq!(target_kind_from_role("other"), SymKind::Function);
+    }
+
+    #[test]
+    fn test_call_for_task_with_detail() {
+        let interner = Interner::new();
+        let mut ingest = IngestResult::new();
+        let sym = crate::domain::Symbol::new(
+            0,
+            interner.intern("test_fn"),
+            interner.intern("c_test_fn"),
+            SymKind::Function,
+            crate::domain::Lang::Rust,
+            0,
+            1,
+        );
+        ingest.symbols.push(sym);
+        let res = call_for_task(&ingest, &interner, &[1.0], "test fn", None, Some(1), false);
+        assert_eq!(res["count"], 1);
+        assert_eq!(res["detail"], 1);
     }
 }

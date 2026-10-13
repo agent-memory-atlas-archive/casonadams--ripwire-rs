@@ -132,12 +132,14 @@ pub fn execute_path_query<W: Write>(
 
 fn execute_doc_search_query<W: Write>(
     ws: &TopWorkspaceArgs,
+    root: &str,
     ingest: &IngestResult,
     interner: &Interner,
+    with_history: bool,
     out: &mut W,
 ) -> io::Result<bool> {
     if let Some(sym) = ws.whereis.as_deref() {
-        let val = crate::mcp::doc_tools::call_whereis(ingest, interner, sym);
+        let val = crate::mcp::doc_tools::call_whereis(ingest, interner, root, sym, with_history);
         crate::serialize::serialize_whereis_xml(&val, out)?;
         Ok(true)
     } else if ws.doc_drift {
@@ -259,11 +261,13 @@ fn execute_symbol_mutation_query<W: Write>(
 
 pub fn execute_workspace_doc_query<W: Write>(
     ws: &TopWorkspaceArgs,
+    root: &str,
     ingest: &IngestResult,
     interner: &Interner,
+    with_history: bool,
     out: &mut W,
 ) -> io::Result<()> {
-    if execute_doc_search_query(ws, ingest, interner, out)? {
+    if execute_doc_search_query(ws, root, ingest, interner, with_history, out)? {
         return Ok(());
     }
     if execute_session_tools_query(ws, out)? {
@@ -639,7 +643,9 @@ pub fn run_batch_subquery<W: Write>(
             let _ = crate::serialize::serialize_grep_xml(&val, &mut sub_buf);
         }
         "for" => {
-            let val = crate::mcp::retrieval::call_for_task(ingest, interner, &pr.ranks, a, None);
+            let val = crate::mcp::retrieval::call_for_task(
+                ingest, interner, &pr.ranks, a, None, None, false,
+            );
             let _ = crate::serialize::serialize_for_xml(&val, &mut sub_buf);
         }
         _ => {}
@@ -695,6 +701,51 @@ pub fn execute_batch_file<W: Write>(
     execute_batch_content(root, &content, ingest, graph, pr, interner, out)
 }
 
+fn execute_task_or_signatures<W: Write>(
+    ret: &TopRetrievalArgs,
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
+    if let Some(task) = ret.task_for.as_deref() {
+        let detail = if ret.signatures_only {
+            None
+        } else if ret.auto_bodies && ret.detail.is_none() {
+            Some(6)
+        } else {
+            ret.detail
+        };
+        let mut val = crate::mcp::retrieval::call_for_task(
+            ingest,
+            interner,
+            &pr.ranks,
+            task,
+            None,
+            detail,
+            ret.adaptive,
+        );
+        if let Some(sec) = ret.sections.as_deref() {
+            val["sections"] = serde_json::json!(sec);
+        }
+        crate::serialize::serialize_for_xml(&val, out)?;
+        return Ok(true);
+    }
+    if ret.pack_signatures {
+        writeln!(out, "<ctx schema=\"ripwire.pack-signatures/v1\">")?;
+        let opts = crate::serialize::SerializeOptions {
+            root: root.to_string(),
+            ..Default::default()
+        };
+        crate::serialize::serialize_xml(ingest, graph, pr, interner, out, &opts)?;
+        writeln!(out, "</ctx>")?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 pub fn execute_retrieval_dispatch<W: Write>(
     ret: &TopRetrievalArgs,
     root: &str,
@@ -704,10 +755,10 @@ pub fn execute_retrieval_dispatch<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    if let Some(task) = ret.task_for.as_deref() {
-        let val = crate::mcp::retrieval::call_for_task(ingest, interner, &pr.ranks, task, None);
-        crate::serialize::serialize_for_xml(&val, out)?;
-    } else if let Some(pat) = ret.grep.as_deref() {
+    if execute_task_or_signatures(ret, root, ingest, graph, pr, interner, out)? {
+        return Ok(());
+    }
+    if let Some(pat) = ret.grep.as_deref() {
         let val = crate::mcp::retrieval::call_grep(ingest, interner, pat, None);
         crate::serialize::serialize_grep_xml(&val, out)?;
     } else if let Some(syms) = ret.connect.as_deref() {

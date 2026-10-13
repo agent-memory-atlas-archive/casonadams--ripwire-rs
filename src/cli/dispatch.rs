@@ -241,14 +241,36 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 12);
             let commits =
                 crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
-            let val = crate::mcp::doc_tools::call_owners(commits.as_deref(), None);
+            let at_stamp = crate::git::history::compute_git_at_stamp(root);
+            let (ingest, _graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+            let known_files: std::collections::HashSet<String> = ingest
+                .files
+                .iter()
+                .map(|f| interner.resolve(&f.path).to_string())
+                .collect();
+            let mut val = crate::mcp::doc_tools::call_owners(
+                commits.as_deref(),
+                None,
+                at_stamp.as_deref(),
+                Some(&known_files),
+            );
+            if cli.retrieval.detail.is_some_and(|d| d > 0) {
+                val["detail"] = serde_json::Value::Bool(true);
+            }
             crate::serialize::serialize_owners_xml(&val, &mut stdout)?;
         } else if ws.stray_content {
-            let val = crate::mcp::doc_tools::call_stray_content(None);
+            let val = crate::mcp::doc_tools::call_stray_content(root);
             crate::serialize::serialize_stray_content_xml(&val, &mut stdout)?;
         } else {
             let (ingest, _graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-            execute_workspace_doc_query(ws, &ingest, &interner, &mut stdout)?;
+            execute_workspace_doc_query(
+                ws,
+                root,
+                &ingest,
+                &interner,
+                cli.retrieval.with_history,
+                &mut stdout,
+            )?;
         }
         Ok(())
     })())
@@ -307,6 +329,11 @@ pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         && !s.seams
         && s.pr_context.is_none()
         && s.merge_scout.is_none()
+        && s.dmm.is_none()
+        && s.plan_lanes.is_none()
+        && s.scan_skills.is_none()
+        && s.edit_plan.is_none()
+        && s.edit_payload.is_none()
     {
         return None;
     }
@@ -321,6 +348,23 @@ pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         Ok(())
     })())
 }
+fn execute_arch_rules_query<W: Write>(
+    rules_file: &str,
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    stdout: &mut W,
+) -> io::Result<()> {
+    let content = std::fs::read_to_string(rules_file)?;
+    let cfg = crate::gate::arch::ArchConfig::parse(&content);
+    let violations = crate::gate::arch::check_architecture_rules(&cfg, ingest, graph, interner);
+    crate::gate::arch::serialize_arch_xml(root, &violations, stdout)?;
+    if !violations.is_empty() {
+        std::process::exit(2);
+    }
+    Ok(())
+}
 
 pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let a = &cli.arch;
@@ -329,18 +373,11 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     }
 
     Some((|| {
-        let (ingest, graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout = io::stdout().lock();
 
         if let Some(rules_file) = a.arch.as_deref() {
-            let content = std::fs::read_to_string(rules_file)?;
-            let cfg = crate::gate::arch::ArchConfig::parse(&content);
-            let violations =
-                crate::gate::arch::check_architecture_rules(&cfg, &ingest, &graph, &interner);
-            crate::gate::arch::serialize_arch_xml(root, &violations, &mut stdout)?;
-            if !violations.is_empty() {
-                std::process::exit(2);
-            }
+            execute_arch_rules_query(rules_file, root, &ingest, &graph, &interner, &mut stdout)?;
         } else if a.mermaid {
             crate::graph::generate_mermaid_diagram(&ingest, &graph, &interner, &mut stdout)?;
         } else if a.zoom.is_some() {
@@ -361,12 +398,79 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             execute_external_surface_query(root, &ingest, &interner, &mut stdout)?;
         } else if a.deps {
             execute_deps_query(root, &ingest, &graph, &interner, &mut stdout)?;
+        } else if dispatch_lens_queries(a, root, &ingest, &graph, &pr, &interner, &mut stdout)? {
+            return Ok(());
         }
         Ok(())
     })())
 }
 
+fn dispatch_lens_queries<W: Write>(
+    a: &TopArchitectureArgs,
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    pr: &crate::rank::PageRankResult,
+    interner: &Interner,
+    stdout: &mut W,
+) -> io::Result<bool> {
+    if a.metrics {
+        let opts = crate::serialize::SerializeOptions {
+            root: root.to_string(),
+            metrics: true,
+            ..Default::default()
+        };
+        crate::serialize::serialize_xml(ingest, graph, pr, interner, stdout, &opts)?;
+        return Ok(true);
+    }
+    if let Some(preset_opt) = &a.quality_panel {
+        let rep = crate::metrics::compute_quality_panel_report(
+            ingest,
+            graph,
+            interner,
+            preset_opt.as_deref(),
+        );
+        crate::metrics::serialize_quality_panel_xml(&rep, stdout)?;
+        return Ok(true);
+    }
+    if let Some(sym) = a.layout.as_deref() {
+        let rep = crate::metrics::compute_layout_report(sym, ingest, interner, root);
+        crate::metrics::serialize_layout_xml(&rep, root, stdout)?;
+        return Ok(true);
+    }
+    if let Some(sym_opt) = &a.field_affinity {
+        let sym = sym_opt.as_deref().unwrap_or("Symbol");
+        let rep = crate::metrics::compute_layout_report(sym, ingest, interner, root);
+        crate::metrics::serialize_field_affinity_xml(&rep, root, stdout)?;
+        return Ok(true);
+    }
+    if a.context_ratio {
+        let rep = crate::metrics::compute_context_ratio(ingest, graph, interner);
+        crate::metrics::serialize_context_ratio_xml(&rep, root, stdout)?;
+        return Ok(true);
+    }
+    if a.ensemble {
+        let rep = crate::metrics::compute_ensemble(ingest, graph, interner);
+        crate::metrics::serialize_ensemble_xml(&rep, root, stdout)?;
+        return Ok(true);
+    }
+    if a.comment_coherence {
+        let rep = crate::metrics::compute_comment_coherence(ingest, interner);
+        crate::metrics::serialize_comment_coherence_xml(&rep, root, stdout)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
 pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    if cli.modifiers.eval {
+        let mut stdout = io::stdout().lock();
+        return Some(crate::metrics::run_cochange_eval(&mut stdout));
+    }
+    if cli.modifiers.eval_retrieval {
+        let mut stdout = io::stdout().lock();
+        return Some(crate::metrics::run_retrieval_eval(&mut stdout));
+    }
     if let Some(file) = cli.modifiers.batch.as_deref() {
         return Some((|| {
             let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
@@ -374,7 +478,6 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             execute_batch_file(root, file, &ingest, &graph, &pr, &interner, &mut stdout)
         })());
     }
-
     dispatch_top_nav(cli, root)
         .or_else(|| dispatch_top_retrieval(cli, root))
         .or_else(|| dispatch_top_workspace(cli, root))
