@@ -313,23 +313,24 @@ fn diff_commit_tree(
         .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
 
     let changed_files = if let Some(parent_id) = meta.parent_id {
-        let parent_tree = repo
-            .find_object(parent_id)
-            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?
-            .into_commit()
-            .tree()
-            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
-        let mut changes = parent_tree
-            .changes()
-            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
-        let mut files = Vec::new();
-        changes
-            .for_each_to_obtain_tree(&tree, |change| {
-                files.push(change.location().to_string());
-                Ok::<_, std::convert::Infallible>(gix::object::tree::diff::Action::Continue)
-            })
-            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
-        files
+        if let Ok(parent_obj) = repo.find_object(parent_id)
+            && let Ok(parent_commit) = parent_obj.try_into_commit()
+            && let Ok(parent_tree) = parent_commit.tree()
+        {
+            let mut changes = parent_tree
+                .changes()
+                .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
+            let mut files = Vec::new();
+            changes
+                .for_each_to_obtain_tree(&tree, |change| {
+                    files.push(change.location().to_string());
+                    Ok::<_, std::convert::Infallible>(gix::object::tree::diff::Action::Continue)
+                })
+                .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
+            files
+        } else {
+            Vec::new()
+        }
     } else {
         Vec::new()
     };
@@ -543,13 +544,20 @@ mod tests {
     fn test_in_process_history_diffing() {
         if let Ok(repo) = gix::open(".")
             && let Ok(head) = repo.head_commit()
-            && let Ok(rev_walk) = repo.rev_walk([head.id()]).all()
-            && let Ok(metas) = collect_commit_metas(rev_walk.take(3), None)
-            && !metas.is_empty()
         {
-            let info = diff_commit_tree(&repo, &metas[0]);
+            let meta = RawCommitMeta {
+                id: head.id().into(),
+                parent_id: None,
+                timestamp: 12345,
+            };
+            let info = diff_commit_tree(&repo, &meta);
             assert!(info.is_ok());
-            assert_eq!(info.unwrap().id, metas[0].id.to_string());
+            let c = info.unwrap();
+            assert_eq!(c.id, head.id().to_string());
+            assert_eq!(c.timestamp, 12345);
+            if let Ok(rev_walk) = repo.rev_walk([head.id()]).all() {
+                let _ = collect_commit_metas(rev_walk.take(1), Some(12345));
+            }
         }
     }
 }

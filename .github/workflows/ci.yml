@@ -56,29 +56,6 @@ jobs:
           top-cognitive: 15
           args: --lang rust
 
-  test:
-    name: Test
-    runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || github.event.action != 'edited'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Fetch vendored grammars
-        run: ./scripts/update-grammars.sh
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - name: Install cargo-nextest
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest
-
-      - name: Run tests
-        run: cargo nextest run --workspace --all-targets
-
-      - name: Run doc tests
-        run: cargo test --workspace --doc
-
   coverage-crap:
     name: Coverage & CRAP Metric
     runs-on: ubuntu-latest
@@ -104,6 +81,9 @@ jobs:
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           export PATH="$HOME/.cargo/bin:$PATH"
           cargo crap --version
+
+      - name: Run doc tests
+        run: cargo test --workspace --doc
 
       - name: Generate test coverage trace
         id: coverage
