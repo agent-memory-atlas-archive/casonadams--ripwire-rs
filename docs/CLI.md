@@ -202,3 +202,6 @@ ripwire-rs --add-skills
 - `ripwire-rs mcp`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
 - `ripwire-rs skills [DIR]`: Install and manage 17 ripwire-rs agent skills in `~/.agents/skills`.
 - `ripwire-rs wrap <AGENT>`: Generate agent integration recipe (`claude`, `cursor`, `codex`, `windsurf`, `gemini`, `opencode`, `aider`).
+- `ripwire-rs [PATH] [--cache <PATH>] [--no-cache]`: Persistent binary on-disk caching in TMPDIR (or custom path) for sub-second repeat queries.
+- `make bench [REPO=<PATH>]`: Multi-metric performance and resident set size (RSS) benchmark against C++ `ripwire`.
+- `make bench-pipeline`: Native in-memory Cargo micro-benchmarks (`cargo bench --bench bench_pipeline`).

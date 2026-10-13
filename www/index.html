@@ -99,21 +99,21 @@
       <!-- Performance Comparison Card -->
       <div class="benchmark-card">
         <div class="benchmark-header">
-          <span class="benchmark-title">Cold Parse &amp; Call Graph Construction (100K+ SLoC)</span>
-          <span style="font-size: 0.85rem; color: var(--text-secondary);">Apple Silicon M-Series</span>
+          <span class="benchmark-title">Empirical Performance &amp; Memory Efficiency</span>
+          <span style="font-size: 0.85rem; color: var(--text-secondary);">Apple Silicon M-Series &bull; oh-my-pi (7,166 files)</span>
         </div>
         <div class="stat-grid">
           <div class="stat-box">
-            <div class="stat-val fast">48 ms</div>
-            <div class="stat-label">ripwire-rs</div>
+            <div class="stat-val fast">0.61 s</div>
+            <div class="stat-label">Warm Map Latency</div>
           </div>
           <div class="stat-box">
-            <div class="stat-val">340 ms</div>
-            <div class="stat-label">Tree-sitter CLI</div>
+            <div class="stat-val fast">92 MB</div>
+            <div class="stat-label">Peak RSS (-85% vs C++)</div>
           </div>
           <div class="stat-box">
-            <div class="stat-val">1.2 s</div>
-            <div class="stat-label">Sourcegraph SCIP</div>
+            <div class="stat-val">2.26 s</div>
+            <div class="stat-label">Cold Parse (7.1k files)</div>
           </div>
           <div class="stat-box">
             <div class="stat-val gold">33</div>

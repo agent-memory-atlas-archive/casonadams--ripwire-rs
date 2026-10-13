@@ -250,7 +250,12 @@ ripwire-rs . --quality-delta
 
 # Upstream Parity Validation: verifies 1:1 input/output equivalence across 39 commands
 make validate REPO=.
-```
+
+# Performance & Resource Benchmark: benchmarks speed and peak memory against upstream ripwire
+make bench REPO=.
+
+# In-Memory Cargo Pipeline Benchmark: runs statistical micro-benchmarks (cargo bench)
+make bench-pipeline
 
 #### GitHub Actions Workflow Example (`.github/workflows/ripwire-gate.yml`)
 ```yaml
