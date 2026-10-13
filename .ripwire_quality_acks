@@ -311,6 +311,8 @@ ack short-horizon-churn fc1eb821e01f7010 6 cid=09841ad1850cca5d now=6 was=0 face
 ack short-horizon-churn ff13a7414cb0f2f1 10 cid=dcf9d0ad774171a1 now=10 was=0 facet=self p=src/cli/dispatch.rs:198 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn ff2afe1ec5c50beb 17 cid=7035e8bc40b1bb80 now=17 was=0 facet=self p=src/cli.rs:328 cli options and streaming enhancements
 ack short-horizon-churn ffe8cd20e751aac3 8 cid=a76a4515e108eff9 now=8 was=0 facet=ambient p=src/navigate.rs:1023 fix(parity): implement exemplar selection and graph-query DSL
+ack short-horizon-churn build_direct_file_adj 4 now=4 was=0 p=src/git/cochange.rs:199 perf(cochange): optimize transitive coupling with lazy closure
+ack short-horizon-churn find_type3_pairs 8 now=8 was=0 p=src/clones/detector.rs:338 perf(clones): optimize type-3 clone candidate search
 ack verbosity 03e609981e51a079 62 cid=844fd93f87304958 now=62 was=50 p=src/cli.rs:17 cli flag expansion
 ack verbosity 05417ac6ba678f95 72 cid=b828ed667b0f11d5 now=72 was=68 p=src/cli/args.rs:10 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 1bb8d09cbe6509f3 69 cid=d7290398e8124e66 now=69 was=66 p=src/git/cochange.rs:457 fix(owners): compute recency-weighted author ownership and bus factor

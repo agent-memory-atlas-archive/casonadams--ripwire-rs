@@ -249,6 +249,9 @@ fn group_exact_clones(candidates: &[BodyTokens]) -> Vec<CloneGroup> {
     groups
 }
 
+const TYPE3_MAX_BUCKET: usize = 1024;
+const TYPE3_MAX_TOKENS_FOR_LCS: usize = 4096;
+
 fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGroup> {
     let len_a = ca.norm_tokens.len();
     let len_b = cb.norm_tokens.len();
@@ -262,8 +265,13 @@ fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGrou
         return None;
     }
 
-    let lcs = compute_lcs_len(&ca.norm_token_ids, &cb.norm_token_ids);
-    let similarity = (2.0 * lcs as f64) / (len_a + len_b) as f64;
+    let end_a = ca.norm_token_ids.len().min(TYPE3_MAX_TOKENS_FOR_LCS);
+    let end_b = cb.norm_token_ids.len().min(TYPE3_MAX_TOKENS_FOR_LCS);
+    let a_ids = &ca.norm_token_ids[..end_a];
+    let b_ids = &cb.norm_token_ids[..end_b];
+
+    let lcs = compute_lcs_len(a_ids, b_ids);
+    let similarity = (2.0 * lcs as f64) / (a_ids.len() + b_ids.len()) as f64;
 
     if (0.80..1.0).contains(&similarity) {
         let avg_tokens = (len_a + len_b) / 2;
@@ -280,53 +288,75 @@ fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGrou
     }
 }
 
-fn find_type3_pairs_seq(
+fn build_kgram_inverted_index(
     candidates: &[BodyTokens],
     exact_matched: &HashMap<NodeId, ()>,
-) -> Vec<CloneGroup> {
-    let mut gapped = Vec::new();
-    for (i, ca) in candidates.iter().enumerate() {
-        if exact_matched.contains_key(&ca.id) {
+) -> HashMap<u64, Vec<u32>> {
+    let mut index: HashMap<u64, Vec<u32>> = HashMap::new();
+    for (idx, c) in candidates.iter().enumerate() {
+        if exact_matched.contains_key(&c.id) {
             continue;
         }
-        let max_len_b = ((ca.norm_tokens.len() as f64) / 0.70) as usize;
-        for cb in candidates[i + 1..]
-            .iter()
-            .take_while(|cb| cb.norm_tokens.len() <= max_len_b)
-        {
-            if exact_matched.contains_key(&cb.id) {
-                continue;
-            }
-            if let Some(group) = evaluate_candidate_pair(ca, cb) {
-                gapped.push(group);
+        for &kg in &c.kgrams {
+            index.entry(kg).or_default().push(idx as u32);
+        }
+    }
+    index
+}
+
+fn collect_bucket_pairs(candidates: &[BodyTokens], bucket: &[u32], pairs: &mut Vec<u64>) {
+    for i in 0..bucket.len() {
+        let ia = bucket[i];
+        let len_a = candidates[ia as usize].norm_tokens.len();
+        for &ib in &bucket[i + 1..] {
+            let len_b = candidates[ib as usize].norm_tokens.len();
+            let min_len = len_a.min(len_b) as f64;
+            let max_len = len_a.max(len_b) as f64;
+            if min_len / max_len >= 0.70 {
+                let (lo, hi) = if ia < ib { (ia, ib) } else { (ib, ia) };
+                pairs.push(((lo as u64) << 32) | (hi as u64));
             }
         }
     }
-    gapped
+}
+
+fn collect_type3_candidate_pairs(
+    candidates: &[BodyTokens],
+    index: HashMap<u64, Vec<u32>>,
+) -> Vec<u64> {
+    let mut pairs = Vec::new();
+    for bucket in index.into_values() {
+        if bucket.len() >= 2 && bucket.len() <= TYPE3_MAX_BUCKET {
+            collect_bucket_pairs(candidates, &bucket, &mut pairs);
+        }
+    }
+    pairs.sort_unstable();
+    pairs.dedup();
+    pairs
 }
 
 fn find_type3_pairs(
     candidates: &[BodyTokens],
     exact_matched: &HashMap<NodeId, ()>,
 ) -> Vec<CloneGroup> {
-    if candidates.len() < 32 {
-        return find_type3_pairs_seq(candidates, exact_matched);
-    }
+    let index = build_kgram_inverted_index(candidates, exact_matched);
+    let pairs = collect_type3_candidate_pairs(candidates, index);
 
-    candidates
-        .par_iter()
-        .enumerate()
-        .filter(|(_, ca)| !exact_matched.contains_key(&ca.id))
-        .flat_map(|(i, ca)| {
-            let max_len_b = ((ca.norm_tokens.len() as f64) / 0.70) as usize;
-            candidates[i + 1..]
-                .iter()
-                .take_while(move |cb| cb.norm_tokens.len() <= max_len_b)
-                .filter(|cb| !exact_matched.contains_key(&cb.id))
-                .filter_map(|cb| evaluate_candidate_pair(ca, cb))
-                .collect::<Vec<_>>()
+    let mut gapped: Vec<CloneGroup> = pairs
+        .into_par_iter()
+        .filter_map(|key| {
+            let ia = (key >> 32) as usize;
+            let ib = (key as u32) as usize;
+            evaluate_candidate_pair(&candidates[ia], &candidates[ib])
         })
-        .collect()
+        .collect();
+
+    gapped.sort_by(|a, b| {
+        a.members
+            .cmp(&b.members)
+            .then_with(|| b.token_count.cmp(&a.token_count))
+    });
+    gapped
 }
 
 /// Detect all Type-1, Type-2, and Type-3 clones across the codebase.
@@ -460,5 +490,35 @@ mod tests {
             Some("switch-name-table")
         );
         assert_eq!(CloneIdiom::BuilderChain.as_str(), Some("builder-chain"));
+    }
+
+    #[test]
+    fn test_clone_type3_gapped_detection() {
+        let interner = Interner::new();
+        let registry = LanguageRegistry::new().unwrap();
+
+        let code_base = b"fn process_items(items: &[i32]) -> i32 {\n    let mut total = 0;\n    for &item in items {\n        if item > 0 {\n            total += item * 2;\n        }\n    }\n    total\n}\n";
+        let code_near = b"fn process_values(values: &[i32]) -> i32 {\n    let mut total = 0;\n    let bonus = 1;\n    for &elem in values {\n        if elem > 0 {\n            total += elem * 2;\n        }\n    }\n    total + bonus\n}\n";
+
+        let mut sources = HashMap::new();
+        sources.insert("src/base.rs".into(), code_base.to_vec());
+        sources.insert("src/near.rs".into(), code_near.to_vec());
+
+        let ingest = ingest_in_memory_files(
+            &[
+                ("src/base.rs", Lang::Rust, code_base),
+                ("src/near.rs", Lang::Rust, code_near),
+            ],
+            &registry,
+            &interner,
+        );
+
+        let clones = find_clones(&ingest, &interner, 10, Some(&sources));
+        assert!(!clones.is_empty(), "Should detect Type-3 near-miss clone");
+        let t3 = clones.iter().find(|g| g.clone_type == CloneType::Type3);
+        assert!(t3.is_some(), "Expected Type-3 clone");
+        let g = t3.unwrap();
+        assert_eq!(g.members.len(), 2);
+        assert!(g.similarity >= 0.80 && g.similarity < 1.0);
     }
 }

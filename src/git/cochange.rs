@@ -50,7 +50,8 @@ pub struct CoPair {
 #[derive(Debug, Default)]
 pub struct StaticCouplingMap {
     file_to_id: HashMap<String, u32>,
-    transitive_closure: Vec<HashSet<u32>>,
+    direct_adj: Vec<Vec<u32>>,
+    memo: std::sync::RwLock<HashMap<u32, HashSet<u32>>>,
     referenced_basenames: Vec<HashSet<String>>,
     file_basenames: Vec<String>,
 }
@@ -62,11 +63,11 @@ impl StaticCouplingMap {
         let (file_to_id, file_basenames, referenced_basenames) =
             extract_file_metadata(ingest, interner);
         let direct_adj = build_direct_file_adj(ingest, graph);
-        let transitive_closure = compute_transitive_closure(&direct_adj);
 
         Self {
             file_to_id,
-            transitive_closure,
+            direct_adj,
+            memo: std::sync::RwLock::new(HashMap::new()),
             referenced_basenames,
             file_basenames,
         }
@@ -76,31 +77,55 @@ impl StaticCouplingMap {
     #[must_use]
     pub fn is_coupled(&self, path_a: &str, path_b: &str) -> bool {
         let id_a = match self.file_to_id.get(path_a) {
-            Some(&id) => id as usize,
+            Some(&id) => id,
             None => return false,
         };
         let id_b = match self.file_to_id.get(path_b) {
-            Some(&id) => id as usize,
+            Some(&id) => id,
             None => return false,
         };
         if id_a == id_b {
             return true;
         }
 
-        if self.names_basename(id_a, id_b) || self.names_basename(id_b, id_a) {
+        if self.names_basename(id_a as usize, id_b as usize)
+            || self.names_basename(id_b as usize, id_a as usize)
+        {
             return true;
         }
 
-        let a_reaches_b = self
-            .transitive_closure
-            .get(id_a)
-            .is_some_and(|c| c.contains(&(id_b as u32)));
-        let b_reaches_a = self
-            .transitive_closure
-            .get(id_b)
-            .is_some_and(|c| c.contains(&(id_a as u32)));
+        self.reaches(id_a, id_b) || self.reaches(id_b, id_a)
+    }
 
-        a_reaches_b || b_reaches_a
+    fn reaches(&self, src: u32, dst: u32) -> bool {
+        if let Ok(guard) = self.memo.read()
+            && let Some(closure) = guard.get(&src)
+        {
+            return closure.contains(&dst);
+        }
+
+        let closure = self.compute_closure(src);
+        let res = closure.contains(&dst);
+        if let Ok(mut guard) = self.memo.write() {
+            guard.insert(src, closure);
+        }
+        res
+    }
+
+    fn compute_closure(&self, src: u32) -> HashSet<u32> {
+        let mut visited = HashSet::new();
+        let mut stack = vec![src];
+        visited.insert(src);
+        while let Some(curr) = stack.pop() {
+            if let Some(neighbors) = self.direct_adj.get(curr as usize) {
+                for &next in neighbors {
+                    if visited.insert(next) {
+                        stack.push(next);
+                    }
+                }
+            }
+        }
+        visited
     }
 
     fn names_basename(&self, source_id: usize, target_id: usize) -> bool {
@@ -155,45 +180,35 @@ fn extract_file_metadata(ingest: &IngestResult, interner: &Interner) -> FileMeta
     (file_to_id, file_basenames, referenced_basenames)
 }
 
-fn build_direct_file_adj(ingest: &IngestResult, graph: Option<&Graph>) -> Vec<HashSet<u32>> {
-    let n_files = ingest.files.len();
-    let mut direct_adj = vec![HashSet::new(); n_files];
-    let Some(g) = graph else {
-        return direct_adj;
-    };
+fn add_callee_file_edges(
+    from_node: usize,
+    g: &Graph,
+    ingest: &IngestResult,
+    direct_adj: &mut [Vec<u32>],
+) {
+    let from_fid = ingest.symbols[from_node].file_id as usize;
+    let n_files = direct_adj.len();
+    for (to_node, _) in g.callees(from_node as u32) {
+        let to_fid = ingest.symbols[to_node as usize].file_id as usize;
+        if from_fid != to_fid && from_fid < n_files && to_fid < n_files {
+            direct_adj[from_fid].push(to_fid as u32);
+        }
+    }
+}
 
-    for from_node in 0..g.node_count() {
-        let from_fid = ingest.symbols[from_node].file_id as usize;
-        for (to_node, _) in g.callees(from_node as u32) {
-            let to_fid = ingest.symbols[to_node as usize].file_id as usize;
-            if from_fid != to_fid && from_fid < n_files && to_fid < n_files {
-                direct_adj[from_fid].insert(to_fid as u32);
-            }
+fn build_direct_file_adj(ingest: &IngestResult, graph: Option<&Graph>) -> Vec<Vec<u32>> {
+    let n_files = ingest.files.len();
+    let mut direct_adj = vec![Vec::new(); n_files];
+    if let Some(g) = graph {
+        for from_node in 0..g.node_count() {
+            add_callee_file_edges(from_node, g, ingest, &mut direct_adj);
+        }
+        for adj in &mut direct_adj {
+            adj.sort_unstable();
+            adj.dedup();
         }
     }
     direct_adj
-}
-
-fn forward_reachable(start: u32, direct_adj: &[HashSet<u32>]) -> HashSet<u32> {
-    let mut visited = HashSet::new();
-    let mut queue = vec![start];
-    visited.insert(start);
-    while let Some(curr) = queue.pop() {
-        if let Some(neighbors) = direct_adj.get(curr as usize) {
-            for &next in neighbors {
-                if visited.insert(next) {
-                    queue.push(next);
-                }
-            }
-        }
-    }
-    visited
-}
-
-fn compute_transitive_closure(direct_adj: &[HashSet<u32>]) -> Vec<HashSet<u32>> {
-    (0..direct_adj.len())
-        .map(|i| forward_reachable(i as u32, direct_adj))
-        .collect()
 }
 fn is_file_path(p: &str) -> bool {
     Path::new(p).extension().is_some()
@@ -354,26 +369,41 @@ where
 }
 
 struct RepoPairsTally<'a> {
-    file_counts: HashMap<&'a str, u32>,
-    pairs: HashMap<(&'a str, &'a str), FileCommitStats>,
+    file_paths: Vec<&'a str>,
+    file_counts: Vec<u32>,
+    pairs: HashMap<u64, FileCommitStats>,
 }
 
 fn tally_repo_pairs<'a>(commits: &[&'a CommitInfo], sub_windows: usize) -> RepoPairsTally<'a> {
-    let mut file_counts: HashMap<&'a str, u32> = HashMap::new();
-    let mut pairs: HashMap<(&'a str, &'a str), FileCommitStats> = HashMap::new();
+    let mut file_map: HashMap<&'a str, u32> = HashMap::new();
+    let mut file_paths: Vec<&'a str> = Vec::new();
+    let mut file_counts: Vec<u32> = Vec::new();
+    let mut pairs: HashMap<u64, FileCommitStats> = HashMap::new();
+    let mut commit_ids = Vec::new();
 
     for (idx, commit) in commits.iter().enumerate() {
         let bit = 1u32 << ((idx * sub_windows) / commits.len());
+        commit_ids.clear();
         for f in &commit.changed_files {
-            *file_counts.entry(f.as_str()).or_insert(0) += 1;
+            let s = f.as_str();
+            let id = *file_map.entry(s).or_insert_with(|| {
+                let new_id = file_paths.len() as u32;
+                file_paths.push(s);
+                file_counts.push(0);
+                new_id
+            });
+            file_counts[id as usize] += 1;
+            commit_ids.push(id);
         }
 
-        let n = commit.changed_files.len();
+        commit_ids.sort_unstable();
+        commit_ids.dedup();
+
+        let n = commit_ids.len();
         for i in 0..n {
-            for j in (i + 1)..n {
-                let fa = commit.changed_files[i].as_str();
-                let fb = commit.changed_files[j].as_str();
-                let key = if fa < fb { (fa, fb) } else { (fb, fa) };
+            let lo = commit_ids[i] as u64;
+            for &hi in &commit_ids[i + 1..] {
+                let key = (lo << 32) | (hi as u64);
                 let entry = pairs.entry(key).or_insert(FileCommitStats {
                     together: 0,
                     recur_mask: 0,
@@ -383,7 +413,11 @@ fn tally_repo_pairs<'a>(commits: &[&'a CommitInfo], sub_windows: usize) -> RepoP
             }
         }
     }
-    RepoPairsTally { file_counts, pairs }
+    RepoPairsTally {
+        file_paths,
+        file_counts,
+        pairs,
+    }
 }
 
 /// Mine repository-wide co-change pairs across all files.
@@ -411,33 +445,13 @@ where
     let tally = tally_repo_pairs(&commit_list, sub_windows);
 
     let mut pairs = Vec::new();
-    for ((fa, fb), stats) in tally.pairs {
-        if !is_file_path(fa) || !is_file_path(fb) {
-            continue;
-        }
-        if stats.together >= opts.min_support {
-            let total_a = tally.file_counts.get(fa).copied().unwrap_or(stats.together);
-            let total_b = tally.file_counts.get(fb).copied().unwrap_or(stats.together);
-            let deg_a = (stats.together as f64) / (total_a as f64);
-            let deg_b = (stats.together as f64) / (total_b as f64);
-            let deg = deg_a.max(deg_b);
-            let recur = stats.recur_mask.count_ones();
-            let dep_capable = check_pair_dependency_capability(fa, fb, ingest, interner);
-            let is_coupled = coupling.is_some_and(|c| c.is_coupled(fa, fb));
-            let surprising = dep_capable && !is_coupled;
-
-            pairs.push(CoPair {
-                file_a: fa.to_string(),
-                file_b: fb.to_string(),
-                together: stats.together,
-                deg,
-                recur,
-                surprising,
-                dep_capable,
-            });
+    for (&key, stats) in &tally.pairs {
+        if stats.together >= opts.min_support
+            && let Some(p) = build_copair(key, stats, &tally, coupling, ingest, interner)
+        {
+            pairs.push(p);
         }
     }
-
     pairs.sort_by(|a, b| {
         b.together
             .cmp(&a.together)
@@ -451,6 +465,46 @@ where
     });
 
     pairs
+}
+
+fn build_copair(
+    key: u64,
+    stats: &FileCommitStats,
+    tally: &RepoPairsTally<'_>,
+    coupling: Option<&StaticCouplingMap>,
+    ingest: Option<&IngestResult>,
+    interner: Option<&Interner>,
+) -> Option<CoPair> {
+    let id_a = (key >> 32) as usize;
+    let id_b = (key as u32) as usize;
+    let fa = tally.file_paths[id_a];
+    let fb = tally.file_paths[id_b];
+    if !is_file_path(fa) || !is_file_path(fb) {
+        return None;
+    }
+    let total_a = tally.file_counts[id_a];
+    let total_b = tally.file_counts[id_b];
+    let deg_a = (stats.together as f64) / (total_a as f64);
+    let deg_b = (stats.together as f64) / (total_b as f64);
+    let deg = deg_a.max(deg_b);
+    let recur = stats.recur_mask.count_ones();
+    let dep_capable = check_pair_dependency_capability(fa, fb, ingest, interner);
+    let is_coupled = coupling.is_some_and(|c| c.is_coupled(fa, fb));
+    let surprising = dep_capable && !is_coupled;
+    let (file_a, file_b) = if fa < fb {
+        (fa.to_string(), fb.to_string())
+    } else {
+        (fb.to_string(), fa.to_string())
+    };
+    Some(CoPair {
+        file_a,
+        file_b,
+        together: stats.together,
+        deg,
+        recur,
+        surprising,
+        dep_capable,
+    })
 }
 
 #[cfg(test)]
