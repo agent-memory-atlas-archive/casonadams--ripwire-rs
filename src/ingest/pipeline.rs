@@ -76,30 +76,53 @@ pub fn ingest_crawled_files(
         })
         .collect();
 
+    let mut node_offsets = Vec::with_capacity(files.len() + 1);
+    let mut current_offset: NodeId = 0;
+    for parsed in &parsed_files {
+        node_offsets.push(current_offset);
+        if let Some(p) = parsed {
+            current_offset += p.defs.len() as NodeId;
+        }
+    }
+    node_offsets.push(current_offset);
+
+    let processed: Vec<(FileInfo, Vec<Symbol>, Vec<Reference>)> = (0..files.len())
+        .into_par_iter()
+        .zip(parsed_files)
+        .map(|(file_id, parsed)| {
+            let file = &files[file_id];
+            let file_id = file_id as u32;
+            let file_spur = interner.intern(&file.rel_path);
+            let mut start_id = node_offsets[file_id as usize];
+
+            let (line_count, byte_size, defs, refs) = match parsed {
+                Some(p) => (p.line_count, p.byte_size, p.defs, p.refs),
+                None => (0, file.byte_size, Vec::new(), Vec::new()),
+            };
+
+            let file_info = FileInfo {
+                id: file_id,
+                path: file_spur,
+                lang: file.lang,
+                line_count,
+                byte_size,
+            };
+
+            let file_symbols = build_file_symbols(defs, file, file_id, interner, &mut start_id);
+            let file_refs = build_file_references(refs, file, file_id, &file_symbols, interner);
+
+            (file_info, file_symbols, file_refs)
+        })
+        .collect();
+
     let mut ingest = IngestResult::new();
-    let mut next_node_id: NodeId = 0;
+    ingest.files.reserve(files.len());
+    ingest.symbols.reserve(current_offset as usize);
 
-    for (file_id, (file, parsed)) in files.iter().zip(parsed_files).enumerate() {
-        let file_id = file_id as u32;
-        let file_spur = interner.intern(&file.rel_path);
-        let (line_count, byte_size, defs, refs) = match parsed {
-            Some(p) => (p.line_count, p.byte_size, p.defs, p.refs),
-            None => (0, file.byte_size, Vec::new(), Vec::new()),
-        };
-
-        ingest.files.push(FileInfo {
-            id: file_id,
-            path: file_spur,
-            lang: file.lang,
-            line_count,
-            byte_size,
-        });
-
-        let file_symbols = build_file_symbols(defs, file, file_id, interner, &mut next_node_id);
-        let file_refs = build_file_references(refs, file, file_id, &file_symbols, interner);
-
-        ingest.references.extend(file_refs);
+    for (file_info, file_symbols, file_refs) in processed {
+        ingest.files.push(file_info);
         ingest.symbols.extend(file_symbols);
+        ingest.references.extend(file_refs);
     }
     ingest
 }
