@@ -27,6 +27,12 @@ fn run_benchmark<F: FnMut()>(name: &str, mut f: F, warmup_iters: usize, bench_it
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--list") {
+        println!("bench_pipeline: benchmark");
+        return;
+    }
+
     println!(
         "========================================================================================="
     );

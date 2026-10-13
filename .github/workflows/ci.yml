@@ -53,7 +53,8 @@ jobs:
         uses: moznion/cccc-action@v1
         with:
           path: .
-          top-cognitive: 10
+          top-cognitive: 15
+          args: --lang rust
 
   test:
     name: Test

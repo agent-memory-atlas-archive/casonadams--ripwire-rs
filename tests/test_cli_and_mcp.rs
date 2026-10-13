@@ -634,6 +634,7 @@ fn test_all_new_feature_coverage() {
 
     let _ = ripwire_rs::navigate::resolve_symbol_at("src/lib.rs", 1, &ingest, &interner);
     let _ = ripwire_rs::metrics::execute_biggest_first_query(".", &ingest, &interner, &mut out);
+    assert!(ripwire_rs::cli::execute_html_export(".", None, "lang").is_ok());
 
     for agent in ["claude", "cursor", "codex", "opencode", "aider"] {
         let cli = Cli {

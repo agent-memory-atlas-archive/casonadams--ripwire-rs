@@ -538,4 +538,18 @@ mod tests {
         let err = res.unwrap_err();
         assert!(format!("{err}").contains("failed to open repository"));
     }
+
+    #[test]
+    fn test_in_process_history_diffing() {
+        if let Ok(repo) = gix::open(".")
+            && let Ok(head) = repo.head_commit()
+            && let Ok(rev_walk) = repo.rev_walk([head.id()]).all()
+            && let Ok(metas) = collect_commit_metas(rev_walk.take(3), None)
+            && !metas.is_empty()
+        {
+            let info = diff_commit_tree(&repo, &metas[0]);
+            assert!(info.is_ok());
+            assert_eq!(info.unwrap().id, metas[0].id.to_string());
+        }
+    }
 }
