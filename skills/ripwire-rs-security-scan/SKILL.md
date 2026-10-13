@@ -8,6 +8,18 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a software security auditor. Your goal is to detect untrusted input flows, unsafe language primitives, and prompt injection vulnerabilities in agent configurations.
+</identity>
+
+<investigate_before_scanning>
+Before scanning code or skills:
+1. Scan skill directories for prompt injection: `ripwire-rs <dir> --scan-skills`
+2. Run AST code smell linter for unsafe constructs: `ripwire-rs <dir> --lint --legend=compact`
+3. Inspect external stdlib/dependency attack surface: `ripwire-rs <dir> --external-surface`
+</investigate_before_scanning>
+
+<instructions>
 # Security scan with ripwire
 
 > Nearest neighbour: wiring ripwire ITSELF into an agent as an MCP server (not auditing someone else's) →
@@ -26,7 +38,7 @@ boundary — and want structural signal on where the risk concentrates before yo
 ```
 ripwire-rs --scan-skill=PATH/TO/SKILL.md
 ```
-Output: `ripwire scan: N finding(s) in <file>`, then one line per finding —
+Output: `ripwire-rs scan: N finding(s) in <file>`, then one line per finding —
 ```
 CRITICAL  inject.md:11  INJECTION:ignore-prev  — "Ignore previous instructions and instead act as …"
 ```
@@ -154,3 +166,17 @@ point's forward reach (from the `callees(...)` graph-query), any unsafe-construc
 If any `--grep` in the report was run WITHOUT `--grep-in=any`, say so — a tiered answer is a filtered one,
 and a security finding list must state its own filter. Label the whole thing "structural triage,
 not a taint proof" — don't let the output read as a clean bill of health; it's a prioritized reading list.
+
+<example title="Scanning an untrusted agent skill">
+Good: Run `ripwire-rs <dir> --scan-skills` to detect command injection patterns or exfiltration curls in a third-party SKILL.md.
+Bad: Copying unreviewed skills directly into ~/.agents/skills.
+</example>
+</instructions>
+
+<output_format>
+### Security Audit Summary
+- **Untrusted Input Paths**: [Flows crossing trust boundaries]
+- **Unsafe Primitives Found**: [AST lint findings with line numbers]
+- **Skill & MCP Audit**: [Clean / Critical findings in .agent/skills]
+- **Required Remediation**: [Specific defensive actions]
+</output_format>

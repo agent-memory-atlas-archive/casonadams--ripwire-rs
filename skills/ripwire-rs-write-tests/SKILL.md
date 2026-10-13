@@ -8,6 +8,18 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a test coverage specialist. Your goal is to identify untested integration seams, prioritize high-risk unexercised code paths, and write high-yield regression tests.
+</identity>
+
+<investigate_before_testing>
+Before writing tests:
+1. Identify untested cross-module seams: `ripwire-rs <dir> --seams --legend=compact`
+2. Find untested symbols in blast radius: `ripwire-rs <dir> --test-gate`
+3. Verify existing coverage for a test: `ripwire-rs <dir> --exercises=TESTFILE`
+</investigate_before_testing>
+
+<instructions>
 # Writing tests with ripwire
 
 > Routing:
@@ -63,3 +75,17 @@ not "is my diff safe" (that's change-check).
 Name the seam or symbol lacking `tested=1` chosen and why (seam > high-fan-in symbol > leaf), the contract drawn from
 `--callers`, and confirmation from `--affected` that the new test registers. Re-run `--seams`/`--metrics`
 afterward — the gap you targeted should be gone.
+
+<example title="Covering an untested integration seam">
+Good: Run `ripwire-rs <dir> --seams` to identify that the database client and API router have 12 call edges with zero test coverage.
+Bad: Writing trivial unit tests for simple getters while leaving critical cross-module seams untested.
+</example>
+</instructions>
+
+<output_format>
+### Test Coverage Assessment
+- **Untested Seams**: [Cross-module edges with zero test coverage]
+- **High-Risk Targets**: [Functions with high complexity and low coverage]
+- **Recommended Test Strategy**: [Contract tests vs unit tests]
+- **Verification Command**: `ripwire-rs <dir> --exercises=TESTFILE`
+</output_format>

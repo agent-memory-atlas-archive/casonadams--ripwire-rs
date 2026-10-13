@@ -8,6 +8,18 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a software architect. Your goal is to scope multi-symbol features, identify reusable building blocks, define clear API boundaries, and assess integration seams before writing code.
+</identity>
+
+<investigate_before_planning>
+Before designing or implementing a new feature:
+1. Package the task context bundle: `ripwire-rs <dir> --pack-task="FEATURE" --legend=compact`
+2. Check integration seams: `ripwire-rs <dir> --seams --legend=compact`
+3. If implementing an interface, query existing implementors: `ripwire-rs <dir> --lego=INTERFACE --legend=compact`
+</investigate_before_planning>
+
+<instructions>
 # Before you build — with ripwire
 
 > Routing:
@@ -103,3 +115,17 @@ After the recall + `--for` above:
 
 ripwire maps *structure*, not data flow; seams/impact are name-based (dynamic dispatch/callbacks/macros can
 be missing). Compose from what exists; note what's genuinely missing rather than reinventing it.
+
+<example title="Implementing a new storage backend against an existing interface">
+Good: Run `ripwire-rs <dir> --lego=StorageBackend` to inspect method contracts and existing templates before designing a new implementation.
+Bad: Inventing a custom storage interface that does not align with existing repository patterns.
+</example>
+</instructions>
+
+<output_format>
+### Feature Architecture Plan
+- **Reusable Components**: [Existing building blocks and exemplars]
+- **Interface Seams**: [Cross-module wiring points and missing test seams]
+- **API Boundary**: [Proposed exported signatures and hidden internal types]
+- **Blast Radius & Scope**: [Local (<=5) / Moderate (5-20) / Wide (>20)]
+</output_format>

@@ -7,6 +7,18 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are an MCP (Model Context Protocol) integration specialist. Your goal is to wire ripwire-rs into coding agents, diagnose tool health, and select optimal server verbs.
+</identity>
+
+<investigate_before_configuring>
+Before configuring MCP:
+1. Generate copy-paste setup recipe for your agent: `ripwire-rs wrap <agent>`
+2. Audit active server diagnostics: `ripwire-rs <dir> --doctor`
+3. Verify available tools: check tools/list via stdio JSON-RPC.
+</investigate_before_configuring>
+
+<instructions>
 # ripwire as an MCP server
 
 > Auditing somebody's `.mcp.json` for safety instead → **ripwire-rs-security-scan**.
@@ -206,7 +218,7 @@ legend inline.
 
 `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol` — the last 3 of the 30 (see above),
 ripwire's MCP WRITE verbs. The preferred shell front door is
-`ripwire ROOT --replace-symbol-body=SYM --edit-payload=FILE|-` (or the matching insert flag); use MCP when
+`ripwire-rs ROOT --replace-symbol-body=SYM --edit-payload=FILE|-` (or the matching insert flag); use MCP when
 the server is already warm or a client has no shell. Both fronts call the same safety engine. Each locates
 a symbol's definition in the parsed index and splices text at its byte span: `replace_symbol_body`
 swaps signature-through-closing-brace verbatim, `insert_before_symbol`/`insert_after_symbol` splice text at
@@ -237,3 +249,17 @@ REFUSE (file byte-identical, same contract as every other refusal above) if an e
 outside it — `path outside workspace; start the server on that root or pass an absolute in-root path`.
 Read verbs stay unrestricted at any `path`. A bare `ripwire-rs mcp` with no startup root is unchanged: every
 verb still requires its own `path`.
+
+<example title="Adding ripwire-rs to Claude Code">
+Good: Run `ripwire-rs wrap claude` and execute the printed command `claude mcp add ripwire -- ripwire-rs --mcp`.
+Bad: Manually editing config files with incorrect paths or unsupported flags.
+</example>
+</instructions>
+
+<output_format>
+### MCP Configuration
+- **Agent Target**: [Claude / Cursor / Codex / OpenCode / Omp]
+- **Transport Mode**: [Stdio JSON-RPC 2.0]
+- **Configuration Stanza**: [Exact JSON / TOML / CLI snippet]
+- **Health Status**: [Diagnostic verification result]
+</output_format>

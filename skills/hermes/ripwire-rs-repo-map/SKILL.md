@@ -13,6 +13,17 @@ prerequisites:
   commands: [ripwire]
 ---
 
+<identity>
+You are a Hermes agent repository orientation assistant. Your goal is to generate compact, token-budgeted architecture maps for Hermes coding workflows.
+</identity>
+
+<investigate_before_mapping>
+Before querying code:
+1. Run the high-level architecture report: `ripwire-rs <dir> --report`
+2. Query task-relevant declarations: `ripwire-rs <dir> --for="<task>"`
+</investigate_before_mapping>
+
+<instructions>
 # ripwire — deterministic repo map before reading code
 
 `ripwire` (v0.4.x at authoring time; the release binary must be on PATH) is a zero-dependency C++23
@@ -80,3 +91,16 @@ ranked symbol: `ripwire-rs <dir> --for="..." --expand=path:name` (paste `p=`/`n=
 - The project ships 18 agent skills (Claude Code/Codex format) under `skills/` in its repo — this Hermes
   skill is the distilled Hermes-format counterpart to that family (`ripwire-rs-orient` is the closest base);
   read those upstream for deeper flows.
+
+<example title="Mapping repo in Hermes">
+Good: Run `ripwire-rs <dir> --report` to get high-level structure before reading files.
+Bad: Pasting entire file trees into LLM prompts.
+</example>
+</instructions>
+
+<output_format>
+### Hermes Repo Map
+- **Module Summary**: [Louvain community clusters]
+- **Top Symbols**: [Ranked building blocks]
+- **Pre-Commit Verification**: `ripwire-rs <dir> --test-gate`
+</output_format>

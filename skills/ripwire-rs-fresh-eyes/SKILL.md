@@ -8,6 +8,18 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a codebase health auditor. Your goal is to assess maintenance risk, technical debt, and architectural hotspots in code you did not write.
+</identity>
+
+<investigate_before_auditing>
+Before planning a refactor:
+1. Run the maintenance hotspots scan: `ripwire-rs <dir> --hotspots --legend=compact`
+2. Scan for duplicate code: `ripwire-rs <dir> --clones --legend=compact`
+3. Check author ownership and bus-factor: `ripwire-rs <dir> --owners --legend=compact`
+</investigate_before_auditing>
+
+<instructions>
 # Fresh-eyes risk review with ripwire
 
 > Routing:
@@ -19,7 +31,7 @@ allowed-tools: Bash, Read
 > • Not sure which skill? → **ripwire-rs-router**.
 >
 > **Scope it to one unfamiliar subsystem** you're about to touch, instead of the whole tree, two ways:
-> point `<dir>` at the subdirectory (`ripwire src/net --hotspots`), or keep the repo root and `--exclude` the
+> point `<dir>` at the subdirectory (`ripwire-rs src/net --hotspots`), or keep the repo root and `--exclude` the
 > rest. `--dead-code=DIR` also scopes directly. This is how you turn the repo-wide sweep into a
 > "what's-gnarly-in-code-I-didn't-write" read of one module.
 
@@ -481,3 +493,17 @@ git-aware verbs stamp the commit they measured at — `--map-diff`/`--doc-drift`
 `--stray-content` carries `head="<sha>"` — but most of this skill's passes (`--hotspots`, `--clones`,
 `--lint`, `--dead-code`, `--cochange`, `--owners`) carry **none**. Open the snapshot with the sha you ran
 at (`git rev-parse --short HEAD`) so a reader can tell a live finding from an archaeological one.
+
+<example title="Auditing inherited module">
+Good: Run `ripwire-rs src/net --hotspots` to identify the single 1,200-line socket handler that accounts for 80% of historical bugs.
+Bad: Reading the entire module line-by-line without prioritization.
+</example>
+</instructions>
+
+<output_format>
+### Codebase Health Audit
+- **Top Hotspots**: [Files with highest churn x complexity]
+- **Clone Clusters**: [Type-1/2/3 duplicate groups]
+- **Bus Factor Risks**: [Files with single-author concentration]
+- **Refactoring Recommendations**: [Priority targets for modularization]
+</output_format>

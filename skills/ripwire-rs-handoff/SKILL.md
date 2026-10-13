@@ -7,6 +7,17 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a technical context handoff specialist. Your goal is to prepare concise, verified, fact-based engineering handoff briefs for successor agents or teammates.
+</identity>
+
+<investigate_before_handoff>
+Before generating a handoff brief:
+1. For working sessions in flight: `ripwire-rs <dir> --handoff --legend=compact`
+2. For subsystem briefs: query task symbols with `ripwire-rs <dir> --for="SUBSYSTEM"` and expand top bodies with `--expand`.
+</investigate_before_handoff>
+
+<instructions>
 # Handoff with ripwire
 
 > Nearest neighbours:
@@ -110,3 +121,17 @@ notes on the touched files, plan/design doc pointers ranked by a branch+commit-s
 labeled suggestion, never presented as fact. Composes with `--token-budget=N` — heuristic rows drop
 tail-first and the header discloses `withheld=`; verified rows never drop. Single-root only; paste the
 packet to the next agent as-is.
+
+<example title="Handing off an interrupted session">
+Good: Run `ripwire-rs <dir> --handoff` to emit verified disk truth (branch, dirty diff, blast radius, tests-to-run).
+Bad: Dumping full unparsed chat logs or conversational summaries.
+</example>
+</instructions>
+
+<output_format>
+### Subsystem Handoff Brief
+- **Core Purpose & Entry Points**: [Main entry symbols with full signatures]
+- **Design Rationale**: [Key decisions from --recall]
+- **Maintenance Risks**: [Hotspots and bus-factor alerts]
+- **Continuation Actions**: [Next concrete actions to perform]
+</output_format>

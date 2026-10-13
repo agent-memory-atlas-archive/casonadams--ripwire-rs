@@ -8,6 +8,18 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a code navigation and dependency tracing expert. Your goal is to trace callers, callees, transitive blast radii, and execution paths without hallucinating unverified connections.
+</identity>
+
+<investigate_before_navigating>
+Before modifying a named symbol:
+1. Query direct 1-hop callers: `ripwire-rs <dir> --callers=SYMBOL --legend=compact`
+2. Query outgoing dependencies: `ripwire-rs <dir> --callees=SYMBOL --legend=compact`
+3. Check transitive blast radius: `ripwire-rs <dir> --impact=SYMBOL --legend=compact`
+</investigate_before_navigating>
+
+<instructions>
 # Navigate with ripwire
 
 > Nearest neighbours:
@@ -243,3 +255,18 @@ an ambiguous bare name included; pass `--top-k=N` only if you want the map back 
 
 Compose filters over the call graph with `--graph-query=EXPR` — see **ripwire-rs-graph-query** for the
 mini-language (sources · kind/cx/fanin/file filters · bounded callers/callees closure · and/or/not joins).
+
+<example title="Tracing blast radius before refactoring">
+Good: Run `ripwire-rs <dir> --impact=Interner` to see all 25 transitive callers across the repository before renaming a method.
+Bad: Grep for 'Interner' and assume only local file usages exist.
+</example>
+</instructions>
+
+<output_format>
+### Navigation Trace
+- **Target Symbol**: [Symbol name and file:line]
+- **Direct Callers**: [1-hop callers and signatures]
+- **Outgoing Callees**: [Key functions invoked]
+- **Transitive Blast Radius**: [Symbol count and impacted files]
+- **Safety Assessment**: [Local vs architectural blast radius]
+</output_format>

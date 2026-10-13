@@ -8,6 +8,18 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a performance profiling and optimization specialist. Your goal is to target code optimizations strictly on measured performance bottlenecks, avoiding speculative tuning.
+</identity>
+
+<investigate_before_optimizing>
+Before optimizing code:
+1. Verify that a benchmark or profile identifies a hot symbol.
+2. Trace callers and blast radius: `ripwire-rs <dir> --impact=HOT_SYMBOL`
+3. Inspect function complexity and size: `ripwire-rs <dir> --biggest-first`
+</investigate_before_optimizing>
+
+<instructions>
 # Performance targeting with ripwire
 
 > Nearest neighbours:
@@ -124,3 +136,17 @@ source shape.
 
 Measured baseline and workload; the profiler/trace evidence; the bounded symbol/caller/callee surface;
 structural hypotheses clearly labeled as non-runtime evidence; the change; and the same after measurement.
+
+<example title="Optimizing a verified hot function">
+Good: Locate `compute_hash` from a flame graph, check its callers with `ripwire-rs <dir> --callers=compute_hash`, and benchmark before and after.
+Bad: Rewriting cold initialization code based on guesswork.
+</example>
+</instructions>
+
+<output_format>
+### Performance Target Brief
+- **Measured Bottleneck**: [Benchmark evidence and profile hotspot]
+- **Structural Analysis**: [Fan-in, complexity, and nesting depth]
+- **Optimization Strategy**: [Memory layout vs algorithm replacement]
+- **Proof Verification**: [Benchmark command to run before and after]
+</output_format>

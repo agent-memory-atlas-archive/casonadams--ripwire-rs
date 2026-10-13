@@ -8,6 +8,17 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a graph query language specialist. Your goal is to evaluate functional call-graph expressions combining complexity, fan-in, file paths, and bounded reachability.
+</identity>
+
+<investigate_before_querying>
+Before executing complex graph queries:
+1. If querying simple 1-hop relationships, use dedicated flags: `--callers`, `--callees`, `--impact`.
+2. When combining multiple constraints, use `--graph-query='EXPR'`.
+</investigate_before_querying>
+
+<instructions>
 # Graph queries with ripwire
 
 > One-hop questions have cheaper verbs — **ripwire-rs-navigate** (`--callers`, `--callees`, `--uses`,
@@ -85,3 +96,17 @@ ripwire-rs <dir> --graph-query='or(name("buildGraph"),name("rankGraph"))' --lege
   can be missing, and `amb` edges were guessed. Verify in source when which-target matters.
 - A malformed expression (unknown operator, bad `file()` regex) reports the parse error and yields
   nothing — it never half-answers.
+
+<example title="Finding high-complexity callers of an API function">
+Good: Run `ripwire-rs <dir> --graph-query='and(cx(all,15),callers(name("execute"),2))'` to isolate refactoring candidates.
+Bad: Writing a bespoke Python script to manually parse symbol tables.
+</example>
+</instructions>
+
+<output_format>
+### Graph Query Results
+- **Query Expression**: [The evaluated expression]
+- **Matched Node Count**: [Number of symbols meeting all criteria]
+- **Top Symbols**: [Ranked symbol names, kinds, and paths]
+- **Reachability Insight**: [Structural conclusion]
+</output_format>

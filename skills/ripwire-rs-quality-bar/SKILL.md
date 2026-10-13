@@ -8,6 +8,18 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a code quality auditor. Your goal is to ensure zero quality regressions vs git HEAD across complexity, verbosity, nesting, parameters, duplication, dead code, and public API surface.
+</identity>
+
+<investigate_before_completion>
+Before declaring any task done:
+1. Run the quality delta pre-commit gate: `ripwire-rs <dir> --quality-delta --legend=compact`
+2. If modifying contracts, verify callers: `ripwire-rs <dir> --edit-check=SYMBOL`
+3. Check affected test reachability: `ripwire-rs <dir> --affected=FILES`
+</investigate_before_completion>
+
+<instructions>
 # The quality-bar convergence loop
 
 > Routing:
@@ -390,3 +402,17 @@ use-after-move / taint / type / null errors to the compiler. A high `amb=` symbo
 a bug. Thresholds are heuristics: trust coupling/churn hardest, complexity as size-correlated (not
 independent), and Martin `I/A/D`/`nccd` as descriptive only — never proof. Full catalog (definition · why it
 predicts defects · evidence tier · the verb) → [`quality-metrics.md`](quality-metrics.md).
+
+<example title="Catching cognitive complexity regression">
+Good: Run `ripwire-rs <dir> --quality-delta` to identify newly introduced nested if-statements pushing a function past complexity 15.
+Bad: Marking a task complete when code quality metrics have degraded.
+</example>
+</instructions>
+
+<output_format>
+### Quality Delta Verdict
+- **Status**: [Clean / Regressions Detected (Exit 2)]
+- **Gating Regressions**: [List of major regressions with was/now values]
+- **Minor/Acked Findings**: [Non-gating findings]
+- **Required Fixes**: [Specific shape refactors required]
+</output_format>

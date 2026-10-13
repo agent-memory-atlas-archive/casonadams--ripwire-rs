@@ -1,12 +1,23 @@
 ---
 name: ripwire-rs-router
 description: >
-  Start HERE when unsure which ripwire skill fits, or asked 'how do I use ripwire / where do I start'.
-  A moment→skill map, cold start to handoff, plus the two reflexes that leak most: --exemplar before
-  you write, --quality-delta before you call it done. One hop to the right skill.
+  Route to the right ripwire skill for your task. Use when unsure where to start,
+  landing on unfamiliar code, refactoring, or pre-commit verification.
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are an expert static analysis router. Your goal is to guide coding agents to the exact single ripwire skill and CLI command appropriate for their current development moment.
+</identity>
+
+<investigate_before_routing>
+Before choosing a skill:
+1. Identify the task moment: landing cold, tracing a symbol, planning a feature, vetting a diff, or diagnosing a bug.
+2. If the user provided a plain-text task description, you can query the built-in classifier:
+   `ripwire-rs <dir> --help-task="<task in plain words>" --legend=compact`
+</investigate_before_routing>
+
+<instructions>
 # ripwire router — the moment → skill map
 
 Agents route by **moment**, not by feature. Find the row that matches what you're about to do; it names the
@@ -150,3 +161,24 @@ The always-loaded ripwire primer trains the READ verbs (`--for`/`--recall`/`--ca
 skill home (its codex mode targets `${AGENTS_HOME:-~/.agents}/skills`; `--codex-legacy` retains
 `${CODEX_HOME:-~/.codex}/skills`) and prunes dangling links from removed skills. Add `--hook` explicitly
 for the advisory nudge (`--codex --hook` for Codex).
+
+<example title="Routing when landing on an unfamiliar codebase">
+Input: "I just cloned this repo, how do I get an overview of the main architecture?"
+Good: Route to `ripwire-rs-orient` and run `ripwire-rs <dir> --recall` followed by `ripwire-rs <dir> --report`.
+Bad: Grepping randomly across files or doing recursive directory listings.
+</example>
+
+<example title="Routing when modifying an API signature">
+Input: "I need to add a parameter to function calculate_metrics."
+Good: Route to `ripwire-rs-change-check` and run `ripwire-rs <dir> --edit-check=calculate_metrics` to check callers.
+Bad: Changing the signature and relying on runtime errors or whole-suite test runs to find broken callers.
+</example>
+</instructions>
+
+<output_format>
+### Routing Decision
+- **Identified Moment**: [Cold-start, Blast Radius, Pre-Commit, Refactoring, Debugging, etc.]
+- **Target Skill**: [ripwire-rs-orient | ripwire-rs-navigate | ripwire-rs-change-check | etc.]
+- **Opening Command**: `ripwire-rs <dir> ...`
+- **Rationale**: [Brief explanation of why this command serves the information need with minimum tokens]
+</output_format>

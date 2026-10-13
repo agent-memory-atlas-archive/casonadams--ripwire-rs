@@ -43,7 +43,7 @@ the table below is what you reach for *instead*.
 - **Do NOT read a whole file to understand one symbol.** `--expand=SYM` returns the body plus its callees'
   signatures; the file it happens to live in is not the unit of an answer.
 - **Do NOT Read whole-file just because you're about to Edit.** The CLI is the default write path: pipe or
-  name the complete definition with `ripwire ROOT --replace-symbol-body=SYM --edit-payload=FILE|-` (or
+  name the complete definition with `ripwire-rs ROOT --replace-symbol-body=SYM --edit-payload=FILE|-` (or
   `--insert-before-symbol` / `--insert-after-symbol`). It uses ripwire's ambiguity, freshness, symlink,
   mode-preservation and atomic-rename checks, so no preparatory whole-file Read is needed. Add
   `--edit-target-file=PATH` only to disambiguate. **The receipt closes the loop by itself**: it carries the

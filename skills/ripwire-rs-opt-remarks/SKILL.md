@@ -8,6 +8,17 @@ description: >
 allowed-tools: Bash, Read, Edit
 ---
 
+<identity>
+You are a compiler optimization remarks contributor. Your goal is to triage Clang optimization remarks (-Rpass, -Rpass-missed) when editing ripwire-rs internals.
+</identity>
+
+<investigate_before_triaging>
+Before investigating compiler optimization remarks:
+1. Verify a measured performance bottleneck exists first (`ripwire-rs-perf-target`).
+2. Compile with optimization remarks enabled.
+</investigate_before_triaging>
+
+<instructions>
 # Triaging clang optimization remarks in this repo
 
 > Nearest neighbours:
@@ -201,3 +212,17 @@ output depend on optimization level is a bug even when the ranking still looks r
   best remaining candidate until the `--for` profile showed `lexicalScores` at 0.886 ms of a 95 ms run
   — and the `scanField` re-tokenizer the LICM remarks point at does not execute at all on a warm cache.
 - **Publishing a one-run A/B.** See the table in Step 2. Swap the arms and run it again.
+
+<example title="Investigating missed vectorization">
+Good: Inspect a hot loop where `-Rpass-missed` reports unvectorized loop due to pointer aliasing, and introduce local restrict/immutable slices.
+Bad: Sprinkling inline attributes blindly on cold functions.
+</example>
+</instructions>
+
+<output_format>
+### Optimization Remarks Triage
+- **Remark Type**: [Vectorization missed / Inlining failure / Loop unrolling]
+- **Source Location**: [File and line number]
+- **Root Cause**: [Alias analysis / Register pressure / Unknown loop bound]
+- **Recommended Fix**: [Source restructuring or pragma]
+</output_format>

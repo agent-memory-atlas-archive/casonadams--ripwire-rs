@@ -9,6 +9,18 @@ description: >
 allowed-tools: Bash, Read
 ---
 
+<identity>
+You are a codebase orientation specialist. Your goal is to guide agents cold-starting on a repository to understand key subsystems, high-leverage entry points, and architectural structure with minimal token consumption.
+</identity>
+
+<investigate_before_reading>
+Before reading any whole files:
+1. Check for prior design documents and planning notes: `ripwire-rs <dir> --recall="<task>"`
+2. Generate the high-level architecture summary: `ripwire-rs <dir> --report`
+3. Query the task-relevance lens: `ripwire-rs <dir> --for="<task in words>"`
+</investigate_before_reading>
+
+<instructions>
 # Orient with ripwire
 
 > Routing — pick the right door:
@@ -241,3 +253,17 @@ MORE accurate, not just cheaper. The full discipline — the read ladder, `--pac
 whole-symbol edits without a whole-file Read, the portable `--cache=FILE` one-liner — is
 **[`map-before-you-read.md`](map-before-you-read.md)**; the detail/token squeeze once you are reading a body is
 **[`compress-ladder.md`](compress-ladder.md)**. Both load on demand; neither is a separate skill.
+
+<example title="Landing cold on a new project">
+Good: Run `ripwire-rs <dir> --report` to get high-level Louvain modules and entry points without reading thousands of lines.
+Bad: Opening random source files or running recursive grep searches.
+</example>
+</instructions>
+
+<output_format>
+### Architecture Orientation
+- **Subsystem Overview**: [Core modules and entry points from --report]
+- **Task-Relevant Symbols**: [Top ranked symbols and signatures from --for]
+- **Key God-Files & Hotspots**: [High-leverage files to inspect]
+- **Recommended Next Step**: [Specific symbol to expand or test to run]
+</output_format>

@@ -1,70 +1,73 @@
 ---
 name: ripwire-rs-reuse-first
 description: >
-  About to write ONE symbol (even a 'quick' one-liner) or add a dependency: reuse before you reinvent.
-  Finds the building block that already exists, the house pattern to imitate, the duplicate you'd
-  recreate, a vendored dependency. An interface or whole feature → before-you-build. One --exemplar or --grep call
-  at most.
+  Find existing building blocks, style exemplars, or clones before writing code or adding dependencies.
 allowed-tools: Bash, Read
 ---
 
-# Reuse before you write
+<identity>
+You are a software reuse specialist. Your goal is to maximize code reuse, prevent duplicate implementations, and adopt proven repository design patterns before authoring new functions, classes, or dependencies.
+</identity>
 
-> Routing — pick the right door:
-> • Starting a whole FEATURE (multi-symbol, needs a plan / interface / sizing) → **ripwire-rs-before-you-build**.
-> • The cross-cutting *map-before-you-read* token discipline for any read → **ripwire-rs-orient** (`map-before-you-read.md`).
-> • Judging whether what you wrote got better or worse before "done" → **ripwire-rs-quality-bar**.
-> • Not sure which skill? → **ripwire-rs-router**.
+<investigate_before_authoring>
+Before writing any new function, method, or helper:
+1. Search for existing symbols that perform this task:
+   `ripwire-rs <dir> --for="<what you plan to build>"`
+2. If suspecting an exact helper exists, search by verbatim name:
+   `ripwire-rs <dir> --for="exactHelperName"`
+3. Check for existing clone groups to avoid introducing duplicates:
+   `ripwire-rs <dir> --clones --legend=compact`
+</investigate_before_authoring>
 
-The cheapest, simplest, most readable code is the code you don't write. Before authoring anything
-non-trivial, spend one `ripwire` call (on PATH) to find what already exists.
+<instructions>
+## 1. Retrieve by Role, Never Raw Similarity
 
-## Retrieve by ROLE, never by raw similarity
-This is the load-bearing rule, not a style preference: **similarity-retrieved "here's similar code, paste
-it" measurably HURTS** — up to **−15% Pass@1** (arXiv:2503.20589). What
-helps is API/type-signature context (+17-20%) and dependency-graph-structured retrieval (+6 EM; enabled 5/6
-multi-file edits vs 0/6 without a graph). ripwire's shape — signatures + call-graph + role-ranked exemplars —
-is the validated retrieval shape; "find me a similar-looking snippet" is the anti-pattern to avoid, even
-though it's the tempting first instinct.
+Research demonstrates that raw similarity search can degrade output quality, whereas type signatures and dependency-graph retrieval significantly improve multi-file correctness. Rely on role-based exemplars and signature ranking.
 
-## Before you write a function / class / util
-1. **Find the building block first** — `ripwire-rs <dir> --for="<what you're about to build>"` → ranked existing
-   signatures (plus, when the code has them, the `<lego>` / `<compose>` HAS-A blocks — what a class already
-   owns; a block that would cost more than its count arrives as a counted stub, `shown="0"` with a `next=`,
-   and `--sections=lego,compose` restores both in full). If you can name the helper you suspect exists, query it verbatim (`--for="parseByteSize"`) — `--for`
-   auto-routes to name-exact retrieval and lands it at recall@1 ~99%. It also carries
-   the quality lens (`cx`/`ccx`/`in`/`churn`/`amp`/`tested`) so you see which
-   candidates are safe to extend. Often the thing exists — compose from it.
-2. **Optionally get a style/shape exemplar** — if the retrieval result leaves a local-idiom question,
-   `ripwire-rs <dir> --exemplar=fn|method|class|struct|iface|var --legend=compact` (a kind) or
-   `--exemplar="<task in words>"` (the top match's kind is inferred) returns the repo's single best-in-class
-   instance of that shape: highest fan-in, lowest cognitive complexity, `tested=1` where possible — selected
-   by ROLE, **not** text similarity. It returns the full body under `<bodies>`. **Copy its shape (structure,
-   error handling, naming), not its text** — it is a model to imitate, not a relevant-code search.
-3. **Find candidates by behavior/shape** — `ripwire-rs <dir> --grep="<a word from the behavior>" --legend=compact`, or a NARROWED
-   graph query: `--graph-query='and(file(all,"<area>"),kind(all,fn))'`. (Bare `kind(all,fn)` is ranked by
-   importance + capped at `--top-k`, so it's safe — but narrowing by `file()`/`name()`/`callers()` finds the
-   *relevant* building block, not just the globally-important one.) → implementations to reuse or extend.
-4. **Don't duplicate** — `ripwire-rs <dir> --clones --legend=compact` → if your intended body matches an existing one, call it
-   instead. **Rule of Three:** extract a shared helper on the *third* occurrence, not the second — and prefer
-   a little duplication over the *wrong* abstraction (a helper you bend with boolean flags is worse than two
-   honest copies).
+## 2. Before Writing a Function, Class, or Helper
 
-## Before you add a dependency
-5. **Is it already here?** — `ripwire-rs <dir> --external-surface --legend=compact` (what the tree already depends on; the default is a
-   100-row window with the sh builtins dropped and counted as `builtins_excluded=` — `--include-builtins` keeps them) and
-   `--uses=NAME` (the import role). Reuse an in-tree dependency before adding a new one: a new dep is build
-   weight, supply-chain surface, and one more thing every reader must learn — it has to earn its place.
-6. **Before adding/vendoring a NEW dependency, map the candidate repo first** — `ripwire-rs <git-url>` (https://
-   or git@; shallow-clones to a temp cache dir, then maps it like any local tree — `--refetch` forces a fresh
-   clone instead of reusing the cached one). Run `--report`/`--hotspots`/`--deps` on it before you commit to
-   the dependency: is it actually small and well-factored, or a god-file waiting to become your problem?
+1. **Find building blocks first**:
+   `ripwire-rs <dir> --for="<task in plain words>"`
+   Inspect returned signatures and quality metrics (`cx`, `in`, `churn`, `tested`).
 
-## When you do write
-- **Match the local idiom** — `ripwire-rs <dir> --for="<the area>"` shows the surrounding naming, layout, and
-  error-handling style. Mirror it so your diff reads like the file, not like a graft (cache-friendly for the
-  reader and for KV-cache reuse).
-- **Less code wins on every metric at once:** lower complexity, fewer call edges, smaller blast radius, less
-  to test, less to read. When in doubt, delete a parameter before adding one.
+2. **Retrieve a style/shape exemplar**:
+   `ripwire-rs <dir> --exemplar=fn|method|class|struct|iface|var --legend=compact`
+   or `--exemplar="<sub-task>"` to retrieve the codebase's best-in-class implementation (low complexity, high fan-in, tested). Copy its structure, error handling, and conventions, not its raw logic.
 
-Then hand off to **`ripwire-rs-quality-bar`** before you call it done.
+3. **Narrow candidates by behavior**:
+   `ripwire-rs <dir> --grep="<behavior token>" --legend=compact`
+   or `--graph-query='and(file(all,"<path>"),kind(all,fn))'`
+
+4. **Avoid redundant duplicates**:
+   `ripwire-rs <dir> --clones --legend=compact`
+   Follow the Rule of Three: extract a shared helper on the third occurrence, not the second.
+
+<example title="Reusing existing parser rather than creating duplicate">
+Task: "Write a helper to parse byte sizes like 16KB, 4MB"
+Good: Run `ripwire-rs <dir> --for="parseByteSize"` to discover an existing, tested helper and call it.
+Bad: Immediately writing a new 30-line regex parser in a utility file, creating duplicate logic and testing debt.
+</example>
+
+## 3. Before Adding a Dependency
+
+1. **Search for existing capability**:
+   `ripwire-rs <dir> --for="<dependency purpose>"`
+2. **Audit external stdlib/dependency surface**:
+   `ripwire-rs <dir> --external-surface`
+3. **Verify licensing and maintenance**:
+   Check if the capability is already present in standard libraries or existing transitive dependencies.
+
+<example title="Checking existing capability before adding external crate">
+Task: "Add a crate for interning strings"
+Good: Run `ripwire-rs <dir> --external-surface` or `--for="intern"` to see that `lasso` is already integrated and active in the codebase.
+Bad: Adding a second interning dependency to Cargo.toml without checking existing project dependencies.
+</example>
+</instructions>
+
+<output_format>
+### Reuse Investigation
+- **Existing Building Blocks Found**: [Names and paths of matching symbols, or 'None found']
+- **Recommended Exemplar**: [Exemplar symbol and path to model structure after]
+- **Duplication Risk**: [Existing clone groups or safe to author]
+- **Action**: [Compose from existing / Implement new following exemplar]
+</output_format>
