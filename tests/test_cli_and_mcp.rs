@@ -1,5 +1,5 @@
 use ripwire_rs::cli::{
-    GateArgs, MetricsArgs, NavMode, NavigateArgs, SliceArgs, execute_nav_symbol_query,
+    GateArgs, MetricsArgs, NavMode, NavigateArgs, SliceArgs, WrapArgs, execute_nav_symbol_query,
     execute_navigate_with, execute_stream_xml_with,
 };
 use ripwire_rs::{
@@ -636,6 +636,14 @@ fn test_all_new_feature_coverage() {
     let _ = ripwire_rs::metrics::execute_biggest_first_query(".", &ingest, &interner, &mut out);
 
     for agent in ["claude", "cursor", "codex", "opencode", "aider"] {
-        assert!(ripwire_rs::cli::execute_wrap_command(agent, false).is_ok());
+        let cli = Cli {
+            command: Some(Commands::Wrap(WrapArgs {
+                agent: agent.to_string(),
+                force: false,
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        assert!(run_cli_args(cli).is_ok());
     }
 }
