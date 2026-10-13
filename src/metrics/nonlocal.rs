@@ -78,24 +78,27 @@ pub fn serialize_nonlocal_state_xml<W: Write>(
 ) -> io::Result<()> {
     writeln!(
         out,
-        "<nonlocal_state schema=\"ripwire.nonlocal-state/v1\" root=\"{root}\" functions=\"{}\">",
+        "<nonlocal-state schema=\"ripwire.nonlocal-state/v1\" root=\"{root}\" functions=\"{}\">",
         funcs.len()
     )?;
     for f in funcs {
+        let p_esc = crate::serialize::escape::escape_xml_str(&format!("{}:{}", f.path, f.line));
+        let n_esc = crate::serialize::escape::escape_xml_str(&f.sym_name);
         writeln!(
             out,
-            "  <fn p=\"{}:{}\" n=\"{}\" writes=\"{}\" reads=\"{}\">",
-            f.path, f.line, f.sym_name, f.writes, f.reads
+            "  <fn p=\"{p_esc}\" n=\"{n_esc}\" writes=\"{}\" reads=\"{}\">",
+            f.writes, f.reads
         )?;
         for c in &f.cells {
             let mode = if c.is_write { "w" } else { "r" };
+            let cell_n = crate::serialize::escape::escape_xml_str(&c.cell_name);
+            let cell_p = crate::serialize::escape::escape_xml_str(&format!("{}:{}", c.path, c.line));
             writeln!(
                 out,
-                "    <cell n=\"{}\" p=\"{}:{}\" dir=\"{mode}\"/>",
-                c.cell_name, c.path, c.line
+                "    <cell n=\"{cell_n}\" p=\"{cell_p}\" dir=\"{mode}\"/>",
             )?;
         }
         writeln!(out, "  </fn>")?;
     }
-    writeln!(out, "</nonlocal_state>")
+    writeln!(out, "</nonlocal-state>")
 }

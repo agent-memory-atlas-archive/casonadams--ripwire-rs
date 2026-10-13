@@ -77,11 +77,28 @@ where
         &mut io::StdoutLock<'_>,
     ) -> io::Result<()>,
 {
-    let state = crate::mcp::McpState::load(root)
-        .ok_or_else(|| io::Error::other("failed to load repository index"))?;
-    let commits_vec =
-        crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
+    let path = Path::new(root);
+    let commits_vec = crate::git::history::walk_repository_history_scoped(path, cutoff).ok();
     let commits = commits_vec.as_deref().unwrap_or(&[]);
+    let files = crate::crawler::crawl_directory(path, &crate::crawler::CrawlerOptions::default());
+    let registry =
+        crate::ingest::LanguageRegistry::new().map_err(|e| io::Error::other(e.to_string()))?;
+    let interner = crate::domain::Interner::new();
+    let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
+    let graph = crate::graph::Graph::build(&ingest, &interner);
+    let state = crate::mcp::McpState {
+        root: root.to_string(),
+        ingest,
+        graph,
+        ranks: Vec::new(),
+        interner,
+        pr: crate::rank::PageRankResult {
+            ranks: Vec::new(),
+            iterations: 0,
+            converged: true,
+        },
+        commits: None,
+    };
     let mut stdout = io::stdout().lock();
     runner(commits, &state, &mut stdout)
 }

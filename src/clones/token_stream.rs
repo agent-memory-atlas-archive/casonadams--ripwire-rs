@@ -267,6 +267,44 @@ pub fn compute_kgrams(tokens: &[String], k: usize) -> Vec<u64> {
     list
 }
 
+/// Compute 32-bit FNV-1a hash of a token byte slice.
+#[must_use]
+pub fn token_id(token: &[u8]) -> u32 {
+    let mut hash = 0x811c9dc5u32;
+    for &b in token {
+        hash ^= u32::from(b);
+        hash = hash.wrapping_mul(0x01000193);
+    }
+    hash
+}
+
+/// Compute 64-bit FNV-1a hash of a token id window.
+#[must_use]
+pub fn hash_token_window(window: &[u32]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for &id in window {
+        for b in id.to_le_bytes() {
+            hash ^= u64::from(b);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        hash ^= 0x20;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+/// Compute sorted, unique k-gram fingerprint hashes from token ids.
+#[must_use]
+pub fn compute_kgrams_ids(ids: &[u32], k: usize) -> Vec<u64> {
+    if ids.len() < k {
+        return Vec::new();
+    }
+    let mut list: Vec<u64> = ids.windows(k).map(hash_token_window).collect();
+    list.sort_unstable();
+    list.dedup();
+    list
+}
+
 /// Compute Jaccard similarity of two sorted, unique k-gram hash vectors.
 #[must_use]
 pub fn compute_jaccard(a: &[u64], b: &[u64]) -> f64 {

@@ -27,8 +27,6 @@ impl McpState {
         let graph = Graph::build(&ingest, &interner);
         let pr = graph.page_rank(&PageRankConfig::default());
         let ranks = pr.ranks.clone();
-
-        let commits = crate::git::history::walk_repository_history(path).ok();
         Some(Self {
             root: root.to_string(),
             ingest,
@@ -36,7 +34,7 @@ impl McpState {
             ranks,
             interner,
             pr,
-            commits,
+            commits: None,
         })
     }
 

@@ -1,5 +1,5 @@
 use super::token_stream::{
-    compute_jaccard, compute_kgrams, compute_lcs_len, hash_tokens, tokenize_body,
+    compute_jaccard, compute_kgrams_ids, compute_lcs_len, hash_tokens, token_id, tokenize_body,
 };
 use crate::domain::{IngestResult, Interner, NodeId, SymKind};
 use rayon::prelude::*;
@@ -63,29 +63,40 @@ struct BodyTokens {
     raw_hash: u64,
     norm_hash: u64,
     norm_token_ids: Vec<u32>,
-    norm_tokens: Vec<String>,
     kgrams: Vec<u64>,
 }
 
-fn is_threshold_ladder(tokens: &[String]) -> bool {
-    let if_count = tokens.iter().filter(|&t| t == "if").count();
-    let ret_count = tokens.iter().filter(|&t| t == "return").count();
+const ID_IF: u32 = 0x3938_6e06;
+const ID_RETURN: u32 = 0x85ee_37bf;
+const ID_CASE: u32 = 0x9b25_38b1;
+const ID_ARROW: u32 = 0x91f4_de62;
+const ID_SWITCH: u32 = 0x93e0_5f71;
+const ID_MATCH: u32 = 0x7e20_2f96;
+const ID_DOT: u32 = 0x2b0c_98f1;
+const ID_EQ: u32 = 0x380c_ad68;
+
+fn is_threshold_ladder(tokens: &[u32]) -> bool {
+    let if_count = tokens.iter().filter(|&&t| t == ID_IF).count();
+    let ret_count = tokens.iter().filter(|&&t| t == ID_RETURN).count();
     if_count >= 2 && ret_count >= 2 && tokens.len() <= 80
 }
 
-fn is_switch_table(tokens: &[String]) -> bool {
-    let case_count = tokens.iter().filter(|&t| t == "case" || t == "=>").count();
-    let switch_or_match = tokens.iter().any(|t| t == "switch" || t == "match");
+fn is_switch_table(tokens: &[u32]) -> bool {
+    let case_count = tokens
+        .iter()
+        .filter(|&&t| t == ID_CASE || t == ID_ARROW)
+        .count();
+    let switch_or_match = tokens.iter().any(|&t| t == ID_SWITCH || t == ID_MATCH);
     switch_or_match && case_count >= 2 && tokens.len() <= 80
 }
 
-fn is_builder_chain(tokens: &[String]) -> bool {
-    let dot_count = tokens.iter().filter(|&t| t == ".").count();
-    let eq_count = tokens.iter().filter(|&t| t == "=").count();
+fn is_builder_chain(tokens: &[u32]) -> bool {
+    let dot_count = tokens.iter().filter(|&&t| t == ID_DOT).count();
+    let eq_count = tokens.iter().filter(|&&t| t == ID_EQ).count();
     eq_count >= 3 && dot_count >= 3 && tokens.len() <= 80
 }
 
-fn classify_body_idiom(tokens: &[String]) -> CloneIdiom {
+fn classify_body_idiom(tokens: &[u32]) -> CloneIdiom {
     if is_threshold_ladder(tokens) {
         CloneIdiom::ThresholdLadder
     } else if is_switch_table(tokens) {
@@ -101,31 +112,23 @@ fn check_group_idiom(members: &[&BodyTokens]) -> CloneIdiom {
     let Some(first_member) = members.first() else {
         return CloneIdiom::None;
     };
-    let first = classify_body_idiom(&first_member.norm_tokens);
+    let first = classify_body_idiom(&first_member.norm_token_ids);
     if first == CloneIdiom::None {
         return CloneIdiom::None;
     }
     for m in &members[1..] {
-        if classify_body_idiom(&m.norm_tokens) != first {
+        if classify_body_idiom(&m.norm_token_ids) != first {
             return CloneIdiom::None;
         }
     }
     first
 }
 
-struct RawCandidate {
-    id: NodeId,
-    raw_hash: u64,
-    norm_hash: u64,
-    norm_tokens: Vec<String>,
-    kgrams: Vec<u64>,
-}
-
 fn extract_file_candidates(
     file_bytes: &[u8],
     syms: &[&crate::domain::Symbol],
     min_tokens: usize,
-) -> Vec<RawCandidate> {
+) -> Vec<BodyTokens> {
     let mut out = Vec::new();
     for sym in syms {
         let start = (sym.sig_start_byte as usize).min(file_bytes.len());
@@ -140,12 +143,13 @@ fn extract_file_candidates(
         }
         let raw_hash = hash_tokens(&raw_tokens);
         let norm_hash = hash_tokens(&norm_tokens);
-        let kgrams = compute_kgrams(&norm_tokens, 5);
-        out.push(RawCandidate {
+        let norm_token_ids: Vec<u32> = norm_tokens.iter().map(|t| token_id(t.as_bytes())).collect();
+        let kgrams = compute_kgrams_ids(&norm_token_ids, 5);
+        out.push(BodyTokens {
             id: sym.id,
             raw_hash,
             norm_hash,
-            norm_tokens,
+            norm_token_ids,
             kgrams,
         });
     }
@@ -172,7 +176,7 @@ fn extract_candidate_bodies(
         }
     }
 
-    let raw_candidates: Vec<RawCandidate> = symbols_by_file
+    symbols_by_file
         .into_par_iter()
         .enumerate()
         .filter(|(_, syms)| !syms.is_empty())
@@ -189,27 +193,6 @@ fn extract_candidate_bodies(
             Some(extract_file_candidates(&file_bytes, &syms, min_tokens))
         })
         .flatten()
-        .collect();
-
-    let mut rodeo = lasso::Rodeo::default();
-    raw_candidates
-        .into_iter()
-        .map(|c| {
-            use lasso::Key;
-            let norm_token_ids = c
-                .norm_tokens
-                .iter()
-                .map(|t| rodeo.get_or_intern(t).into_usize() as u32)
-                .collect();
-            BodyTokens {
-                id: c.id,
-                raw_hash: c.raw_hash,
-                norm_hash: c.norm_hash,
-                norm_token_ids,
-                norm_tokens: c.norm_tokens,
-                kgrams: c.kgrams,
-            }
-        })
         .collect()
 }
 
@@ -234,7 +217,7 @@ fn group_exact_clones(candidates: &[BodyTokens]) -> Vec<CloneGroup> {
         };
 
         let members: Vec<NodeId> = list.iter().map(|c| c.id).collect();
-        let token_count = list[0].norm_tokens.len();
+        let token_count = list[0].norm_token_ids.len();
         let tokens_saved = (members.len() - 1) * token_count;
         let idiom = check_group_idiom(&list);
         groups.push(CloneGroup {
@@ -253,8 +236,8 @@ const TYPE3_MAX_BUCKET: usize = 1024;
 const TYPE3_MAX_TOKENS_FOR_LCS: usize = 4096;
 
 fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGroup> {
-    let len_a = ca.norm_tokens.len();
-    let len_b = cb.norm_tokens.len();
+    let len_a = ca.norm_token_ids.len();
+    let len_b = cb.norm_token_ids.len();
     let min_len = len_a.min(len_b) as f64;
     let max_len = len_a.max(len_b) as f64;
     if min_len / max_len < 0.70 {
@@ -307,9 +290,9 @@ fn build_kgram_inverted_index(
 fn collect_bucket_pairs(candidates: &[BodyTokens], bucket: &[u32], pairs: &mut Vec<u64>) {
     for i in 0..bucket.len() {
         let ia = bucket[i];
-        let len_a = candidates[ia as usize].norm_tokens.len();
+        let len_a = candidates[ia as usize].norm_token_ids.len();
         for &ib in &bucket[i + 1..] {
-            let len_b = candidates[ib as usize].norm_tokens.len();
+            let len_b = candidates[ib as usize].norm_token_ids.len();
             let min_len = len_a.min(len_b) as f64;
             let max_len = len_a.max(len_b) as f64;
             if min_len / max_len >= 0.70 {
@@ -380,7 +363,7 @@ pub fn find_clones_in_root(
     root: Option<&std::path::Path>,
 ) -> Vec<CloneGroup> {
     let mut candidates = extract_candidate_bodies(ingest, interner, min_tokens, sources, root);
-    candidates.sort_unstable_by_key(|c| c.norm_tokens.len());
+    candidates.sort_unstable_by_key(|c| c.norm_token_ids.len());
     let mut exact_groups = group_exact_clones(&candidates);
 
     let mut exact_matched = HashMap::new();
