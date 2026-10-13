@@ -570,15 +570,35 @@
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Provisions 18 pre-packaged ripwire-rs agent skills and the active manifest (<code>.ripwire-rs-manifest-v1</code>) directly into <code>~/.agents/skills</code> (or a custom directory).</p>
+            <p class="cmd-desc">Provisions 17 pre-packaged ripwire-rs agent skills and the active manifest (<code>.ripwire-rs-manifest-v1</code>) directly into <code>~/.agents/skills</code> (or a custom directory).</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
-            <p class="cmd-desc">Embeds all 18 skill definition packages into the binary, resolving cross-platform agent discovery paths and repairing stale or broken symlinks safely.</p>
+            <p class="cmd-desc">Embeds all 17 skill definition packages into the binary, resolving cross-platform agent discovery paths and repairing stale or broken symlinks safely.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">When To Use It</span>
             <p class="cmd-desc">When onboarding new coding agents (Claude Code, Codex, Omp, OpenCode) to immediately activate ripwire skills across any repository.</p>
+          </div>
+        </div>
+      </div>
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs wrap &lt;AGENT&gt;</code></div>
+          <span class="cmd-badge">Agents</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Generates copy-paste integration stanzas to wire ripwire-rs into coding agents (<code>claude</code>, <code>cursor</code>, <code>codex</code>, <code>windsurf</code>, <code>gemini</code>, <code>opencode</code>, <code>aider</code>).</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Emits deterministic configuration recipes, verifying CLI vs MCP registration modes and ensuring zero-overhead integration.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Run <code>ripwire-rs wrap &lt;agent&gt;</code> (e.g. <code>ripwire-rs wrap claude</code>) during initial agent environment setup.</p>
           </div>
         </div>
       </div>

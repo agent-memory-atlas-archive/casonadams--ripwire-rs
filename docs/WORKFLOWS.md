@@ -222,14 +222,14 @@ ripwire-rs . --note-add="symbol: gotcha note"
 # Launch native stdio Model Context Protocol (MCP) server for coding agents
 ripwire-rs mcp
 
-# Install 18 pre-packaged ripwire agent skills to ~/.agents/skills (or custom path)
+# Install 17 pre-packaged ripwire-rs agent skills to ~/.agents/skills (or custom path)
 ripwire-rs --add-skills
 ```
 
 ### Benefits
 - **Precision Context Bundles**: Extracts only relevant symbol bodies into CDATA blocks, conserving prompt token budgets.
 - **Batching Economy**: `--batch` executes up to 16 queries in a single turn, eliminating agent tool-call round-trip latency.
-- **Instant Agent Skills**: `--add-skills` automatically provisions 18 standardized agent skills and active manifest into `~/.agents/skills` for Claude Code, Codex, and Omp.
+- **Instant Agent Skills**: `--add-skills` automatically provisions 17 standardized agent skills and active manifest into `~/.agents/skills` for Claude Code, Codex, and Omp.
 
 ---
 
@@ -248,7 +248,7 @@ ripwire-rs . --test-gate
 # Quality Regression Gate: checks quality regressions against base branch / HEAD (exits 2 on violation)
 ripwire-rs . --quality-delta
 
-# Upstream Parity Validation: verifies 1:1 input/output equivalence across 36 commands
+# Upstream Parity Validation: verifies 1:1 input/output equivalence across 39 commands
 make validate REPO=.
 ```
 

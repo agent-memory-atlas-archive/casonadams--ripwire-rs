@@ -442,7 +442,7 @@ pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
             execute_skills_install(target)
         }
         Commands::Wrap(wrap_args) => {
-            crate::cli::queries::execute_wrap_command(&wrap_args.agent, wrap_args.force)
+            crate::cli::wrap::execute_wrap_command(&wrap_args.agent, wrap_args.force)
         }
     }
 }

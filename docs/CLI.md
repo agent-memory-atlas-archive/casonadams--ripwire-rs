@@ -186,7 +186,7 @@ ripwire-rs . --doctor
 ripwire-rs . --notes
 ripwire-rs . --note-add="symbol: gotcha note"
 
-# Install 18 pre-packaged ripwire agent skills to ~/.agents/skills (or custom path)
+# Install 17 pre-packaged ripwire-rs agent skills to ~/.agents/skills (or custom path)
 ripwire-rs --add-skills
 ```
 * **Benefits:** Minimal prompt token consumption with maximum semantic density for coding agents.
@@ -201,3 +201,4 @@ ripwire-rs --add-skills
 - `ripwire-rs slice [PATH] --symbol <SYM> --var <VAR>`: Intra-procedural slicing.
 - `ripwire-rs mcp`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
 - `ripwire-rs skills [DIR]`: Install and manage 17 ripwire-rs agent skills in `~/.agents/skills`.
+- `ripwire-rs wrap <AGENT>`: Generate agent integration recipe (`claude`, `cursor`, `codex`, `windsurf`, `gemini`, `opencode`, `aider`).
