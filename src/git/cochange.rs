@@ -463,6 +463,7 @@ mod tests {
             CommitInfo {
                 id: "c1".to_string(),
                 timestamp: 100,
+                author: "alice@example.com".to_string(),
                 changed_files: vec![
                     "src/ui.rs".to_string(),
                     "src/db.rs".to_string(),
@@ -472,6 +473,7 @@ mod tests {
             CommitInfo {
                 id: "c2".to_string(),
                 timestamp: 200,
+                author: "alice@example.com".to_string(),
                 changed_files: vec![
                     "src/ui.rs".to_string(),
                     "src/db.rs".to_string(),
@@ -481,6 +483,7 @@ mod tests {
             CommitInfo {
                 id: "c3".to_string(),
                 timestamp: 300,
+                author: "bob@example.com".to_string(),
                 changed_files: vec![
                     "src/ui.rs".to_string(),
                     "src/db.rs".to_string(),

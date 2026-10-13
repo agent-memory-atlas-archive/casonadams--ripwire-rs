@@ -112,16 +112,19 @@ fn test_git_calendar_and_since_filtering() {
         CommitInfo {
             id: "sha3".to_string(),
             timestamp: epoch,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string()],
         },
         CommitInfo {
             id: "sha2".to_string(),
             timestamp: epoch - 7 * 86400,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string(), "src/callee.rs".to_string()],
         },
         CommitInfo {
             id: "sha1".to_string(),
             timestamp: epoch - 30 * 86400,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/unrelated.rs".to_string()],
         },
     ];
@@ -139,16 +142,19 @@ fn test_git_file_churn_and_decay() {
         CommitInfo {
             id: "c3".to_string(),
             timestamp: epoch,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string(), "src/callee.rs".to_string()],
         },
         CommitInfo {
             id: "c2".to_string(),
             timestamp: epoch - 90 * 86400, // 90 days ago: weight should be ~0.5
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string()],
         },
         CommitInfo {
             id: "bomb".to_string(),
             timestamp: epoch - 100,
+            author: "dev@example.com".to_string(),
             changed_files: (0..150).map(|i| format!("file_{i}.rs")).collect(),
         },
     ];
@@ -201,6 +207,7 @@ fn test_git_cochange_surprising_and_recurrence() {
         CommitInfo {
             id: "c0".to_string(),
             timestamp: 600,
+            author: "dev@example.com".to_string(),
             changed_files: vec![
                 "src/caller.rs".to_string(),
                 "src/callee.rs".to_string(),
@@ -211,6 +218,7 @@ fn test_git_cochange_surprising_and_recurrence() {
         CommitInfo {
             id: "c1".to_string(),
             timestamp: 500,
+            author: "dev@example.com".to_string(),
             changed_files: vec![
                 "src/caller.rs".to_string(),
                 "src/callee.rs".to_string(),
@@ -220,6 +228,7 @@ fn test_git_cochange_surprising_and_recurrence() {
         CommitInfo {
             id: "c2".to_string(),
             timestamp: 400,
+            author: "dev@example.com".to_string(),
             changed_files: vec![
                 "src/caller.rs".to_string(),
                 "src/callee.rs".to_string(),
@@ -229,6 +238,7 @@ fn test_git_cochange_surprising_and_recurrence() {
         CommitInfo {
             id: "c3".to_string(),
             timestamp: 300,
+            author: "dev@example.com".to_string(),
             changed_files: vec![
                 "src/caller.rs".to_string(),
                 "src/callee.rs".to_string(),
@@ -238,6 +248,7 @@ fn test_git_cochange_surprising_and_recurrence() {
         CommitInfo {
             id: "c4".to_string(),
             timestamp: 200,
+            author: "dev@example.com".to_string(),
             changed_files: vec![
                 "src/caller.rs".to_string(),
                 "src/callee.rs".to_string(),
@@ -248,6 +259,7 @@ fn test_git_cochange_surprising_and_recurrence() {
         CommitInfo {
             id: "c5".to_string(),
             timestamp: 100,
+            author: "dev@example.com".to_string(),
             changed_files: vec![
                 "src/caller.rs".to_string(),
                 "src/callee.rs".to_string(),
@@ -351,16 +363,19 @@ fn test_cli_cochange_execution_and_xml_output() {
         CommitInfo {
             id: "c1".to_string(),
             timestamp: 100,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string(), "src/unrelated.rs".to_string()],
         },
         CommitInfo {
             id: "c2".to_string(),
             timestamp: 200,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string(), "src/unrelated.rs".to_string()],
         },
         CommitInfo {
             id: "c3".to_string(),
             timestamp: 300,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string(), "src/unrelated.rs".to_string()],
         },
     ];
@@ -393,16 +408,19 @@ fn test_mcp_cochange_tool_json_rpc() {
         CommitInfo {
             id: "c1".to_string(),
             timestamp: 100,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string(), "src/unrelated.rs".to_string()],
         },
         CommitInfo {
             id: "c2".to_string(),
             timestamp: 200,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string(), "src/unrelated.rs".to_string()],
         },
         CommitInfo {
             id: "c3".to_string(),
             timestamp: 300,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/caller.rs".to_string(), "src/unrelated.rs".to_string()],
         },
     ];

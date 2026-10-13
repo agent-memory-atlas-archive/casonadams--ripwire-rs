@@ -106,16 +106,20 @@ pub fn call_flags(ingest: &IngestResult, interner: &Interner) -> Value {
             if trimmed.starts_with("#ifndef ") || trimmed.starts_with("#ifdef ") {
                 let flag = trimmed.split_whitespace().nth(1).unwrap_or("");
                 flags.push(json!({
+                    "name": flag,
                     "flag": flag,
-                    "kind": "preprocessor_guard",
+                    "kind": "compile",
                     "file": path,
+                    "path": path,
                     "line": idx + 1
                 }));
             } else if trimmed.contains("env::var(") || trimmed.contains("getenv(") {
                 flags.push(json!({
+                    "name": trimmed,
                     "flag": trimmed,
-                    "kind": "env_read",
+                    "kind": "env",
                     "file": path,
+                    "path": path,
                     "line": idx + 1
                 }));
             }
@@ -124,7 +128,62 @@ pub fn call_flags(ingest: &IngestResult, interner: &Interner) -> Value {
 
     json!({
         "flags_count": flags.len(),
+        "gates": flags.clone(),
         "flags": flags
+    })
+}
+
+/// Execute `owners` tool: git commit author ownership per file.
+fn compute_file_author_weights(
+    commits: &[crate::git::history::CommitInfo],
+    path_filter: Option<&str>,
+) -> HashMap<String, HashMap<String, f64>> {
+    let mut file_authors: HashMap<String, HashMap<String, f64>> = HashMap::new();
+    let head_epoch = commits.first().map_or(0, |c| c.timestamp);
+
+    for c in commits {
+        let age_sec = (head_epoch - c.timestamp).max(0);
+        let age_days = (age_sec as f64) / 86400.0;
+        let weight = 0.5f64.powf(age_days / 180.0);
+        let author = if c.author.is_empty() {
+            "unknown".to_string()
+        } else {
+            c.author.clone()
+        };
+
+        for f in &c.changed_files {
+            if path_filter.is_none() || path_filter.is_some_and(|pf| f.contains(pf)) {
+                let entry = file_authors.entry(f.clone()).or_default();
+                *entry.entry(author.clone()).or_insert(0.0) += weight;
+            }
+        }
+    }
+    file_authors
+}
+
+fn score_file_ownership(f: String, author_weights: HashMap<String, f64>) -> Value {
+    let authors_count = author_weights.len();
+    let total_weight: f64 = author_weights.values().sum();
+    let (top_author, top_weight) = author_weights
+        .into_iter()
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or_default();
+    let share = if total_weight > 0.0 {
+        top_weight / total_weight
+    } else {
+        1.0
+    };
+    let bf = if share >= 0.80 { 1 } else { 0 };
+
+    json!({
+        "file": f.clone(),
+        "path": f,
+        "authors": authors_count,
+        "bf": bf,
+        "top": top_author.clone(),
+        "top_author": top_author,
+        "share": (share * 100.0).round() / 100.0,
+        "top_share": (share * 100.0).round() / 100.0,
     })
 }
 
@@ -137,30 +196,17 @@ pub fn call_owners(
         return json!({ "error": "git commit history unavailable" });
     };
 
-    let mut file_commit_counts: HashMap<String, usize> = HashMap::new();
-
-    for c in commits {
-        for f in &c.changed_files {
-            if path_filter.is_none() || path_filter.is_some_and(|pf| f.contains(pf)) {
-                *file_commit_counts.entry(f.clone()).or_default() += 1;
-            }
-        }
-    }
-
-    let mut file_results: Vec<Value> = file_commit_counts
+    let file_authors = compute_file_author_weights(commits, path_filter);
+    let mut file_results: Vec<Value> = file_authors
         .into_iter()
-        .map(|(f, count)| {
-            json!({
-                "file": f.clone(),
-                "path": f,
-                "commits": count,
-                "authors": 1,
-                "bf": 1,
-                "share": 1.0
-            })
-        })
+        .map(|(f, map)| score_file_ownership(f, map))
         .collect();
-    file_results.sort_by_key(|b| std::cmp::Reverse(b["commits"].as_u64().unwrap_or(0)));
+
+    file_results.sort_by(|a, b| {
+        let path_a = a["path"].as_str().unwrap_or("");
+        let path_b = b["path"].as_str().unwrap_or("");
+        path_a.cmp(path_b)
+    });
 
     json!({
         "files_analyzed": file_results.len(),
@@ -169,9 +215,9 @@ pub fn call_owners(
     })
 }
 
-/// Execute `whereis` tool: identify where a symbol lives.
+/// Execute `whereis` tool: identify where a symbol lives (definitions and references).
 pub fn call_whereis(ingest: &IngestResult, interner: &Interner, symbol_name: &str) -> Value {
-    let mut locations = Vec::new();
+    let mut hits = Vec::new();
 
     for sym in &ingest.symbols {
         let n = interner.resolve(&sym.name);
@@ -181,11 +227,33 @@ pub fn call_whereis(ingest: &IngestResult, interner: &Interner, symbol_name: &st
                 .get(sym.file_id as usize)
                 .map(|f| interner.resolve(&f.path))
                 .unwrap_or("");
-            locations.push(json!({
+            hits.push(json!({
                 "symbol": n,
-                "kind": sym.kind.tag(),
+                "kind": "def",
                 "file": file_path,
+                "path": file_path,
                 "line": sym.line,
+                "text": format!("{} {}", sym.kind.tag(), n),
+                "on_head": true
+            }));
+        }
+    }
+
+    for r in &ingest.references {
+        let n = interner.resolve(&r.callee_name);
+        if n == symbol_name {
+            let file_path = ingest
+                .files
+                .get(r.file_id as usize)
+                .map(|f| interner.resolve(&f.path))
+                .unwrap_or("");
+            hits.push(json!({
+                "symbol": n,
+                "kind": "ref",
+                "file": file_path,
+                "path": file_path,
+                "line": r.line,
+                "text": n,
                 "on_head": true
             }));
         }
@@ -193,18 +261,61 @@ pub fn call_whereis(ingest: &IngestResult, interner: &Interner, symbol_name: &st
 
     json!({
         "symbol": symbol_name,
-        "count": locations.len(),
-        "locations": locations
+        "count": hits.len(),
+        "hits": hits.clone(),
+        "locations": hits
     })
+}
+
+fn find_stray_branches() -> Vec<Value> {
+    let Ok(output) = std::process::Command::new("git")
+        .args(["for-each-ref", "--format=%(refname:short)", "refs/heads/"])
+        .output()
+    else {
+        return Vec::new();
+    };
+    if !output.status.success() {
+        return Vec::new();
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut branches = Vec::new();
+    for line in text.lines() {
+        let branch = line.trim();
+        if branch.is_empty() || branch == "main" || branch == "master" || branch == "HEAD" {
+            continue;
+        }
+        let Ok(count_out) = std::process::Command::new("git")
+            .args(["rev-list", "--count", &format!("HEAD..{branch}")])
+            .output()
+        else {
+            continue;
+        };
+        if count_out.status.success() {
+            let count_str = String::from_utf8_lossy(&count_out.stdout)
+                .trim()
+                .to_string();
+            let unmerged = count_str.parse::<u64>().unwrap_or(0);
+            if unmerged > 0 {
+                branches.push(json!({
+                    "branch": branch,
+                    "unmerged_commits": unmerged,
+                }));
+            }
+        }
+    }
+    branches
 }
 
 /// Execute `stray_content` tool.
 pub fn call_stray_content(commits: Option<&[crate::git::history::CommitInfo]>) -> Value {
     let commit_count = commits.map(|c| c.len()).unwrap_or(0);
+    let branches = find_stray_branches();
+    let stray_count = branches.len();
     json!({
-        "stray_count": 0,
+        "stray_count": stray_count,
         "commits_inspected": commit_count,
-        "status": "clean"
+        "branches": branches,
+        "status": if stray_count == 0 { "clean" } else { "diverged" }
     })
 }
 
@@ -218,5 +329,57 @@ mod tests {
         let interner = Interner::new();
         let res = call_mentions(&ingest, &interner, "nonexistent");
         assert_eq!(res["total_mentions"], 0);
+    }
+
+    #[test]
+    fn test_owners_attribution() {
+        let commits = vec![
+            crate::git::history::CommitInfo {
+                id: "c1".to_string(),
+                timestamp: 1000,
+                author: "alice@example.com".to_string(),
+                changed_files: vec!["src/lib.rs".to_string()],
+            },
+            crate::git::history::CommitInfo {
+                id: "c2".to_string(),
+                timestamp: 2000,
+                author: "bob@example.com".to_string(),
+                changed_files: vec!["src/lib.rs".to_string()],
+            },
+        ];
+        let res = call_owners(Some(&commits), None);
+        assert_eq!(res["files_analyzed"], 1);
+        let files = res["files"].as_array().unwrap();
+        assert_eq!(files[0]["authors"], 2);
+    }
+
+    #[test]
+    fn test_whereis_and_stray() {
+        let mut ingest = IngestResult::new();
+        let interner = Interner::new();
+        let f0 = crate::domain::FileInfo {
+            id: 0,
+            path: interner.intern("src/main.rs"),
+            lang: crate::domain::Lang::Rust,
+            line_count: 10,
+            byte_size: 100,
+        };
+        let sym = crate::domain::Symbol::new(
+            0,
+            interner.intern("main"),
+            interner.intern("c_main"),
+            crate::domain::SymKind::Function,
+            crate::domain::Lang::Rust,
+            0,
+            1,
+        );
+        ingest.files.push(f0);
+        ingest.symbols.push(sym);
+
+        let whereis_res = call_whereis(&ingest, &interner, "main");
+        assert_eq!(whereis_res["count"], 1);
+
+        let stray_res = call_stray_content(None);
+        assert!(stray_res.get("stray_count").is_some());
     }
 }

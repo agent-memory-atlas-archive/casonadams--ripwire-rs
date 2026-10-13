@@ -63,15 +63,22 @@ pub fn serialize_grep_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> 
 /// Serialize `whereis` branch symbol search to Ripwire XML.
 pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let sym = val["symbol"].as_str().unwrap_or("");
-    let hits = val["hits"].as_array();
+    let hits = val
+        .get("hits")
+        .or_else(|| val.get("locations"))
+        .and_then(Value::as_array);
     let count = hits.map_or(0, |h| h.len());
     let attrs = format!("schema=\"ripwire.whereis/v1\" sym=\"{sym}\" root=\".\" count=\"{count}\"");
     write_xml_envelope(out, "whereis", &attrs, |out| {
         if let Some(items) = hits {
             for h in items {
-                let path = h["path"].as_str().unwrap_or("");
+                let path = h
+                    .get("path")
+                    .or_else(|| h.get("file"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
                 let line = h["line"].as_u64().unwrap_or(0);
-                let kind = h["kind"].as_str().unwrap_or("");
+                let kind = h["kind"].as_str().unwrap_or("def");
                 let text = h["text"].as_str().unwrap_or("");
                 writeln!(
                     out,
@@ -100,6 +107,7 @@ pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()
                     .and_then(Value::as_str)
                     .unwrap_or("");
                 let authors = f.get("authors").and_then(Value::as_u64).unwrap_or(1);
+                let bf = f.get("bf").and_then(Value::as_u64).unwrap_or(1);
                 let top = f
                     .get("top_author")
                     .or_else(|| f.get("top"))
@@ -112,7 +120,7 @@ pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()
                     .unwrap_or(1.0);
                 writeln!(
                     out,
-                    "  <f p=\"{path}\" authors=\"{authors}\" top=\"{top}\" share=\"{share:.2}\"/>"
+                    "  <f p=\"{path}\" authors=\"{authors}\" bf=\"{bf}\" top=\"{top}\" share=\"{share:.2}\"/>"
                 )?;
             }
         }
@@ -122,15 +130,26 @@ pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()
 
 /// Serialize `flags` environment and compile gates to Ripwire XML.
 pub fn serialize_flags_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let gates = val["gates"].as_array();
+    let gates = val
+        .get("gates")
+        .or_else(|| val.get("flags"))
+        .and_then(Value::as_array);
     let count = gates.map_or(0, |g| g.len());
     let attrs = format!("schema=\"ripwire.flags/v1\" root=\".\" count=\"{count}\"");
     write_xml_envelope(out, "flags", &attrs, |out| {
         if let Some(items) = gates {
             for g in items {
-                let name = g["name"].as_str().unwrap_or("");
-                let kind = g["kind"].as_str().unwrap_or("");
-                let file = g["file"].as_str().unwrap_or("");
+                let name = g
+                    .get("name")
+                    .or_else(|| g.get("flag"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let kind = g.get("kind").and_then(Value::as_str).unwrap_or("compile");
+                let file = g
+                    .get("file")
+                    .or_else(|| g.get("path"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
                 let line = g["line"].as_u64().unwrap_or(0);
                 writeln!(
                     out,
@@ -186,7 +205,11 @@ pub fn serialize_mentions_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<
     write_xml_envelope(out, "mentions", &attrs, |out| {
         if let Some(items) = docs {
             for d in items {
-                let path = d["path"].as_str().unwrap_or("");
+                let path = d
+                    .get("path")
+                    .or_else(|| d.get("file"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
                 let mentions = d["mentions"].as_u64().unwrap_or(0);
                 writeln!(out, "  <doc p=\"{path}\" mentions=\"{mentions}\"/>")?;
             }

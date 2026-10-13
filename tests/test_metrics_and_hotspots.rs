@@ -233,16 +233,19 @@ fn test_cli_hotspots_execution_xml_output() {
         CommitInfo {
             id: "c1".to_string(),
             timestamp: 1000,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/core.rs".to_string()],
         },
         CommitInfo {
             id: "c2".to_string(),
             timestamp: 2000,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/core.rs".to_string()],
         },
         CommitInfo {
             id: "c3".to_string(),
             timestamp: 3000,
+            author: "dev@example.com".to_string(),
             changed_files: vec!["src/core.rs".to_string()],
         },
     ];

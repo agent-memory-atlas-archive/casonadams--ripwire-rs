@@ -12,6 +12,7 @@ pub const DEFAULT_COCHANGE_MONTHS: u32 = 18;
 pub struct CommitInfo {
     pub id: String,
     pub timestamp: i64,
+    pub author: String,
     pub changed_files: Vec<String>,
 }
 
@@ -335,13 +336,17 @@ fn diff_commit_tree(
         Vec::new()
     };
 
+    let author = commit
+        .author()
+        .map(|a| a.email.to_string())
+        .unwrap_or_default();
     Ok(CommitInfo {
         id: meta.id.to_string(),
         timestamp: meta.timestamp,
+        author,
         changed_files,
     })
 }
-
 fn process_commits_parallel(
     repo: &gix::Repository,
     metas: Vec<RawCommitMeta>,
@@ -358,33 +363,38 @@ fn process_commits_parallel(
 }
 
 /// Walk git commit history and extract changed files per commit using `gix`.
-fn parse_commit_header(line: &[u8]) -> Option<(String, i64)> {
+fn parse_commit_header(line: &[u8]) -> Option<(String, i64, String)> {
     let rest = line.strip_prefix(b"commit ")?;
     let mut parts = rest.split(|&b| b == b' ');
     let sha = parts.next()?;
     let ts = parts.next()?;
+    let author_raw = parts.next().unwrap_or(b"");
     let id = String::from_utf8_lossy(sha).into_owned();
     let timestamp = std::str::from_utf8(ts).ok()?.parse().ok()?;
-    Some((id, timestamp))
+    let author = String::from_utf8_lossy(author_raw).into_owned();
+    Some((id, timestamp, author))
 }
 
 fn parse_git_log_stream(output: &[u8]) -> Option<Vec<CommitInfo>> {
     let mut commits = Vec::new();
     let mut current_id = String::new();
     let mut current_ts = 0i64;
+    let mut current_author = String::new();
     let mut current_files = Vec::new();
 
     for line in output.split(|&b| b == b'\n') {
-        if let Some((id, ts)) = parse_commit_header(line) {
+        if let Some((id, ts, author)) = parse_commit_header(line) {
             if !current_id.is_empty() {
                 commits.push(CommitInfo {
                     id: std::mem::take(&mut current_id),
                     timestamp: current_ts,
+                    author: std::mem::take(&mut current_author),
                     changed_files: std::mem::take(&mut current_files),
                 });
             }
             current_id = id;
             current_ts = ts;
+            current_author = author;
         } else if !current_id.is_empty() && !line.is_empty() {
             current_files.push(String::from_utf8_lossy(line).into_owned());
         }
@@ -393,6 +403,7 @@ fn parse_git_log_stream(output: &[u8]) -> Option<Vec<CommitInfo>> {
         commits.push(CommitInfo {
             id: current_id,
             timestamp: current_ts,
+            author: current_author,
             changed_files: current_files,
         });
     }
@@ -405,7 +416,7 @@ fn try_git_log_cli(repo_path: &Path, cutoff_timestamp: Option<i64>) -> Option<Ve
     if let Some(cutoff) = cutoff_timestamp {
         cmd.arg(format!("--since={cutoff}"));
     }
-    cmd.args(["--format=commit %H %ct", "--name-only", "-c"]);
+    cmd.args(["--format=commit %H %ct %ae", "--name-only", "-c"]);
     let output = cmd.output().ok()?;
     if !output.status.success() {
         return None;
@@ -499,20 +510,22 @@ mod tests {
             CommitInfo {
                 id: "c3".to_string(),
                 timestamp: 300,
+                author: "alice@example.com".to_string(),
                 changed_files: vec!["a.rs".to_string(), "b.rs".to_string()],
             },
             CommitInfo {
                 id: "c2".to_string(),
                 timestamp: 200,
+                author: "alice@example.com".to_string(),
                 changed_files: vec!["a.rs".to_string()],
             },
             CommitInfo {
                 id: "c1".to_string(),
                 timestamp: 100,
+                author: "bob@example.com".to_string(),
                 changed_files: vec!["b.rs".to_string()],
             },
         ];
-
         let filtered = filter_commits_by_scope(&commits, &SinceScope::SinceDate(200));
         assert_eq!(filtered.len(), 2);
         assert_eq!(filtered[0].id, "c3");
