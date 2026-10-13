@@ -1,4 +1,4 @@
-use lasso::{Spur, ThreadedRodeo};
+use lasso::{Key, Spur, ThreadedRodeo};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -8,7 +8,7 @@ pub type NodeId = u32;
 /// Sentinel value indicating no node (e.g., file-scope references).
 pub const NO_NODE: NodeId = u32::MAX;
 /// Thread-safe string interner backed by `lasso::ThreadedRodeo`.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Interner(Arc<ThreadedRodeo>);
 
 impl Interner {
@@ -36,6 +36,26 @@ impl Interner {
     }
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
+    }
+    #[must_use]
+    pub fn all_strings(&self) -> Vec<String> {
+        let mut out = Vec::with_capacity(self.0.len());
+        for i in 0..self.0.len() {
+            if let Some(spur) = Spur::try_from_usize(i)
+                && let Some(s) = self.0.try_resolve(&spur)
+            {
+                out.push(s.to_string());
+            }
+        }
+        out
+    }
+    #[must_use]
+    pub fn from_strings(strings: &[String]) -> Self {
+        let rodeo = ThreadedRodeo::new();
+        for s in strings {
+            rodeo.get_or_intern(s);
+        }
+        Self(Arc::new(rodeo))
     }
 }
 
@@ -422,7 +442,7 @@ pub struct FileInfo {
 }
 
 /// Ingest output: the contract between AST ingestion and graph construction.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct IngestResult {
     pub files: Vec<FileInfo>,
     pub symbols: Vec<Symbol>,

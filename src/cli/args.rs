@@ -94,7 +94,7 @@ pub struct Cli {
     /// Top-level global modifiers and batching flags
     #[command(flatten)]
     pub modifiers: TopModifierArgs,
-    /// Install ripwire agent skills to ~/.agents/skills (or custom path)
+    /// Install ripwire-rs agent skills to ~/.agents/skills (or custom path)
     #[arg(
         long = "add-skills",
         visible_alias = "install-skills",
@@ -221,6 +221,19 @@ pub struct TopArchitectureArgs {
     #[arg(long = "zoom", value_name = "DEPTH")]
     pub zoom: Option<Option<u32>>,
 }
+impl TopArchitectureArgs {
+    pub fn is_active(&self) -> bool {
+        self.dead_code
+            || self.communities
+            || self.community.is_some()
+            || self.deps
+            || self.around.is_some()
+            || self.external_surface
+            || self.arch.is_some()
+            || self.mermaid
+            || self.zoom.is_some()
+    }
+}
 
 /// Top-level global modifiers and batching flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
@@ -240,6 +253,12 @@ pub struct TopModifierArgs {
     /// Run several lookups in one turn from newline-delimited verb:arg file
     #[arg(long, value_name = "FILE")]
     pub batch: Option<String>,
+    /// Explicit cache file path
+    #[arg(long, value_name = "PATH")]
+    pub cache: Option<String>,
+    /// Disable on-disk binary auto-caching (force cold parse)
+    #[arg(long = "no-cache")]
+    pub no_cache: bool,
 }
 
 /// Top-level retrieval & architecture flags.
@@ -281,6 +300,25 @@ pub struct TopRetrievalArgs {
     /// Evaluate small functional graph query DSL expression
     #[arg(long = "graph-query", value_name = "EXPR")]
     pub graph_query: Option<String>,
+}
+impl TopRetrievalArgs {
+    pub fn is_active(&self) -> bool {
+        let opts = [
+            &self.task_for,
+            &self.grep,
+            &self.connect,
+            &self.path_between,
+            &self.exemplar,
+            &self.lego,
+            &self.recall,
+            &self.from_trace,
+            &self.at,
+            &self.verify,
+            &self.pack_task,
+            &self.graph_query,
+        ];
+        opts.iter().any(|o| o.is_some())
+    }
 }
 
 /// Top-level workspace & audit flags.
@@ -359,7 +397,7 @@ pub enum Commands {
     Slice(SliceArgs),
     /// Launch stdio JSON-RPC Model Context Protocol server
     Mcp(McpArgs),
-    /// Manage and install ripwire agent skills
+    /// Manage and install ripwire-rs agent skills
     Skills(SkillsArgs),
 }
 

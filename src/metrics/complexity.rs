@@ -1,11 +1,11 @@
 use crate::domain::Lang;
+use serde::{Deserialize, Serialize};
 use tree_sitter::Node;
-
 /// Nesting threshold for counting humps and deep lines.
 pub const NESTING_BAR: u16 = 4;
 
 /// Computed complexity and nesting metrics for a symbol or code block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct ComplexityMetrics {
     pub cx: u32,
     pub ccx: u32,

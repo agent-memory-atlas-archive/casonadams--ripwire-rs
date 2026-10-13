@@ -1,6 +1,6 @@
 # Real-World Workflows: When, Where, & Why to Use ripwire
 
-`ripwire` (`rw`) provides static analysis, call graph navigation, and pre-commit verification gates. Rather than running commands in isolation, `rw` is designed around 6 high-impact development and agentic workflows.
+`ripwire` (`ripwire-rs`) provides static analysis, call graph navigation, and pre-commit verification gates. Rather than running commands in isolation, `ripwire-rs` is designed around 6 high-impact development and agentic workflows.
 
 ---
 
@@ -14,16 +14,16 @@
 ### Commands
 ```bash
 # Architecture map of top 200 ranked symbols by Personalized PageRank
-rw . --top-k=200
+ripwire-rs . --top-k=200
 
 # File-by-file structural inventory showing top 3 symbols per file
-rw . --tree
+ripwire-rs . --tree
 
 # Task-lens relevance ranking: retrieves ranked declarations relevant to a goal
-rw . --for="implement user authentication"
+ripwire-rs . --for="implement user authentication"
 
 # Export interactive, self-contained SVG/HTML call graph to open in browser
-rw . --html=graph.html --color-by=community
+ripwire-rs . --html=graph.html --color-by=community
 ```
 
 ### Benefits
@@ -43,25 +43,25 @@ rw . --html=graph.html --color-by=community
 ### Commands
 ```bash
 # Query direct 1-hop callers that depend on a symbol
-rw . --callers="Interner::len"
+ripwire-rs . --callers="Interner::len"
 
 # Query outgoing dependencies called by a function
-rw . --callees="ingest_files"
+ripwire-rs . --callees="ingest_files"
 
 # Transitive reachability graph: full blast radius across the whole codebase
-rw . --impact="Interner"
+ripwire-rs . --impact="Interner"
 
 # Extract ego-graph around a symbol (depth 1, fanout 32)
-rw . --around="Interner::new" --around-depth=2 --around-fanout=16
+ripwire-rs . --around="Interner::new" --around-depth=2 --around-fanout=16
 
 # Shortest directed call path between two symbols
-rw . --path-between="main:execute"
+ripwire-rs . --path-between="main:execute"
 
 # Minimal connecting subgraph relating 2..16 symbols
-rw . --connect="main,resolve_symbol,emit_xml"
+ripwire-rs . --connect="main,resolve_symbol,emit_xml"
 
 # Intra-procedural def-use variable dataflow slicing (ARISE)
-rw . --slice="compute:x" --slice-flow=both
+ripwire-rs . --slice="compute:x" --slice-flow=both
 ```
 
 ### Benefits
@@ -81,34 +81,34 @@ rw . --slice="compute:x" --slice-flow=both
 ### Commands
 ```bash
 # Verify caller compatibility after modifying a symbol contract
-rw . --edit-check="symbol_name"
+ripwire-rs . --edit-check="symbol_name"
 
 # Transitive reachability mapping to affected test suites
-rw . --affected="src/lib.rs"
+ripwire-rs . --affected="src/lib.rs"
 
 # Pre-PR gate: names tests to run and untested blast radius (exits with code 4)
-rw . --test-gate
+ripwire-rs . --test-gate
 
 # Situational awareness report for working tree diff: blast radius, tests, co-change
-rw . --situ
+ripwire-rs . --situ
 
 # Assess whether a symbol can be safely deleted without breaking callers
-rw . --safe-delete="Interner::len"
+ripwire-rs . --safe-delete="Interner::len"
 
 # Measure code quality regressions against git HEAD across 10 facets (exits with code 2)
-rw . --quality-delta
+ripwire-rs . --quality-delta
 
 # Re-rank architecture map toward git-changed files so active work floats up
-rw . --map-diff --top-k=30
+ripwire-rs . --map-diff --top-k=30
 
 # Discover untested cross-module call boundaries (integration seams)
-rw . --seams
+ripwire-rs . --seams
 
 # Generate composite PR review context bundle vs base branch
-rw . --pr-context=main
+ripwire-rs . --pr-context=main
 
 # Predict symbol merge conflicts across concurrent divergent branches
-rw . --merge-scout="branch-a,branch-b"
+ripwire-rs . --merge-scout="branch-a,branch-b"
 ```
 
 ### Benefits
@@ -129,41 +129,41 @@ rw . --merge-scout="branch-a,branch-b"
 ### Commands
 ```bash
 # Detect internal functions with zero incoming callers across the repository
-rw . --dead-code
+ripwire-rs . --dead-code
 
 # Rank repository files by maintenance risk (churn * cognitive complexity)
-rw . --hotspots
+ripwire-rs . --hotspots
 
 # Detect AST code clones and near-miss duplicates (Type-1, Type-2, Type-3)
-rw . --clones --min-tokens=40
+ripwire-rs . --clones --min-tokens=40
 
 # Mine historical Git co-change coupling to identify hidden file coupling
-rw . --cochange
+ripwire-rs . --cochange
 
 # Partition call graph into cohesive modules via Louvain community detection
-rw . --communities
+ripwire-rs . --communities
 
 # Hierarchical Louvain community zoom clustering
-rw . --zoom
+ripwire-rs . --zoom
 
 # Enforce architectural layering constraints from a rules file (exits 2 on violation)
-rw . --arch=rules.txt
+ripwire-rs . --arch=rules.txt
 
 # Export Mermaid flowchart of module dependency topology
-rw . --mermaid
+ripwire-rs . --mermaid
 
 # Discover symbols referenced in code but never defined (stdlib & external packages)
-rw . --external-surface
+ripwire-rs . --external-surface
 
 # Rank functions by readability volume and size, largest first
-rw . --biggest-first
+ripwire-rs . --biggest-first
 
 # Detect functions accessing reachable global / file-static mutable state
-rw . --nonlocal-state
+ripwire-rs . --nonlocal-state
 
 # Scan codebase for AST code smells (complexity spikes, deep nesting, dead code)
-rw . --lint
-rw . --lint-catalog
+ripwire-rs . --lint
+ripwire-rs . --lint-catalog
 ```
 
 ### Benefits
@@ -183,47 +183,47 @@ rw . --lint-catalog
 ### Commands
 ```bash
 # Expand full source body of symbols and callee signatures in CDATA XML
-rw . --expand="Symbol::new"
+ripwire-rs . --expand="Symbol::new"
 
 # Outline control-flow skeletons of symbols (loops, branches, declarations)
-rw . --outline="Interner::intern"
+ripwire-rs . --outline="Interner::intern"
 
 # Pack source bodies of the top N highest PageRank symbols
-rw . --pack-top-n=5
+ripwire-rs . --pack-top-n=5
 
 # Resolve innermost symbol chain enclosing a specific FILE:LINE
-rw . --at="src/main.rs:25"
+ripwire-rs . --at="src/main.rs:25"
 
 # Formally verify relationship claim between two symbols (calls, uses, defines)
-rw . --verify="calls(main,run_cli)"
+ripwire-rs . --verify="calls(main,run_cli)"
 
 # Single-call orientation task bundle tailored to a task description
-rw . --pack-task="search"
+ripwire-rs . --pack-task="search"
 
 # Functional graph query DSL
-rw . --graph-query="callers(main)"
+ripwire-rs . --graph-query="callers(main)"
 
 # Map compiler error / stack trace frames directly onto indexed symbols
-rw . --from-trace=error.log
+ripwire-rs . --from-trace=error.log
 
 # Execute up to 16 heterogeneous sub-queries in a single turn
-rw . --batch=queries.txt
+ripwire-rs . --batch=queries.txt
 
 # Structured JSON output for navigation queries
-rw . --callers="Interner::len" --json
+ripwire-rs . --callers="Interner::len" --json
 
 # Engine self-diagnostics and repository health check
-rw . --doctor
+ripwire-rs . --doctor
 
 # Pinned session gotchas and notes
-rw . --notes
-rw . --note-add="symbol: gotcha note"
+ripwire-rs . --notes
+ripwire-rs . --note-add="symbol: gotcha note"
 
 # Launch native stdio Model Context Protocol (MCP) server for coding agents
-rw mcp
+ripwire-rs mcp
 
 # Install 18 pre-packaged ripwire agent skills to ~/.agents/skills (or custom path)
-rw --add-skills
+ripwire-rs --add-skills
 ```
 
 ### Benefits
@@ -243,10 +243,10 @@ rw --add-skills
 ### Commands & CI Pipeline Recipe
 ```bash
 # PR Gate: names tests to run and untested blast radius (exits 4 on violation)
-rw . --test-gate
+ripwire-rs . --test-gate
 
 # Quality Regression Gate: checks quality regressions against base branch / HEAD (exits 2 on violation)
-rw . --quality-delta
+ripwire-rs . --quality-delta
 
 # Upstream Parity Validation: verifies 1:1 input/output equivalence across 36 commands
 make validate REPO=.
@@ -268,14 +268,14 @@ jobs:
         with:
           fetch-depth: 0  # Full git history for diff and quality delta comparison
 
-      - name: Install ripwire CLI (rw)
-        run: cargo install ripwire
+      - name: Install ripwire CLI (ripwire-rs)
+        run: cargo install ripwire-rs
 
       - name: Run Test Reachability Gate
-        run: rw . --test-gate
+        run: ripwire-rs . --test-gate
 
       - name: Run Quality Regression Delta Gate
-        run: rw . --quality-delta
+        run: ripwire-rs . --quality-delta
 ```
 
 ### Benefits

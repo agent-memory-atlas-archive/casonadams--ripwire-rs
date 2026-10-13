@@ -1,4 +1,4 @@
-use ripwire::{
+use ripwire_rs::{
     CsrMatrix, FileInfo, Graph, IngestResult, Interner, Lang, PageRankConfig, RefRole, Reference,
     SymKind, Symbol, biased_teleport, page_rank, uniform_teleport,
 };

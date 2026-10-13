@@ -1,4 +1,4 @@
-use ripwire::{
+use ripwire_rs::{
     FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, RefRole, Reference, SymKind, Symbol,
 };
 

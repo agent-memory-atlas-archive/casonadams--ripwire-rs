@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <title>Documentation · ripwire Code Intelligence</title>
-  <meta name="description" content="Reference documentation for ripwire: rw CLI commands, 33 Model Context Protocol (MCP) context routing tools, pre-commit gates, and Rust library integration.">
+  <meta name="description" content="Reference documentation for ripwire: ripwire-rs CLI commands, 33 Model Context Protocol (MCP) context routing tools, pre-commit gates, and Rust library integration.">
 
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/style.css?v=2">
@@ -38,7 +38,7 @@
         <a href="./" class="nav-link">Home</a>
         <a href="workflows.html" class="nav-link">Workflows</a>
         <a href="docs.html" class="nav-link active">Docs</a>
-        <a href="https://crates.io/crates/ripwire" target="_blank" rel="noopener" class="nav-link">crates.io</a>
+        <a href="https://crates.io/crates/ripwire-rs" target="_blank" rel="noopener" class="nav-link">crates.io</a>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
         </a>
         <button id="themeToggle" class="btn-icon" aria-label="Toggle dark/light theme">
@@ -83,7 +83,7 @@
       <div class="docs-nav-group">
         <div class="docs-nav-title">CLI Reference</div>
         <ul class="docs-nav-links">
-          <li><a href="#cli" class="docs-nav-link">rw CLI Commands</a></li>
+          <li><a href="#cli" class="docs-nav-link">ripwire-rs CLI Commands</a></li>
           <li><a href="#subcommands" class="docs-nav-link">Subcommands</a></li>
           <li><a href="#gates" class="docs-nav-link">Pre-Commit Gates</a></li>
         </ul>
@@ -111,17 +111,17 @@
       </div>
       <h2 id="installation">Installation</h2>
       <h3>Homebrew (macOS &amp; Linux)</h3>
-      <pre><code>brew install casonadams/tap/ripwire</code></pre>
+      <pre><code>brew install casonadams/tap/ripwire-rs</code></pre>
 
       <h3>Cargo</h3>
-      <pre><code>cargo install ripwire</code></pre>
+      <pre><code>cargo install ripwire-rs</code></pre>
 
-      <h2 id="cli">rw CLI Reference</h2>
-      <p>The <code>rw</code> binary offers both direct flag-based execution and structured workflow subcommands.</p>
+      <h2 id="cli">ripwire-rs CLI Reference</h2>
+      <p>The <code>ripwire-rs</code> binary offers both direct flag-based execution and structured workflow subcommands.</p>
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw [PATH] [--top-k &lt;N&gt;] [--max-tokens &lt;N&gt;] [--legend &lt;MODE&gt;]</code></div>
+          <div class="cmd-title"><code>ripwire-rs [PATH] [--top-k &lt;N&gt;] [--max-tokens &lt;N&gt;] [--legend &lt;MODE&gt;]</code></div>
           <span class="cmd-badge">Architecture</span>
         </div>
         <div class="cmd-body">
@@ -142,7 +142,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --quality-delta</code></div>
+          <div class="cmd-title"><code>ripwire-rs --quality-delta</code></div>
           <span class="cmd-badge">Safety Gate</span>
         </div>
         <div class="cmd-body">
@@ -163,7 +163,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --test-gate [FILES]</code></div>
+          <div class="cmd-title"><code>ripwire-rs --test-gate [FILES]</code></div>
           <span class="cmd-badge">Safety Gate</span>
         </div>
         <div class="cmd-body">
@@ -184,7 +184,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --expand &lt;SYMS&gt;</code></div>
+          <div class="cmd-title"><code>ripwire-rs --expand &lt;SYMS&gt;</code></div>
           <span class="cmd-badge">Detail Ladder</span>
         </div>
         <div class="cmd-body">
@@ -205,7 +205,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --dead-code</code></div>
+          <div class="cmd-title"><code>ripwire-rs --dead-code</code></div>
           <span class="cmd-badge">Architecture</span>
         </div>
         <div class="cmd-body">
@@ -225,7 +225,7 @@
       </div>
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --edit-check &lt;SYM&gt;</code></div>
+          <div class="cmd-title"><code>ripwire-rs --edit-check &lt;SYM&gt;</code></div>
           <span class="cmd-badge">Safety Gate</span>
         </div>
         <div class="cmd-body">
@@ -246,7 +246,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --affected &lt;PATH&gt;</code></div>
+          <div class="cmd-title"><code>ripwire-rs --affected &lt;PATH&gt;</code></div>
           <span class="cmd-badge">Safety Gate</span>
         </div>
         <div class="cmd-body">
@@ -267,7 +267,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --hotspots</code></div>
+          <div class="cmd-title"><code>ripwire-rs --hotspots</code></div>
           <span class="cmd-badge">Metrics</span>
         </div>
         <div class="cmd-body">
@@ -288,7 +288,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --cochange [&lt;FILE&gt;]</code></div>
+          <div class="cmd-title"><code>ripwire-rs --cochange [&lt;FILE&gt;]</code></div>
           <span class="cmd-badge">Git Analytics</span>
         </div>
         <div class="cmd-body">
@@ -309,7 +309,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --slice &lt;SYM[:VAR]&gt; [--slice-flow &lt;fwd|back|both&gt;]</code></div>
+          <div class="cmd-title"><code>ripwire-rs --slice &lt;SYM[:VAR]&gt; [--slice-flow &lt;fwd|back|both&gt;]</code></div>
           <span class="cmd-badge">Slicing</span>
         </div>
         <div class="cmd-body">
@@ -330,7 +330,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --clones [--min-tokens &lt;N&gt;]</code></div>
+          <div class="cmd-title"><code>ripwire-rs --clones [--min-tokens &lt;N&gt;]</code></div>
           <span class="cmd-badge">Hygiene</span>
         </div>
         <div class="cmd-body">
@@ -351,7 +351,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --callers &lt;SYM&gt; / --callees &lt;SYM&gt; / --find-symbol &lt;SYM&gt;</code></div>
+          <div class="cmd-title"><code>ripwire-rs --callers &lt;SYM&gt; / --callees &lt;SYM&gt; / --find-symbol &lt;SYM&gt;</code></div>
           <span class="cmd-badge">Navigation</span>
         </div>
         <div class="cmd-body">
@@ -372,7 +372,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --impact &lt;SYM&gt;</code></div>
+          <div class="cmd-title"><code>ripwire-rs --impact &lt;SYM&gt;</code></div>
           <span class="cmd-badge">Navigation</span>
         </div>
         <div class="cmd-body">
@@ -393,7 +393,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw --path-between &lt;A:B&gt;</code></div>
+          <div class="cmd-title"><code>ripwire-rs --path-between &lt;A:B&gt;</code></div>
           <span class="cmd-badge">Architecture</span>
         </div>
         <div class="cmd-body">
@@ -414,7 +414,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw . --html [&lt;FILE&gt;] [--color-by &lt;MODE&gt;]</code></div>
+          <div class="cmd-title"><code>ripwire-rs . --html [&lt;FILE&gt;] [--color-by &lt;MODE&gt;]</code></div>
           <span class="cmd-badge">Visualization</span>
         </div>
         <div class="cmd-body">
@@ -438,7 +438,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw orient [PATH] --for &lt;TASK&gt;</code></div>
+          <div class="cmd-title"><code>ripwire-rs orient [PATH] --for &lt;TASK&gt;</code></div>
           <span class="cmd-badge">Exploration</span>
         </div>
         <div class="cmd-body">
@@ -459,7 +459,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw navigate [PATH] --symbol &lt;SYM&gt; [--callers | --callees | --impact]</code></div>
+          <div class="cmd-title"><code>ripwire-rs navigate [PATH] --symbol &lt;SYM&gt; [--callers | --callees | --impact]</code></div>
           <span class="cmd-badge">Navigation</span>
         </div>
         <div class="cmd-body">
@@ -480,7 +480,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw gate [PATH] [--edit-check &lt;SYM&gt;] [--affected &lt;PATH&gt;] [--quality-delta]</code></div>
+          <div class="cmd-title"><code>ripwire-rs gate [PATH] [--edit-check &lt;SYM&gt;] [--affected &lt;PATH&gt;] [--quality-delta]</code></div>
           <span class="cmd-badge">Safety Gate</span>
         </div>
         <div class="cmd-body">
@@ -501,7 +501,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw metrics [PATH] [--hotspots]</code></div>
+          <div class="cmd-title"><code>ripwire-rs metrics [PATH] [--hotspots]</code></div>
           <span class="cmd-badge">Metrics</span>
         </div>
         <div class="cmd-body">
@@ -522,7 +522,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw slice [PATH] --symbol &lt;SYM:VAR&gt; [--slice-flow &lt;fwd|back|both&gt;]</code></div>
+          <div class="cmd-title"><code>ripwire-rs slice [PATH] --symbol &lt;SYM:VAR&gt; [--slice-flow &lt;fwd|back|both&gt;]</code></div>
           <span class="cmd-badge">Slicing</span>
         </div>
         <div class="cmd-body">
@@ -543,7 +543,7 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw mcp</code></div>
+          <div class="cmd-title"><code>ripwire-rs mcp</code></div>
           <span class="cmd-badge">Integration</span>
         </div>
         <div class="cmd-body">
@@ -564,13 +564,13 @@
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>rw skills [DIR] / rw --add-skills</code></div>
+          <div class="cmd-title"><code>ripwire-rs skills [DIR] / ripwire-rs --add-skills</code></div>
           <span class="cmd-badge">Agents</span>
         </div>
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Provisions 18 pre-packaged ripwire agent skills and the active manifest (<code>.ripwire-manifest-v1</code>) directly into <code>~/.agents/skills</code> (or a custom directory).</p>
+            <p class="cmd-desc">Provisions 18 pre-packaged ripwire-rs agent skills and the active manifest (<code>.ripwire-rs-manifest-v1</code>) directly into <code>~/.agents/skills</code> (or a custom directory).</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
@@ -701,8 +701,8 @@ fn main() {
         <a href="./">Home</a>
         <a href="workflows.html">Workflows</a>
         <a href="docs.html">Docs</a>
-        <a href="https://crates.io/crates/ripwire" target="_blank" rel="noopener">Crates.io</a>
-        <a href="https://github.com/casonadams/ripwire" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://crates.io/crates/ripwire-rs-rs" target="_blank" rel="noopener">Crates.io</a>
+        <a href="https://github.com/casonadams/ripwire-rs-rs" target="_blank" rel="noopener">GitHub</a>
     </div>
   </footer>
 

@@ -1,5 +1,5 @@
-use ripwire::mcp::{McpState, dispatch_json_rpc, handle_tools_list};
-use ripwire::{IngestResult, Interner};
+use ripwire_rs::mcp::{McpState, dispatch_json_rpc, handle_tools_list};
+use ripwire_rs::{IngestResult, Interner};
 use serde_json::{Value, json};
 
 #[test]

@@ -95,7 +95,7 @@ Identifies call edges crossing module or directory boundaries that have zero dir
 Re-ranks the architecture map toward git-modified files so recent work automatically floats to the top of the context window.
 
 ```bash
-rw . --map-diff --top-k=30
+ripwire-rs . --map-diff --top-k=30
 ```
 
 - **Focus**: Keeps LLM context windows concentrated on currently active development tasks without losing structural context.
@@ -148,7 +148,7 @@ deny api -> domain
 ```
 
 ```bash
-rw . --arch=rules.txt
+ripwire-rs . --arch=rules.txt
 ```
 
 - **Exit Code**: Returns exit code 2 if any forbidden cross-layer dependency edge is introduced.

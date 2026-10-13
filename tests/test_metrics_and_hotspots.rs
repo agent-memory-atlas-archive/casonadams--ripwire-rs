@@ -1,9 +1,9 @@
-use ripwire::ToXmlString;
-use ripwire::cli::execute_hotspots_with;
-use ripwire::domain::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
-use ripwire::git::history::CommitInfo;
-use ripwire::mcp::McpState;
-use ripwire::metrics::{
+use ripwire_rs::ToXmlString;
+use ripwire_rs::cli::execute_hotspots_with;
+use ripwire_rs::domain::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
+use ripwire_rs::git::history::CommitInfo;
+use ripwire_rs::mcp::McpState;
+use ripwire_rs::metrics::{
     NESTING_BAR, compute_complexity, compute_hotspots, compute_readability, posnett_score,
 };
 use std::collections::HashMap;

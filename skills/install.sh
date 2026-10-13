@@ -54,14 +54,14 @@ jqIsScript='def isScript($n): (.command // "") | split(" ")[0] | endswith("/hook
 # agrees is left untouched, and this never adds, removes or reorders an entry.
 refresh_hook_matcher()
 {
-    if ! jq -e --arg cmd "$2" --arg m "$3" --arg n "ripwire-nudge.sh" "$jqIsScript"'
+    if ! jq -e --arg cmd "$2" --arg m "$3" --arg n "ripwire-rs-nudge.sh" "$jqIsScript"'
         any((.hooks.PreToolUse // [])[]?; (any(.hooks[]?; isScript($n))) and ((.matcher != $m) or (any(.hooks[]?; isScript($n) and .command != $cmd))))' \
         "$1" >/dev/null 2>&1; then
         echo "ripwire PreToolUse hook already registered in $1 ($2) — nothing to do."
         return 0
     fi
     tmp="$( mktemp )"
-    if jq --arg cmd "$2" --arg m "$3" --arg n "ripwire-nudge.sh" "$jqIsScript"'
+    if jq --arg cmd "$2" --arg m "$3" --arg n "ripwire-rs-nudge.sh" "$jqIsScript"'
         .hooks.PreToolUse |= map( if any(.hooks[]?; isScript($n))
                                   then .matcher = $m | .hooks |= map( if isScript($n) then .command = $cmd else . end )
                                   else . end )' \
@@ -93,10 +93,10 @@ install_claude_route()
     }
     chmod +x "$routeScript" 2>/dev/null || true
 
-    if jq -e --arg n "ripwire-claude-route.sh" "$jqIsScript"'
+    if jq -e --arg n "ripwire-rs-claude-route.sh" "$jqIsScript"'
         any((.hooks.UserPromptSubmit // [])[]?.hooks[]?; isScript($n))' "$1" >/dev/null 2>&1; then
         tmp="$( mktemp )"
-        if jq --arg cmd "$routeScript" --arg n "ripwire-claude-route.sh" "$jqIsScript"'
+        if jq --arg cmd "$routeScript" --arg n "ripwire-rs-claude-route.sh" "$jqIsScript"'
             .hooks.UserPromptSubmit |= map( .hooks |= map( if isScript($n) then .command = $cmd else . end ) )' \
             "$1" >"$tmp" && [ -s "$tmp" ] && mv "$tmp" "$1"; then
             echo "ripwire UserPromptSubmit router already registered in $1 — command refreshed to $routeScript."
@@ -150,7 +150,7 @@ install_claude_hook()
     mkdir -p "$( dirname "$settings" )"
     [ -f "$settings" ] || echo '{}' >"$settings"
 
-    if jq -e --arg n "ripwire-nudge.sh" "$jqIsScript"'
+    if jq -e --arg n "ripwire-rs-nudge.sh" "$jqIsScript"'
         any((.hooks.PreToolUse // [])[]?.hooks[]?; isScript($n))' \
         "$settings" >/dev/null 2>&1; then
         refresh_hook_matcher "$settings" "$hookScript" "$hookMatcher" || return $?
@@ -336,7 +336,7 @@ mkdir -p "$dst"
 #    2. EMPTY TREE: it holds no non-directory entry at ANY depth (B1). This is #334's actual shape. On Windows
 #       without symlink privilege every 0.6.0-0.6.3 installer's unverified `ln -sfn DIR DEST` left an empty
 #       directory, and on the SECOND run DEST was already a real directory, so coreutils/MSYS `ln` resolved the
-#       target to DEST/basename(DIR) and left an empty ripwire-x/ripwire-x inside it. A tree of empty
+#       target to DEST/basename(DIR) and left an empty ripwire-rs-x/ripwire-x inside it. A tree of empty
 #       directories holds no user bytes. `find` failing anywhere (an unreadable subdirectory, no find at all)
 #       means the tree is NOT provably empty, so its errors are handled explicitly and never read as "empty".
 #    3. BYTE-IDENTICAL: its contents are identical (`diff -rq`) to the skill this checkout ships under that name
@@ -347,7 +347,7 @@ mkdir -p "$dst"
 #    `kept` note, and never added to the manifest's ours set: the manifest is written from what this run
 #    itself verified, never from what a past run once claimed.
 #    test/skillinstallcheck.sh sections (F)-(I) drive all of it with an `ln` that behaves like that Git Bash.
-copyMarker=".ripwire-installed-copy"
+copyMarker=".ripwire-rs-installed-copy"
 # shipped_src_for NAME — the skill directory this checkout would install under NAME right now, or nothing if
 # this checkout ships no such skill (a stale/renamed name, or a Hermes-native one outside non-hermes modes).
 shipped_src_for()
@@ -390,7 +390,7 @@ remove_ours() { if [ -d "$1" ] && [ ! -L "$1" ]; then rm -rf "$1"; else rm -f "$
 # routing to it hits an error and learns to distrust the whole family. `-L` also catches BROKEN symlinks
 # (whose target dir was deleted), which `-e` alone would miss.
 # 2026-09-06 (stranger audit): a skill whose SKILL.md front matter says `audience: contributor` is about
-# working ON ripwire (ripwire-opt-remarks: clang optimization remarks while editing this tree's C++). It is
+# working ON ripwire (ripwire-rs-opt-remarks: clang optimization remarks while editing this tree's C++). It is
 # shipped so a contributor can activate it, but it is NOT activated for a user of the tool — the release
 # installer runs this script for every agent it detects on a stranger's machine. Pass --contributor to link
 # those too; without it a previously linked contributor skill is pruned, so a checkout that stops being a
@@ -481,13 +481,13 @@ for d in "$src"/ripwire-*/; do
 done
 
 # Hermes loads the flat Agent-Skills-standard set AND Hermes-native skills (skills/hermes/ripwire-*, e.g.
-# the ripwire-repo-map skill purpose-built for Hermes) side by side out of one directory — verified live:
+# the ripwire-rs-repo-map skill purpose-built for Hermes) side by side out of one directory — verified live:
 # both formats index together, so --hermes deploys both and no prefer/fallback logic is needed.
 # The ripwire-* glob is the SAME name scope the flat install loop and the prune loop above use, and it is
 # load-bearing: this loop `ln -sfn`s each entry into the user's skill home under its own name, `ln -sfn`
 # unlinks an existing regular file first, and the prune loop only ever looks at ripwire-*. A hermes/ entry
 # without the prefix would therefore delete a same-named USER skill and then be impossible to prune. Only
-# ripwire-repo-map lives there today, so this is the asymmetry being closed, not a bug being observed.
+# ripwire-rs-repo-map lives there today, so this is the asymmetry being closed, not a bug being observed.
 # Gate: test/hermesinstallcheck.sh arm 7.
 if [ "$mode" = "hermes" ]; then
     for nd in "$src"/hermes/ripwire-*/; do
@@ -508,12 +508,12 @@ fi
 # records exactly the skills that were VERIFIED usable above (linked or copied), so `ripwire --doctor
 # --agent=codex` can distinguish a complete install from a stale/missing/extra skill without trusting the
 # checkout it came from. A skill that FAILED is not in it: listing it is the #334 lie in another file.
-manifestTmp="$( mktemp "$dst/.ripwire-manifest-v1.tmp.XXXXXX" )"
+manifestTmp="$( mktemp "$dst/.ripwire-rs-manifest-v1.tmp.XXXXXX" )"
 {
     echo 'version=1'
     printf '%s' "$installedNames" | while IFS= read -r n; do echo "skill=$n"; done
 } >"$manifestTmp"
-mv "$manifestTmp" "$dst/.ripwire-manifest-v1"
+mv "$manifestTmp" "$dst/.ripwire-rs-manifest-v1"
 if [ "$failed" -gt 0 ]; then
     # Not `exit 1` here: a requested --hook is still registered below, and the status is set at the very end.
     echo "skills/install.sh: $failed ripwire skill(s) FAILED to install into $dst (listed above); $count usable, ${copied} of them copied, ${kept} kept as yours." >&2

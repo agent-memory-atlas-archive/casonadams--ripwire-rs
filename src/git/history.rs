@@ -182,6 +182,26 @@ pub fn parse_since_scope(since_str: Option<&str>, anchor_epoch: i64) -> SinceSco
     SinceScope::SinceRevision(s.to_string())
 }
 
+/// Resolve an optional since parameter and default month window to an epoch timestamp cutoff.
+#[must_use]
+pub fn resolve_cutoff_timestamp(since: Option<&str>, default_months: u32) -> Option<i64> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    match parse_since_scope(since, now) {
+        SinceScope::SinceDate(ts) => Some(ts),
+        SinceScope::AllHistory => {
+            if since.is_some() {
+                None
+            } else {
+                Some(months_before_epoch(now, default_months))
+            }
+        }
+        SinceScope::SinceRevision(_) => None,
+    }
+}
+
 /// Filter commits according to the specified `SinceScope`.
 #[must_use]
 pub fn filter_commits_by_scope<'a>(
@@ -242,79 +262,110 @@ where
     churn_map
 }
 
-fn get_parent_or_empty_tree<'a>(
-    repo: &'a gix::Repository,
-    commit: &gix::Commit<'_>,
-) -> Result<gix::Tree<'a>, GitHistoryError> {
-    if let Some(parent_id) = commit.parent_ids().next() {
-        let parent = repo
-            .find_object(parent_id)
-            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?
-            .into_commit();
-        parent
-            .tree()
-            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))
-    } else {
-        Ok(repo.empty_tree())
+struct RawCommitMeta {
+    id: gix::ObjectId,
+    parent_id: Option<gix::ObjectId>,
+    timestamp: i64,
+}
+
+fn collect_commit_metas<'a>(
+    rev_walk: impl IntoIterator<
+        Item = Result<gix::revision::walk::Info<'a>, gix::revision::walk::iter::Error>,
+    >,
+    cutoff_timestamp: Option<i64>,
+) -> Result<Vec<RawCommitMeta>, GitHistoryError> {
+    let mut metas = Vec::new();
+    let cutoff_with_safety = cutoff_timestamp.map(|c| c - 14 * 86400);
+
+    for info in rev_walk {
+        let info = info.map_err(|e| GitHistoryError::Walk(e.to_string()))?;
+        let commit = info
+            .object()
+            .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
+        let time = commit
+            .time()
+            .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
+        if let Some(cutoff) = cutoff_with_safety
+            && time.seconds < cutoff
+        {
+            break;
+        }
+        let parent_id = commit.parent_ids().next().map(|p| p.detach());
+        metas.push(RawCommitMeta {
+            id: info.id,
+            parent_id,
+            timestamp: time.seconds,
+        });
     }
+    Ok(metas)
 }
 
-fn extract_commit_changed_files(
+fn diff_commit_tree(
     repo: &gix::Repository,
-    commit: &gix::Commit<'_>,
-    tree: &gix::Tree<'_>,
-) -> Result<Vec<String>, GitHistoryError> {
-    let mut changed_files = Vec::new();
-    let parent_tree = get_parent_or_empty_tree(repo, commit)?;
-    let mut changes = parent_tree
-        .changes()
-        .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
-    changes
-        .for_each_to_obtain_tree(tree, |change| {
-            changed_files.push(change.location().to_string());
-            Ok::<_, std::convert::Infallible>(gix::object::tree::diff::Action::Continue)
-        })
-        .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
-    Ok(changed_files)
-}
-
-fn parse_commit_record(
-    repo: &gix::Repository,
-    info: gix::revision::walk::Info,
+    meta: &RawCommitMeta,
 ) -> Result<CommitInfo, GitHistoryError> {
-    let commit = info
-        .object()
-        .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
-    let time = commit
-        .time()
-        .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
+    let commit = repo
+        .find_object(meta.id)
+        .map_err(|e| GitHistoryError::Walk(e.to_string()))?
+        .into_commit();
     let tree = commit
         .tree()
-        .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
-    let changed_files = extract_commit_changed_files(repo, &commit, &tree)?;
+        .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
+
+    let changed_files = if let Some(parent_id) = meta.parent_id {
+        let parent_tree = repo
+            .find_object(parent_id)
+            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?
+            .into_commit()
+            .tree()
+            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
+        let mut changes = parent_tree
+            .changes()
+            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
+        let mut files = Vec::new();
+        changes
+            .for_each_to_obtain_tree(&tree, |change| {
+                files.push(change.location().to_string());
+                Ok::<_, std::convert::Infallible>(gix::object::tree::diff::Action::Continue)
+            })
+            .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
+        files
+    } else {
+        Vec::new()
+    };
+
     Ok(CommitInfo {
-        id: info.id.to_string(),
-        timestamp: time.seconds,
+        id: meta.id.to_string(),
+        timestamp: meta.timestamp,
         changed_files,
     })
 }
 
-fn collect_rev_walk<'a>(
+fn process_commits_parallel(
     repo: &gix::Repository,
-    rev_walk: impl IntoIterator<
-        Item = Result<gix::revision::walk::Info<'a>, gix::revision::walk::iter::Error>,
-    >,
+    metas: Vec<RawCommitMeta>,
 ) -> Result<Vec<CommitInfo>, GitHistoryError> {
-    let mut commits = Vec::new();
-    for info in rev_walk {
-        let info = info.map_err(|e| GitHistoryError::Walk(e.to_string()))?;
-        commits.push(parse_commit_record(repo, info)?);
-    }
-    Ok(commits)
+    use rayon::prelude::*;
+    let sync_repo = repo.clone().into_sync();
+    metas
+        .into_par_iter()
+        .map(|meta| {
+            let thread_repo = sync_repo.to_thread_local();
+            diff_commit_tree(&thread_repo, &meta)
+        })
+        .collect()
 }
 
 /// Walk git commit history and extract changed files per commit using `gix`.
 pub fn walk_repository_history(repo_path: &Path) -> Result<Vec<CommitInfo>, GitHistoryError> {
+    walk_repository_history_scoped(repo_path, None)
+}
+
+/// Walk git commit history with an optional cutoff timestamp.
+pub fn walk_repository_history_scoped(
+    repo_path: &Path,
+    cutoff_timestamp: Option<i64>,
+) -> Result<Vec<CommitInfo>, GitHistoryError> {
     let repo = gix::open(repo_path).map_err(|e| GitHistoryError::Open(e.to_string()))?;
     let head = repo
         .head_commit()
@@ -323,7 +374,8 @@ pub fn walk_repository_history(repo_path: &Path) -> Result<Vec<CommitInfo>, GitH
         .rev_walk([head.id()])
         .all()
         .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
-    collect_rev_walk(&repo, rev_walk)
+    let metas = collect_commit_metas(rev_walk, cutoff_timestamp)?;
+    process_commits_parallel(&repo, metas)
 }
 #[cfg(test)]
 mod tests {

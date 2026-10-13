@@ -9,8 +9,8 @@
 ```json
 {
   "mcpServers": {
-    "ripwire": {
-      "command": "/path/to/rw",
+    "ripwire-rs": {
+      "command": "/path/to/ripwire-rs",
       "args": ["mcp"]
     }
   }

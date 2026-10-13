@@ -64,7 +64,7 @@ pub fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<i
     execute_gate_action(args, &state, &mut stdout)
 }
 
-pub fn execute_with_git_state<F>(root: &str, runner: F) -> io::Result<()>
+pub fn execute_with_git_state<F>(root: &str, cutoff: Option<i64>, runner: F) -> io::Result<()>
 where
     F: FnOnce(
         &[crate::git::history::CommitInfo],
@@ -74,7 +74,8 @@ where
 {
     let state = crate::mcp::McpState::load(root)
         .ok_or_else(|| io::Error::other("failed to load repository index"))?;
-    let commits_vec = crate::git::history::walk_repository_history(Path::new(root)).ok();
+    let commits_vec =
+        crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
     let commits = commits_vec.as_deref().unwrap_or(&[]);
     let mut stdout = io::stdout().lock();
     runner(commits, &state, &mut stdout)
@@ -87,14 +88,20 @@ pub fn dispatch_git_metrics_command(
     since: Option<&str>,
 ) -> Option<io::Result<()>> {
     if let Some(probed) = cochange {
-        return Some(execute_with_git_state(root, |commits, state, out| {
-            execute_cochange_with(probed, since, commits, state, out)
-        }));
+        let cutoff = crate::git::history::resolve_cutoff_timestamp(since, 18);
+        return Some(execute_with_git_state(
+            root,
+            cutoff,
+            |commits, state, out| execute_cochange_with(probed, since, commits, state, out),
+        ));
     }
     if hotspots {
-        return Some(execute_with_git_state(root, |commits, state, out| {
-            execute_hotspots_with(since, commits, state, out)
-        }));
+        let cutoff = crate::git::history::resolve_cutoff_timestamp(since, 12);
+        return Some(execute_with_git_state(
+            root,
+            cutoff,
+            |commits, state, out| execute_hotspots_with(since, commits, state, out),
+        ));
     }
     None
 }

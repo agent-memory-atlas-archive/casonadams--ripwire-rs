@@ -1,4 +1,4 @@
-use ripwire::{
+use ripwire_rs::{
     FileInfo, Graph, IngestResult, Interner, Lang, PageRankResult, RefRole, Reference,
     SerializeOptions, SymKind, Symbol, escape_xml_str, serialize_connect_xml,
     serialize_doc_drift_xml, serialize_flags_xml, serialize_for_xml, serialize_grep_xml,
@@ -301,7 +301,7 @@ fn test_query_xml_retrieval_and_git() {
 }
 #[test]
 fn test_query_xml_detail_ladder() {
-    use ripwire::{
+    use ripwire_rs::{
         TreeFileSymbols, serialize_expand_xml, serialize_pack_top_n_xml, serialize_tree_xml,
     };
     let mut buf = Vec::new();
@@ -338,10 +338,10 @@ fn test_query_xml_detail_ladder() {
 }
 #[test]
 fn test_query_xml_safety_family() {
-    use ripwire::{serialize_exercises_xml, serialize_safe_delete_xml, serialize_test_gate_xml};
+    use ripwire_rs::{serialize_exercises_xml, serialize_safe_delete_xml, serialize_test_gate_xml};
     let mut buf = Vec::new();
 
-    let tests = [ripwire::gate::affected::AffectedTest {
+    let tests = [ripwire_rs::gate::affected::AffectedTest {
         path: "tests/foo.rs".into(),
         hops: 1,
         is_direct_change: false,
@@ -359,7 +359,7 @@ fn test_query_xml_safety_family() {
 }
 #[test]
 fn test_query_xml_architecture_family() {
-    use ripwire::{
+    use ripwire_rs::{
         CommunityModule, serialize_around_xml, serialize_communities_xml, serialize_dead_code_xml,
         serialize_deps_xml, serialize_external_surface_xml,
     };
@@ -401,7 +401,7 @@ fn test_query_xml_architecture_family() {
 }
 #[test]
 fn test_query_xml_task_retrieval_family() {
-    use ripwire::{
+    use ripwire_rs::{
         serialize_exemplar_xml, serialize_from_trace_xml, serialize_lego_xml, serialize_recall_xml,
     };
     let mut buf = Vec::new();

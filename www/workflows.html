@@ -38,8 +38,8 @@
         <a href="./" class="nav-link">Home</a>
         <a href="workflows.html" class="nav-link active">Workflows</a>
         <a href="docs.html" class="nav-link">Docs</a>
-        <a href="https://crates.io/crates/ripwire" target="_blank" rel="noopener" class="nav-link">crates.io</a>
-        <a href="https://github.com/casonadams/ripwire" target="_blank" rel="noopener" class="btn-icon" aria-label="GitHub Repository">
+        <a href="https://crates.io/crates/ripwire-rs-rs" target="_blank" rel="noopener" class="nav-link">crates.io</a>
+        <a href="https://github.com/casonadams/ripwire-rs-rs" target="_blank" rel="noopener" class="btn-icon" aria-label="GitHub Repository">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
         </a>
         <button id="themeToggle" class="btn-icon" aria-label="Toggle dark/light theme">
@@ -99,8 +99,8 @@
                 <span>Architecture map of top 200 ranked symbols by Personalized PageRank</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --top-k=200</code>
-                <button class="btn-copy" data-copy="rw . --top-k=200">Copy</button>
+                <code>ripwire-rs . --top-k=200</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --top-k=200">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -109,8 +109,8 @@
                 <span>File-by-file structural inventory showing top 3 symbols per file</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --tree</code>
-                <button class="btn-copy" data-copy="rw . --tree">Copy</button>
+                <code>ripwire-rs . --tree</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --tree">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -119,8 +119,8 @@
                 <span>Task-lens relevance ranking: retrieves ranked declarations relevant to a goal</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --for="implement user authentication"</code>
-                <button class="btn-copy" data-copy="rw . --for=&quot;implement user authentication&quot;">Copy</button>
+                <code>ripwire-rs . --for="implement user authentication"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --for=&quot;implement user authentication&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -129,8 +129,8 @@
                 <span>Export interactive, self-contained SVG/HTML call graph to open in browser</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --html=graph.html --color-by=community</code>
-                <button class="btn-copy" data-copy="rw . --html=graph.html --color-by=community">Copy</button>
+                <code>ripwire-rs . --html=graph.html --color-by=community</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --html=graph.html --color-by=community">Copy</button>
               </div>
             </div>
           </div>
@@ -172,8 +172,8 @@
                 <span>Query direct 1-hop callers that depend on a symbol</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --callers="Interner::len"</code>
-                <button class="btn-copy" data-copy="rw . --callers=&quot;Interner::len&quot;">Copy</button>
+                <code>ripwire-rs . --callers="Interner::len"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --callers=&quot;Interner::len&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -182,8 +182,8 @@
                 <span>Query outgoing dependencies called by a function</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --callees="ingest_files"</code>
-                <button class="btn-copy" data-copy="rw . --callees=&quot;ingest_files&quot;">Copy</button>
+                <code>ripwire-rs . --callees="ingest_files"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --callees=&quot;ingest_files&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -192,8 +192,8 @@
                 <span>Transitive reachability graph: full blast radius across the whole codebase</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --impact="Interner"</code>
-                <button class="btn-copy" data-copy="rw . --impact=&quot;Interner&quot;">Copy</button>
+                <code>ripwire-rs . --impact="Interner"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --impact=&quot;Interner&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -202,8 +202,8 @@
                 <span>Local ego-graph neighborhood (depth=1..3, fanout=32)</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --around="execute_query" --around-depth=2 --around-fanout=16</code>
-                <button class="btn-copy" data-copy="rw . --around=&quot;execute_query&quot; --around-depth=2 --around-fanout=16">Copy</button>
+                <code>ripwire-rs . --around="execute_query" --around-depth=2 --around-fanout=16</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --around=&quot;execute_query&quot; --around-depth=2 --around-fanout=16">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -212,8 +212,8 @@
                 <span>Shortest directed call path between two functions</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --path="parse,serialize"</code>
-                <button class="btn-copy" data-copy="rw . --path=&quot;parse,serialize&quot;">Copy</button>
+                <code>ripwire-rs . --path="parse,serialize"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --path=&quot;parse,serialize&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -222,8 +222,8 @@
                 <span>ARISE intra-procedural def-use variable dataflow slicing (forward/backward)</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --slice="compute:x" --slice-flow=both</code>
-                <button class="btn-copy" data-copy="rw . --slice=&quot;compute:x&quot; --slice-flow=both">Copy</button>
+                <code>ripwire-rs . --slice="compute:x" --slice-flow=both</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --slice=&quot;compute:x&quot; --slice-flow=both">Copy</button>
               </div>
             </div>
           </div>
@@ -265,8 +265,8 @@
                 <span>Verify caller compatibility after modifying a symbol contract</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --edit-check="symbol_name"</code>
-                <button class="btn-copy" data-copy="rw . --edit-check=&quot;symbol_name&quot;">Copy</button>
+                <code>ripwire-rs . --edit-check="symbol_name"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --edit-check=&quot;symbol_name&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -275,8 +275,8 @@
                 <span>Transitive reachability mapping to affected test suites</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --affected="src/lib.rs"</code>
-                <button class="btn-copy" data-copy="rw . --affected=&quot;src/lib.rs&quot;">Copy</button>
+                <code>ripwire-rs . --affected="src/lib.rs"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --affected=&quot;src/lib.rs&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -285,8 +285,8 @@
                 <span>Pre-PR gate: names tests to run and untested blast radius (exits with code 4)</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --test-gate</code>
-                <button class="btn-copy" data-copy="rw . --test-gate">Copy</button>
+                <code>ripwire-rs . --test-gate</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --test-gate">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -295,8 +295,8 @@
                 <span>Situational awareness report for working tree diff: blast radius, tests, co-change</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --situ</code>
-                <button class="btn-copy" data-copy="rw . --situ">Copy</button>
+                <code>ripwire-rs . --situ</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --situ">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -305,8 +305,8 @@
                 <span>Assess whether a symbol can be safely deleted without breaking callers</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --safe-delete="Interner::len"</code>
-                <button class="btn-copy" data-copy="rw . --safe-delete=&quot;Interner::len&quot;">Copy</button>
+                <code>ripwire-rs . --safe-delete="Interner::len"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --safe-delete=&quot;Interner::len&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -315,8 +315,8 @@
                 <span>Measure code quality regressions against git HEAD across 10 facets</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --quality-delta</code>
-                <button class="btn-copy" data-copy="rw . --quality-delta">Copy</button>
+                <code>ripwire-rs . --quality-delta</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --quality-delta">Copy</button>
               </div>
             </div>
           </div>
@@ -358,8 +358,8 @@
                 <span>Detect internal functions with zero incoming callers across the repository</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --dead-code</code>
-                <button class="btn-copy" data-copy="rw . --dead-code">Copy</button>
+                <code>ripwire-rs . --dead-code</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --dead-code">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -368,8 +368,8 @@
                 <span>Rank repository files by maintenance risk (churn * cognitive complexity)</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --hotspots</code>
-                <button class="btn-copy" data-copy="rw . --hotspots">Copy</button>
+                <code>ripwire-rs . --hotspots</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --hotspots">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -378,8 +378,8 @@
                 <span>Detect AST code clones and near-miss duplicates (Type-1, Type-2, Type-3)</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --clones --min-tokens=40</code>
-                <button class="btn-copy" data-copy="rw . --clones --min-tokens=40">Copy</button>
+                <code>ripwire-rs . --clones --min-tokens=40</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --clones --min-tokens=40">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -388,8 +388,8 @@
                 <span>Mine historical Git co-change coupling to identify hidden file coupling</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --cochange</code>
-                <button class="btn-copy" data-copy="rw . --cochange">Copy</button>
+                <code>ripwire-rs . --cochange</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --cochange">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -398,8 +398,8 @@
                 <span>Partition call graph into cohesive modules via Louvain community detection</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --communities</code>
-                <button class="btn-copy" data-copy="rw . --communities">Copy</button>
+                <code>ripwire-rs . --communities</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --communities">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -408,8 +408,8 @@
                 <span>Discover symbols referenced in code but never defined (stdlib &amp; external packages)</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --external-surface</code>
-                <button class="btn-copy" data-copy="rw . --external-surface">Copy</button>
+                <code>ripwire-rs . --external-surface</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --external-surface">Copy</button>
               </div>
             </div>
           </div>
@@ -451,8 +451,8 @@
                 <span>Expand full source body of symbols and callee signatures in CDATA XML</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --expand="Symbol::new"</code>
-                <button class="btn-copy" data-copy="rw . --expand=&quot;Symbol::new&quot;">Copy</button>
+                <code>ripwire-rs . --expand="Symbol::new"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --expand=&quot;Symbol::new&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -461,8 +461,8 @@
                 <span>Outline control-flow skeletons of symbols (loops, branches, declarations)</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --outline="Interner::intern"</code>
-                <button class="btn-copy" data-copy="rw . --outline=&quot;Interner::intern&quot;">Copy</button>
+                <code>ripwire-rs . --outline="Interner::intern"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --outline=&quot;Interner::intern&quot;">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -471,8 +471,8 @@
                 <span>Pack source bodies of the top N highest PageRank symbols</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --pack-top-n=5</code>
-                <button class="btn-copy" data-copy="rw . --pack-top-n=5">Copy</button>
+                <code>ripwire-rs . --pack-top-n=5</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --pack-top-n=5">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -481,8 +481,8 @@
                 <span>Map compiler error / stack trace frames directly onto indexed symbols</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --from-trace=error.log</code>
-                <button class="btn-copy" data-copy="rw . --from-trace=error.log">Copy</button>
+                <code>ripwire-rs . --from-trace=error.log</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --from-trace=error.log">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -491,8 +491,8 @@
                 <span>Execute up to 16 heterogeneous sub-queries in a single turn</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --batch=queries.txt</code>
-                <button class="btn-copy" data-copy="rw . --batch=queries.txt">Copy</button>
+                <code>ripwire-rs . --batch=queries.txt</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --batch=queries.txt">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -501,8 +501,8 @@
                 <span>Structured JSON output for navigation queries</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --callers="Interner::len" --json</code>
-                <button class="btn-copy" data-copy="rw . --callers=&quot;Interner::len&quot; --json">Copy</button>
+                <code>ripwire-rs . --callers="Interner::len" --json</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --callers=&quot;Interner::len&quot; --json">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -511,18 +511,18 @@
                 <span>Launch native stdio Model Context Protocol (MCP) server for coding agents</span>
               </div>
               <div class="code-wrap">
-                <code>rw mcp</code>
-                <button class="btn-copy" data-copy="rw mcp">Copy</button>
+                <code>ripwire-rs mcp</code>
+                <button class="btn-copy" data-copy="ripwire-rs mcp">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
               <div class="step-desc">
                 <span class="step-num">8</span>
-                <span>Install 18 pre-packaged ripwire agent skills to ~/.agents/skills (or custom path)</span>
+                <span>Install 18 pre-packaged ripwire-rs agent skills to ~/.agents/skills (or custom path)</span>
               </div>
               <div class="code-wrap">
-                <code>rw --add-skills</code>
-                <button class="btn-copy" data-copy="rw --add-skills">Copy</button>
+                <code>ripwire-rs --add-skills</code>
+                <button class="btn-copy" data-copy="ripwire-rs --add-skills">Copy</button>
               </div>
             </div>
           </div>
@@ -531,9 +531,9 @@
           <span class="cmd-label">Why &amp; Key Benefits</span>
           <ul style="padding-left: 20px; color: var(--text-secondary); font-size: 0.95rem; margin-top: 6px;">
             <li><strong>Precision Context Bundles:</strong> Extracts only relevant symbol bodies into CDATA blocks, conserving prompt token budgets.</li>
-            <li><strong>Batching Economy:</strong> <code>rw . --batch</code> executes up to 16 queries in a single turn, eliminating agent tool-call round-trip latency.</li>
+            <li><strong>Batching Economy:</strong> <code>ripwire-rs . --batch</code> executes up to 16 queries in a single turn, eliminating agent tool-call round-trip latency.</li>
             <li><strong>Native Agent Protocol:</strong> 33 built-in MCP tools accessible over stdio for Claude Desktop, Cursor, and Omp.</li>
-            <li><strong>Instant Agent Skills:</strong> <code>rw --add-skills</code> provisions 18 standardized skills and active manifest into <code>~/.agents/skills</code> for zero-configuration onboarding.</li>
+            <li><strong>Instant Agent Skills:</strong> <code>ripwire-rs --add-skills</code> provisions 18 standardized skills and active manifest into <code>~/.agents/skills</code> for zero-configuration onboarding.</li>
           </ul>
         </div>
       </div>
@@ -565,8 +565,8 @@
                 <span>PR Gate: names tests to run and untested blast radius (exits 4 on violation)</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --test-gate</code>
-                <button class="btn-copy" data-copy="rw . --test-gate">Copy</button>
+                <code>ripwire-rs . --test-gate</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --test-gate">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -575,8 +575,8 @@
                 <span>Quality Regression Gate: checks quality regressions against base branch / HEAD</span>
               </div>
               <div class="code-wrap">
-                <code>rw . --quality-delta</code>
-                <button class="btn-copy" data-copy="rw . --quality-delta">Copy</button>
+                <code>ripwire-rs . --quality-delta</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --quality-delta">Copy</button>
               </div>
             </div>
             <div class="workflow-step">
@@ -619,16 +619,16 @@ jobs:
         run: cargo install ripwire
 
       - name: Run Test Reachability Gate
-        run: rw . --test-gate
+        run: ripwire-rs . --test-gate
 
       - name: Run Quality Regression Delta Gate
-        run: rw . --quality-delta</code></pre>
+        run: ripwire-rs . --quality-delta</code></pre>
           </div>
         </div>
         <div class="cmd-field">
           <span class="cmd-label">Why &amp; Key Benefits</span>
           <ul style="padding-left: 20px; color: var(--text-secondary); font-size: 0.95rem; margin-top: 6px;">
-            <li><strong>Automated Merge Blocking:</strong> Fails PR jobs automatically (exit code 4 on <code>rw . --test-gate</code> or non-zero on <code>rw . --quality-delta</code>) before untested code or architectural rot merges.</li>
+            <li><strong>Automated Merge Blocking:</strong> Fails PR jobs automatically (exit code 4 on <code>ripwire-rs . --test-gate</code> or non-zero on <code>ripwire-rs . --quality-delta</code>) before untested code or architectural rot merges.</li>
             <li><strong>Sub-50ms Execution:</strong> Fast in-memory static analysis executes in milliseconds, eliminating slow CI runner bottlenecks.</li>
             <li><strong>Upstream Parity Enforcement:</strong> <code>make validate</code> runs continuous 20-command verification matrices against upstream specifications.</li>
             <li><strong>Zero Configuration:</strong> Reads native git repository history, remotes, and branch merge bases automatically.</li>
@@ -649,8 +649,8 @@ jobs:
         <a href="./">Home</a>
         <a href="workflows.html">Workflows</a>
         <a href="docs.html">Docs</a>
-        <a href="https://crates.io/crates/ripwire" target="_blank" rel="noopener">Crates.io</a>
-        <a href="https://github.com/casonadams/ripwire" target="_blank" rel="noopener">GitHub</a>
+        <a href="https://crates.io/crates/ripwire-rs-rs" target="_blank" rel="noopener">Crates.io</a>
+        <a href="https://github.com/casonadams/ripwire-rs-rs" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>
   </footer>

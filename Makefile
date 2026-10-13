@@ -75,9 +75,16 @@ complexity: ## Evaluate Cognitive and Cyclomatic complexity with cccc and gate o
 	@cccc --max-cognitive 15 . | jq -e '([.files[]? | .path as $$path | .functions[]? | select(.cognitive > 15) | {file: $$path, line: .line, function: .name, cognitive: .cognitive, cyclomatic: .cyclomatic}]) as $$v | if ($$v | length) > 0 then ($$v | halt_error(1)) else $$v end'
 
 .PHONY: quality
-quality: ## Measure quality regressions against git HEAD with ripwire
-	@command -v ripwire >/dev/null 2>&1 || { echo "Error: ripwire not found"; exit 1; }
-	@ripwire . --quality-delta >/dev/null
+quality: ## Measure quality regressions against git HEAD with ripwire-rs
+	@if [ -x target/release/ripwire-rs ]; then \
+		target/release/ripwire-rs . --quality-delta >/dev/null; \
+	elif command -v ripwire-rs >/dev/null 2>&1; then \
+		ripwire-rs . --quality-delta >/dev/null; \
+	elif command -v ripwire >/dev/null 2>&1; then \
+		ripwire . --quality-delta >/dev/null; \
+	else \
+		echo "Error: ripwire-rs not found"; exit 1; \
+	fi
 
 REPO ?= .
 
@@ -94,7 +101,7 @@ update-grammars: ## Update vendored tree-sitter grammars from upstream repositor
 install-man: ## Install manual pages into candidate man directory
 	@MAN_DIR=$$(test -w /opt/homebrew/share/man/man1 2>/dev/null && echo /opt/homebrew/share/man/man1 || echo ~/.local/share/man/man1); \
 	mkdir -p "$$MAN_DIR"; \
-	cp man/man1/rw.1 man/man1/ripwire.1 "$$MAN_DIR/"; \
+	cp man/man1/ripwire-rs.1 "$$MAN_DIR/"; \
 	echo "Installed man pages to $$MAN_DIR"
 
 .PHONY: install

@@ -100,6 +100,17 @@ pub fn execute_stream_xml(root: &str) -> io::Result<()> {
 pub fn load_repo_analysis(
     root: &str,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
+    load_repo_analysis_cached(root, None, false)
+}
+
+pub fn load_repo_analysis_cached(
+    root: &str,
+    cache_path: Option<&Path>,
+    no_cache: bool,
+) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
+    if !no_cache && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path) {
+        return Ok(cached);
+    }
     let path = Path::new(root);
     let files = crate::crawler::crawl_directory(path, &crate::crawler::CrawlerOptions::default());
     let registry =
@@ -108,7 +119,20 @@ pub fn load_repo_analysis(
     let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
     let graph = Graph::build(&ingest, &interner);
     let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
+    if !no_cache {
+        let _ =
+            crate::cache::save_cached_analysis(root, cache_path, (&ingest, &graph, &pr, &interner));
+    }
     Ok((ingest, graph, pr, interner))
+}
+
+pub fn load_repo_analysis_for_cli(
+    cli: &Cli,
+    root: &str,
+) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
+    let cache_path = cli.modifiers.cache.as_deref().map(Path::new);
+    let no_cache = cli.modifiers.no_cache;
+    load_repo_analysis_cached(root, cache_path, no_cache)
 }
 
 pub fn compute_effective_budget(
@@ -138,7 +162,7 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     };
 
     Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout = io::stdout().lock();
         if cli.modifiers.json {
             let ids = crate::navigate::find_symbols_by_name(sym, &ingest, &interner);
@@ -172,26 +196,21 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 }
 
 pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    let ret = &cli.retrieval;
-    if ret.task_for.is_none()
-        && ret.grep.is_none()
-        && ret.connect.is_none()
-        && ret.path_between.is_none()
-        && ret.exemplar.is_none()
-        && ret.lego.is_none()
-        && ret.recall.is_none()
-        && ret.from_trace.is_none()
-        && ret.at.is_none()
-        && ret.verify.is_none()
-        && ret.pack_task.is_none()
-        && ret.graph_query.is_none()
-    {
+    if !cli.retrieval.is_active() {
         return None;
     }
     Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout = io::stdout().lock();
-        execute_retrieval_dispatch(ret, root, &ingest, &graph, &pr, &interner, &mut stdout)
+        execute_retrieval_dispatch(
+            &cli.retrieval,
+            root,
+            &ingest,
+            &graph,
+            &pr,
+            &interner,
+            &mut stdout,
+        )
     })())
 }
 
@@ -203,15 +222,16 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     Some((|| {
         let mut stdout = io::stdout().lock();
         if ws.owners {
-            let commits = crate::git::history::walk_repository_history(Path::new(root)).ok();
+            let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 12);
+            let commits =
+                crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
             let val = crate::mcp::doc_tools::call_owners(commits.as_deref(), None);
             crate::serialize::serialize_owners_xml(&val, &mut stdout)?;
         } else if ws.stray_content {
-            let commits = crate::git::history::walk_repository_history(Path::new(root)).ok();
-            let val = crate::mcp::doc_tools::call_stray_content(commits.as_deref());
+            let val = crate::mcp::doc_tools::call_stray_content(None);
             crate::serialize::serialize_stray_content_xml(&val, &mut stdout)?;
         } else {
-            let (ingest, _graph, _pr, interner) = load_repo_analysis(root)?;
+            let (ingest, _graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
             execute_workspace_doc_query(ws, &ingest, &interner, &mut stdout)?;
         }
         Ok(())
@@ -233,7 +253,7 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     }
 
     Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout = io::stdout().lock();
 
         if let Some(syms) = detail.expand.as_deref().or(detail.outline.as_deref()) {
@@ -275,7 +295,7 @@ pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         return None;
     }
     Some((|| {
-        let (ingest, graph, _pr, interner) = load_repo_analysis(root)?;
+        let (ingest, graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout = io::stdout().lock();
         if let Some(code) =
             execute_safety_dispatch(s, root, &ingest, &graph, &interner, &mut stdout)?
@@ -288,21 +308,12 @@ pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
 pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let a = &cli.arch;
-    if !a.dead_code
-        && !a.communities
-        && a.community.is_none()
-        && !a.deps
-        && a.around.is_none()
-        && !a.external_surface
-        && a.arch.is_none()
-        && !a.mermaid
-        && a.zoom.is_none()
-    {
+    if !a.is_active() {
         return None;
     }
 
     Some((|| {
-        let (ingest, graph, _pr, interner) = load_repo_analysis(root)?;
+        let (ingest, graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout = io::stdout().lock();
 
         if let Some(rules_file) = a.arch.as_deref() {
@@ -342,7 +353,7 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     if let Some(file) = cli.modifiers.batch.as_deref() {
         return Some((|| {
-            let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+            let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
             let mut stdout = io::stdout().lock();
             execute_batch_file(root, file, &ingest, &graph, &pr, &interner, &mut stdout)
         })());
@@ -358,7 +369,7 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
 pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io::Result<()> {
     let emit_legend = !cli.legend.eq_ignore_ascii_case("none");
-    let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+    let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
     let mut stdout = io::stdout().lock();
     let args = RankedStreamArgs {
         root,
@@ -419,13 +430,13 @@ pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
 pub fn execute_skills_install(target: Option<&str>) -> io::Result<()> {
     let report = crate::skills::install_skills(target)?;
     println!(
-        "Installed {} ripwire agent skills to {}",
+        "Installed {} ripwire-rs agent skills to {}",
         report.installed_count,
         report.destination.display()
     );
     println!(
         "Active manifest written to {}",
-        report.destination.join(".ripwire-manifest-v1").display()
+        report.destination.join(".ripwire-rs-manifest-v1").display()
     );
     for skill in &report.skills {
         println!("  - {skill}");

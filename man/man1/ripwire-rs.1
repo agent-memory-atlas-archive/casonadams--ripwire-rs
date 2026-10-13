@@ -1,0 +1,383 @@
+.TH RIPWIRE-RS 1 "2026-10-12" "ripwire-rs 0.3.1" "User Commands"
+.SH NAME
+ripwire-rs \- high-throughput agent context router and deterministic static analysis engine
+.SH SYNOPSIS
+.B ripwire-rs
+[\fIPATH\fR] [\fIOPTIONS\fR] [\fICOMMAND\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-top\-k\fR \fIN\fR] [\fB\-\-max\-tokens\fR \fIN\fR] [\fB\-\-pack\-budget\fR \fIBYTES\fR] [\fB\-\-rank\-by\fR \fIMODE\fR] [\fB\-\-legend\fR \fIMODE\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-expand\fR \fISYMS\fR] [\fB\-\-outline\fR \fISYMS\fR] [\fB\-\-pack\-top\-n\fR \fIN\fR] [\fB\-\-tree\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-callers\fR \fISYM\fR] [\fB\-\-callees\fR \fISYM\fR] [\fB\-\-impact\fR \fISYM\fR] [\fB\-\-uses\fR \fISYM\fR] [\fB\-\-find\-symbol\fR \fISYM\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-for\fR \fITASK\fR] [\fB\-\-grep\fR \fIPAT\fR] [\fB\-\-connect\fR \fIA,B\fR] [\fB\-\-path\fR \fIA:B\fR] [\fB\-\-whereis\fR \fISYM\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-exemplar\fR \fITASK\fR] [\fB\-\-lego\fR \fITYPE\fR] [\fB\-\-recall\fR \fITASK\fR] [\fB\-\-from\-trace\fR \fIFILE\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-edit\-check\fR \fISYM\fR] [\fB\-\-affected\fR \fIPATH\fR] [\fB\-\-test\-gate\fR [\fIFILES\fR]] [\fB\-\-situ\fR [\fIFILES\fR]]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-safe\-delete\fR \fISYM\fR] [\fB\-\-exercises\fR \fITESTFILE\fR] [\fB\-\-quality\-baseline\fR] [\fB\-\-quality\-delta\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-dead\-code\fR] [\fB\-\-communities\fR] [\fB\-\-around\fR \fISYM\fR] [\fB\-\-deps\fR] [\fB\-\-external\-surface\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-clones\fR] [\fB\-\-hotspots\fR] [\fB\-\-slice\fR \fISYM[:VAR]\fR] [\fB\-\-cochange\fR] [\fB\-\-json\fR] [\fB\-\-batch\fR \fIFILE\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-map\-diff\fR] [\fB\-\-seams\fR] [\fB\-\-pr\-context\fR] [\fB\-\-merge\-scout\fR \fIREFS\fR] [\fB\-\-arch\fR \fIFILE\fR] [\fB\-\-mermaid\fR] [\fB\-\-zoom\fR]
+.br
+.B ripwire-rs
+[\fIPATH\fR] [\fB\-\-lint\fR] [\fB\-\-lint\-catalog\fR] [\fB\-\-at\fR \fIFILE:LINE\fR] [\fB\-\-verify\fR \fICLAIM\fR] [\fB\-\-doctor\fR] [\fB\-\-notes\fR]
+.br
+.B ripwire-rs
+[\fB\-\-add\-skills\fR [\fIDIR\fR]]
+.B ripwire-rs mcp
+[\fIPATH\fR]
+.br
+.B ripwire-rs skills
+[\fIDIR\fR]
+\fBripwire-rs\fR is a high-throughput context router and deterministic static analysis engine designed for AI coding agents, developer CLI workflows, and automated CI/CD safety gates. It is a Rust port and rewrite of \fBredhat-et/ripwire\fR, originally authored by David Brewster.
+.PP
+It indexes codebases across 36 programming languages using multi-threaded parallel Tree-Sitter grammar queries, builds a resolved workspace call graph with multi-tier scoping precedence, executes Personalized PageRank over compressed sparse row (CSR) transpose matrices with dangling node mass redistribution, and streams dense, token-budgeted XML representations to stdout.
+Output formats are minified, self-documenting XML designed to maximize LLM in-context reasoning efficiency while eliminating hallucinated code dependencies and false-negative omissions.
+
+.SH ORIENTATION & BUDGET OPTIONS
+.TP
+.BI \-\-top\-k= N
+Retain only the \fIN\fR highest-ranked symbols in the emitted symbol map (e.g. \fB\-\-top\-k=200\fR).
+.TP
+.BI \-\-max\-tokens= N
+Budget the output to approximately \fIN\fR LLM prompt tokens (~4 bytes per token).
+.TP
+.BI \-\-token\-budget= N
+Alias for \fB\-\-max\-tokens\fR.
+.TP
+.BI \-\-pack\-budget= BYTES
+Streaming budget cap in raw bytes (default: 65536 = 64 KB).
+.TP
+.BI \-\-rank\-by= MODE
+Ranking signal algorithm: \fBpagerank\fR (default, structural authority), \fBauthority\fR (HITS authority), or \fBhub\fR (HITS hub).
+.TP
+.BI \-\-legend= MODE
+Schema documentation comment posture: \fBcompact\fR (default, includes in-context AST schema header comment) or \fBnone\fR (suppresses leading XML comments).
+
+.SH DETAIL LADDER & BODY OPTIONS
+.TP
+.BI \-\-expand= SYMS
+Expand full source body of comma-separated symbols \fISYMS\fR and list callee signatures.
+.TP
+.BI \-\-outline= SYMS
+Outline control-flow skeletons of symbols (declarations, loops, branches with body statements collapsed).
+.TP
+.BI \-\-pack\-top\-n= N
+Pack source bodies of the top \fIN\fR highest PageRank symbols.
+.TP
+.B \-\-tree
+Orient file by file, showing each file's top 3 symbols by rank.
+
+.SH NAVIGATION & GRAPH OPTIONS
+.TP
+.BI \-\-callers= SYM
+Query direct 1-hop incoming callers of symbol \fISYM\fR.
+.TP
+.BI \-\-callees= SYM
+Query direct 1-hop outgoing callees called by symbol \fISYM\fR.
+.TP
+.BI \-\-impact= SYM
+Compute transitive blast radius (reachability graph) reaching symbol \fISYM\fR.
+.TP
+.BI \-\-uses= SYM
+Query all static use-sites (calls, definitions, reads) of symbol \fISYM\fR.
+.TP
+.BI \-\-find\-symbol= SYM
+Query both incoming callers and outgoing callees of symbol \fISYM\fR in one view.
+.TP
+.BI \-\-connect= A,B,...
+Compute the minimal connecting subgraph relating 2 to 16 named symbols.
+.TP
+.BI \-\-path= A:B ", " \-\-path\-between= A:B
+Find the shortest directed call path from source symbol \fIA\fR to destination \fIB\fR (\fIA:B\fR or \fIA,B\fR).
+
+.SH SEARCH & RETRIEVAL OPTIONS
+.TP
+.BI \-\-for= TASK
+Task-lens relevance ranking: retrieves ranked declarations, signatures, and context relevant to natural-language task description \fITASK\fR.
+.TP
+.BI \-\-grep= PAT
+Search for literal trigram text pattern \fIPAT\fR; every match is annotated with its enclosing AST symbol.
+.TP
+.BI \-\-whereis= SYM
+Locate which branches, revisions, or tree locations define symbol \fISYM\fR.
+.TP
+.BI \-\-mentions= SYM
+Locate Markdown documentation and specification files that reference symbol \fISYM\fR in backticks.
+.TP
+.BI \-\-exemplar= TASK|KIND
+Retrieve best-in-class existing implementation of kind or role to imitate.
+.TP
+.BI \-\-lego= TYPE
+Show one interface or trait contract and all implementing types in the codebase.
+.TP
+.BI \-\-recall= TASK
+Search repository documentation, design plans, and notes for relevant concepts.
+.TP
+.BI \-\-from\-trace= FILE
+Map stack trace lines, compiler error messages, or sanitizer frames onto indexed symbols.
+.TP
+.B \-\-owners
+Analyze recency-weighted Git commit authorship and calculate per-file bus-factor metrics.
+
+.SH VERIFICATION & SAFETY GATES
+.TP
+.BI \-\-edit\-check= SYM
+Verify caller compatibility after modifying symbol \fISYM\fR's signature. Verifies parameter count and visibility changes against git \fBHEAD\fR across all 1-hop callers.
+.TP
+.BI \-\-affected= PATH
+Transitive reachability mapping from changed file or symbol \fIPATH\fR to affected test suites, ranked by evidence distance.
+.TP
+.BI \-\-test\-gate [=FILES]
+Pre-PR verification gate: names tests to run and untested blast radius. Exits with code \fB4\fR if non-empty obligations exist. Defaults to git diff.
+.TP
+.BI \-\-situ [=FILES]
+Situational awareness report for a change: blast radius, tests to run, and Fowler's Shotgun Surgery co-change coupling. Defaults to git diff.
+.TP
+.BI \-\-safe\-delete= SYM
+Safe deletion assessment: joins 1-hop callers, impact blast radius, test coverage, and dead code candidate status for symbol \fISYM\fR.
+.TP
+.BI \-\-exercises= TESTFILE
+Show which non-test domain symbols a specific test harness file reaches.
+.TP
+.B \-\-quality\-baseline
+Pin a code quality baseline stamped with git \fBHEAD\fR to \fB.ripwire_quality_baseline\fR.
+.TP
+.B \-\-quality\-delta
+Measure code quality regressions against git \fBHEAD\fR (or pinned baseline) across 10 facets (cognitive complexity, cyclomatic complexity, dead code, duplicates, nesting, params, churn, and arity breaks). Exits non-zero (\fB2\fR) if gating regressions are detected.
+.TP
+.B \-\-map\-diff
+Re-rank the architecture map toward git-changed files so recent work automatically floats to the top of the context window.
+.TP
+.B \-\-seams
+Discover untested cross-module call boundaries (integration seams) across directory and subsystem boundaries.
+.TP
+.BI \-\-pr\-context [=BASE]
+Generate a composite pull request review context bundle against base reference \fIBASE\fR (default: \fBmain\fR or \fBmaster\fR), including changed symbols, impact, tests, co-change, and authors.
+.TP
+.BI \-\-merge\-scout= REFS
+Predict semantic and symbol merge conflicts across concurrent divergent branches \fIREFS\fR before attempting a git merge or rebase.
+.TP
+.BI \-\-arch= FILE
+Enforce architectural layering rules from file \fIFILE\fR. Exits with code \fB2\fR if any forbidden cross-layer call dependency is introduced.
+.TP
+.B \-\-mermaid
+Export a Mermaid flowchart diagram of module call dependency topology to stdout.
+.TP
+.B \-\-zoom
+Hierarchical Louvain community clustering view.
+.TP
+.B \-\-biggest\-first
+Rank functions by readability volume and physical size, largest first.
+.TP
+.B \-\-nonlocal\-state
+Detect functions reading or mutating reachable global or file-static state.
+.TP
+.B \-\-lint
+Scan codebase for AST code smells (complexity spikes, deep nesting, dead functions).
+.TP
+.B \-\-lint\-catalog
+Print built-in AST code smell catalog with severity rankings.
+.TP
+.BI \-\-at= FILE:LINE
+Resolve innermost symbol definition enclosing \fIFILE:LINE\fR. Exits 1 if no symbol spans line.
+.TP
+.BI \-\-verify= CLAIM
+Formally verify relationship claim between symbols (e.g. \fBcalls(A,B)\fR, \fBuses(A,B)\fR).
+.TP
+.BI \-\-pack\-task= TASK
+Assemble single-call orientation task bundle under budget tailored to task description.
+.TP
+.BI \-\-graph\-query= QUERY
+Evaluate functional graph query expression (e.g. \fBcallers(main)\fR).
+.TP
+.B \-\-doctor
+Run self-check diagnostics, verifying grammar integrity, git health, and baseline presence.
+.TP
+.B \-\-notes
+Display pinned session gotchas and notes.
+.TP
+.BI \-\-note\-add= NOTE
+Append a pinned session gotcha note.
+.TP
+.BI \-\-replace\-symbol\-body= BODY
+Atomically replace an entire symbol definition with new source code body.
+.TP
+.BI \-\-insert\-before\-symbol= TEXT
+Atomically insert source code immediately before a symbol definition.
+.TP
+.BI \-\-insert\-after\-symbol= TEXT
+Atomically insert source code immediately after a symbol definition.
+.SH ARCHITECTURE & CODE INTELLIGENCE
+.TP
+.B \-\-dead\-code
+Detect internal functions with zero incoming callers across the repository.
+.TP
+.B \-\-communities
+Partition call graph into cohesive modular clusters using Louvain community detection.
+.TP
+.BI \-\-community= ID
+Inspect member symbols and bridges of a specific community cluster.
+.TP
+.BI \-\-around= SYM
+Extract ego-graph around symbol \fISYM\fR.
+.TP
+.BI \-\-around\-depth= N
+Depth limit for \fB\-\-around\fR ego-graph (default: 1).
+.TP
+.BI \-\-around\-fanout= N
+Maximum neighbors explored per hop for \fB\-\-around\fR (default: 32).
+.TP
+.B \-\-external\-surface
+Discover symbols referenced in code that have no definition in the repository (standard library and external package surface).
+.TP
+.B \-\-deps
+Generate file-to-file dependency graph with afferent and efferent inclusion counts.
+.TP
+.B \-\-clones
+Detect AST code duplication and near-miss duplicate functions across Type-1 (exact), Type-2 (renamed identifiers), and Type-3 (gapped modifications) clone categories.
+.TP
+.BI \-\-min\-tokens= N
+Minimum token length threshold for clone candidate extraction (default: 40).
+.TP
+.B \-\-hotspots
+Rank repository files by maintenance risk score, combining commit churn with Campbell cognitive complexity.
+.TP
+.B \-\-cochange
+Mine historical Git co-change coupling to identify hidden file coupling (Fowler's Shotgun Surgery).
+.TP
+.BI \-\-since= DATE_OR_REV
+Limit Git history traversal to commits after this date (YYYY-MM-DD) or revision.
+.TP
+.BI \-\-slice= SYM[:VAR]
+Perform ARISE intra-procedural def-use variable dataflow slicing for variable \fIVAR\fR inside symbol \fISYM\fR.
+.TP
+.BI \-\-slice\-flow= DIRECTION
+Dataflow direction for \fB\-\-slice\fR: \fBfwd\fR (default, forward dependencies), \fBback\fR (backward origins), or \fBboth\fR.
+.TP
+.B \-\-flags
+Scan codebase for dark feature gates, environment reads, and compile-time flags.
+.TP
+.B \-\-doc\-drift
+Detect stale or broken symbol references within repository documentation.
+.TP
+.B \-\-stray\-content
+Track authored content living on divergent branches that has not merged into \fBHEAD\fR.
+
+.SH MODIFIERS & BATCHING
+.TP
+.B \-\-json
+Emit JSON instead of XML for navigation and query commands.
+.TP
+.BI \-\-batch= FILE
+Execute up to 16 heterogeneous sub-queries sequentially from a newline-delimited \fIverb:arg\fR specification file (\fI-\fR for stdin).
+.TP
+.BI \-\-add\-skills [=DIR]
+Install 18 pre-packaged ripwire agent skills and active manifest (\fB.ripwire\-manifest\-v1\fR) to \fI~/.agents/skills\fR (or custom \fIDIR\fR). Replaces stale or broken symlinks safely. Alias: \fB\-\-install\-skills\fR.
+.SH VISUALIZATION OPTIONS
+.TP
+.BI \-\-html [=FILE]
+Export interactive, self-contained SVG/HTML call graph visualization (writes to stdout or specified file).
+.TP
+.BI \-\-color\-by= MODE
+Node coloring mode for HTML visualization: \fBlang\fR (default), \fBcommunity\fR, \fBcx\fR (complexity), \fBchurn\fR, or \fBtested\fR.
+
+.SH SUBCOMMANDS
+.TP
+.B ripwire-rs orient \fR[\fIPATH\fR]
+Exploration and task-based context orientation.
+.TP
+.B ripwire-rs navigate \fR[\fIPATH\fR] \fB\-\-symbol\fR \fISYM\fR [\fB\-\-callers\fR|\fB\-\-callees\fR|\fB\-\-impact\fR]
+Symbol neighborhood analysis and traversals.
+.TP
+.B ripwire-rs gate \fR[\fIPATH\fR] [\fB\-\-edit\-check\fR|\fB\-\-affected\fR|\fB\-\-quality\-delta\fR|\fB\-\-test\-gate\fR]
+Pre-commit verification safety gates.
+.TP
+.B ripwire-rs metrics \fR[\fIPATH\fR] [\fB\-\-hotspots\fR|\fB\-\-clones\fR]
+Code health and structural complexity metrics.
+.TP
+.B ripwire-rs slice \fR[\fIPATH\fR] \fB\-\-symbol\fR \fISYM\fR \fB\-\-var\fR \fIVAR\fR
+Intra-procedural def-use slicing.
+.TP
+.B ripwire-rs mcp \fR[\fIPATH\fR]
+Launch native Model Context Protocol (MCP) JSON-RPC 2.0 server over standard input/output.
+.TP
+.B ripwire-rs skills \fR[\fIDIR\fR]
+Install and manage 18 ripwire agent skills into the cross-agent discovery directory (default: \fI~/.agents/skills\fR).
+.SH SYMBOL SELECTOR SYNTAX
+When querying symbols via \fB\-\-callers\fR, \fB\-\-callees\fR, \fB\-\-impact\fR, \fB\-\-uses\fR, \fB\-\-expand\fR, or \fB\-\-edit\-check\fR, \fBripwire-rs\fR accepts several selector formats:
+.TP
+.B bare_name
+Matches any symbol with name \fIbare_name\fR (e.g. \fBlen\fR).
+.TP
+.B Scope::name
+Disambiguates by enclosing type or namespace scope (e.g. \fBInterner::len\fR or \fBType.method\fR).
+.TP
+.B file_path:name
+Disambiguates by file path prefix/suffix and symbol name (e.g. \fBsrc/domain.rs:len\fR).
+.TP
+.B file_path::Scope::name
+Fully qualified canonical identifier (e.g. \fBsrc/domain.rs::Interner::len\fR).
+
+.SH EXAMPLES
+Expand full body of an interned method:
+.RS
+.B ripwire-rs . \-\-expand="Interner::len"
+.RE
+.PP
+Run pre-PR test gate check (exits 4 on untested blast radius):
+.RS
+.B ripwire-rs . \-\-test\-gate
+.RE
+.PP
+Inspect situational awareness diff analysis:
+.RS
+.B ripwire-rs . \-\-situ
+.RE
+.PP
+Verify whether a symbol can be safely deleted:
+.RS
+.B ripwire-rs . \-\-safe\-delete="Interner::len"
+.RE
+.PP
+Partition repository call graph into modules:
+.RS
+.B ripwire-rs . \-\-communities
+.RE
+.PP
+Find dead internal functions:
+.RS
+.B ripwire-rs . \-\-dead\-code
+.RE
+.PP
+Execute a batch of queries in a single turn:
+.RS
+.B ripwire-rs . \-\-batch=queries.txt
+.RE
+
+.SH SEE ALSO
+.BR git (1),
+.BR cccc (1)
+
+.SH AUTHOR
+Cason Adams (Rust port)
+.br
+David Brewster (ripwire, https://github.com/redhat-et/ripwire)
+.SH COPYRIGHT
+Apache-2.0 License

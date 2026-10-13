@@ -4,10 +4,11 @@ pub mod mermaid;
 use crate::rank::{PageRankConfig, PageRankResult, page_rank, uniform_teleport};
 use crate::resolve::{ResolutionResult, resolve_all_references};
 pub use mermaid::generate_mermaid_diagram;
+use serde::{Deserialize, Serialize};
 use std::ops::Range;
 
 /// Compressed Sparse Row (CSR) matrix representation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CsrMatrix {
     pub rows: usize,
     pub cols: usize,
@@ -99,7 +100,7 @@ impl CsrMatrix {
 }
 
 /// The resolved repository call graph.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Graph {
     pub in_edges: CsrMatrix,
     pub w_out_deg: Vec<f64>,

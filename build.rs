@@ -56,17 +56,15 @@ fn main() {
 
 fn copy_man_to_dir(src: &std::path::Path, dir: PathBuf) {
     if dir.exists() || std::fs::create_dir_all(&dir).is_ok() {
-        let _ = std::fs::copy(src.join("rw.1"), dir.join("rw.1"));
-        let _ = std::fs::copy(src.join("ripwire.1"), dir.join("ripwire.1"));
+        let _ = std::fs::copy(src.join("ripwire-rs.1"), dir.join("ripwire-rs.1"));
     }
 }
 
 fn install_man_pages() {
-    println!("cargo:rerun-if-changed=man/man1/rw.1");
-    println!("cargo:rerun-if-changed=man/man1/ripwire.1");
+    println!("cargo:rerun-if-changed=man/man1/ripwire-rs.1");
 
     let src = PathBuf::from("man/man1");
-    if !src.join("rw.1").exists() {
+    if !src.join("ripwire-rs.1").exists() {
         return;
     }
 

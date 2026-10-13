@@ -69,7 +69,7 @@ pub fn get_skill_names() -> Vec<&'static str> {
     let mut names = BTreeSet::new();
     for (rel_path, _) in EMBEDDED_SKILLS {
         if let Some(first_seg) = rel_path.split('/').next()
-            && first_seg.starts_with("ripwire-")
+            && first_seg.starts_with("ripwire-rs-")
         {
             names.insert(first_seg);
         }
@@ -108,7 +108,7 @@ fn write_skill_file(dest_dir: &Path, rel_path: &str, content: &str) -> io::Resul
 }
 fn write_manifest_file(dest_dir: &Path, skill_names: &[&str]) -> io::Result<()> {
     let manifest_content = generate_manifest_content(skill_names);
-    let manifest_path = dest_dir.join(".ripwire-manifest-v1");
+    let manifest_path = dest_dir.join(".ripwire-rs-manifest-v1");
     clean_path_if_symlink(&manifest_path)?;
     fs::write(&manifest_path, manifest_content)
 }
@@ -143,19 +143,19 @@ mod tests {
         let names = get_skill_names();
         assert!(!names.is_empty());
         for name in &names {
-            assert!(name.starts_with("ripwire-"));
+            assert!(name.starts_with("ripwire-rs-"));
         }
-        assert!(names.contains(&"ripwire-orient"));
-        assert!(names.contains(&"ripwire-change-check"));
+        assert!(names.contains(&"ripwire-rs-orient"));
+        assert!(names.contains(&"ripwire-rs-change-check"));
     }
 
     #[test]
     fn test_generate_manifest_content() {
-        let skills = ["ripwire-orient", "ripwire-change-check"];
+        let skills = ["ripwire-rs-orient", "ripwire-rs-change-check"];
         let manifest = generate_manifest_content(&skills);
         assert!(manifest.starts_with("version=1\n"));
-        assert!(manifest.contains("skill=ripwire-orient\n"));
-        assert!(manifest.contains("skill=ripwire-change-check\n"));
+        assert!(manifest.contains("skill=ripwire-rs-orient\n"));
+        assert!(manifest.contains("skill=ripwire-rs-change-check\n"));
     }
 
     #[test]

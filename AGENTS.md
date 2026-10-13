@@ -86,11 +86,11 @@
 - Whenever adding or updating CLI flags, options, subcommands, defaults, or MCP
   tool definitions, the repository documentation (`README.md`, `docs/CLI.md`,
   `docs/`), the static GitHub Pages showcase in `www/` (`www/index.html`,
-  `www/docs.html`), AND the manual pages in `man/man1/` (`man/man1/rw.1`,
-  `man/man1/ripwire.1`) MUST be updated and synchronized in the same commit.
+  `www/docs.html`), AND the manual page in `man/man1/` (`man/man1/ripwire-rs.1`)
+  MUST be updated and synchronized in the same commit.
 - Ensure all relative links, code examples, synopsis syntax, tool names, command
-  names (`rw`, `ripwire`), and feature lists stay fully aligned across
-  repository docs, the `www/` site, and roff manual pages.
+  name (`ripwire-rs`), and feature lists stay fully aligned across
+  repository docs, the `www/` site, and roff manual page.
 
 ## Completion
 
@@ -98,5 +98,5 @@
   1. `fmt-check` (code formatting)
   2. `clippy` (lints treated as errors)
   3. `complexity` (cognitive complexity <= 15 via `cccc`)
-  4. `quality` (quality delta regressions vs git HEAD via `ripwire`)
+  4. `quality` (quality delta regressions vs git HEAD via `ripwire-rs`)
   5. `crap` (workspace tests under coverage and CRAP <= 30 threshold gating)

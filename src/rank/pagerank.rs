@@ -1,4 +1,5 @@
 use crate::graph::CsrMatrix;
+use serde::{Deserialize, Serialize};
 
 /// Reduction block size for platform-independent deterministic float summation.
 pub const REDUCTION_BLOCK_SIZE: usize = 1024;
@@ -22,7 +23,7 @@ impl Default for PageRankConfig {
 }
 
 /// Result of PageRank power iteration.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PageRankResult {
     pub iterations: u32,
     pub converged: bool,

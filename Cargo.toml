@@ -1,16 +1,16 @@
 [package]
-name = "ripwire"
+name = "ripwire-rs"
 version = "0.3.1"
 edition = "2024"
 authors = ["Cason Adams", "David Brewster (ripwire, https://github.com/redhat-et/ripwire)"]
 description = "High-throughput agent context router and deterministic static analysis engine"
 readme = "README.md"
 license = "Apache-2.0"
-repository = "https://github.com/casonadams/ripwire"
-documentation = "https://docs.rs/ripwire"
+repository = "https://github.com/casonadams/ripwire-rs"
+documentation = "https://docs.rs/ripwire-rs"
 keywords = ["static-analysis", "callgraph", "mcp", "code-intelligence", "pagerank"]
 categories = ["development-tools", "command-line-utilities"]
-default-run = "rw"
+default-run = "ripwire-rs"
 include = [
     "src/**/*",
     "vendor/grammars/**/*.c",
@@ -24,8 +24,12 @@ include = [
     "LICENSE",
 ]
 
+[lib]
+name = "ripwire_rs"
+path = "src/lib.rs"
+
 [[bin]]
-name = "rw"
+name = "ripwire-rs"
 path = "src/main.rs"
 
 [dependencies]
@@ -34,7 +38,7 @@ ignore = "0.4"
 gix = "0.70"
 lasso = { version = "0.7", features = ["multi-threaded", "serialize"] }
 rayon = "1.10"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 streaming-iterator = "0.1"
 tree-sitter = "0.25"

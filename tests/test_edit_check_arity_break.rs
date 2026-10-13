@@ -1,13 +1,13 @@
-use ripwire::ToXmlString;
-use ripwire::cli::{execute_affected_with, execute_edit_check_with};
-use ripwire::domain::{
+use ripwire_rs::ToXmlString;
+use ripwire_rs::cli::{execute_affected_with, execute_edit_check_with};
+use ripwire_rs::domain::{
     FileInfo, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
 };
-use ripwire::gate::affected::find_affected_tests;
-use ripwire::gate::contract::SignatureContract;
-use ripwire::gate::edit_check::check_symbol_contract;
-use ripwire::graph::Graph;
-use ripwire::mcp::{McpState, dispatch_json_rpc};
+use ripwire_rs::gate::affected::find_affected_tests;
+use ripwire_rs::gate::contract::SignatureContract;
+use ripwire_rs::gate::edit_check::check_symbol_contract;
+use ripwire_rs::graph::Graph;
+use ripwire_rs::mcp::{McpState, dispatch_json_rpc};
 use serde_json::Value;
 use std::io::Cursor;
 

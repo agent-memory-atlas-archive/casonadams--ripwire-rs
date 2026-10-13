@@ -1,4 +1,4 @@
-use ripwire::{
+use ripwire_rs::{
     IngestResult, Interner, Lang, LanguageRegistry, RefRole, SymKind, ingest_in_memory_files,
 };
 
