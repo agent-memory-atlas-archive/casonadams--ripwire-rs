@@ -56,6 +56,7 @@ commands = [
     ("--external-surface", "External API surface"),
     ("--deps", "File dependencies"),
     ("--hotspots", "Maintenance hotspots"),
+    ("--cochange", "Shotgun surgery co-change mining"),
     ("--clones", "Clone detection"),
     ("-v", "Version banner"),
     ("--quality-delta", "Quality delta gate"),
@@ -76,6 +77,8 @@ commands = [
     ("--notes", "Persistent session gotchas"),
     ("--mermaid", "Mermaid diagram generation"),
     ("--zoom", "Hierarchical Louvain clustering"),
+    ("--html", "Interactive HTML visualizer export"),
+    ("wrap claude", "Agent integration recipe"),
 ]
 def get_xml_root(text):
     clean = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL).strip()
@@ -84,7 +87,7 @@ def get_xml_root(text):
 
 print(f"==================================================")
 print(f"Validating 1:1 Parity on: {os.path.abspath(repo)}")
-print(f"rw binary:      {rw_bin}")
+print(f"ripwire-rs binary: {rw_bin}")
 print(f"ripwire binary: {ripwire_bin}")
 print(f"==================================================")
 
@@ -94,10 +97,12 @@ for cmd, desc in commands:
     if cmd == "-v":
         cmd_rw = f"{rw_bin} -V"
         cmd_rip = f"{ripwire_bin} -v"
+    elif cmd.startswith("wrap"):
+        cmd_rw = f"{rw_bin} {cmd}"
+        cmd_rip = f"{ripwire_bin} {cmd}"
     else:
         cmd_rw = f"{rw_bin} {repo} {cmd}"
         cmd_rip = f"{ripwire_bin} {repo} {cmd}"
-
     p_rw = subprocess.run(cmd_rw, shell=True, capture_output=True, text=True)
     p_rip = subprocess.run(cmd_rip, shell=True, capture_output=True, text=True)
 
@@ -106,9 +111,13 @@ for cmd, desc in commands:
     if code_match and p_rw.returncode != 0:
         match = True
     elif cmd == "-v":
-        match = code_match and ("rw" in p_rw.stdout or "ripwire" in p_rw.stdout)
+        match = code_match and ("ripwire-rs" in p_rw.stdout or "rw" in p_rw.stdout or "ripwire" in p_rw.stdout)
     elif "--mermaid" in cmd:
         match = code_match and ("flowchart" in p_rw.stdout) and ("flowchart" in p_rip.stdout)
+    elif "--html" in cmd:
+        match = code_match and ("<!DOCTYPE html>" in p_rw.stdout) and ("const NODES" in p_rw.stdout)
+    elif cmd.startswith("wrap"):
+        match = code_match and ("claude mcp add" in p_rw.stdout) and ("claude mcp add" in p_rip.stdout)
     else:
         root_rw = get_xml_root(p_rw.stdout)
         root_rip = get_xml_root(p_rip.stdout)
