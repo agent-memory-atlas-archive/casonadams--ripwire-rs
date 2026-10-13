@@ -1,7 +1,7 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
 use serde::Serialize;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::io::{self, Write};
 /// Detailed navigation information for a symbol.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -486,18 +486,538 @@ pub fn execute_pack_task<W: Write>(
     writeln!(out, "</ctx>")
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+enum Token {
+    Ident(String),
+    Str(String),
+    Num(usize),
+    LParen,
+    RParen,
+    Comma,
+}
+
+fn read_quoted_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, quote: char) -> String {
+    let mut s = String::new();
+    while let Some(&nc) = chars.peek() {
+        chars.next();
+        if nc == quote {
+            break;
+        }
+        s.push(nc);
+    }
+    s
+}
+
+fn read_digits(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<usize> {
+    let mut s = String::new();
+    while let Some(&nc) = chars.peek() {
+        if !nc.is_ascii_digit() {
+            break;
+        }
+        s.push(nc);
+        chars.next();
+    }
+    s.parse::<usize>().ok()
+}
+
+fn is_ident_char(c: char) -> bool {
+    c.is_alphanumeric() || matches!(c, '_' | ':' | '-' | '.')
+}
+
+fn read_ident(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    let mut s = String::new();
+    while let Some(&nc) = chars.peek() {
+        if !is_ident_char(nc) {
+            break;
+        }
+        s.push(nc);
+        chars.next();
+    }
+    s
+}
+
+fn next_token(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<Token> {
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        match c {
+            '(' => {
+                chars.next();
+                return Some(Token::LParen);
+            }
+            ')' => {
+                chars.next();
+                return Some(Token::RParen);
+            }
+            ',' => {
+                chars.next();
+                return Some(Token::Comma);
+            }
+            '"' | '\'' => {
+                chars.next();
+                return Some(Token::Str(read_quoted_string(chars, c)));
+            }
+            '0'..='9' => return read_digits(chars).map(Token::Num),
+            _ => {
+                let id = read_ident(chars);
+                if !id.is_empty() {
+                    return Some(Token::Ident(id));
+                }
+                chars.next();
+            }
+        }
+    }
+    None
+}
+
+fn tokenize_graph_query(input: &str) -> Vec<Token> {
+    let mut tokens = Vec::new();
+    let mut chars = input.chars().peekable();
+    while let Some(tok) = next_token(&mut chars) {
+        tokens.push(tok);
+    }
+    tokens
+}
+
+#[derive(Debug, Clone)]
+enum GraphExpr {
+    All,
+    Name(String),
+    Callers(Box<GraphExpr>, usize),
+    Callees(Box<GraphExpr>, usize),
+    Kind(Box<GraphExpr>, String),
+    File(Box<GraphExpr>, String),
+    Fanin(Box<GraphExpr>, usize),
+    Cx(Box<GraphExpr>, u32),
+    And(Vec<GraphExpr>),
+    Or(Vec<GraphExpr>),
+    Not(Box<GraphExpr>),
+}
+
+struct GraphQueryParser<'a> {
+    tokens: &'a [Token],
+    pos: usize,
+}
+
+impl<'a> GraphQueryParser<'a> {
+    fn peek(&self) -> Option<&Token> {
+        self.tokens.get(self.pos)
+    }
+
+    fn next(&mut self) -> Option<&Token> {
+        let tok = self.tokens.get(self.pos);
+        if tok.is_some() {
+            self.pos += 1;
+        }
+        tok
+    }
+
+    fn match_ident(&mut self) -> Option<String> {
+        match self.peek() {
+            Some(Token::Ident(s)) | Some(Token::Str(s)) => {
+                let s = s.clone();
+                self.pos += 1;
+                Some(s)
+            }
+            _ => None,
+        }
+    }
+
+    fn parse_args(&mut self) -> Vec<GraphExpr> {
+        let mut args = Vec::new();
+        while let Some(expr) = self.parse_expr() {
+            args.push(expr);
+            if self.peek() == Some(&Token::Comma) {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        args
+    }
+
+    fn parse_expr(&mut self) -> Option<GraphExpr> {
+        let tok = self.next()?.clone();
+        match &tok {
+            Token::Ident(id) => self.parse_ident_expr(id),
+            Token::Str(s) => Some(GraphExpr::Name(s.clone())),
+            _ => None,
+        }
+    }
+
+    fn parse_ident_expr(&mut self, id: &str) -> Option<GraphExpr> {
+        match id {
+            "all" => {
+                if self.peek() == Some(&Token::LParen) {
+                    self.pos += 1;
+                    if self.peek() == Some(&Token::RParen) {
+                        self.pos += 1;
+                    }
+                }
+                Some(GraphExpr::All)
+            }
+            "name" => {
+                if self.peek() == Some(&Token::LParen) {
+                    self.pos += 1;
+                    let name = self.match_ident().unwrap_or_default();
+                    if self.peek() == Some(&Token::RParen) {
+                        self.pos += 1;
+                    }
+                    Some(GraphExpr::Name(name))
+                } else {
+                    Some(GraphExpr::Name(id.to_string()))
+                }
+            }
+            "callers" => self.parse_closure_expr(true),
+            "callees" => self.parse_closure_expr(false),
+            "kind" => self.parse_filter_kind(),
+            "file" => self.parse_filter_file(),
+            "fanin" => self.parse_filter_fanin(),
+            "cx" => self.parse_filter_cx(),
+            "and" => self.parse_composite(true),
+            "or" => self.parse_composite(false),
+            "not" => self.parse_not(),
+            _ => Some(GraphExpr::Name(id.to_string())),
+        }
+    }
+
+    fn parse_closure_expr(&mut self, is_callers: bool) -> Option<GraphExpr> {
+        if self.peek() != Some(&Token::LParen) {
+            return Some(GraphExpr::Name(
+                if is_callers { "callers" } else { "callees" }.to_string(),
+            ));
+        }
+        self.pos += 1;
+        let sub = self.parse_expr()?;
+        let depth = if self.peek() == Some(&Token::Comma) {
+            self.pos += 1;
+            match self.next() {
+                Some(Token::Num(n)) => *n,
+                _ => 1,
+            }
+        } else {
+            1
+        };
+        if self.peek() == Some(&Token::RParen) {
+            self.pos += 1;
+        }
+        if is_callers {
+            Some(GraphExpr::Callers(Box::new(sub), depth))
+        } else {
+            Some(GraphExpr::Callees(Box::new(sub), depth))
+        }
+    }
+
+    fn parse_filter_kind(&mut self) -> Option<GraphExpr> {
+        if self.peek() != Some(&Token::LParen) {
+            return Some(GraphExpr::Name("kind".to_string()));
+        }
+        self.pos += 1;
+        let sub = self.parse_expr()?;
+        let kind = if self.peek() == Some(&Token::Comma) {
+            self.pos += 1;
+            self.match_ident().unwrap_or_default()
+        } else {
+            String::new()
+        };
+        if self.peek() == Some(&Token::RParen) {
+            self.pos += 1;
+        }
+        Some(GraphExpr::Kind(Box::new(sub), kind))
+    }
+
+    fn parse_filter_file(&mut self) -> Option<GraphExpr> {
+        if self.peek() != Some(&Token::LParen) {
+            return Some(GraphExpr::Name("file".to_string()));
+        }
+        self.pos += 1;
+        let sub = self.parse_expr()?;
+        let path = if self.peek() == Some(&Token::Comma) {
+            self.pos += 1;
+            self.match_ident().unwrap_or_default()
+        } else {
+            String::new()
+        };
+        if self.peek() == Some(&Token::RParen) {
+            self.pos += 1;
+        }
+        Some(GraphExpr::File(Box::new(sub), path))
+    }
+
+    fn parse_filter_fanin(&mut self) -> Option<GraphExpr> {
+        if self.peek() != Some(&Token::LParen) {
+            return Some(GraphExpr::Name("fanin".to_string()));
+        }
+        self.pos += 1;
+        let sub = self.parse_expr()?;
+        let min_in = if self.peek() == Some(&Token::Comma) {
+            self.pos += 1;
+            match self.next() {
+                Some(Token::Num(n)) => *n,
+                _ => 1,
+            }
+        } else {
+            1
+        };
+        if self.peek() == Some(&Token::RParen) {
+            self.pos += 1;
+        }
+        Some(GraphExpr::Fanin(Box::new(sub), min_in))
+    }
+
+    fn parse_filter_cx(&mut self) -> Option<GraphExpr> {
+        if self.peek() != Some(&Token::LParen) {
+            return Some(GraphExpr::Name("cx".to_string()));
+        }
+        self.pos += 1;
+        let sub = self.parse_expr()?;
+        let max_cx = if self.peek() == Some(&Token::Comma) {
+            self.pos += 1;
+            match self.next() {
+                Some(Token::Num(n)) => *n as u32,
+                _ => 15,
+            }
+        } else {
+            15
+        };
+        if self.peek() == Some(&Token::RParen) {
+            self.pos += 1;
+        }
+        Some(GraphExpr::Cx(Box::new(sub), max_cx))
+    }
+
+    fn parse_composite(&mut self, is_and: bool) -> Option<GraphExpr> {
+        if self.peek() != Some(&Token::LParen) {
+            return Some(GraphExpr::Name(
+                if is_and { "and" } else { "or" }.to_string(),
+            ));
+        }
+        self.pos += 1;
+        let args = self.parse_args();
+        if self.peek() == Some(&Token::RParen) {
+            self.pos += 1;
+        }
+        if is_and {
+            Some(GraphExpr::And(args))
+        } else {
+            Some(GraphExpr::Or(args))
+        }
+    }
+
+    fn parse_not(&mut self) -> Option<GraphExpr> {
+        if self.peek() != Some(&Token::LParen) {
+            return Some(GraphExpr::Name("not".to_string()));
+        }
+        self.pos += 1;
+        let sub = self.parse_expr()?;
+        if self.peek() == Some(&Token::RParen) {
+            self.pos += 1;
+        }
+        Some(GraphExpr::Not(Box::new(sub)))
+    }
+}
+
+fn kind_matches_tag(kind: crate::domain::SymKind, tag: &str) -> bool {
+    kind.tag() == tag
+        || match tag {
+            "fn" | "function" => kind == crate::domain::SymKind::Function,
+            "method" => kind == crate::domain::SymKind::Method,
+            "class" | "cls" => kind == crate::domain::SymKind::Class,
+            "struct" => kind == crate::domain::SymKind::Struct,
+            "interface" | "iface" => kind == crate::domain::SymKind::Interface,
+            "section" | "sec" => kind == crate::domain::SymKind::Section,
+            _ => false,
+        }
+}
+
+fn eval_callers_closure(
+    mut current: BTreeSet<NodeId>,
+    depth: usize,
+    graph: &Graph,
+) -> BTreeSet<NodeId> {
+    for _ in 0..depth {
+        let mut next = BTreeSet::new();
+        for &id in &current {
+            for (caller, _) in graph.callers(id) {
+                next.insert(caller);
+            }
+        }
+        current = next;
+    }
+    current
+}
+
+fn eval_callees_closure(
+    mut current: BTreeSet<NodeId>,
+    depth: usize,
+    graph: &Graph,
+) -> BTreeSet<NodeId> {
+    for _ in 0..depth {
+        let mut next = BTreeSet::new();
+        for &id in &current {
+            for (callee, _) in graph.callees(id) {
+                next.insert(callee);
+            }
+        }
+        current = next;
+    }
+    current
+}
+
+fn eval_filter_kind(
+    base: BTreeSet<NodeId>,
+    kind_tag: &str,
+    ingest: &IngestResult,
+) -> BTreeSet<NodeId> {
+    base.into_iter()
+        .filter(|&id| {
+            ingest
+                .symbols
+                .get(id as usize)
+                .is_some_and(|s| kind_matches_tag(s.kind, kind_tag))
+        })
+        .collect()
+}
+
+fn eval_filter_file(
+    base: BTreeSet<NodeId>,
+    pat: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> BTreeSet<NodeId> {
+    base.into_iter()
+        .filter(|&id| {
+            ingest.symbols.get(id as usize).is_some_and(|s| {
+                ingest
+                    .files
+                    .get(s.file_id as usize)
+                    .is_some_and(|f| interner.resolve(&f.path).contains(pat))
+            })
+        })
+        .collect()
+}
+
+fn eval_and_composite(
+    subs: &[GraphExpr],
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> BTreeSet<NodeId> {
+    let mut iter = subs.iter();
+    let Some(first) = iter.next() else {
+        return BTreeSet::new();
+    };
+    let mut acc = evaluate_graph_expr(first, ingest, graph, interner);
+    for sub in iter {
+        let next = evaluate_graph_expr(sub, ingest, graph, interner);
+        acc = acc.intersection(&next).copied().collect();
+    }
+    acc
+}
+
+fn eval_or_composite(
+    subs: &[GraphExpr],
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> BTreeSet<NodeId> {
+    let mut acc = BTreeSet::new();
+    for sub in subs {
+        acc.extend(evaluate_graph_expr(sub, ingest, graph, interner));
+    }
+    acc
+}
+
+fn evaluate_graph_expr(
+    expr: &GraphExpr,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> BTreeSet<NodeId> {
+    match expr {
+        GraphExpr::All => ingest.symbols.iter().map(|s| s.id).collect(),
+        GraphExpr::Name(name) => find_symbols_by_name(name, ingest, interner)
+            .into_iter()
+            .collect(),
+        GraphExpr::Callers(sub, depth) => {
+            let base = evaluate_graph_expr(sub, ingest, graph, interner);
+            eval_callers_closure(base, *depth, graph)
+        }
+        GraphExpr::Callees(sub, depth) => {
+            let base = evaluate_graph_expr(sub, ingest, graph, interner);
+            eval_callees_closure(base, *depth, graph)
+        }
+        GraphExpr::Kind(sub, kind_tag) => {
+            let base = evaluate_graph_expr(sub, ingest, graph, interner);
+            eval_filter_kind(base, kind_tag, ingest)
+        }
+        GraphExpr::File(sub, pat) => {
+            let base = evaluate_graph_expr(sub, ingest, graph, interner);
+            eval_filter_file(base, pat, ingest, interner)
+        }
+        GraphExpr::Fanin(sub, min_in) => evaluate_graph_expr(sub, ingest, graph, interner)
+            .into_iter()
+            .filter(|&id| graph.in_degree(id) >= *min_in)
+            .collect(),
+        GraphExpr::Cx(sub, max_cx) => evaluate_graph_expr(sub, ingest, graph, interner)
+            .into_iter()
+            .filter(|&id| {
+                ingest
+                    .symbols
+                    .get(id as usize)
+                    .is_some_and(|s| s.ccx <= *max_cx || s.cx <= *max_cx)
+            })
+            .collect(),
+        GraphExpr::And(subs) => eval_and_composite(subs, ingest, graph, interner),
+        GraphExpr::Or(subs) => eval_or_composite(subs, ingest, graph, interner),
+        GraphExpr::Not(sub) => {
+            let excluded = evaluate_graph_expr(sub, ingest, graph, interner);
+            ingest
+                .symbols
+                .iter()
+                .map(|s| s.id)
+                .filter(|id| !excluded.contains(id))
+                .collect()
+        }
+    }
+}
+
 pub fn execute_graph_query_expr<W: Write>(
     expr: &str,
     root: &str,
-    _ingest: &IngestResult,
-    _interner: &Interner,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
+    let tokens = tokenize_graph_query(expr);
+    let mut parser = GraphQueryParser {
+        tokens: &tokens,
+        pos: 0,
+    };
+    let parsed = parser
+        .parse_expr()
+        .unwrap_or_else(|| GraphExpr::Name(expr.to_string()));
+    let matched_nodes = evaluate_graph_expr(&parsed, ingest, graph, interner);
+    let count = matched_nodes.len();
+
+    let escaped_expr = crate::serialize::escape::escape_xml_str(expr);
     writeln!(
         out,
-        "<graph-query schema=\"ripwire.graph-query/v1\" expr=\"{expr}\" root=\"{root}\" count=\"0\">"
+        "<query schema=\"ripwire.graph-query/v1\" expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\" root=\"{root}\">"
     )?;
-    writeln!(out, "</graph-query>")
+    for node_id in matched_nodes {
+        if let Some(sym) = ingest.symbols.get(node_id as usize) {
+            let n = interner.resolve(&sym.name);
+            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+            let k = sym.kind.tag();
+            let l = sym.line;
+            writeln!(out, "<s t=\"{k}\" n=\"{n}\" p=\"{p}:{l}\"/>")?;
+        }
+    }
+    writeln!(out, "</query>")
 }
 #[cfg(test)]
 mod tests {
@@ -574,5 +1094,101 @@ mod tests {
         assert_eq!(impact[0].hops, 1);
         assert_eq!(impact[1].name, "a");
         assert_eq!(impact[1].hops, 2);
+    }
+
+    #[test]
+    fn test_graph_query_execution() {
+        let interner = Interner::new();
+        let f0 = FileInfo {
+            id: 0,
+            path: interner.intern("src/test.rs"),
+            lang: Lang::Rust,
+            line_count: 50,
+            byte_size: 500,
+        };
+        let sym_a = Symbol::new(
+            0,
+            interner.intern("foo"),
+            interner.intern("c_foo"),
+            SymKind::Function,
+            Lang::Rust,
+            0,
+            1,
+        );
+        let sym_b = Symbol::new(
+            1,
+            interner.intern("bar"),
+            interner.intern("c_bar"),
+            SymKind::Function,
+            Lang::Rust,
+            0,
+            5,
+        );
+        let ref_ab = Reference::new(0, interner.intern("bar"), 0, 2, Lang::Rust, RefRole::Call);
+
+        let mut ingest = IngestResult::new();
+        ingest.files.push(f0);
+        ingest.symbols.extend_from_slice(&[sym_a, sym_b]);
+        ingest.references.extend_from_slice(&[ref_ab]);
+
+        let graph = Graph::build(&ingest, &interner);
+        let mut out = Vec::new();
+        execute_graph_query_expr(
+            "callers(name(\"bar\"))",
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &mut out,
+        )
+        .unwrap();
+        let out_str = String::from_utf8(out).unwrap();
+        assert!(out_str.contains("<query schema=\"ripwire.graph-query/v1\""));
+        assert!(out_str.contains("count=\"1\""));
+        assert!(out_str.contains("n=\"foo\""));
+
+        let mut out = Vec::new();
+        execute_graph_query_expr(
+            "callees(name(\"foo\"))",
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out).unwrap().contains("n=\"bar\""));
+
+        let mut out = Vec::new();
+        execute_graph_query_expr(
+            "and(kind(all, fn), file(all, test), fanin(all, 1), cx(all, 10))",
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out).unwrap().contains("n=\"bar\""));
+
+        let mut out = Vec::new();
+        execute_graph_query_expr(
+            "or(not(name(\"foo\")), callers(\"bar\", 1))",
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &mut out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(out).unwrap().contains("count=\"2\""));
+
+        assert!(kind_matches_tag(SymKind::Function, "function"));
+        assert!(kind_matches_tag(SymKind::Method, "method"));
+        assert!(kind_matches_tag(SymKind::Class, "class"));
+        assert!(kind_matches_tag(SymKind::Struct, "struct"));
+        assert!(kind_matches_tag(SymKind::Interface, "interface"));
+        assert!(kind_matches_tag(SymKind::Section, "section"));
+        assert!(!kind_matches_tag(SymKind::Function, "unknown"));
     }
 }

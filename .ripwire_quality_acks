@@ -38,6 +38,7 @@ ack dead-code:new-symbol 53165f3946b16f9a 0 cid=d3f560283b350c08 now=0 was=0 p=t
 ack dead-code:new-symbol 5d1c47d7ed0abe51 0 cid=b97ba3d0b3db8764 now=0 was=0 p=tests/test_cli_and_mcp.rs:516 retrieval dispatch routing
 ack dead-code:new-symbol 662a2172035907cd 0 cid=e9eb9772d64f57f0 now=0 was=0 p=src/mcp/edit.rs:217 feat(mcp): complete 33 mcp tools suite
 ack dead-code:new-symbol 68f171ed9d5920c6 0 cid=2a5e9338e6fbd3ca now=0 was=0 p=tests/test_streaming_xml_serializer.rs:361 retrieval dispatch routing
+ack dead-code:new-symbol 72b1dfd25aeddec0 0 cid=935a32c463a850b7 now=0 was=0 p=src/navigate.rs:1100 fix(parity): implement exemplar selection and graph-query DSL
 ack dead-code:new-symbol 795c5808ab0ca979 0 cid=3f603d0498ec0654 now=0 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 7dd9d37f97a49ab9 0 cid=d28da232c324815f now=0 was=0 p=tests/test_streaming_xml_serializer.rs:403 retrieval dispatch routing
 ack dead-code:new-symbol 835014cf519abbfd 0 cid=f06d8bcd08de78f7 now=0 was=0 p=tests/test_streaming_xml_serializer.rs:172 cli options and streaming enhancements
@@ -75,8 +76,10 @@ ack dead-code:new-symbol efcf59377883097f 0 cid=9b40235abf585eb8 now=0 was=0 p=s
 ack dead-code:new-symbol f021162b29442383 0 cid=7a0fa0c34150b62c now=0 was=0 p=src/mcp/retrieval.rs:340 feat(mcp): complete 33 mcp tools suite
 ack dead-code:new-symbol fb0d433ebd7ff914 0 cid=72668aac5d535d99 now=0 was=0 p=src/gate/quality_delta.rs:227 feat(gate): quality baseline and delta gate
 ack dead-code:preexisting c0300ca9ffbbc65c 0 cid=5a489bd9f0f776b1 now=0 was=0 p=src/metrics/hotspots.rs:30 feat(gate): pre-commit contract gate and affected test reachability
+ack duplication 00b64dd66ad68aee 191 now=191 was=0 p=src/navigate.rs:686 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication 02427b21a4f355ba 504 now=504 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 1336857542d3befe 641 now=641 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
+ack duplication 187a84711bf14493 191 now=191 was=0 p=src/navigate.rs:686 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication 1dec0fb2c1f89afd 190 now=190 was=0 p=src/gate/edit_check.rs:82 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 20fbd8ff0e3ca16f 412 now=412 was=0 p=tests/test_cli_and_mcp.rs:347 safety queries test suite
 ack duplication 2f9d3acbd0e38728 168 now=168 was=0 p=src/mcp/graph_tools.rs:297 feat(mcp): complete 33 mcp tools suite
@@ -84,10 +87,13 @@ ack duplication 3598b25464891c8a 132 now=132 was=0 p=src/serialize/query_xml.rs:
 ack duplication 368b03d3a725d35b 67 now=67 was=0 p=src/mcp/doc_tools.rs:211 feat(mcp): complete 33 mcp tools suite
 ack duplication 378895c50d59fd95 105 now=105 was=0 p=src/gate/affected.rs:56 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 39a4e8543db87cd3 74 now=74 was=0 p=src/mcp/edit.rs:228 feat(mcp): complete 33 mcp tools suite
+ack duplication 39ad7b6d1b1d8c4b 143 now=143 was=0 p=src/navigate.rs:731 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication 3aa99d55b8fdd038 45 now=45 was=0 p=src/serialize/query_xml.rs:432 retrieval dispatch routing
 ack duplication 3d4e5a4c18cf8a62 132 now=132 was=0 p=src/serialize/query_xml.rs:527 retrieval dispatch routing
 ack duplication 4568e39b8b97b662 146 now=146 was=0 p=src/metrics/readability.rs:238 feat(metrics): compute complexity, readability, and hotspots
 ack duplication 50068cc975ab738a 47 now=47 was=0 p=src/serialize/query_xml.rs:367 retrieval dispatch routing
+ack duplication 56cedc821c147fab 157 now=157 was=0 p=src/navigate.rs:749 fix(parity): implement exemplar selection and graph-query DSL
+ack duplication 58edd1a44e315cc5 52 now=52 was=0 p=src/navigate.rs:527 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication 5bf3a45a44efcc76 241 now=241 was=0 p=tests/test_streaming_xml_serializer.rs:303 safety dispatch routing
 ack duplication 6aa91a25d5b22030 45 now=45 was=0 p=src/serialize/query_xml.rs:449 retrieval dispatch routing
 ack duplication 6af64fcdf256b60e 277 now=277 was=0 p=src/gate/baseline.rs:226 feat(gate): quality baseline and delta gate
@@ -97,12 +103,18 @@ ack duplication 89c3edaf9bab79a3 55 now=55 was=0 p=src/ingest.rs:255 feat(gate):
 ack duplication 99fc73e822d88331 45 now=45 was=0 p=src/serialize/query_xml.rs:340 retrieval dispatch routing
 ack duplication 9c4140b778c1671e 181 now=181 was=0 p=src/mcp/graph_tools.rs:105 feat(mcp): complete 33 mcp tools suite
 ack duplication a2302432e09510c7 85 now=85 was=0 p=src/metrics/complexity.rs:19 feat(metrics): compute complexity, readability, and hotspots
+ack duplication aa511ad587c684ba 159 now=159 was=0 p=src/navigate.rs:770 fix(parity): implement exemplar selection and graph-query DSL
+ack duplication aadcf160330de9cc 54 now=54 was=0 p=src/navigate.rs:852 fix(parity): implement exemplar selection and graph-query DSL
+ack duplication af8672f66e73a983 66 now=66 was=0 p=src/navigate.rs:511 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication b57d7cd71a911669 105 now=105 was=0 p=src/gate/affected.rs:56 feat(gate): pre-commit contract gate and affected test reachability
+ack duplication b9ec0397ba7dbc5e 159 now=159 was=0 p=src/navigate.rs:770 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication c105effba9d2de60 47 now=47 was=0 p=src/serialize/query_xml.rs:367 retrieval dispatch routing
 ack duplication c6d51b335cb2560a 72 now=72 was=0 p=src/mcp/edit.rs:217 feat(mcp): complete 33 mcp tools suite
+ack duplication cc4d9db9f9f566bd 113 now=113 was=0 p=src/navigate.rs:791 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication cddca65fd31797b1 132 now=132 was=0 p=src/serialize/query_xml.rs:487 retrieval dispatch routing
 ack duplication dd4c31cb7409343d 47 now=47 was=0 p=src/serialize/query_xml.rs:367 retrieval dispatch routing
 ack duplication e3697d8c8dc449f9 277 now=277 was=0 p=src/gate/quality_delta.rs:231 feat(gate): quality baseline and delta gate
+ack duplication f0c530320da7c581 191 now=191 was=0 p=src/navigate.rs:686 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication f67ca71a54fe23e3 56 now=56 was=0 p=src/gate/contract.rs:160 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication fd017b6932c3f08b 21 now=21 was=0 p=src/serialize/html_vis.js:1418 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack nesting c9bcc01a8ee00ea7 5 cid=c6e6d6517e1bc166 now=5 was=0 p=src/mcp/edit.rs:30 feat(mcp): complete 33 mcp tools suite
@@ -111,6 +123,7 @@ ack params 036578c0c808c522 6 cid=ac65639f5a740595 now=6 was=0 p=src/mcp/retriev
 ack params 03964b5fab11a3e9 7 cid=cb1cc9803abdea7c now=7 was=0 p=src/cli.rs:1805 cli flag expansion
 ack params 0b9eb55f672f2fa5 6 cid=7c832b24c475b9fb now=6 was=0 p=src/cli.rs:1293 safety dispatch routing
 ack params 234aef5a84aff53e 7 cid=541120b1e9f9a739 now=7 was=0 p=src/cli.rs:1046 retrieval dispatch routing
+ack params 2aeb7a8a7df01331 6 cid=a8f78cb823e5e3c2 now=6 was=5 p=src/navigate.rs:987 fix(parity): implement exemplar selection and graph-query DSL
 ack params 49a1c863499fc814 6 cid=d7eb0c7f1a9c096e now=6 was=0 p=src/mcp/edit.rs:139 feat(mcp): complete 33 mcp tools suite
 ack params 4f7e71157c3d1049 6 cid=113ba1f19bfe3fbc now=6 was=0 p=src/cli.rs:1529 retrieval dispatch routing
 ack params 54e7136a347d0061 6 cid=abc12525642d7d06 now=6 was=0 p=src/mcp/graph_tools.rs:172 feat(mcp): complete 33 mcp tools suite
@@ -123,6 +136,10 @@ ack params d8d0bab89c9e3dd3 6 cid=dd2347d8763dc1d0 now=6 was=0 p=src/cli.rs:1323
 ack params dbdad3c9a111feaf 7 cid=e917af5a471760ec now=7 was=0 p=src/cli.rs:1564 retrieval dispatch routing
 ack params eb0335dc263eb7d1 6 cid=84009aee2033ef82 now=6 was=0 p=src/cli.rs:1242 safety dispatch routing
 ack params fe114e977e970be6 6 cid=4347f70dcc10924c now=6 was=0 p=src/serialize/query_xml.rs:412 retrieval dispatch routing
+ack short-horizon-churn 0000000000000001 5 now=3 was=0 facet=self p=src/git/history.rs:420 perf(history): optimize git history streaming and candidate extraction
+ack short-horizon-churn 0000000000000002 5 now=2 was=0 facet=self p=src/ingest/extract.rs:440 perf(history): optimize git history streaming and candidate extraction
+ack short-horizon-churn 0000000000000003 15 now=13 was=0 facet=self p=src/cli/dispatch.rs:489 perf: optimize git history streaming and candidate extraction
+ack short-horizon-churn 0000000000000004 15 now=14 was=0 facet=self p=tests/test_cli_and_mcp.rs:574 perf: optimize git history streaming and candidate extraction
 ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 facet=ambient p=src/domain.rs:214 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 03e609981e51a079 19 cid=12f34c9cbed57c34 now=19 was=0 facet=ambient p=src/cli.rs:17 safety dispatch routing | prior: cli options and streaming enhancements
 ack short-horizon-churn 05417ac6ba678f95 9 cid=b828ed667b0f11d5 now=9 was=0 facet=ambient p=src/cli/args.rs:10 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
@@ -146,12 +163,16 @@ ack short-horizon-churn 1b14ebd540a7f7a0 4 cid=8888eff9be14a5c1 now=4 was=0 face
 ack short-horizon-churn 1e3db6601ccd19d9 5 cid=6d4c472b01a08e40 now=5 was=0 facet=self p=src/mcp/mod.rs:174 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 2033625d6827aa6e 2 cid=760b754621a3a9e8 now=2 was=0 facet=ambient p=src/rank/hits.rs:135 cli options and streaming enhancements
 ack short-horizon-churn 20bd39fbd6c933fe 9 cid=0be97549f4bd488c now=9 was=0 facet=ambient p=src/cli/args.rs:216 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn 2238de1007d4146d 2 cid=5b62f62847917cb2 now=2 was=0 facet=ambient p=src/mcp/dispatch.rs:330 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn 227e269f843cf58d 16 cid=a6650ad250c2929b now=16 was=0 facet=self p=src/cli.rs:946 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 27df363ae0c450b3 5 cid=80b8cd85a4844728 now=5 was=0 facet=self p=src/mcp/mod.rs:318 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 2a74dc8296003db5 5 cid=3db9c4bc1085ab39 now=5 was=0 facet=self p=src/mcp/mod.rs:223 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 2aeb7a8a7df01331 8 cid=a8f78cb823e5e3c2 now=8 was=0 facet=self p=src/navigate.rs:987 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn 2d239cc7bb872512 4 cid=1738622f191fa471 now=4 was=0 facet=ambient p=src/resolve.rs:234 cli options and streaming enhancements
 ack short-horizon-churn 2f78d80dc0101330 5 cid=2b87816e47bd895a now=5 was=0 facet=self p=src/serialize/xml.rs:366 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: cli options and streaming enhancements
 ack short-horizon-churn 2fcf922794d2ea7c 11 cid=3d734924a49ce7d8 now=11 was=0 facet=self p=src/cli/dispatch.rs:464 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn 30f062ec83fa41b7 5 cid=f095fd27846d2050 now=5 was=0 facet=self p=scripts/validate-parity.py:42 fix(parity): implement exemplar selection and graph-query DSL
+ack short-horizon-churn 33a6a949ce323797 4 cid=7556da21efb0205a now=4 was=0 facet=self p=src/serialize/query_xml.rs:87 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn 37fbf6517ff6ce1b 17 cid=6770921381e4e1a8 now=17 was=0 facet=self p=src/cli.rs:1059 cli options and streaming enhancements
 ack short-horizon-churn 3837a3181097f8ac 3 cid=8596089df645328d now=3 was=0 facet=self p=src/gate/contract.rs:104 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 3873965730b5abf7 2 cid=36ef75088a9afe03 now=2 was=0 facet=ambient p=src/git/history.rs:360 perf(cache): implement persistent on-disk binary cache and parallel git mining
@@ -162,6 +183,8 @@ ack short-horizon-churn 3bc166f2d687d5e0 10 cid=96a499e17974cdcf now=10 was=0 fa
 ack short-horizon-churn 3c8424377bc0287c 5 cid=4f50111421bfb6c6 now=5 was=0 facet=self p=src/mcp/mod.rs:96 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn 3e5d89483b9ae82c 6 cid=1d3d607091f1ae70 now=6 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:303 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 3ff5983328204de0 2 cid=2749d1e2f0830ec7 now=2 was=0 facet=self p=src/serialize/html.rs:208 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn 4037ad80b2daeed1 2 cid=121d51c05f740148 now=2 was=0 facet=self p=src/mcp/retrieval.rs:398 fix(parity): implement exemplar selection and graph-query DSL
+ack short-horizon-churn 41a9d58d55a6364b 4 cid=96f6eebd91cf6b49 now=4 was=0 facet=self p=src/serialize/query_xml.rs:489 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn 4495e320775c8df7 10 cid=4f05796358cc6a1a now=10 was=0 facet=self p=src/cli/dispatch.rs:309 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 44a561ac8e5656a2 17 cid=b582def855349035 now=17 was=0 facet=self p=src/cli.rs:1136 cli options and streaming enhancements | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 4590d19cc4031a6d 6 cid=551c876371714bf3 now=6 was=0 facet=self p=src/ingest/mod.rs:209 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
@@ -223,6 +246,7 @@ ack short-horizon-churn a8d8a8c2b3c692bb 5 cid=8a850df30c972216 now=5 was=0 face
 ack short-horizon-churn a8f8a5f239f73c3e 4 cid=7fb8c3b69f3757a0 now=4 was=0 facet=ambient p=src/resolve.rs:261 cli options and streaming enhancements
 ack short-horizon-churn aa67274c42eaba44 5 cid=58ba098c841edcf3 now=5 was=0 facet=self p=src/serialize/xml.rs:64 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: cli options and streaming enhancements
 ack short-horizon-churn abbf9013bfc446fc 19 cid=2afd56d18715568a now=19 was=0 facet=self p=src/cli.rs:1082 retrieval dispatch routing | prior: fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
+ack short-horizon-churn ae955dbfb19ebc21 2 cid=eec12778f3867a5e now=2 was=0 facet=self p=src/mcp/doc_tools.rs:132 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn af8f8cdf2368bd78 5 cid=a44d1244512278d2 now=5 was=0 facet=self p=src/mcp/mod.rs:265 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn b375ec7d1556994c 5 cid=5325c82e263c650e now=5 was=0 facet=ambient p=src/graph.rs:303 cli options and streaming enhancements
 ack short-horizon-churn b5a40f34ce7656a9 6 cid=f92ea050828bbe61 now=6 was=0 facet=self p=tests/test_cli_and_mcp.rs:28 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
@@ -251,25 +275,31 @@ ack short-horizon-churn e334c9d7ea0fb943 5 cid=07dac40999a2e9c3 now=5 was=0 face
 ack short-horizon-churn e676baff641bf844 10 cid=a6cbaa49094c060c now=10 was=0 facet=self p=src/cli/dispatch.rs:150 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn e68c44392a811fd2 4 cid=d39251fdf8116de8 now=4 was=0 facet=self p=src/gate/contract.rs:69 cli options and streaming enhancements
 ack short-horizon-churn ea36d3b69d5342f9 6 cid=1410a297cc9ae313 now=6 was=0 facet=self p=src/cli/safety.rs:84 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn ea965a9dd84dd747 7 cid=a604e489897986e2 now=7 was=0 facet=self p=src/cli/queries.rs:698 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn eb5eb8bc9f9e78a7 4 cid=be77a8b6faba1225 now=4 was=0 facet=ambient p=src/serialize/xml.rs:12 cli options and streaming enhancements
 ack short-horizon-churn eb913f807b07fad8 3 cid=bd0dd9ade9a75003 now=3 was=0 facet=self p=src/gate/contract.rs:187 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn ecb2368dd4d7311c 17 cid=0bec28715d7c20ea now=17 was=0 facet=self p=src/cli.rs:1190 cli options and streaming enhancements
 ack short-horizon-churn ef0834f2485b47ff 5 cid=051e60b772482121 now=5 was=0 facet=self p=src/graph.rs:233 cli options and streaming enhancements
+ack short-horizon-churn f021162b29442383 2 cid=f1837b2fcb544a33 now=2 was=0 facet=self p=src/mcp/retrieval.rs:387 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn f0ff33b16b71ee4b 7 cid=a2bdbce68e56d287 now=7 was=0 facet=ambient p=src/ingest.rs:531 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn f1b6b0c968cc1eab 2 cid=240185457307fb31 now=2 was=0 facet=self p=src/mcp/retrieval.rs:205 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn f2a73a2e239bdff2 10 cid=0eab5b19cf78cc89 now=10 was=0 facet=self p=src/cli/dispatch.rs:370 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn facea9a26b6819c2 5 cid=428a31d751b879a1 now=5 was=0 facet=self p=src/mcp/mod.rs:152 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn faeda1a26b82bcb9 5 cid=029dba1e608c8d9f now=5 was=0 facet=self p=src/mcp/mod.rs:130 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn ff13a7414cb0f2f1 10 cid=dcf9d0ad774171a1 now=10 was=0 facet=self p=src/cli/dispatch.rs:198 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn ff2afe1ec5c50beb 17 cid=7035e8bc40b1bb80 now=17 was=0 facet=self p=src/cli.rs:328 cli options and streaming enhancements
+ack short-horizon-churn ffe8cd20e751aac3 8 cid=a76a4515e108eff9 now=8 was=0 facet=ambient p=src/navigate.rs:1023 fix(parity): implement exemplar selection and graph-query DSL
 ack verbosity 03e609981e51a079 62 cid=844fd93f87304958 now=62 was=50 p=src/cli.rs:17 cli flag expansion
 ack verbosity 05417ac6ba678f95 72 cid=b828ed667b0f11d5 now=72 was=68 p=src/cli/args.rs:10 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 21c952917f59fdf2 374 cid=082a96c2f7393aa8 now=374 was=0 p=src/mcp/schema.rs:5 feat(mcp): complete 33 mcp tools suite
+ack verbosity 2238de1007d4146d 91 cid=5b62f62847917cb2 now=91 was=90 p=src/mcp/dispatch.rs:330 fix(parity): implement exemplar selection and graph-query DSL
 ack verbosity 2976ccc597b56f50 97 cid=547adee2b8442588 now=97 was=0 p=src/gate/affected.rs:270 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 2cdcf0486a28549b 63 cid=1f9ce08aaffe8e8e now=63 was=0 p=src/gate/edit_check.rs:222 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 35864867e9f930b2 86 cid=34b59eab7cf163b4 now=86 was=0 p=tests/test_mcp_33_tools.rs:6 feat(mcp): complete 33 mcp tools suite
 ack verbosity 38e4fa4960049db5 69 cid=4cb1a2afbe738a56 now=69 was=0 p=tests/test_edit_check_arity_break.rs:11 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 3ff5983328204de0 146 cid=2749d1e2f0830ec7 now=146 was=139 p=src/serialize/html.rs:208 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 54e7136a347d0061 66 cid=abc12525642d7d06 now=66 was=0 p=src/mcp/graph_tools.rs:172 feat(mcp): complete 33 mcp tools suite
+ack verbosity 72b1dfd25aeddec0 88 cid=935a32c463a850b7 now=88 was=0 p=src/navigate.rs:1100 fix(parity): implement exemplar selection and graph-query DSL
 ack verbosity 795c5808ab0ca979 90 cid=3f603d0498ec0654 now=90 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity 7a85d3d58b3d5639 62 cid=7ffc97d878b6d486 now=62 was=0 p=src/serialize/html_vis.js:1415 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 89cc6ea26e2c5dda 67 cid=9c3a3d5e89523184 now=67 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
@@ -286,7 +316,4 @@ ack verbosity dbf9873eb051deef 110 cid=f6f66f92d6091196 now=110 was=90 p=tests/t
 ack verbosity e0ab848c5d67d7ae 72 cid=510934f45e78e30e now=72 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity e5467b59283b7d80 68 cid=984a4712ea404e5d now=68 was=0 p=src/serialize/html_vis.js:412 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity ef626e7fbdac48cf 83 cid=c560a4919f395ede now=83 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability
-ack short-horizon-churn 0000000000000001 5 cid=0000000000000000 now=3 was=0 facet=self p=src/git/history.rs:420 perf(history): optimize git history streaming and candidate extraction
-ack short-horizon-churn 0000000000000002 5 cid=0000000000000000 now=2 was=0 facet=self p=src/ingest/extract.rs:440 perf(history): optimize git history streaming and candidate extraction
-ack short-horizon-churn 0000000000000003 15 cid=0000000000000000 now=13 was=0 facet=self p=src/cli/dispatch.rs:489 perf: optimize git history streaming and candidate extraction
-ack short-horizon-churn 0000000000000004 15 cid=0000000000000000 now=14 was=0 facet=self p=tests/test_cli_and_mcp.rs:574 perf: optimize git history streaming and candidate extraction
+ack verbosity ffe8cd20e751aac3 155 cid=a76a4515e108eff9 now=155 was=66 p=src/navigate.rs:1023 fix(parity): implement exemplar selection and graph-query DSL

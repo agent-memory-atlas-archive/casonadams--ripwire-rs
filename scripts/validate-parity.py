@@ -4,7 +4,7 @@ import os
 import subprocess
 import re
 import shutil
-
+import shlex
 repo = sys.argv[1] if len(sys.argv) > 1 else "."
 
 if not os.path.exists(repo):
@@ -72,7 +72,9 @@ commands = [
     ("--at=src/main.rs:1", "Location definition resolver"),
     ("--verify=calls(main,run_cli)", "Relationship claim verification"),
     ("--pack-task=search", "Task-scoped context pack"),
-    ("--graph-query=callers(main)", "Functional graph query DSL"),
+    ('--graph-query=\'callers(name("main"))\'', "Functional graph query DSL"),
+    ("--exemplar=fn", "Best-in-class style exemplar"),
+    ("--owners", "Git author ownership per file"),
     ("--doctor", "Environment and tool diagnostics"),
     ("--notes", "Persistent session gotchas"),
     ("--mermaid", "Mermaid diagram generation"),
@@ -95,19 +97,19 @@ failures = 0
 
 for cmd, desc in commands:
     if cmd == "-v":
-        cmd_rw = f"{rw_bin} -V"
-        cmd_rip = f"{ripwire_bin} -v"
+        c_rw = [rw_bin, "-V"]
+        c_rip = [ripwire_bin, "-v"]
     elif cmd.startswith("wrap"):
-        cmd_rw = f"{rw_bin} {cmd}"
-        cmd_rip = f"{ripwire_bin} {cmd}"
+        c_rw = [rw_bin] + cmd.split()
+        c_rip = [ripwire_bin] + cmd.split()
     else:
-        cmd_rw = f"{rw_bin} {repo} {cmd}"
-        cmd_rip = f"{ripwire_bin} {repo} {cmd}"
-    p_rw = subprocess.run(cmd_rw, shell=True, capture_output=True, text=True)
-    p_rip = subprocess.run(cmd_rip, shell=True, capture_output=True, text=True)
+        c_rw = [rw_bin, repo] + shlex.split(cmd)
+        c_rip = [ripwire_bin, repo] + shlex.split(cmd)
+
+    p_rw = subprocess.run(c_rw, capture_output=True, text=True)
+    p_rip = subprocess.run(c_rip, capture_output=True, text=True)
 
     code_match = (p_rw.returncode == p_rip.returncode)
-
     if code_match and p_rw.returncode != 0:
         match = True
     elif cmd == "-v":
@@ -122,6 +124,10 @@ for cmd, desc in commands:
         root_rw = get_xml_root(p_rw.stdout)
         root_rip = get_xml_root(p_rip.stdout)
         match = code_match and (root_rw == root_rip) and (root_rw is not None)
+        if match and "--exemplar" in cmd:
+            match = match and ('n=""' not in p_rw.stdout) and ('candidates=' in p_rw.stdout)
+        if match and "--graph-query" in cmd:
+            match = match and ('schema="ripwire.graph-query/v1"' in p_rw.stdout)
     cmd_label = cmd if cmd else "(default)"
     if match:
         print(f"  \033[32m[PASS]\033[0m {cmd_label:22} - {desc}")

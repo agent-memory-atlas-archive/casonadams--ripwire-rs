@@ -385,6 +385,7 @@ pub fn dispatch_read_tools(
                 &state.interner,
                 &state.ranks,
                 role,
+                Some(&state.graph),
             ))
         }
         "lego" => {

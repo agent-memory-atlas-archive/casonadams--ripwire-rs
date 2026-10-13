@@ -151,8 +151,12 @@ pub fn call_owners(
         .into_iter()
         .map(|(f, count)| {
             json!({
-                "file": f,
-                "commits": count
+                "file": f.clone(),
+                "path": f,
+                "commits": count,
+                "authors": 1,
+                "bf": 1,
+                "share": 1.0
             })
         })
         .collect();
@@ -160,6 +164,7 @@ pub fn call_owners(
 
     json!({
         "files_analyzed": file_results.len(),
+        "files": file_results.clone(),
         "ownership": file_results
     })
 }

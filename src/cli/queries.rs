@@ -715,7 +715,8 @@ pub fn execute_retrieval_dispatch<W: Write>(
     } else if let Some(pair) = ret.path_between.as_deref() {
         execute_path_query(pair, ingest, graph, interner, out)?;
     } else if let Some(ex) = ret.exemplar.as_deref() {
-        let val = crate::mcp::retrieval::call_exemplar(ingest, interner, &pr.ranks, ex);
+        let val =
+            crate::mcp::retrieval::call_exemplar(ingest, interner, &pr.ranks, ex, Some(graph));
         crate::serialize::serialize_exemplar_xml(root, &val, out)?;
     } else if let Some(iface) = ret.lego.as_deref() {
         let val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
@@ -736,7 +737,7 @@ pub fn execute_retrieval_dispatch<W: Write>(
     } else if let Some(task) = ret.pack_task.as_deref() {
         crate::navigate::execute_pack_task(task, root, ingest, interner, out)?;
     } else if let Some(expr) = ret.graph_query.as_deref() {
-        crate::navigate::execute_graph_query_expr(expr, root, ingest, interner, out)?;
+        crate::navigate::execute_graph_query_expr(expr, root, ingest, graph, interner, out)?;
     }
     Ok(())
 }

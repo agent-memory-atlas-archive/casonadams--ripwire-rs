@@ -1,4 +1,5 @@
 use crate::domain::{IngestResult, Interner, RefRole, SymKind};
+use crate::graph::Graph;
 use serde_json::{Value, json};
 use std::fs;
 
@@ -155,6 +156,50 @@ fn target_kind_from_role(role: &str) -> SymKind {
         _ => SymKind::Function,
     }
 }
+fn select_best_exemplar<'a>(
+    ingest: &'a IngestResult,
+    interner: &Interner,
+    ranks: &[f64],
+    graph: Option<&Graph>,
+    target_kind: SymKind,
+) -> Option<(&'a crate::domain::Symbol, usize, usize, f64)> {
+    let valid: Vec<&crate::domain::Symbol> = ingest
+        .symbols
+        .iter()
+        .filter(|s| s.kind == target_kind && s.end_byte > s.sig_start_byte)
+        .collect();
+    if valid.is_empty() {
+        return None;
+    }
+    let eligible_under_cx: Vec<&crate::domain::Symbol> =
+        valid.iter().copied().filter(|s| s.ccx <= 15).collect();
+    let candidates_pool = if eligible_under_cx.is_empty() {
+        &valid
+    } else {
+        &eligible_under_cx
+    };
+    let candidate_count = candidates_pool.len();
+    let mut best: Option<(&crate::domain::Symbol, usize, f64)> = None;
+    let mut best_score = (false, 0usize, i64::MIN, 0.0f64);
+
+    for &sym in candidates_pool {
+        let file_path = ingest
+            .files
+            .get(sym.file_id as usize)
+            .map(|f| interner.resolve(&f.path))
+            .unwrap_or("");
+        let is_non_test = !crate::gate::affected::is_test_path(file_path);
+        let in_deg = graph.map(|g| g.in_degree(sym.id)).unwrap_or(0);
+        let neg_ccx = -(sym.ccx as i64);
+        let r = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
+        let score = (is_non_test, in_deg, neg_ccx, r);
+        if best.is_none() || score > best_score {
+            best_score = score;
+            best = Some((sym, in_deg, r));
+        }
+    }
+    best.map(|(sym, in_deg, r)| (sym, in_deg, candidate_count, r))
+}
 
 /// Execute `exemplar` tool: get top-ranked symbol of a given kind to imitate.
 pub fn call_exemplar(
@@ -162,22 +207,14 @@ pub fn call_exemplar(
     interner: &Interner,
     ranks: &[f64],
     role: &str,
+    graph: Option<&Graph>,
 ) -> Value {
     let target_kind = target_kind_from_role(role);
-    let mut best: Option<(f64, &crate::domain::Symbol)> = None;
-    for sym in &ingest.symbols {
-        if sym.kind == target_kind && sym.end_byte > sym.sig_start_byte {
-            let r = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
-            if best.is_none() || best.is_some_and(|(b_rank, _)| r > b_rank) {
-                best = Some((r, sym));
-            }
-        }
-    }
-
-    let Some((rank, sym)) = best else {
+    let Some((sym, in_deg, cand_cnt, rank)) =
+        select_best_exemplar(ingest, interner, ranks, graph, target_kind)
+    else {
         return json!({ "error": format!("no exemplar found for role '{role}'") });
     };
-
     let name = interner.resolve(&sym.name);
     let file_path = ingest
         .files
@@ -197,9 +234,15 @@ pub fn call_exemplar(
 
     json!({
         "role": role,
+        "kind": role,
+        "candidates": cand_cnt,
         "name": name,
         "path": file_path,
         "line": sym.line,
+        "in": in_deg,
+        "callers": in_deg,
+        "ccx": sym.ccx,
+        "tested": if in_deg > 0 { 1 } else { 0 },
         "rank": (rank * 10000.0).round() / 10000.0,
         "body": body.unwrap_or_default()
     })
@@ -355,7 +398,7 @@ mod tests {
     fn test_call_exemplar_roles() {
         let interner = Interner::new();
         let ingest = IngestResult::new();
-        let res = call_exemplar(&ingest, &interner, &[], "fn");
+        let res = call_exemplar(&ingest, &interner, &[], "fn", None);
         assert!(res.get("error").is_some());
         assert_eq!(target_kind_from_role("method"), SymKind::Method);
         assert_eq!(target_kind_from_role("class"), SymKind::Class);

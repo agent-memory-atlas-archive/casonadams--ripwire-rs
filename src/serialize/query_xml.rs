@@ -85,16 +85,31 @@ pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
 
 /// Serialize `owners` authorship to Ripwire XML.
 pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let files = val["files"].as_array();
+    let files = val
+        .get("files")
+        .or_else(|| val.get("ownership"))
+        .and_then(Value::as_array);
     let count = files.map_or(0, |f| f.len());
     let attrs = format!("schema=\"ripwire.owners/v1\" root=\".\" files=\"{count}\"");
     write_xml_envelope(out, "owners", &attrs, |out| {
         if let Some(items) = files {
             for f in items {
-                let path = f["path"].as_str().unwrap_or("");
-                let authors = f["authors"].as_u64().unwrap_or(1);
-                let top = f["top_author"].as_str().unwrap_or("");
-                let share = f["top_share"].as_f64().unwrap_or(1.0);
+                let path = f
+                    .get("path")
+                    .or_else(|| f.get("file"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let authors = f.get("authors").and_then(Value::as_u64).unwrap_or(1);
+                let top = f
+                    .get("top_author")
+                    .or_else(|| f.get("top"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let share = f
+                    .get("top_share")
+                    .or_else(|| f.get("share"))
+                    .and_then(Value::as_f64)
+                    .unwrap_or(1.0);
                 writeln!(
                     out,
                     "  <f p=\"{path}\" authors=\"{authors}\" top=\"{top}\" share=\"{share:.2}\"/>"
@@ -472,21 +487,35 @@ pub fn serialize_deps_xml<W: Write>(
 }
 /// Serialize `--exemplar` to Ripwire XML.
 pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
-    let ex = &val["exemplar"];
-    let k = val.get("kind").and_then(Value::as_str).unwrap_or("fn");
+    let ex = if val.get("exemplar").is_some() {
+        &val["exemplar"]
+    } else {
+        val
+    };
+    let k = val
+        .get("kind")
+        .or_else(|| val.get("role"))
+        .and_then(Value::as_str)
+        .unwrap_or("fn");
     let n = ex.get("name").and_then(Value::as_str).unwrap_or_default();
     let p = ex.get("path").and_then(Value::as_str).unwrap_or_default();
     let l = ex.get("line").and_then(Value::as_u64).unwrap_or(1);
     let c = ex
         .get("callers")
+        .or_else(|| ex.get("in"))
         .and_then(Value::as_u64)
         .unwrap_or_default();
     let cx = ex.get("ccx").and_then(Value::as_u64).unwrap_or_default();
+    let cand_attr = match ex.get("candidates").and_then(Value::as_u64) {
+        Some(cnt) => format!(" candidates=\"{cnt}\""),
+        None => String::new(),
+    };
+    let tested = ex.get("tested").and_then(Value::as_u64).unwrap_or(0);
     let b = ex.get("body").and_then(Value::as_str).unwrap_or_default();
 
     writeln!(
         out,
-        "<exemplar schema=\"ripwire.exemplar/v1\" root=\"{root}\" kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\"><bodies shown=\"1\" total=\"1\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]></b></bodies></exemplar>"
+        "<exemplar schema=\"ripwire.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]></b></bodies></exemplar>"
     )
 }
 /// Serialize `--lego` to Ripwire XML.
