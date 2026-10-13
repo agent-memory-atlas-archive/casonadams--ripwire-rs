@@ -100,6 +100,9 @@ pub struct Cli {
     /// Top-level global modifiers and batching flags
     #[command(flatten)]
     pub modifiers: TopModifierArgs,
+    /// Launch stdio JSON-RPC Model Context Protocol server
+    #[arg(long = "mcp")]
+    pub mcp: bool,
     /// Install ripwire-rs agent skills to ~/.agents/skills (or custom path)
     #[arg(
         long = "add-skills",

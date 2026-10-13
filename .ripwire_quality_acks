@@ -286,3 +286,7 @@ ack verbosity dbf9873eb051deef 110 cid=f6f66f92d6091196 now=110 was=90 p=tests/t
 ack verbosity e0ab848c5d67d7ae 72 cid=510934f45e78e30e now=72 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity e5467b59283b7d80 68 cid=984a4712ea404e5d now=68 was=0 p=src/serialize/html_vis.js:412 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity ef626e7fbdac48cf 83 cid=c560a4919f395ede now=83 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability
+ack short-horizon-churn 0000000000000001 5 cid=0000000000000000 now=3 was=0 facet=self p=src/git/history.rs:420 perf(history): optimize git history streaming and candidate extraction
+ack short-horizon-churn 0000000000000002 5 cid=0000000000000000 now=2 was=0 facet=self p=src/ingest/extract.rs:440 perf(history): optimize git history streaming and candidate extraction
+ack short-horizon-churn 0000000000000003 15 cid=0000000000000000 now=13 was=0 facet=self p=src/cli/dispatch.rs:489 perf: optimize git history streaming and candidate extraction
+ack short-horizon-churn 0000000000000004 15 cid=0000000000000000 now=14 was=0 facet=self p=tests/test_cli_and_mcp.rs:574 perf: optimize git history streaming and candidate extraction

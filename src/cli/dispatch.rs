@@ -464,14 +464,16 @@ pub fn execute_skills_install(target: Option<&str>) -> io::Result<()> {
 }
 
 /// Execute CLI from parsed options.
-pub fn run_cli_args(cli: Cli) -> io::Result<()> {
-    let root = cli.path.as_deref().unwrap_or(".");
+fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    if cli.mcp {
+        return Some(run_mcp_stdio(root));
+    }
     if let Some(target_opt) = &cli.add_skills {
         let target = target_opt.as_deref();
-        return execute_skills_install(target);
+        return Some(execute_skills_install(target));
     }
-    if let Some(res) = dispatch_top_flags(&cli, root) {
-        return res;
+    if let Some(res) = dispatch_top_flags(cli, root) {
+        return Some(res);
     }
     if let Some(res) = dispatch_git_metrics_command(
         root,
@@ -479,6 +481,14 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
         cli.hotspots,
         cli.since.as_deref(),
     ) {
+        return Some(res);
+    }
+    None
+}
+
+pub fn run_cli_args(cli: Cli) -> io::Result<()> {
+    let root = cli.path.as_deref().unwrap_or(".");
+    if let Some(res) = dispatch_primary_workflows(&cli, root) {
         return res;
     }
 
