@@ -172,6 +172,9 @@ pub struct TopDetailArgs {
     /// Ignore specific lint rules
     #[arg(long = "lint-ignore", value_name = "RULES")]
     pub lint_ignore: Option<String>,
+    /// Maximum findings emitted per lint rule
+    #[arg(long = "lint-max-per-rule", value_name = "N")]
+    pub lint_max_per_rule: Option<usize>,
     /// Check local-variable naming consistency
     #[arg(long = "naming-locals")]
     pub naming_locals: bool,
@@ -242,6 +245,9 @@ pub struct TopSafetyArgs {
     /// Allow quality-baseline on a dirty working tree
     #[arg(long = "allow-dirty")]
     pub allow_dirty: bool,
+    /// Show stale quality-delta acknowledgments even on clean runs
+    #[arg(long = "show-stale")]
+    pub show_stale: bool,
     /// Partition quality-delta by ownership scope
     #[arg(long = "scope", value_name = "SCOPE")]
     pub scope: Option<String>,
@@ -460,6 +466,12 @@ pub struct TopModifierArgs {
     /// Disable stable dependency violation section in --deps
     #[arg(long = "no-stable")]
     pub no_stable: bool,
+    /// Drop unranked <inv> file inventory tier from map and metrics output
+    #[arg(long = "no-inventory")]
+    pub no_inventory: bool,
+    /// Explicit RSS memory guard ceiling (e.g. 512M, 2G)
+    #[arg(long = "max-memory", value_name = "N[K|M|G]")]
+    pub max_memory: Option<String>,
     /// Compress output using compact token dialect
     #[arg(long = "compress")]
     pub compress: bool,
@@ -475,6 +487,12 @@ pub struct TopModifierArgs {
     /// Require authentication token for MCP transport
     #[arg(long = "mcp-token", value_name = "TOKEN")]
     pub mcp_token: Option<String>,
+    /// Legend posture for stdio MCP server (session|inline)
+    #[arg(long = "mcp-legend", value_name = "MODE")]
+    pub mcp_legend: Option<String>,
+    /// Restrict exposed MCP tools to comma-separated list or profile (core|full)
+    #[arg(long = "mcp-tools", value_name = "LIST")]
+    pub mcp_tools: Option<String>,
     /// Target agent profile for output shaping
     #[arg(long = "agent", value_name = "AGENT")]
     pub agent: Option<String>,
@@ -666,6 +684,12 @@ pub struct TopWorkspaceArgs {
     /// Find which branches or trees define a symbol
     #[arg(long, value_name = "SYM")]
     pub whereis: Option<String>,
+    /// Emit verbatim matched lines in --whereis without length truncation
+    #[arg(long = "whereis-full-text")]
+    pub whereis_full_text: bool,
+    /// Select --whereis listing filter (defs|refs|all)
+    #[arg(long = "whereis-listing", value_name = "MODE")]
+    pub whereis_listing: Option<String>,
     /// Authorship and bus-factor analysis
     #[arg(long)]
     pub owners: bool,

@@ -89,5 +89,33 @@ mod tests {
         let mut stream_out = Vec::new();
         run_lsp_stream(stream_in, &mut stream_out, ".").unwrap();
         assert!(String::from_utf8_lossy(&stream_out).contains("ripwire-lsp"));
+        let res_list = dispatch_json_rpc(
+            r#"{"jsonrpc":"2.0","id":10,"method":"resources/list","params":{}}"#,
+            &mut state,
+            ".",
+        )
+        .unwrap();
+        assert!(res_list.contains("ripwire://legend-dict/full"));
+        let res_read = dispatch_json_rpc(
+            r#"{"jsonrpc":"2.0","id":11,"method":"resources/read","params":{"uri":"ripwire://legend-dict/full"}}"#,
+            &mut state,
+            ".",
+        )
+        .unwrap();
+        assert!(res_read.contains("ripwire.legend-dict/v1"));
+        let call1 = dispatch_json_rpc(
+            r#"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"callers","arguments":{"symbol":"beta"}}}"#,
+            &mut state,
+            ".",
+        )
+        .unwrap();
+        assert!(call1.contains("80b7e589253a8e76"));
+        let call2 = dispatch_json_rpc(
+            r#"{"jsonrpc":"2.0","id":13,"method":"tools/call","params":{"name":"callers","arguments":{"symbol":"beta"}}}"#,
+            &mut state,
+            ".",
+        )
+        .unwrap();
+        assert!(call2.contains("\\\"legend\\\": \\\"ref\\\""));
     }
 }

@@ -123,6 +123,7 @@ where
         interner,
         pr,
         commits: None,
+        legend_sent: std::sync::atomic::AtomicBool::new(false),
     };
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = crate::serialize::XmlWriter::with_format(&mut stdout_lock, pretty, json_out);

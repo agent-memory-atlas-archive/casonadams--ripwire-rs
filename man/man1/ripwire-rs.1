@@ -412,6 +412,30 @@ Pretty-print indented XML output (default is minified token-optimized single-lin
 .BI \-\-mcp\-token= TOKEN
 Require authentication token \fITOKEN\fR for MCP transport.
 .TP
+.B \-\-no\-inventory
+Drop the unranked file inventory tier from ranked map and metrics output.
+.TP
+.BI \-\-max\-memory= N [K|M|G]
+Enforce an explicit RSS memory ceiling (or set via \fBRIPWIRE_MAX_MEMORY\fR).
+.TP
+.BI \-\-lint\-max\-per\-rule= N
+Cap the maximum findings emitted per AST lint rule.
+.TP
+.B \-\-show\-stale
+Emit stale \fB.ripwire_quality_acks\fR rows in \fB\-\-quality\-delta\fR even on clean runs.
+.TP
+.B \-\-whereis\-full\-text
+Emit verbatim matched lines in \fB\-\-whereis\fR without length truncation.
+.TP
+.BI \-\-whereis\-listing= MODE
+Filter \fB\-\-whereis\fR results by \fBdefs\fR, \fBrefs\fR, or \fBall\fR.
+.TP
+.BI \-\-mcp\-legend= MODE
+Configure MCP session legend posture (\fBsession\fR or \fBinline\fR).
+.TP
+.BI \-\-mcp\-tools= LIST
+Restrict exposed MCP tools to a comma-separated list or profile (\fBcore\fR, \fBfull\fR).
+.TP
 .BI \-\-agent= AGENT
 Target agent profile for output token shaping and syntax formatting.
 .TP

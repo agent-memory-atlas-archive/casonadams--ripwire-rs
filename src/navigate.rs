@@ -277,6 +277,11 @@ fn write_nav_items<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let count = items.len();
+    let via_attr = if tag == "callees" {
+        " via=\"name\""
+    } else {
+        ""
+    };
     write!(
         out,
         "<!-- ripwire {tag} schema=ripwire.{tag}/v1: 1-hop {tag} of of=. -->\n<{tag} schema=\"ripwire.{tag}/v1\" of=\"{of}\" defs=\"1\" count=\"{count}\" root=\".\" hop_tested=\"0\" hop_untested=\"{count}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" next=\"{next_flag}={of}\">",
@@ -284,7 +289,7 @@ fn write_nav_items<W: Write>(
     for it in items {
         write!(
             out,
-            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
+            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{via_attr}/>",
             it.kind, it.name, it.path, it.line
         )?;
     }
@@ -318,15 +323,25 @@ pub fn serialize_impact_xml<W: Write>(
     let reaches = nodes.len();
     let shown = reaches.min(40);
     let capped = usize::from(shown < reaches);
+    let mut depth_counts: std::collections::BTreeMap<u32, usize> =
+        std::collections::BTreeMap::new();
+    for n in nodes {
+        *depth_counts.entry(n.hops).or_insert(0) += 1;
+    }
+    let by_depth = depth_counts
+        .iter()
+        .map(|(d, c)| format!("{d}:{c}"))
+        .collect::<Vec<_>>()
+        .join(",");
     write!(
         out,
-        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" importers=\"1\" shown_importers=\"1\" importers_capped=\"0\" radius_tested=\"0\" radius_untested=\"{reaches}\" root=\".\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" pr_iters=\"44\" next=\"--safe-delete={sym_name}\">",
+        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" by_depth=\"{by_depth}\" importers=\"1\" shown_importers=\"1\" importers_capped=\"0\" radius_tested=\"0\" radius_untested=\"{reaches}\" root=\".\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" pr_iters=\"44\" next=\"--safe-delete={sym_name}\">",
     )?;
     for n in nodes.iter().take(shown) {
         write!(
             out,
-            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\" dist=\"{}\"/>",
-            n.kind, n.name, n.path, n.line, n.hops
+            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\" d=\"{}\" dist=\"{}\"/>",
+            n.kind, n.name, n.path, n.line, n.hops, n.hops
         )?;
     }
     write!(out, "<f via=\"import\" p=\"src/cli/mod.rs\" lazy=\"0\"/>")?;

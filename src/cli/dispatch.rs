@@ -232,10 +232,11 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
                 }
             }
         }
-        let mut stdout = crate::serialize::XmlWriter::with_format(
+        let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
             cli.modifiers.is_pretty(),
             cli.modifiers.is_json(),
+            cli.legend.eq_ignore_ascii_case("none"),
         );
         execute_nav_symbol_query(
             sym,
@@ -257,10 +258,11 @@ pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout = crate::serialize::XmlWriter::with_format(
+        let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
             cli.modifiers.is_pretty(),
             cli.modifiers.is_json(),
+            cli.legend.eq_ignore_ascii_case("none"),
         );
         execute_retrieval_dispatch(
             &cli.retrieval,
@@ -282,10 +284,11 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     }
     Some((|| {
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout = crate::serialize::XmlWriter::with_format(
+        let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
             cli.modifiers.is_pretty(),
             cli.modifiers.is_json(),
+            cli.legend.eq_ignore_ascii_case("none"),
         );
         if ws.owners {
             execute_workspace_owners(cli, root, &mut stdout)?;
@@ -358,6 +361,26 @@ fn execute_workspace_owners<W: Write>(cli: &Cli, root: &str, out: &mut W) -> io:
     crate::serialize::serialize_owners_xml(&val, out)
 }
 
+fn cap_lint_findings_per_rule(
+    findings: &mut Vec<crate::metrics::lint::LintFinding>,
+    max_per_rule: Option<usize>,
+) {
+    let Some(limit) = max_per_rule else {
+        return;
+    };
+    let mut rule_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    findings.retain(|f| {
+        let c = rule_counts.entry(f.rule.clone()).or_insert(0);
+        if *c < limit {
+            *c += 1;
+            true
+        } else {
+            false
+        }
+    });
+}
+
 fn execute_detail_extended<W: Write>(
     cli: &Cli,
     root: &str,
@@ -369,7 +392,8 @@ fn execute_detail_extended<W: Write>(
 ) -> io::Result<()> {
     let detail = &cli.detail;
     if detail.lint {
-        let findings = crate::metrics::lint::run_lint_scan(ingest, graph, interner);
+        let mut findings = crate::metrics::lint::run_lint_scan(ingest, graph, interner);
+        cap_lint_findings_per_rule(&mut findings, detail.lint_max_per_rule);
         if cli.arch.sarif {
             crate::metrics::lint::serialize_lint_sarif(&findings, stdout)
         } else {
@@ -388,10 +412,7 @@ fn execute_detail_extended<W: Write>(
             root, ingest, graph, &pr.ranks, interner, stdout,
         )
     } else if detail.legend_dict {
-        writeln!(
-            stdout,
-            "<legend-dict schema=\"ripwire.legend-dict/v1\"><entry k=\"f\" v=\"file\"/><entry k=\"s\" v=\"symbol\"/><entry k=\"c\" v=\"calls\"/><entry k=\"t\" v=\"kind\"/><entry k=\"n\" v=\"name\"/><entry k=\"l\" v=\"line\"/><entry k=\"k\" v=\"pagerank\"/><entry k=\"ccx\" v=\"cognitive_complexity\"/></legend-dict>"
-        )
+        crate::serialize::serialize_legend_dict_xml(stdout)
     } else {
         Ok(())
     }
@@ -406,10 +427,11 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout = crate::serialize::XmlWriter::with_format(
+        let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
             cli.modifiers.is_pretty() || detail.report,
             cli.modifiers.is_json() && !detail.report,
+            cli.legend.eq_ignore_ascii_case("none") && !detail.report,
         );
 
         if let Some(syms) = detail.expand.as_deref() {
@@ -446,10 +468,11 @@ pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     Some((|| {
         let (ingest, graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout = crate::serialize::XmlWriter::with_format(
+        let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
             cli.modifiers.is_pretty(),
             cli.modifiers.is_json(),
+            cli.legend.eq_ignore_ascii_case("none"),
         );
         let res = execute_safety_dispatch(s, root, &ingest, &graph, &interner, &mut stdout);
         stdout.flush()?;
@@ -496,10 +519,11 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             );
         }
 
-        let mut stdout = crate::serialize::XmlWriter::with_format(
+        let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
             cli.modifiers.is_pretty(),
             cli.modifiers.is_json(),
+            cli.legend.eq_ignore_ascii_case("none"),
         );
 
         if let Some(rules_file) = a.arch.as_deref() {
@@ -617,10 +641,11 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         return Some((|| {
             let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
             let mut stdout_lock = io::stdout().lock();
-            let mut stdout = crate::serialize::XmlWriter::with_format(
+            let mut stdout = crate::serialize::XmlWriter::with_options(
                 &mut stdout_lock,
                 cli.modifiers.is_pretty(),
                 cli.modifiers.is_json(),
+                cli.legend.eq_ignore_ascii_case("none"),
             );
             execute_batch_file(root, file, &ingest, &graph, &pr, &interner, &mut stdout)?;
             stdout.flush()
@@ -639,10 +664,11 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
     let legend_full = cli.legend.eq_ignore_ascii_case("full");
     let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
     let mut stdout_lock = io::stdout().lock();
-    let mut stdout = crate::serialize::XmlWriter::with_format(
+    let mut stdout = crate::serialize::XmlWriter::with_options(
         &mut stdout_lock,
         cli.modifiers.is_pretty(),
         cli.modifiers.is_json(),
+        cli.legend.eq_ignore_ascii_case("none"),
     );
     let args = RankedStreamArgs {
         root,

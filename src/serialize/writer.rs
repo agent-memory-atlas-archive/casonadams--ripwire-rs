@@ -216,6 +216,7 @@ pub fn xml_bytes_to_json_value(raw: &[u8]) -> serde_json::Value {
 pub enum XmlWriter<'a, W: Write> {
     Plain(&'a mut W),
     Minifying(MinifyingWriter<&'a mut W>),
+    NoComments(&'a mut W, Vec<u8>, bool),
     Json(&'a mut W, Vec<u8>, bool),
 }
 
@@ -229,12 +230,50 @@ impl<'a, W: Write> XmlWriter<'a, W> {
     }
 
     pub fn with_format(writer: &'a mut W, pretty: bool, json: bool) -> Self {
+        Self::with_options(writer, pretty, json, false)
+    }
+
+    pub fn with_options(writer: &'a mut W, pretty: bool, json: bool, strip_comments: bool) -> Self {
         if json {
             Self::Json(writer, Vec::new(), pretty)
+        } else if strip_comments {
+            Self::NoComments(writer, Vec::new(), pretty)
         } else {
             Self::new(writer, pretty)
         }
     }
+}
+
+fn flush_no_comments<W: Write>(w: &mut W, acc: &mut Vec<u8>, pretty: bool) -> io::Result<()> {
+    if acc.is_empty() {
+        return w.flush();
+    }
+    let text = String::from_utf8_lossy(acc);
+    let stripped = strip_xml_comments(&text);
+    let clean = stripped.trim_start();
+    if pretty {
+        w.write_all(clean.as_bytes())?;
+    } else {
+        let mut min = MinifyingWriter::new(&mut *w);
+        min.write_all(clean.as_bytes())?;
+        min.flush()?;
+    }
+    acc.clear();
+    w.flush()
+}
+
+fn flush_json<W: Write>(w: &mut W, acc: &mut Vec<u8>, pretty: bool) -> io::Result<()> {
+    if !acc.is_empty() {
+        let val = xml_bytes_to_json_value(acc);
+        acc.clear();
+        if pretty {
+            serde_json::to_writer_pretty(&mut *w, &val)?;
+        } else {
+            serde_json::to_writer(&mut *w, &val)?;
+        }
+        writeln!(w)?;
+    }
+    w.flush()
 }
 
 impl<'a, W: Write> Write for XmlWriter<'a, W> {
@@ -242,7 +281,7 @@ impl<'a, W: Write> Write for XmlWriter<'a, W> {
         match self {
             Self::Plain(w) => w.write(buf),
             Self::Minifying(w) => w.write(buf),
-            Self::Json(_, acc, _) => {
+            Self::NoComments(_, acc, _) | Self::Json(_, acc, _) => {
                 acc.extend_from_slice(buf);
                 Ok(buf.len())
             }
@@ -253,19 +292,8 @@ impl<'a, W: Write> Write for XmlWriter<'a, W> {
         match self {
             Self::Plain(w) => w.flush(),
             Self::Minifying(w) => w.flush(),
-            Self::Json(w, acc, pretty) => {
-                if !acc.is_empty() {
-                    let val = xml_bytes_to_json_value(acc);
-                    acc.clear();
-                    if *pretty {
-                        serde_json::to_writer_pretty(&mut **w, &val)?;
-                    } else {
-                        serde_json::to_writer(&mut **w, &val)?;
-                    }
-                    writeln!(w)?;
-                }
-                w.flush()
-            }
+            Self::NoComments(w, acc, pretty) => flush_no_comments(*w, acc, *pretty),
+            Self::Json(w, acc, pretty) => flush_json(*w, acc, *pretty),
         }
     }
 }
@@ -302,5 +330,27 @@ mod tests {
         assert_eq!(val["schema"], "ripwire.map/v1");
         assert_eq!(val["files"], 2);
         assert!(!val["items"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_xml_writer_strip_comments_and_legend_dict() {
+        let input = "<!-- ripwire map schema=ripwire.map/v1 -->\n<r schema=\"ripwire.map/v1\"><f p=\"src/lib.rs\"/></r>\n";
+        let mut out = Vec::new();
+        {
+            let mut writer = XmlWriter::with_options(&mut out, false, false, true);
+            writer.write_all(input.as_bytes()).unwrap();
+            writer.flush().unwrap();
+        }
+        let res = String::from_utf8(out).unwrap();
+        assert!(!res.contains("<!--"));
+        assert!(res.starts_with("<r schema=\"ripwire.map/v1\">"));
+
+        let mut dict_buf = Vec::new();
+        crate::serialize::serialize_legend_dict_xml(&mut dict_buf).unwrap();
+        let dict_str = String::from_utf8(dict_buf).unwrap();
+        assert!(dict_str.contains("schema=\"ripwire.legend-dict/v1\""));
+        assert!(dict_str.contains("k=\"ripwire.map/v1\""));
+        assert!(dict_str.contains("k=\"ccx\""));
+        assert!(dict_str.contains("k=\"prov\""));
     }
 }

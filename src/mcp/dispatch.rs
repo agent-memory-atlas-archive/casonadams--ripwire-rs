@@ -567,6 +567,27 @@ pub fn dispatch_tool_action(
         .or_else(|_| dispatch_graph_and_doc_tools(state, tool_name, args))
 }
 
+fn attach_session_legend_meta(val: &mut Value, state: &McpState, args: &Value) {
+    let first_turn = !state
+        .legend_sent
+        .swap(true, std::sync::atomic::Ordering::Relaxed);
+    let force_compact = args["legend"].as_str() == Some("compact");
+    let Value::Object(map) = val else {
+        return;
+    };
+    if first_turn || force_compact {
+        map.insert(
+            "dictv".to_string(),
+            Value::String(crate::serialize::LEGEND_DICT_VERSION.to_string()),
+        );
+    } else {
+        map.insert(
+            "about".to_string(),
+            json!({ "legend": "ref", "dictv": crate::serialize::LEGEND_DICT_VERSION }),
+        );
+    }
+}
+
 /// Handle `tools/call` method.
 #[must_use]
 pub fn handle_tools_call(
@@ -622,7 +643,8 @@ pub fn handle_tools_call(
 
     let result = dispatch_tool_action(current_state, tool_name, args);
     match result {
-        Ok(val) => {
+        Ok(mut val) => {
+            attach_session_legend_meta(&mut val, current_state, args);
             let text = match val {
                 Value::String(s) => s,
                 other => serde_json::to_string_pretty(&other).unwrap_or_default(),

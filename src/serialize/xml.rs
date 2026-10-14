@@ -218,12 +218,15 @@ pub fn bucket_symbols_by_rank(
     let s = symbols.len();
     let keep = top_k.unwrap_or(s).min(s);
 
-    let mut order: Vec<NodeId> = (0..s as NodeId).collect();
+    let mut order: Vec<NodeId> = (0..s as NodeId)
+        .filter(|&id| symbols[id as usize].kind != crate::domain::SymKind::Section)
+        .collect();
     order.sort_by(|&a, &b| {
         let ra = ranks.get(a as usize).copied().unwrap_or(0.0);
         let rb = ranks.get(b as usize).copied().unwrap_or(0.0);
         rb.total_cmp(&ra).then_with(|| a.cmp(&b))
     });
+    let keep = keep.min(order.len());
 
     let mut buckets: Vec<Vec<NodeId>> = vec![Vec::new(); files_len];
     let mut file_order: Vec<u32> = Vec::new();
@@ -277,6 +280,7 @@ pub fn serialize_xml<W: Write>(
 }
 
 pub const SCHEMA_COMMENT: &[u8] = b"<!-- ripwire map schema=ripwire.map/v1: ranked symbol map: <f p= layer=> groups <s t= n= sc= k= amb=> rows (k= rank), <c n=> resolved callees; the header comment is data. est_tokens=: price as emitted (an upper bound under compact). root=: p= relative to it. pr_iters=N: PageRank iterations. declined=K: K calls left unbound (no evidence chose one def). prov=scip|binding|import|split|final-segment: how that <c> edge bound (absent: one unique name); split = one arm of an amb= pick; final-segment = a qualified type matched by last name only. files=/symbols=: files and symbols indexed; edges= distinct call edges; shown= symbols printed, a merged row counting each def; ambiguous= calls split over several defs, corpus-wide; unresolved= calls with in-tree evidence and no edge (defs all language-filtered, or import/pointer binding refused); order= rows by rank (important-first, important-last; (auto:fill) = flipped past a size threshold) or by path (stable). unindexed=ext:N: N text files of that extension no grammar reads (6 extensions at most). sc=: enclosing scope; the full id is p::sc::n (p= of the row or its <f>) and selectors take it. amb=K: K calls split over several defs.";
+pub const SCHEMA_COMMENT_COMPACT: &[u8] = b"<!-- ripwire map schema=ripwire.map/v1: <f p= layer=> <s t= n= sc= k= amb=> <c n=> (dictv=80b7e589253a8e76; full dict: --legend-dict)";
 
 fn build_symbol_row_context<'a>(
     sym: &'a Symbol,
@@ -352,21 +356,36 @@ fn serialize_symbol_buckets(
 }
 
 /// Stream minified XML with custom ranks and budget enforcement.
+fn resolve_cli_map_schema(options: &SerializeOptions) -> &'static str {
+    if options.map_diff_at.is_some() {
+        "ripwire.map-diff/v1"
+    } else if options.metrics {
+        "ripwire.metrics/v1"
+    } else {
+        "ripwire.map/v1"
+    }
+}
+
+fn should_emit_data_sections_cut(options: &SerializeOptions, data_sections_cut: usize) -> bool {
+    let k_lim = options.top_k.unwrap_or(200);
+    data_sections_cut > 0
+        && options.map_diff_at.is_none()
+        && k_lim >= 100
+        && options
+            .pack_budget_bytes
+            .is_none_or(|b| b >= DEFAULT_PACK_BUDGET_BYTES)
+}
+
 fn write_cli_root_open<W: Write>(
     w: &mut W,
     options: &SerializeOptions,
     pr_iters: u32,
     est_tokens: usize,
+    data_sections_cut: usize,
 ) -> io::Result<()> {
     w.write_all(b"<r")?;
     if !options.legend_full {
-        let schema = if options.map_diff_at.is_some() {
-            "ripwire.map-diff/v1"
-        } else if options.metrics {
-            "ripwire.metrics/v1"
-        } else {
-            "ripwire.map/v1"
-        };
+        let schema = resolve_cli_map_schema(options);
         write!(w, " schema=\"{schema}\"")?;
     }
     if let Some(at) = &options.map_diff_at {
@@ -376,10 +395,17 @@ fn write_cli_root_open<W: Write>(
     escape_xml_write(w, &options.root)?;
     w.write_all(b"\"")?;
     if let Some(rb) = &options.rank_by {
-        write!(w, " rank_by=\"{rb}\" est_tokens=\"{est_tokens}\">")
-    } else {
-        write!(w, " est_tokens=\"{est_tokens}\" pr_iters=\"{pr_iters}\">")
+        return write!(w, " rank_by=\"{rb}\" est_tokens=\"{est_tokens}\">");
     }
+    write!(w, " est_tokens=\"{est_tokens}\" pr_iters=\"{pr_iters}\"")?;
+    if should_emit_data_sections_cut(options, data_sections_cut) {
+        let k_lim = options.top_k.unwrap_or(200);
+        write!(
+            w,
+            " data_sections_cut=\"{data_sections_cut}\" next=\"--graph-query=&apos;kind(all,sec)&apos; --offset=0 --limit={k_lim}\""
+        )?;
+    }
+    w.write_all(b">")
 }
 
 /// Stream minified XML with custom ranks and budget enforcement.
@@ -409,7 +435,12 @@ pub fn serialize_xml_with_ranks<W: Write>(
     let mut counter = CountingWriter::new(buf);
     let ambiguous = ctx.graph.amb_out.iter().map(|&a| a as usize).sum::<usize>();
     if options.emit_legend || options.metrics {
-        counter.write_all(SCHEMA_COMMENT)?;
+        let header_prefix = if options.legend_full || options.metrics {
+            SCHEMA_COMMENT
+        } else {
+            SCHEMA_COMMENT_COMPACT
+        };
+        counter.write_all(header_prefix)?;
         write!(
             counter,
             " files={} symbols={} edges={} shown=\"{}\" ambiguous={} unresolved=0 -->",
@@ -420,7 +451,19 @@ pub fn serialize_xml_with_ranks<W: Write>(
             ambiguous
         )?;
         let est_tokens = (body_buf.len() + 1200) * 2 / 5;
-        write_cli_root_open(&mut counter, options, ctx.pr_iters, est_tokens)?;
+        let data_sections_cut = ctx
+            .ingest
+            .symbols
+            .iter()
+            .filter(|s| s.kind == crate::domain::SymKind::Section)
+            .count();
+        write_cli_root_open(
+            &mut counter,
+            options,
+            ctx.pr_iters,
+            est_tokens,
+            data_sections_cut,
+        )?;
     } else {
         let root_ctx = RootElementContext {
             root: &options.root,

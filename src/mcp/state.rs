@@ -11,6 +11,7 @@ pub struct McpState {
     pub interner: Interner,
     pub pr: PageRankResult,
     pub commits: Option<Vec<crate::git::history::CommitInfo>>,
+    pub legend_sent: std::sync::atomic::AtomicBool,
 }
 
 impl McpState {
@@ -27,6 +28,7 @@ impl McpState {
             interner,
             pr,
             commits: None,
+            legend_sent: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -43,6 +45,7 @@ impl McpState {
             interner,
             pr,
             commits: None,
+            legend_sent: std::sync::atomic::AtomicBool::new(false),
         })
     }
     #[must_use]
@@ -58,6 +61,7 @@ impl McpState {
             interner,
             pr,
             commits: None,
+            legend_sent: std::sync::atomic::AtomicBool::new(false),
         }
     }
 

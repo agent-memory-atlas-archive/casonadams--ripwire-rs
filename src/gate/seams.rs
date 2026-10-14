@@ -205,7 +205,7 @@ pub fn serialize_seams_xml<W: Write>(root: &str, rep: &SeamsReport, out: &mut W)
     };
     writeln!(
         out,
-        "<!-- ripwire seams schema=ripwire.seams/v1: cross-directory call edges NO test reaches. -->\n<seams schema=\"ripwire.seams/v1\" root=\"{root}\" modules=\"{}\" bridges=\"{}\" untested=\"{}\" test_files=\"{}\" seam_pairs=\"{total}\"{page_attrs} pr_iters=\"44\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
+        "<!-- ripwire seams schema=ripwire.seams/v1: cross-directory call edges NO test reaches. -->\n<seams schema=\"ripwire.seams/v1\" root=\"{root}\" modules=\"{}\" bridges=\"{}\" untested=\"{}\" doc_links=\"0\" test_files=\"{}\" seam_pairs=\"{total}\"{page_attrs} pr_iters=\"44\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
         rep.modules_count, rep.bridges_count, rep.untested_count, rep.test_files_count,
     )?;
     for g in rep.groups.iter().take(shown) {

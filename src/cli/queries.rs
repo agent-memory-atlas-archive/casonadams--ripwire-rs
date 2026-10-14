@@ -146,7 +146,14 @@ fn execute_doc_search_query<W: Write>(
     out: &mut W,
 ) -> io::Result<bool> {
     if let Some(sym) = ws.whereis.as_deref() {
-        let val = crate::mcp::doc_tools::call_whereis(ingest, interner, root, sym, with_history);
+        let mut val =
+            crate::mcp::doc_tools::call_whereis(ingest, interner, root, sym, with_history);
+        if let Some(listing) = ws.whereis_listing.as_deref() {
+            val["listing"] = serde_json::Value::String(listing.to_string());
+        }
+        if ws.whereis_full_text {
+            val["full_text"] = serde_json::Value::Bool(true);
+        }
         crate::serialize::serialize_whereis_xml(&val, out)?;
         Ok(true)
     } else if ws.doc_drift {
@@ -955,12 +962,53 @@ pub fn execute_deps_query<W: Write>(
     crate::serialize::serialize_deps_xml(root, &file_deps, out)
 }
 
+pub fn deduplicate_batch_legend(raw: &[u8], legend_emitted: &mut bool) -> Vec<u8> {
+    let text = String::from_utf8_lossy(raw);
+    if !text.contains("<!--") {
+        return raw.to_vec();
+    }
+    if !*legend_emitted {
+        *legend_emitted = true;
+        return raw.to_vec();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut s: &str = &text;
+    while let Some(start) = s.find("<!--") {
+        out.push_str(&s[..start]);
+        if let Some(end) = s[start..].find("-->") {
+            s = &s[start + end + 3..];
+        } else {
+            break;
+        }
+    }
+    out.push_str(s.trim_start());
+    let trimmed = out.trim_end();
+    format!(
+        "{trimmed}\n<about legend=\"ref\" dictv=\"{}\"/>\n",
+        crate::serialize::LEGEND_DICT_VERSION
+    )
+    .into_bytes()
+}
+
 pub fn run_batch_subquery<W: Write>(
     line: &str,
     ingest: &IngestResult,
     graph: &Graph,
     pr: &PageRankResult,
     interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut first = false;
+    run_batch_subquery_dedup(line, ingest, graph, pr, interner, &mut first, out)
+}
+
+fn run_batch_subquery_dedup<W: Write>(
+    line: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    legend_emitted: &mut bool,
     out: &mut W,
 ) -> io::Result<()> {
     let Some((verb, arg)) = line.split_once(':') else {
@@ -1033,8 +1081,9 @@ pub fn run_batch_subquery<W: Write>(
         }
         _ => {}
     }
+    let final_bytes = deduplicate_batch_legend(&sub_buf, legend_emitted);
     writeln!(out, "  <result query=\"{line}\">")?;
-    out.write_all(&sub_buf)?;
+    out.write_all(&final_bytes)?;
     writeln!(out, "  </result>")
 }
 
@@ -1056,15 +1105,16 @@ pub fn execute_batch_content<W: Write>(
 
     writeln!(
         out,
-        "<batch schema=\"ripwire.batch/v1\" root=\"{root}\" count=\"{}\">",
+        "<batch schema=\"ripwire.batch/v1\" root=\"{root}\" dictv=\"{}\" count=\"{}\">",
+        crate::serialize::LEGEND_DICT_VERSION,
         lines.len()
     )?;
+    let mut legend_emitted = false;
     for line in lines {
-        run_batch_subquery(line, ingest, graph, pr, interner, out)?;
+        run_batch_subquery_dedup(line, ingest, graph, pr, interner, &mut legend_emitted, out)?;
     }
     writeln!(out, "</batch>")
 }
-
 pub fn execute_batch_file<W: Write>(
     root: &str,
     file_path: &str,

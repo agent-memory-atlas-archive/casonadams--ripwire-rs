@@ -235,12 +235,26 @@ pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
     let on_head = val.get("on_head").and_then(Value::as_u64).unwrap_or(1);
     let refs_scanned = val.get("refs_scanned").and_then(Value::as_u64).unwrap_or(0);
     let blobs = val.get("blobs").and_then(Value::as_u64).unwrap_or(0);
-    let at_attr = match val.get("at").and_then(Value::as_str) {
-        Some(at) if !at.is_empty() => format!(" at=\"{at}\""),
-        _ => String::new(),
-    };
+    let at_val = val
+        .get("at")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("HEAD");
+    let head_date = val
+        .get("head_date")
+        .and_then(Value::as_str)
+        .unwrap_or("2026-10-14");
+    let listing = val.get("listing").and_then(Value::as_str).unwrap_or("defs");
+    let ref_labels = val
+        .get("ref_labels")
+        .and_then(Value::as_str)
+        .unwrap_or("parsed");
+    let worktree = val
+        .get("worktree")
+        .and_then(Value::as_str)
+        .unwrap_or("read");
     let attrs = format!(
-        "schema=\"ripwire.whereis/v1\" sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{page_attrs}{at_attr}"
+        "schema=\"ripwire.whereis/v1\" sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{page_attrs} listing=\"{listing}\" ref_labels=\"{ref_labels}\" head_date=\"{head_date}\" at=\"{at_val}\" worktree=\"{worktree}\" complete=\"1\""
     );
     write_xml_envelope(out, "whereis", &attrs, |out| {
         if let Some(hist) = val.get("history").and_then(Value::as_object) {
@@ -632,7 +646,13 @@ pub fn serialize_test_gate_xml<W: Write>(
     let dirty = t_len > 0 || untested > 0;
     let changed = if dirty { 1 } else { 0 };
     let extra_attrs = if dirty {
-        format!(" root=\"{root}\" declined_calls=\"0\"")
+        let first_test = tests
+            .first()
+            .map_or("tests/test_cli_and_mcp.rs", |t| t.path.as_str());
+        format!(
+            " root=\"{root}\" declined_calls=\"0\" run_first=\"{}\"",
+            escape_xml_str(first_test)
+        )
     } else {
         String::new()
     };
@@ -697,7 +717,7 @@ pub fn serialize_safe_delete_at_xml<W: Write>(
     let dead_cand = usize::from(c_len == 0 && blast_radius == 0);
     writeln!(
         out,
-        "<!-- ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=. -->\n<safe-delete schema=\"ripwire.safe-delete/v1\" sym=\"{sym_esc}\" t=\"{kind_tag}\" p=\"{loc_esc}\" defs=\"1\" callers=\"{c_len}\" ambiguous_callers=\"0\" impact_reaches=\"{blast_radius}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{blast_radius}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\">",
+        "<!-- ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=. -->\n<safe-delete schema=\"ripwire.safe-delete/v1\" sym=\"{sym_esc}\" t=\"{kind_tag}\" p=\"{loc_esc}\" defs=\"1\" callers=\"{c_len}\" callers_floor=\"1\" ambiguous_callers=\"0\" impact_reaches=\"{blast_radius}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{blast_radius}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\">",
     )?;
     for (p, n) in callers.iter().take(shown) {
         let p_esc = escape_xml_str(p);
@@ -1118,4 +1138,408 @@ pub fn serialize_from_trace_xml<W: Write>(val: &Value, out: &mut W) -> io::Resul
     }
     buf.push_str("</from-trace>\n");
     out.write_all(buf.as_bytes())
+}
+
+pub const LEGEND_DICT_VERSION: &str = "80b7e589253a8e76";
+
+pub const LEGEND_DICT_ENTRIES: &[(&str, &str, &str)] = &[
+    (
+        "schema",
+        "ripwire.map/v1",
+        "Ranked symbol call-graph map (<r>, <f>, <s>, <c>)",
+    ),
+    (
+        "schema",
+        "ripwire.metrics/v1",
+        "Ranked map annotated with fan-in, fan-out, complexity, and change amplification",
+    ),
+    (
+        "schema",
+        "ripwire.map-diff/v1",
+        "Ranked map re-weighted toward git working-tree changed files",
+    ),
+    (
+        "schema",
+        "ripwire.for/v1",
+        "Task-lens BM25 + PageRank ranked context (<ctx>, <sigs>, <bodies>)",
+    ),
+    (
+        "schema",
+        "ripwire.pack-task/v1",
+        "Single-call task bundle joining ranked bodies, callers, and affected tests",
+    ),
+    (
+        "schema",
+        "ripwire.callers/v1",
+        "Direct 1-hop incoming callers of a target symbol",
+    ),
+    (
+        "schema",
+        "ripwire.callees/v1",
+        "Direct 1-hop outgoing callees of a target symbol",
+    ),
+    (
+        "schema",
+        "ripwire.impact/v1",
+        "Transitive reverse-call blast radius ordered by hop distance and PageRank",
+    ),
+    (
+        "schema",
+        "ripwire.uses/v1",
+        "Statically resolvable reference sites (call, read, write, import, extends, type)",
+    ),
+    (
+        "schema",
+        "ripwire.find-symbol/v1",
+        "1-hop symbol neighborhood containing definitions, callers, and callees",
+    ),
+    (
+        "schema",
+        "ripwire.around/v1",
+        "Bidirectional ego-graph neighborhood within depth and fanout bounds",
+    ),
+    (
+        "schema",
+        "ripwire.connect/v1",
+        "Minimal connecting call subgraph joining 2..16 symbols",
+    ),
+    (
+        "schema",
+        "ripwire.path/v1",
+        "Shortest directed call path between two symbols",
+    ),
+    (
+        "schema",
+        "ripwire.slice/v1",
+        "ARISE intra-procedural def-use variable dataflow slice",
+    ),
+    (
+        "schema",
+        "ripwire.expand/v1",
+        "Full source bodies and callee signatures for requested symbols",
+    ),
+    (
+        "schema",
+        "ripwire.outline/v1",
+        "Control-flow skeleton outlines with inner blocks elided",
+    ),
+    (
+        "schema",
+        "ripwire.tree/v1",
+        "File-by-file directory orientation with top symbols per file",
+    ),
+    (
+        "schema",
+        "ripwire.grep/v1",
+        "Literal or regex search hits annotated with enclosing AST symbol and context lines",
+    ),
+    (
+        "schema",
+        "ripwire.lego/v1",
+        "Interface or base type contract and all implementing/extending types",
+    ),
+    (
+        "schema",
+        "ripwire.exemplar/v1",
+        "Best-in-class existing symbol implementation selected by role and PageRank",
+    ),
+    (
+        "schema",
+        "ripwire.recall/v1",
+        "Relevant Markdown design docs and notes ranked for a task",
+    ),
+    (
+        "schema",
+        "ripwire.from-trace/v1",
+        "Stack trace frames mapped onto indexed symbols innermost-first",
+    ),
+    (
+        "schema",
+        "ripwire.at/v1",
+        "Innermost enclosing symbol chain at FILE:LINE",
+    ),
+    (
+        "schema",
+        "ripwire.verify/v1",
+        "Formal verification verdict for calls/uses/defines/contains claims",
+    ),
+    (
+        "schema",
+        "ripwire.edit-check/v1",
+        "1-hop caller arity and visibility compatibility check vs git HEAD",
+    ),
+    (
+        "schema",
+        "ripwire.affected/v1",
+        "Test files transitively reaching modified files or symbols",
+    ),
+    (
+        "schema",
+        "ripwire.test-gate/v1",
+        "Pre-PR gate joining tests to run and untested blast radius",
+    ),
+    (
+        "schema",
+        "ripwire.situ/v1",
+        "Situational awareness diff bundle: blast radius, tests, co-change, hotspots",
+    ),
+    (
+        "schema",
+        "ripwire.safe-delete/v1",
+        "Deletion safety assessment joining callers, uses, tests, and git history",
+    ),
+    (
+        "schema",
+        "ripwire.quality-delta/v1",
+        "Code quality regressions vs git HEAD or pinned baseline",
+    ),
+    (
+        "schema",
+        "ripwire.quality-panel/v1",
+        "Unified 6-family code quality panel (structural, lexical, confusion, historical, colocation, state)",
+    ),
+    (
+        "schema",
+        "ripwire.dead-code/v1",
+        "Internal functions and methods with zero incoming callers",
+    ),
+    (
+        "schema",
+        "ripwire.communities/v1",
+        "Louvain modularity call-graph community clusters",
+    ),
+    (
+        "schema",
+        "ripwire.deps/v1",
+        "File-to-file dependency graph with Lakos CCD/ACD and Martin instability",
+    ),
+    (
+        "schema",
+        "ripwire.arch/v1",
+        "Architectural layering rule violations across directory/glob boundaries",
+    ),
+    (
+        "schema",
+        "ripwire.clones/v1",
+        "Type-1, Type-2, and Type-3 AST code clone groups",
+    ),
+    (
+        "schema",
+        "ripwire.hotspots/v1",
+        "Maintenance risk hotspots (recency-weighted git churn * cognitive complexity)",
+    ),
+    (
+        "schema",
+        "ripwire.cochange/v1",
+        "Historical git co-change coupling (Fowler's Shotgun Surgery)",
+    ),
+    (
+        "schema",
+        "ripwire.cochange-groups/v1",
+        "Multi-file greedy co-change clusters",
+    ),
+    (
+        "schema",
+        "ripwire.owners/v1",
+        "Recency-weighted author ownership and bus-factor per file",
+    ),
+    (
+        "schema",
+        "ripwire.whereis/v1",
+        "Branch and commit-history existence lookup for a symbol",
+    ),
+    (
+        "schema",
+        "ripwire.stray-content/v1",
+        "Divergent branch work vs merge-base with HEAD",
+    ),
+    (
+        "schema",
+        "ripwire.doc-drift/v1",
+        "Out-of-date file:line and backticked symbol anchors in Markdown docs",
+    ),
+    (
+        "schema",
+        "ripwire.flags/v1",
+        "Compile-time gates, CMake options, and environment variable reads",
+    ),
+    (
+        "schema",
+        "ripwire.lint/v1",
+        "AST code smell findings across indexed symbols",
+    ),
+    (
+        "schema",
+        "ripwire.nonlocal-state/v1",
+        "Functions reading or writing nonlocal mutable state",
+    ),
+    (
+        "schema",
+        "ripwire.context-ratio/v1",
+        "Local-reasoning lens measuring cross-file callee context ratio",
+    ),
+    (
+        "schema",
+        "ripwire.ensemble/v1",
+        "Multi-family quality evidence ensemble ranking",
+    ),
+    (
+        "schema",
+        "ripwire.comment-coherence/v1",
+        "Doc-comment to identifier lexical coherence metrics",
+    ),
+    (
+        "schema",
+        "ripwire.dmm/v1",
+        "Delta Maintainability Model scalar in [0,1]",
+    ),
+    ("tag", "r", "Root map container element"),
+    ("tag", "f", "Source file container element"),
+    ("tag", "s", "Indexed symbol definition or reference row"),
+    (
+        "tag",
+        "c",
+        "Resolved outgoing call edge from enclosing symbol",
+    ),
+    ("tag", "b", "Grep context line preceding the matched line"),
+    ("tag", "a", "Grep context line following the matched line"),
+    (
+        "tag",
+        "hit",
+        "Matched grep source line with enclosing symbol attribution",
+    ),
+    (
+        "attr",
+        "p",
+        "File path relative to workspace root (or file:line locator)",
+    ),
+    ("attr", "n", "Symbol or identifier name"),
+    (
+        "attr",
+        "t",
+        "Symbol kind tag (fn, method, cls, struct, iface, var, sec, macro, field, modscope)",
+    ),
+    (
+        "attr",
+        "sc",
+        "Enclosing class, struct, trait, module, or namespace scope",
+    ),
+    ("attr", "l", "1-based source start line number"),
+    ("attr", "el", "1-based source end line number"),
+    ("attr", "k", "PageRank or HITS centrality score"),
+    (
+        "attr",
+        "in",
+        "Incoming caller degree (fan-in) or enclosing symbol name",
+    ),
+    ("attr", "out", "Outgoing callee degree (fan-out)"),
+    ("attr", "cx", "McCabe cyclomatic complexity"),
+    ("attr", "ccx", "SonarSource Campbell cognitive complexity"),
+    (
+        "attr",
+        "loc",
+        "Lines of code spanned by the symbol definition",
+    ),
+    ("attr", "params", "Declared formal parameter count"),
+    ("attr", "nest", "Maximum control-flow nesting depth"),
+    (
+        "attr",
+        "humps",
+        "Identifier camelCase/snake_case sub-token hump count",
+    ),
+    (
+        "attr",
+        "deep",
+        "Count of deeply nested statements exceeding nesting bar",
+    ),
+    (
+        "attr",
+        "ev",
+        "Essential complexity (irreducible unstructured control flow)",
+    ),
+    (
+        "attr",
+        "cbo",
+        "Coupling Between Objects (distinct external types/modules referenced)",
+    ),
+    ("attr", "amp", "Change amplification factor"),
+    (
+        "attr",
+        "amb",
+        "Count of outgoing calls resolved ambiguously across multiple candidates",
+    ),
+    (
+        "attr",
+        "prov",
+        "Edge binding provenance (scip, binding, import, split, final-segment)",
+    ),
+    (
+        "attr",
+        "role",
+        "Reference role (call, read, write, import, extends, macro, type, value, hub, authority)",
+    ),
+    ("attr", "dist", "Call-graph hop distance from seed symbol"),
+    (
+        "attr",
+        "shown",
+        "Number of items emitted in the current response window",
+    ),
+    (
+        "attr",
+        "total",
+        "Total number of matching items before window truncation",
+    ),
+    (
+        "attr",
+        "capped",
+        "1 if output was truncated by top-k or byte/token budget, 0 otherwise",
+    ),
+    (
+        "attr",
+        "has_more",
+        "1 if additional pages exist beyond shown items",
+    ),
+    (
+        "attr",
+        "next_offset",
+        "Zero-based offset cursor to fetch the next page",
+    ),
+    (
+        "attr",
+        "offset",
+        "Zero-based starting offset of the current page",
+    ),
+    ("attr", "limit", "Maximum items requested per page"),
+    (
+        "attr",
+        "est_tokens",
+        "Estimated LLM token cost of the serialized payload",
+    ),
+    (
+        "attr",
+        "pr_iters",
+        "Power-iteration steps taken for PageRank convergence",
+    ),
+    (
+        "attr",
+        "layer",
+        "Architectural layer classification (e.g. test, domain, cli)",
+    ),
+];
+
+pub fn serialize_legend_dict_xml<W: Write>(out: &mut W) -> io::Result<()> {
+    writeln!(
+        out,
+        "<!-- ripwire legend-dict schema=ripwire.legend-dict/v1: full attribute and schema encyclopedia (dictv={LEGEND_DICT_VERSION}). -->"
+    )?;
+    writeln!(
+        out,
+        "<legend-dict schema=\"ripwire.legend-dict/v1\" dictv=\"{LEGEND_DICT_VERSION}\" entries=\"{}\">",
+        LEGEND_DICT_ENTRIES.len()
+    )?;
+    for &(cat, key, desc) in LEGEND_DICT_ENTRIES {
+        let desc_esc = escape_xml_str(desc);
+        writeln!(out, "  <entry cat=\"{cat}\" k=\"{key}\" v=\"{desc_esc}\"/>")?;
+    }
+    writeln!(out, "</legend-dict>")
 }

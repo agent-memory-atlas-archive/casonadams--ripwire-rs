@@ -17,7 +17,8 @@ pub fn handle_initialize(id: &Value) -> Value {
                 "version": "0.1.0"
             },
             "capabilities": {
-                "tools": {}
+                "tools": {},
+                "resources": {}
             }
         }
     })
@@ -88,6 +89,33 @@ pub fn dispatch_json_rpc(
     let resp = match req["method"].as_str().unwrap_or("") {
         "initialize" => handle_initialize(id),
         "tools/list" => handle_tools_list(id),
+        "resources/list" => json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": {
+                "resources": [{
+                    "uri": "ripwire://legend-dict/full",
+                    "name": "Ripwire Schema & Attribute Encyclopedia",
+                    "mimeType": "application/xml"
+                }]
+            }
+        }),
+        "resources/read" => {
+            let mut buf = Vec::new();
+            let _ = crate::serialize::serialize_legend_dict_xml(&mut buf);
+            let xml = String::from_utf8_lossy(&buf).into_owned();
+            json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "contents": [{
+                        "uri": "ripwire://legend-dict/full",
+                        "mimeType": "application/xml",
+                        "text": xml
+                    }]
+                }
+            })
+        }
         "tools/call" => {
             let params = req.get("params").unwrap_or(&Value::Null);
             handle_tools_call(id, params, state, default_root)
