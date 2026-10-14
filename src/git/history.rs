@@ -270,9 +270,7 @@ struct RawCommitMeta {
 }
 
 fn collect_commit_metas<'a>(
-    rev_walk: impl IntoIterator<
-        Item = Result<gix::revision::walk::Info<'a>, gix::revision::walk::iter::Error>,
-    >,
+    rev_walk: impl IntoIterator<Item = Result<gix::revision::walk::Info<'a>, gix::Error>>,
     cutoff_timestamp: Option<i64>,
 ) -> Result<Vec<RawCommitMeta>, GitHistoryError> {
     let mut metas = Vec::new();
@@ -325,7 +323,7 @@ fn diff_commit_tree(
             changes
                 .for_each_to_obtain_tree(&tree, |change| {
                     files.push(change.location().to_string());
-                    Ok::<_, std::convert::Infallible>(gix::object::tree::diff::Action::Continue)
+                    Ok::<_, gix::Error>(std::ops::ControlFlow::Continue(()))
                 })
                 .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
             files
@@ -416,7 +414,12 @@ fn try_git_log_cli(repo_path: &Path, cutoff_timestamp: Option<i64>) -> Option<Ve
     if let Some(cutoff) = cutoff_timestamp {
         cmd.arg(format!("--since={cutoff}"));
     }
-    cmd.args(["--format=commit %H %ct %ae", "--name-only", "-c"]);
+    cmd.args([
+        "--no-merges",
+        "--no-renames",
+        "--format=commit %H %ct %ae",
+        "--name-only",
+    ]);
     let output = cmd.output().ok()?;
     if !output.status.success() {
         return None;

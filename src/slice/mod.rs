@@ -114,16 +114,31 @@ pub fn execute_slice(
 ) -> Result<String, String> {
     let (sym_query, var_opt) = parse_slice_target(target);
 
+    let matches_query = |s: &&crate::domain::Symbol| {
+        interner.resolve(&s.name) == sym_query
+            || interner.resolve(&s.canonical_id) == sym_query
+            || interner.resolve(&s.canonical_id).ends_with(sym_query)
+    };
     let symbol = ingest
         .symbols
         .iter()
+        .filter(matches_query)
         .find(|s| {
-            interner.resolve(&s.name) == sym_query
-                || interner.resolve(&s.canonical_id) == sym_query
-                || interner.resolve(&s.canonical_id).ends_with(sym_query)
+            s.kind == crate::domain::SymKind::Function || s.kind == crate::domain::SymKind::Method
         })
+        .or_else(|| ingest.symbols.iter().find(matches_query))
         .ok_or_else(|| format!("symbol not found: {sym_query}"))?;
-
+    if matches!(
+        symbol.lang,
+        crate::domain::Lang::Bash
+            | crate::domain::Lang::Markdown
+            | crate::domain::Lang::Yaml
+            | crate::domain::Lang::Toml
+            | crate::domain::Lang::Json
+    ) || symbol.kind == crate::domain::SymKind::Section
+    {
+        return Err("slice does not support this symbol kind".to_string());
+    }
     let file_info = ingest
         .files
         .get(symbol.file_id as usize)
@@ -191,17 +206,38 @@ pub fn execute_slice_command(
         return Ok(());
     };
 
-    let interner = Interner::new();
+    let (ingest, _graph, _pr, interner) = crate::cli::load_repo_analysis(root)?;
     let registry = LanguageRegistry::new().map_err(|e| std::io::Error::other(e.to_string()))?;
-
-    let files = crate::crawler::crawl_directory(
-        std::path::Path::new(root),
-        &crate::crawler::CrawlerOptions::default(),
-    );
-    let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
+    let (sym_query, _) = parse_slice_target(target);
+    let matches_query = |s: &&crate::domain::Symbol| {
+        interner.resolve(&s.name) == sym_query
+            || interner.resolve(&s.canonical_id) == sym_query
+            || interner.resolve(&s.canonical_id).ends_with(sym_query)
+    };
+    let custom_bytes = ingest
+        .symbols
+        .iter()
+        .filter(matches_query)
+        .find(|s| {
+            s.kind == crate::domain::SymKind::Function || s.kind == crate::domain::SymKind::Method
+        })
+        .or_else(|| ingest.symbols.iter().find(matches_query))
+        .and_then(|s| ingest.files.get(s.file_id as usize))
+        .and_then(|fi| {
+            let rel = interner.resolve(&fi.path);
+            std::fs::read(std::path::Path::new(root).join(rel)).ok()
+        });
 
     let flow_dir = SliceFlowDir::from_str_opt(flow_str).unwrap_or(SliceFlowDir::Fwd);
-    match execute_slice(&ingest, &registry, &interner, target, flow_dir, 8, None) {
+    match execute_slice(
+        &ingest,
+        &registry,
+        &interner,
+        target,
+        flow_dir,
+        8,
+        custom_bytes.as_deref(),
+    ) {
         Ok(out) => {
             print!("{out}");
             Ok(())

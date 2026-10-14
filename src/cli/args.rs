@@ -44,7 +44,9 @@ pub struct Cli {
     /// Dataflow direction for --slice (fwd, back, both)
     #[arg(long, default_value = "fwd")]
     pub slice_flow: String,
-    /// Export interactive HTML call graph visualization to file
+    /// Max hop depth for --slice
+    #[arg(long = "slice-depth", default_value_t = 8)]
+    pub slice_depth: u32,
     #[arg(long, value_name = "FILE")]
     pub html: Option<Option<String>>,
     /// Node coloring mode for --html: lang, community, cx, churn, tested
@@ -164,12 +166,27 @@ pub struct TopDetailArgs {
     /// External YAML ast-grep lint rules directory
     #[arg(long = "lint-rules", value_name = "DIR")]
     pub lint_rules: Option<String>,
+    /// Select specific lint rules to run
+    #[arg(long = "lint-select", value_name = "RULES")]
+    pub lint_select: Option<String>,
+    /// Ignore specific lint rules
+    #[arg(long = "lint-ignore", value_name = "RULES")]
+    pub lint_ignore: Option<String>,
     /// Check local-variable naming consistency
     #[arg(long = "naming-locals")]
     pub naming_locals: bool,
     /// Naming convention consistency check
     #[arg(long = "naming-consistency")]
     pub naming_consistency: bool,
+    /// Calibrate naming lens rules against git rename history
+    #[arg(long = "naming-calibration")]
+    pub naming_calibration: bool,
+    /// Generate executive markdown architecture report
+    #[arg(long = "report")]
+    pub report: bool,
+    /// Emit full schema legend dictionary
+    #[arg(long = "legend-dict")]
+    pub legend_dict: bool,
 }
 
 /// Top-level pre-PR safety and verification flags.
@@ -209,7 +226,35 @@ pub struct TopSafetyArgs {
     #[arg(long = "allow-dirty")]
     pub allow_dirty: bool,
     /// Partition quality-delta by ownership scope
+    #[arg(long = "scope", value_name = "SCOPE")]
     pub scope: Option<String>,
+    /// Pin architectural baseline sidecar
+    #[arg(long = "baseline")]
+    pub baseline: bool,
+    /// Update architectural baseline sidecar with new violations
+    #[arg(long = "baseline-update")]
+    pub baseline_update: bool,
+    /// Cluster co-changing files into multi-file change groups
+    #[arg(long = "cochange-groups")]
+    pub cochange_groups: bool,
+    /// Minimum sub-window recurrence count for co-change pairs
+    #[arg(long = "cochange-recur", value_name = "K")]
+    pub cochange_recur: Option<u32>,
+    /// Target file for symbol edit disambiguation
+    #[arg(long = "edit-target-file", value_name = "FILE")]
+    pub edit_target_file: Option<String>,
+    /// Skip post-edit contract and syntax verification
+    #[arg(long = "no-post-check")]
+    pub no_post_check: bool,
+    /// Allow atomic symbol edits when connected over remote transport
+    #[arg(long = "allow-remote-edits")]
+    pub allow_remote_edits: bool,
+    /// Pin quality census snapshot
+    #[arg(long = "pin-census")]
+    pub pin_census: bool,
+    /// Partition codebase into cohesive modules
+    #[arg(long = "partition", value_name = "K")]
+    pub partition: Option<Option<usize>>,
     /// Delta Maintainability Model scalar in [0,1]
     #[arg(long = "dmm", num_args = 0..=1, default_missing_value = "", value_name = "REV|A..B")]
     pub dmm: Option<Option<String>>,
@@ -220,7 +265,13 @@ pub struct TopSafetyArgs {
     #[arg(long = "task", value_name = "GOAL")]
     pub task: Option<String>,
     /// Security audit scanner for agent skill files
-    #[arg(long = "scan-skills", num_args = 0..=1, default_missing_value = "", value_name = "DIR")]
+    #[arg(
+        long = "scan-skills",
+        visible_alias = "scan-skill",
+        num_args = 0..=1,
+        default_missing_value = "",
+        value_name = "DIR"
+    )]
     pub scan_skills: Option<Option<String>>,
     /// Apply atomic code mutations
     #[arg(long = "apply")]
@@ -354,12 +405,69 @@ pub struct TopModifierArgs {
     /// Select output format (e.g. candidates, columnar, json)
     #[arg(long = "format", value_name = "FORMAT")]
     pub format: Option<String>,
+    /// Exclude glob or directory pattern from indexing
+    #[arg(long = "exclude", value_name = "GLOB")]
+    pub exclude: Option<String>,
+    /// Do not respect .gitignore rules during crawling
+    #[arg(long = "no-ignore")]
+    pub no_ignore: bool,
+    /// Exclude test files and directories from analysis
+    #[arg(long = "ignore-tests")]
+    pub ignore_tests: bool,
+    /// Maximum file size in bytes to index
+    #[arg(long = "max-file-size", value_name = "BYTES")]
+    pub max_file_size: Option<u64>,
+    /// Disable secret redaction on emitted snippets
+    #[arg(long = "no-redact")]
+    pub no_redact: bool,
+    /// Disable stable dependency violation section in --deps
+    #[arg(long = "no-stable")]
+    pub no_stable: bool,
+    /// Compress output using compact token dialect
+    #[arg(long = "compress")]
+    pub compress: bool,
+    /// Export full index to file
+    #[arg(long = "export", value_name = "FILE")]
+    pub export: Option<String>,
+    /// Write binary index cache to file
+    #[arg(long = "index-out", value_name = "FILE")]
+    pub index_out: Option<String>,
+    /// Enable LSP server bridge
+    #[arg(long = "lsp")]
+    pub lsp: bool,
+    /// Require authentication token for MCP transport
+    #[arg(long = "mcp-token", value_name = "TOKEN")]
+    pub mcp_token: Option<String>,
+    /// Target agent profile for output shaping
+    #[arg(long = "agent", value_name = "AGENT")]
+    pub agent: Option<String>,
+    /// Include call-graph edges in task/retrieval output
+    #[arg(long = "with-graph")]
+    pub with_graph: bool,
+    /// Annotate symbols with runtime profile weights
+    #[arg(long = "with-profile", value_name = "FILE")]
+    pub with_profile: Option<String>,
+    /// Execute runtime trace command and map onto symbols
+    #[arg(long = "run-trace", value_name = "CMD")]
+    pub run_trace: Option<String>,
+    /// Timeout in seconds for --run-trace execution
+    #[arg(long = "run-timeout", value_name = "SEC")]
+    pub run_timeout: Option<u64>,
     /// Run co-change recall vs lexical rankers self-evaluation
     #[arg(long = "eval")]
     pub eval: bool,
     /// Known-item retrieval benchmark (MRR, recall@1/5/10)
     #[arg(long = "eval-retrieval")]
     pub eval_retrieval: bool,
+    /// Mined git commit benchmark evaluation
+    #[arg(long = "eval-mined")]
+    pub eval_mined: bool,
+    /// Agent skill effectiveness evaluation
+    #[arg(long = "eval-skills")]
+    pub eval_skills: bool,
+    /// Cross-branch stray content evaluation
+    #[arg(long = "eval-stray")]
+    pub eval_stray: bool,
     /// Run daemon listener
     #[arg(long = "listen")]
     pub listen: bool,
@@ -402,11 +510,35 @@ pub struct TopRetrievalArgs {
     pub sections: Option<String>,
     #[arg(long = "pack-signatures")]
     pub pack_signatures: bool,
-    #[arg(long = "for", value_name = "TASK")]
+    #[arg(long = "for", visible_alias = "query", value_name = "TASK")]
     pub task_for: Option<String>,
     /// Literal trigram text search
     #[arg(long, value_name = "PAT")]
     pub grep: Option<String>,
+    /// Restrict grep to files matching path substring
+    #[arg(long = "grep-in", value_name = "DIR")]
+    pub grep_in: Option<String>,
+    /// Restrict grep to specific symbol scope
+    #[arg(long = "grep-scope", value_name = "SCOPE")]
+    pub grep_scope: Option<String>,
+    /// Conjunction filter for structural search
+    #[arg(long = "and", value_name = "PAT")]
+    pub and_pat: Option<String>,
+    /// Negation filter for structural search
+    #[arg(long = "not", value_name = "PAT")]
+    pub not_pat: Option<String>,
+    /// Enclosing symbol or directory filter
+    #[arg(long = "in", value_name = "SCOPE")]
+    pub in_scope: Option<String>,
+    /// Emit compact refetch handles on retrieval rows
+    #[arg(long = "handles")]
+    pub handles: bool,
+    /// Expand a compact handle returned by --handles
+    #[arg(long = "refetch", value_name = "HANDLE")]
+    pub refetch: Option<String>,
+    /// Recommend the best ripwire verb for a natural-language task
+    #[arg(long = "help-task", value_name = "TASK")]
+    pub help_task: Option<String>,
     /// Minimal connecting subgraph relating symbols (A,B,...)
     #[arg(long, value_name = "A,B")]
     pub connect: Option<String>,

@@ -951,6 +951,9 @@ pub fn execute_retrieval_dispatch<W: Write>(
     } else if let Some(ex) = ret.exemplar.as_deref() {
         let val =
             crate::mcp::retrieval::call_exemplar(ingest, interner, &pr.ranks, ex, Some(graph));
+        if val.get("error").is_some() {
+            return Err(io::Error::other("ripwire: --exemplar: no candidate found"));
+        }
         crate::serialize::serialize_exemplar_xml(root, &val, out)
     } else if let Some(iface) = ret.lego.as_deref() {
         if crate::navigate::find_symbols_by_name(iface, ingest, interner).is_empty() {

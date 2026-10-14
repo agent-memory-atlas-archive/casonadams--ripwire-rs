@@ -91,7 +91,7 @@ fn check_cross_module_edge(
         return None;
     }
 
-    let is_untested = !tested_nodes.contains(&sym.id) && !tested_nodes.contains(&target_id);
+    let is_untested = !tested_nodes.contains(&sym.id) || !tested_nodes.contains(&target_id);
     let seam_edge = if is_untested {
         Some(SeamEdge {
             caller: interner.resolve(&sym.name).to_string(),
@@ -196,9 +196,13 @@ pub fn serialize_seams_xml<W: Write>(root: &str, rep: &SeamsReport, out: &mut W)
     let total = rep.seam_pairs_count;
     let shown = total.min(20);
     let capped = usize::from(shown < total);
-    let page_attrs = format!(
-        " shown=\"{shown}\" capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
-    );
+    let page_attrs = if capped == 1 {
+        format!(
+            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+        )
+    } else {
+        format!(" shown=\"{shown}\" capped=\"0\"")
+    };
     writeln!(
         out,
         "<!-- ripwire seams schema=ripwire.seams/v1: cross-directory call edges NO test reaches. -->\n<seams schema=\"ripwire.seams/v1\" root=\"{root}\" modules=\"{}\" bridges=\"{}\" untested=\"{}\" test_files=\"{}\" seam_pairs=\"{total}\"{page_attrs} pr_iters=\"44\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
