@@ -64,13 +64,26 @@ impl ArchConfig {
     pub fn assign_layer(&self, file_path: &str) -> Option<&str> {
         for (name, substrs) in &self.layers {
             for sub in substrs {
-                if file_path.contains(sub) {
+                if matches_layer_pattern(file_path, sub) {
                     return Some(name.as_str());
                 }
             }
         }
         None
     }
+}
+
+fn matches_layer_pattern(file_path: &str, pat: &str) -> bool {
+    if let Some(ext) = pat.strip_prefix("*.") {
+        return file_path.ends_with(&format!(".{ext}"));
+    }
+    let cleaned = pat
+        .trim_start_matches("**/")
+        .trim_start_matches("./")
+        .trim_end_matches("/**")
+        .trim_end_matches("/*")
+        .trim_end_matches('*');
+    !cleaned.is_empty() && file_path.contains(cleaned)
 }
 struct EdgeEndpoint<'a> {
     file: &'a str,
@@ -181,8 +194,8 @@ mod tests {
     fn test_arch_config_parsing() {
         let rules = r#"
 # Sample layering rules
-layer domain = src/domain
-layer cli = src/cli
+layer domain = src/domain/**
+layer cli = src/cli/*
 deny domain -> cli
 allow cli -> domain
 "#;

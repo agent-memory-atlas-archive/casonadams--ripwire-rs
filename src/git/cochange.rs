@@ -523,6 +523,88 @@ fn build_copair(
         dep_capable,
     })
 }
+
+/// A multi-file co-change cluster group.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CoGroup {
+    pub core: String,
+    pub partners: Vec<String>,
+    pub max_together: u32,
+    pub max_deg: f64,
+}
+
+/// Cluster pairwise co-change edges into greedy multi-file change groups.
+struct NeighborEdge<'a> {
+    path: &'a str,
+    together: u32,
+    deg: f64,
+}
+
+fn collect_unclaimed_group<'a>(
+    core: &'a str,
+    neighbors: &[NeighborEdge<'a>],
+    claimed: &mut HashSet<&'a str>,
+) -> Option<CoGroup> {
+    let mut partners = Vec::new();
+    let mut max_together = 0u32;
+    let mut max_deg = 0.0f64;
+    for nb in neighbors {
+        if !claimed.contains(nb.path) {
+            partners.push(nb.path);
+            max_together = max_together.max(nb.together);
+            max_deg = max_deg.max(nb.deg);
+        }
+    }
+    if partners.is_empty() {
+        return None;
+    }
+    claimed.insert(core);
+    for &pt in &partners {
+        claimed.insert(pt);
+    }
+    let mut partner_strings: Vec<String> = partners.into_iter().map(String::from).collect();
+    partner_strings.sort();
+    Some(CoGroup {
+        core: core.to_string(),
+        partners: partner_strings,
+        max_together,
+        max_deg,
+    })
+}
+
+#[must_use]
+pub fn cluster_cochange_groups(pairs: &[CoPair]) -> Vec<CoGroup> {
+    let mut adj: HashMap<&str, Vec<NeighborEdge<'_>>> = HashMap::new();
+    for p in pairs {
+        adj.entry(p.file_a.as_str())
+            .or_default()
+            .push(NeighborEdge {
+                path: p.file_b.as_str(),
+                together: p.together,
+                deg: p.deg,
+            });
+        adj.entry(p.file_b.as_str())
+            .or_default()
+            .push(NeighborEdge {
+                path: p.file_a.as_str(),
+                together: p.together,
+                deg: p.deg,
+            });
+    }
+    let mut core_keys: Vec<&str> = adj.keys().copied().collect();
+    core_keys.sort_by(|a, b| adj[b].len().cmp(&adj[a].len()).then_with(|| a.cmp(b)));
+
+    let mut claimed: HashSet<&str> = HashSet::new();
+    let mut groups = Vec::new();
+    for core in core_keys {
+        if !claimed.contains(core)
+            && let Some(g) = collect_unclaimed_group(core, &adj[core], &mut claimed)
+        {
+            groups.push(g);
+        }
+    }
+    groups
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -598,5 +680,8 @@ mod tests {
             .unwrap();
         assert_eq!(ui_db_pair.together, 3);
         assert!(ui_db_pair.surprising);
+        let groups = cluster_cochange_groups(&pairs);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].partners.len(), 2);
     }
 }

@@ -247,6 +247,30 @@ fn execute_session_tools_query<W: Write>(
     }
 }
 
+fn resolve_edit_spec(spec: &str, payload_override: Option<&str>) -> io::Result<(String, String)> {
+    if let Some((sym, inline_payload)) = spec.split_once(':') {
+        return Ok((sym.to_string(), inline_payload.to_string()));
+    }
+    let raw_payload = match payload_override {
+        Some("-") => {
+            let mut buf = String::new();
+            io::Read::read_to_string(&mut io::stdin(), &mut buf)?;
+            buf
+        }
+        Some(p) => std::fs::read_to_string(p).unwrap_or_else(|_| p.to_string()),
+        None => String::new(),
+    };
+    Ok((spec.to_string(), raw_payload))
+}
+
+pub struct EditCliOptions<'a> {
+    pub root: &'a str,
+    pub spec: &'a str,
+    pub op: crate::mcp::edit::EditOp,
+    pub payload_override: Option<&'a str>,
+    pub dry_run: bool,
+}
+
 fn execute_edit_op<W: Write>(
     root: &str,
     ingest: &IngestResult,
@@ -255,9 +279,38 @@ fn execute_edit_op<W: Write>(
     op: crate::mcp::edit::EditOp,
     out: &mut W,
 ) -> io::Result<()> {
-    let (sym, payload) = spec.split_once(':').unwrap_or((spec, ""));
-    let res = crate::mcp::edit::perform_atomic_edit_in_root(
-        root, ingest, interner, op, sym, None, payload,
+    execute_edit_op_with_options(
+        EditCliOptions {
+            root,
+            spec,
+            op,
+            payload_override: None,
+            dry_run: false,
+        },
+        ingest,
+        interner,
+        out,
+    )
+}
+
+pub fn execute_edit_op_with_options<W: Write>(
+    opts: EditCliOptions<'_>,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (sym, payload) = resolve_edit_spec(opts.spec, opts.payload_override)?;
+    let res = crate::mcp::edit::perform_atomic_edit_with_options(
+        crate::mcp::edit::EditTargetRequest {
+            root: opts.root,
+            op: opts.op,
+            symbol_name: &sym,
+            path_hint: None,
+            payload: &payload,
+            dry_run: opts.dry_run,
+        },
+        ingest,
+        interner,
     );
     writeln!(out, "{res}")
 }

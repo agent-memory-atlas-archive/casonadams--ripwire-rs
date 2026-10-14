@@ -171,12 +171,13 @@ fn validate_and_read_target(target_path: &Path) -> Result<Vec<u8>, Value> {
     })
 }
 
-struct EditTargetRequest<'a> {
-    root: &'a str,
-    op: EditOp,
-    symbol_name: &'a str,
-    path_hint: Option<&'a str>,
-    payload: &'a str,
+pub struct EditTargetRequest<'a> {
+    pub root: &'a str,
+    pub op: EditOp,
+    pub symbol_name: &'a str,
+    pub path_hint: Option<&'a str>,
+    pub payload: &'a str,
+    pub dry_run: bool,
 }
 
 fn try_atomic_edit_in_root(
@@ -197,14 +198,17 @@ fn try_atomic_edit_in_root(
         end_byte,
         req.payload.as_bytes(),
     )?;
-    write_atomic_temp_file(&target_path, &new_bytes).map_err(|e| {
-        json!({
-            "applied": false,
-            "error": format!("failed to atomically write file '{}': {e}", target_path.display())
-        })
-    })?;
+    if !req.dry_run {
+        write_atomic_temp_file(&target_path, &new_bytes).map_err(|e| {
+            json!({
+                "applied": false,
+                "error": format!("failed to atomically write file '{}': {e}", target_path.display())
+            })
+        })?;
+    }
     Ok(json!({
-        "applied": true,
+        "applied": !req.dry_run,
+        "dry_run": req.dry_run,
         "file": file_rel_path,
         "symbol": req.symbol_name,
         "old_span": [sig_start, end_byte],
@@ -234,16 +238,139 @@ pub fn perform_atomic_edit_in_root(
     path_hint: Option<&str>,
     payload: &str,
 ) -> Value {
-    let req = EditTargetRequest {
-        root,
-        op,
-        symbol_name,
-        path_hint,
-        payload,
-    };
+    perform_atomic_edit_with_options(
+        EditTargetRequest {
+            root,
+            op,
+            symbol_name,
+            path_hint,
+            payload,
+            dry_run: false,
+        },
+        ingest,
+        interner,
+    )
+}
+
+pub fn perform_atomic_edit_with_options(
+    req: EditTargetRequest<'_>,
+    ingest: &IngestResult,
+    interner: &crate::domain::Interner,
+) -> Value {
     match try_atomic_edit_in_root(ingest, interner, req) {
         Ok(v) | Err(v) => v,
     }
+}
+
+fn parse_plan_edit_op(op_str: &str) -> Result<EditOp, String> {
+    match op_str {
+        "replace" | "replace_body" | "replace_symbol_body" => Ok(EditOp::ReplaceBody),
+        "insert_before" | "insert_before_symbol" | "before" => Ok(EditOp::InsertBefore),
+        "insert_after" | "insert_after_symbol" | "after" => Ok(EditOp::InsertAfter),
+        other => Err(format!("unsupported edit op '{other}'")),
+    }
+}
+
+fn run_single_plan_item(
+    item: &Value,
+    root: &str,
+    dry_run: bool,
+    ingest: &IngestResult,
+    interner: &crate::domain::Interner,
+) -> Result<Value, Value> {
+    let op_str = item["op"].as_str().unwrap_or("replace");
+    let op = parse_plan_edit_op(op_str).map_err(|e| json!({ "applied": false, "error": e }))?;
+    let sym = item["symbol"]
+        .as_str()
+        .or_else(|| item["target"].as_str())
+        .ok_or_else(
+            || json!({ "applied": false, "error": "missing 'symbol' field in edit item" }),
+        )?;
+    let path_hint = item["file"].as_str().or_else(|| item["path"].as_str());
+    let payload = item["new_body"]
+        .as_str()
+        .or_else(|| item["text"].as_str())
+        .or_else(|| item["payload"].as_str())
+        .unwrap_or("");
+    try_atomic_edit_in_root(
+        ingest,
+        interner,
+        EditTargetRequest {
+            root,
+            op,
+            symbol_name: sym,
+            path_hint,
+            payload,
+            dry_run,
+        },
+    )
+}
+
+/// Execute a versioned JSON edit plan transactionally.
+fn extract_plan_items(parsed: Value, dry_run: bool) -> Result<Vec<Value>, Value> {
+    if let Some(arr) = parsed["edits"].as_array() {
+        Ok(arr.clone())
+    } else if parsed.is_object() && parsed.get("op").is_some() {
+        Ok(vec![parsed])
+    } else {
+        Err(json!({
+            "applied": false,
+            "dry_run": dry_run,
+            "error": "edit plan must contain an 'edits' array"
+        }))
+    }
+}
+
+fn run_plan_items_batch(
+    items: &[Value],
+    root: &str,
+    dry_run: bool,
+    ingest: &IngestResult,
+    interner: &crate::domain::Interner,
+) -> Result<Vec<Value>, Value> {
+    let mut results = Vec::with_capacity(items.len());
+    for item in items {
+        results.push(run_single_plan_item(item, root, dry_run, ingest, interner)?);
+    }
+    Ok(results)
+}
+
+pub fn execute_edit_plan_json(
+    root: &str,
+    plan_raw: &str,
+    dry_run: bool,
+    ingest: &IngestResult,
+    interner: &crate::domain::Interner,
+) -> Value {
+    let Ok(parsed) = serde_json::from_str::<Value>(plan_raw) else {
+        return json!({
+            "applied": false,
+            "dry_run": dry_run,
+            "error": "invalid JSON in edit plan"
+        });
+    };
+    let items = match extract_plan_items(parsed, dry_run) {
+        Ok(it) => it,
+        Err(err) => return err,
+    };
+    let preflight = match run_plan_items_batch(&items, root, true, ingest, interner) {
+        Ok(r) => r,
+        Err(err) => return err,
+    };
+    let results = if dry_run {
+        preflight
+    } else {
+        match run_plan_items_batch(&items, root, false, ingest, interner) {
+            Ok(r) => r,
+            Err(err) => return err,
+        }
+    };
+    json!({
+        "applied": !dry_run && !results.is_empty(),
+        "dry_run": dry_run,
+        "edits_count": results.len(),
+        "edits": results
+    })
 }
 
 #[cfg(test)]
@@ -311,5 +438,17 @@ mod tests {
         assert!(validate_payload("valid code").is_ok());
         assert!(validate_payload("invalid \0 code").is_err());
         assert!(validate_and_read_target(Path::new("nonexistent.rs")).is_err());
+        let bad_json = execute_edit_plan_json(".", "not json", true, &ingest, &interner);
+        assert_eq!(bad_json["applied"], false);
+        let empty_plan = execute_edit_plan_json(".", "{\"version\":1}", true, &ingest, &interner);
+        assert_eq!(empty_plan["applied"], false);
+        let missing_sym_plan = execute_edit_plan_json(
+            ".",
+            "{\"version\":1,\"edits\":[{\"op\":\"replace\",\"symbol\":\"missing\",\"new_body\":\"fn x(){}\"}]}",
+            true,
+            &ingest,
+            &interner,
+        );
+        assert_eq!(missing_sym_plan["applied"], false);
     }
 }

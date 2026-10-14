@@ -93,6 +93,23 @@ where
         &mut crate::serialize::XmlWriter<'_, io::StdoutLock<'_>>,
     ) -> io::Result<()>,
 {
+    execute_with_git_state_fmt(root, cutoff, false, false, runner)
+}
+
+pub fn execute_with_git_state_fmt<F>(
+    root: &str,
+    cutoff: Option<i64>,
+    pretty: bool,
+    json_out: bool,
+    runner: F,
+) -> io::Result<()>
+where
+    F: FnOnce(
+        &[crate::git::history::CommitInfo],
+        &crate::mcp::McpState,
+        &mut crate::serialize::XmlWriter<'_, io::StdoutLock<'_>>,
+    ) -> io::Result<()>,
+{
     let path = Path::new(root);
     let commits_vec = crate::git::history::walk_repository_history_scoped(path, cutoff).ok();
     let commits = commits_vec.as_deref().unwrap_or(&[]);
@@ -108,9 +125,19 @@ where
         commits: None,
     };
     let mut stdout_lock = io::stdout().lock();
-    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+    let mut stdout = crate::serialize::XmlWriter::with_format(&mut stdout_lock, pretty, json_out);
     runner(commits, &state, &mut stdout)?;
     stdout.flush()
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct GitMetricsFlags<'a> {
+    pub cochange: Option<Option<&'a str>>,
+    pub cochange_groups: bool,
+    pub hotspots: bool,
+    pub since: Option<&'a str>,
+    pub pretty: bool,
+    pub json_out: bool,
 }
 
 pub fn dispatch_git_metrics_command(
@@ -119,20 +146,51 @@ pub fn dispatch_git_metrics_command(
     hotspots: bool,
     since: Option<&str>,
 ) -> Option<io::Result<()>> {
-    if let Some(probed) = cochange {
-        let cutoff = crate::git::history::resolve_cutoff_timestamp(since, 18);
-        return Some(execute_with_git_state(
+    dispatch_git_metrics_with_flags(
+        root,
+        GitMetricsFlags {
+            cochange,
+            cochange_groups: false,
+            hotspots,
+            since,
+            pretty: false,
+            json_out: false,
+        },
+    )
+}
+
+pub fn dispatch_git_metrics_with_flags(
+    root: &str,
+    flags: GitMetricsFlags<'_>,
+) -> Option<io::Result<()>> {
+    if flags.cochange.is_some() || flags.cochange_groups {
+        let probed = flags.cochange.flatten();
+        let cutoff = crate::git::history::resolve_cutoff_timestamp(flags.since, 18);
+        return Some(execute_with_git_state_fmt(
             root,
             cutoff,
-            |commits, state, out| execute_cochange_with(probed, since, commits, state, out),
+            flags.pretty,
+            flags.json_out,
+            |commits, state, out| {
+                execute_cochange_full(
+                    probed,
+                    flags.since,
+                    flags.cochange_groups,
+                    commits,
+                    state,
+                    out,
+                )
+            },
         ));
     }
-    if hotspots {
-        let cutoff = crate::git::history::resolve_cutoff_timestamp(since, 12);
-        return Some(execute_with_git_state(
+    if flags.hotspots {
+        let cutoff = crate::git::history::resolve_cutoff_timestamp(flags.since, 12);
+        return Some(execute_with_git_state_fmt(
             root,
             cutoff,
-            |commits, state, out| execute_hotspots_with(since, commits, state, out),
+            flags.pretty,
+            flags.json_out,
+            |commits, state, out| execute_hotspots_with(flags.since, commits, state, out),
         ));
     }
     None
@@ -369,6 +427,43 @@ fn execute_pr_context_dispatch<W: Write>(
     crate::gate::pr_context::serialize_pr_context_xml(&rep, out)
 }
 
+fn execute_scan_skills_dispatch<W: Write>(raw: &str, out: &mut W) -> io::Result<i32> {
+    let scan_dir = if !raw.is_empty() {
+        crate::skills::resolve_skills_dir(Some(raw))
+    } else if std::path::Path::new("skills").is_dir() {
+        std::path::PathBuf::from("skills")
+    } else {
+        crate::skills::default_skills_dir()
+    };
+    let rep = crate::skills::scan_skills_directory(&scan_dir)?;
+    crate::skills::serialize_skill_scan_xml(&rep, out)?;
+    Ok(match rep.verdict {
+        "critical" => 2,
+        "warn" => 1,
+        _ => 0,
+    })
+}
+
+fn execute_edit_plan_dispatch<W: Write>(
+    plan_spec: &str,
+    root: &str,
+    dry_run: bool,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<i32> {
+    let plan_raw = if plan_spec == "-" {
+        let mut buf = String::new();
+        io::Read::read_to_string(&mut io::stdin(), &mut buf)?;
+        buf
+    } else {
+        std::fs::read_to_string(plan_spec).unwrap_or_else(|_| plan_spec.to_string())
+    };
+    let res = crate::mcp::edit::execute_edit_plan_json(root, &plan_raw, dry_run, ingest, interner);
+    writeln!(out, "{res}")?;
+    Ok(if res.get("error").is_some() { 1 } else { 0 })
+}
+
 fn execute_tool_safety_queries<W: Write>(
     s: &TopSafetyArgs,
     root: &str,
@@ -410,29 +505,11 @@ fn execute_tool_safety_queries<W: Write>(
     }
     if let Some(dir_opt) = &s.scan_skills {
         let raw = dir_opt.as_deref().unwrap_or("");
-        let scan_dir = if !raw.is_empty() {
-            crate::skills::resolve_skills_dir(Some(raw))
-        } else if std::path::Path::new("skills").is_dir() {
-            std::path::PathBuf::from("skills")
-        } else {
-            crate::skills::default_skills_dir()
-        };
-        let rep = crate::skills::scan_skills_directory(&scan_dir)?;
-        crate::skills::serialize_skill_scan_xml(&rep, out)?;
-        let code = match rep.verdict {
-            "critical" => 2,
-            "warn" => 1,
-            _ => 0,
-        };
-        return Ok(Some(code));
+        return execute_scan_skills_dispatch(raw, out).map(Some);
     }
-    if let Some(plan) = s.edit_plan.as_deref().or(s.edit_payload.as_deref()) {
-        writeln!(
-            out,
-            "<edit dry_run=\"{}\" force=\"{}\">{}</edit>",
-            s.dry_run, s.force, plan
-        )?;
-        return Ok(Some(0));
+    if let Some(plan_spec) = s.edit_plan.as_deref().or(s.edit_payload.as_deref()) {
+        return execute_edit_plan_dispatch(plan_spec, root, s.dry_run, ingest, interner, out)
+            .map(Some);
     }
     Ok(None)
 }
@@ -577,9 +654,57 @@ pub fn print_cochange_pairs<W: Write>(
     writeln!(out, "</cochange>")
 }
 
+pub fn print_cochange_groups<W: Write>(
+    root: &str,
+    groups: &[crate::git::cochange::CoGroup],
+    out: &mut W,
+) -> io::Result<()> {
+    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
+    let at_attr = if at_stamp.is_empty() {
+        String::new()
+    } else {
+        format!(" at=\"{at_stamp}\"")
+    };
+    let total = groups.len();
+    let shown = total.min(30);
+    let capped = usize::from(total > 30);
+    writeln!(
+        out,
+        "<cochange-groups schema=\"ripwire.cochange-groups/v1\" groups=\"{total}\" window=\"18mo@HEAD\" shown=\"{shown}\" capped=\"{capped}\" root=\"{root}\"{at_attr}>",
+    )?;
+    for g in groups.iter().take(shown) {
+        let core_esc = crate::serialize::escape::escape_xml_str(&g.core);
+        let partners_joined = g
+            .partners
+            .iter()
+            .map(|p| crate::serialize::escape::escape_xml_str(p).into_owned())
+            .collect::<Vec<_>>()
+            .join(",");
+        writeln!(
+            out,
+            "  <group core=\"{core_esc}\" partners=\"{partners_joined}\" size=\"{}\" together=\"{}\" deg=\"{:.2}\"/>",
+            g.partners.len() + 1,
+            g.max_together,
+            g.max_deg
+        )?;
+    }
+    writeln!(out, "</cochange-groups>")
+}
+
 pub fn execute_cochange_with<W: Write>(
     probed_file: Option<&str>,
     since_str: Option<&str>,
+    commits: &[crate::git::history::CommitInfo],
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
+    execute_cochange_full(probed_file, since_str, false, commits, state, out)
+}
+
+pub fn execute_cochange_full<W: Write>(
+    probed_file: Option<&str>,
+    since_str: Option<&str>,
+    groups_mode: bool,
     commits: &[crate::git::history::CommitInfo],
     state: &crate::mcp::McpState,
     out: &mut W,
@@ -614,7 +739,12 @@ pub fn execute_cochange_with<W: Write>(
             Some(&state.interner),
             &opts,
         );
-        print_cochange_pairs(&state.root, &pairs, out)
+        if groups_mode {
+            let groups = crate::git::cochange::cluster_cochange_groups(&pairs);
+            print_cochange_groups(&state.root, &groups, out)
+        } else {
+            print_cochange_pairs(&state.root, &pairs, out)
+        }
     }
 }
 

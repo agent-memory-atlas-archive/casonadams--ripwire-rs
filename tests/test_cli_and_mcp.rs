@@ -679,6 +679,8 @@ fn test_all_new_feature_coverage() {
     let findings = ripwire_rs::metrics::run_lint_scan(&ingest, &graph, &interner);
     let _ = ripwire_rs::metrics::serialize_lint_xml(".", &findings, &mut out);
     let _ = ripwire_rs::metrics::serialize_lint_catalog(&mut out);
+    let _ = ripwire_rs::metrics::serialize_lint_sarif(&findings, &mut out);
+    let _ = ripwire_rs::cli::print_cochange_groups(".", &[], &mut out);
 
     let arch_cfg = ripwire_rs::gate::arch::ArchConfig::parse(
         "layer src = src\nlayer tests = tests\ndeny src -> tests\ndeny tests -> src\n",

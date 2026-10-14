@@ -207,8 +207,11 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
                 }
             }
         }
-        let mut stdout =
-            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+        let mut stdout = crate::serialize::XmlWriter::with_format(
+            &mut stdout_lock,
+            cli.modifiers.is_pretty(),
+            cli.modifiers.is_json(),
+        );
         execute_nav_symbol_query(
             sym,
             mode,
@@ -229,8 +232,11 @@ pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout =
-            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+        let mut stdout = crate::serialize::XmlWriter::with_format(
+            &mut stdout_lock,
+            cli.modifiers.is_pretty(),
+            cli.modifiers.is_json(),
+        );
         execute_retrieval_dispatch(
             &cli.retrieval,
             root,
@@ -251,8 +257,11 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     }
     Some((|| {
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout =
-            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+        let mut stdout = crate::serialize::XmlWriter::with_format(
+            &mut stdout_lock,
+            cli.modifiers.is_pretty(),
+            cli.modifiers.is_json(),
+        );
         if ws.owners {
             execute_workspace_owners(cli, root, &mut stdout)?;
         } else if ws.stray_content {
@@ -260,14 +269,43 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             crate::serialize::serialize_stray_content_xml(&val, &mut stdout)?;
         } else {
             let (ingest, _graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-            execute_workspace_doc_query(
-                ws,
-                root,
-                &ingest,
-                &interner,
-                cli.retrieval.with_history,
-                &mut stdout,
-            )?;
+            if let Some((spec, op)) = ws
+                .replace_symbol_body
+                .as_deref()
+                .map(|s| (s, crate::mcp::edit::EditOp::ReplaceBody))
+                .or_else(|| {
+                    ws.insert_before_symbol
+                        .as_deref()
+                        .map(|s| (s, crate::mcp::edit::EditOp::InsertBefore))
+                })
+                .or_else(|| {
+                    ws.insert_after_symbol
+                        .as_deref()
+                        .map(|s| (s, crate::mcp::edit::EditOp::InsertAfter))
+                })
+            {
+                execute_edit_op_with_options(
+                    EditCliOptions {
+                        root,
+                        spec,
+                        op,
+                        payload_override: cli.safety.edit_payload.as_deref(),
+                        dry_run: cli.safety.dry_run,
+                    },
+                    &ingest,
+                    &interner,
+                    &mut stdout,
+                )?;
+            } else {
+                execute_workspace_doc_query(
+                    ws,
+                    root,
+                    &ingest,
+                    &interner,
+                    cli.retrieval.with_history,
+                    &mut stdout,
+                )?;
+            }
         }
         stdout.flush()
     })())
@@ -312,8 +350,11 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout =
-            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+        let mut stdout = crate::serialize::XmlWriter::with_format(
+            &mut stdout_lock,
+            cli.modifiers.is_pretty(),
+            cli.modifiers.is_json(),
+        );
 
         if let Some(syms) = detail.expand.as_deref() {
             execute_expand_or_outline_query(root, syms, false, &ingest, &interner, &mut stdout)?;
@@ -335,7 +376,11 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             crate::metrics::nonlocal::serialize_nonlocal_state_xml(root, &funcs, &mut stdout)?;
         } else if detail.lint {
             let findings = crate::metrics::lint::run_lint_scan(&ingest, &graph, &interner);
-            crate::metrics::lint::serialize_lint_xml(root, &findings, &mut stdout)?;
+            if cli.arch.sarif {
+                crate::metrics::lint::serialize_lint_sarif(&findings, &mut stdout)?;
+            } else {
+                crate::metrics::lint::serialize_lint_xml(root, &findings, &mut stdout)?;
+            }
         } else if detail.lint_catalog {
             crate::metrics::lint::serialize_lint_catalog(&mut stdout)?;
         }
@@ -346,26 +391,17 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
 pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let s = &cli.safety;
-    if s.test_gate.is_none()
-        && s.situ.is_none()
-        && s.safe_delete.is_none()
-        && s.exercises.is_none()
-        && !s.seams
-        && s.pr_context.is_none()
-        && s.merge_scout.is_none()
-        && s.dmm.is_none()
-        && s.plan_lanes.is_none()
-        && s.scan_skills.is_none()
-        && s.edit_plan.is_none()
-        && s.edit_payload.is_none()
-    {
+    if !s.is_active() {
         return None;
     }
     Some((|| {
         let (ingest, graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout =
-            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+        let mut stdout = crate::serialize::XmlWriter::with_format(
+            &mut stdout_lock,
+            cli.modifiers.is_pretty(),
+            cli.modifiers.is_json(),
+        );
         let res = execute_safety_dispatch(s, root, &ingest, &graph, &interner, &mut stdout);
         stdout.flush()?;
         if let Some(code) = res? {
@@ -411,8 +447,11 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             );
         }
 
-        let mut stdout =
-            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+        let mut stdout = crate::serialize::XmlWriter::with_format(
+            &mut stdout_lock,
+            cli.modifiers.is_pretty(),
+            cli.modifiers.is_json(),
+        );
 
         if let Some(rules_file) = a.arch.as_deref() {
             execute_arch_rules_query(rules_file, root, &ingest, &graph, &interner, &mut stdout)?;
@@ -529,8 +568,11 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         return Some((|| {
             let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
             let mut stdout_lock = io::stdout().lock();
-            let mut stdout =
-                crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+            let mut stdout = crate::serialize::XmlWriter::with_format(
+                &mut stdout_lock,
+                cli.modifiers.is_pretty(),
+                cli.modifiers.is_json(),
+            );
             execute_batch_file(root, file, &ingest, &graph, &pr, &interner, &mut stdout)?;
             stdout.flush()
         })());
@@ -548,7 +590,11 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
     let legend_full = cli.legend.eq_ignore_ascii_case("full");
     let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
     let mut stdout_lock = io::stdout().lock();
-    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+    let mut stdout = crate::serialize::XmlWriter::with_format(
+        &mut stdout_lock,
+        cli.modifiers.is_pretty(),
+        cli.modifiers.is_json(),
+    );
     let args = RankedStreamArgs {
         root,
         rank_by: &cli.rank_by,
@@ -631,6 +677,9 @@ fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     if cli.mcp {
         return Some(run_mcp_stdio(root));
     }
+    if cli.modifiers.lsp {
+        return Some(crate::mcp::run_lsp_stdio(root));
+    }
     if let Some(target_opt) = &cli.add_skills {
         let target = target_opt.as_deref();
         return Some(execute_skills_install(target));
@@ -638,11 +687,16 @@ fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     if let Some(res) = dispatch_top_flags(cli, root) {
         return Some(res);
     }
-    if let Some(res) = dispatch_git_metrics_command(
+    if let Some(res) = dispatch_git_metrics_with_flags(
         root,
-        cli.cochange.as_ref().map(|o| o.as_deref()),
-        cli.hotspots,
-        cli.since.as_deref(),
+        GitMetricsFlags {
+            cochange: cli.cochange.as_ref().map(|o| o.as_deref()),
+            cochange_groups: cli.safety.cochange_groups,
+            hotspots: cli.hotspots,
+            since: cli.since.as_deref(),
+            pretty: cli.modifiers.is_pretty(),
+            json_out: cli.modifiers.is_json(),
+        },
     ) {
         return Some(res);
     }

@@ -164,3 +164,54 @@ pub fn serialize_lint_xml<W: Write>(
     }
     writeln!(out, "</lint>")
 }
+
+/// Serialize lint scan findings to SARIF 2.1.0 JSON format.
+pub fn serialize_lint_sarif<W: Write>(findings: &[LintFinding], out: &mut W) -> io::Result<()> {
+    let rules_json: Vec<serde_json::Value> = LINT_RULES
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.name,
+                "shortDescription": { "text": r.description },
+                "properties": { "category": r.category, "severity": r.severity }
+            })
+        })
+        .collect();
+    let results_json: Vec<serde_json::Value> = findings
+        .iter()
+        .map(|f| {
+            let level = if f.severity == "major" {
+                "warning"
+            } else {
+                "note"
+            };
+            serde_json::json!({
+                "ruleId": f.rule,
+                "level": level,
+                "message": { "text": f.message },
+                "locations": [{
+                    "physicalLocation": {
+                        "artifactLocation": { "uri": f.path },
+                        "region": { "startLine": f.line }
+                    }
+                }]
+            })
+        })
+        .collect();
+    let sarif = serde_json::json!({
+        "version": "2.1.0",
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "ripwire-rs",
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "rules": rules_json
+                }
+            },
+            "results": results_json
+        }]
+    });
+    serde_json::to_writer_pretty(&mut *out, &sarif)?;
+    writeln!(out)
+}

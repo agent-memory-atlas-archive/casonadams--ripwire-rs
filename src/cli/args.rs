@@ -289,6 +289,23 @@ pub struct TopSafetyArgs {
     #[arg(long = "edit-payload", value_name = "PAYLOAD_JSON")]
     pub edit_payload: Option<String>,
 }
+impl TopSafetyArgs {
+    pub fn is_active(&self) -> bool {
+        let has_target = self.test_gate.is_some()
+            || self.situ.is_some()
+            || self.safe_delete.is_some()
+            || self.exercises.is_some()
+            || self.seams
+            || self.pr_context.is_some();
+        let has_tool = self.merge_scout.is_some()
+            || self.dmm.is_some()
+            || self.plan_lanes.is_some()
+            || self.scan_skills.is_some()
+            || self.edit_plan.is_some()
+            || self.edit_payload.is_some();
+        has_target || has_tool
+    }
+}
 
 /// Top-level architecture and discovery flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
@@ -478,6 +495,10 @@ pub struct TopModifierArgs {
 impl TopModifierArgs {
     pub fn is_pretty(&self) -> bool {
         self.pretty || self.format.as_deref() == Some("pretty")
+    }
+
+    pub fn is_json(&self) -> bool {
+        self.json || self.format.as_deref() == Some("json")
     }
 }
 

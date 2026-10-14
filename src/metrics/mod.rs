@@ -29,7 +29,7 @@ pub use complexity::{
 pub use hotspots::{HotspotFile, HotspotsReport, compute_hotspots};
 pub use lint::{
     LINT_RULES, LintFinding, LintRuleDesc, run_lint_scan, serialize_lint_catalog,
-    serialize_lint_xml,
+    serialize_lint_sarif, serialize_lint_xml,
 };
 pub use nonlocal::{NonlocalFunction, find_nonlocal_state, serialize_nonlocal_state_xml};
 pub use readability::{
