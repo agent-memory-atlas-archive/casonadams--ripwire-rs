@@ -51,3 +51,10 @@
 ## 9. Posnett Code Readability
 - **Reference**: [Wikipedia: Halstead complexity measures](https://en.wikipedia.org/wiki/Halstead_complexity_measures) · [Posnett et al. (MSR 2011)](https://doi.org/10.1145/1985441.1985454)
 - Information-theoretic readability metric combining entropy, Halstead volume, line length, and identifier vocabularies.
+
+## 10. Language-Agnostic Embedded SQL Table Lineage
+- **Mechanism**: Zero-flag, automated SQL DML extraction across string literals, raw strings, and template strings in all 36 host languages.
+- **Reference Roles**:
+  - `SELECT ... FROM [ONLY] <table>` & `JOIN <table>` $\rightarrow$ `RefRole::Read`
+  - `INSERT INTO <table>`, `UPDATE <table>`, `DELETE FROM [ONLY] <table>` $\rightarrow$ `RefRole::Write`
+- **Graph Integration**: Binds extracted table tokens directly to `.sql` schema definitions (e.g. `CREATE TABLE`), enabling transitive blast radius (`--impact`), caller tracing (`--callers`), and pre-PR verification gates (`--test-gate`, `--affected`, `--situ`) across database and application boundaries.

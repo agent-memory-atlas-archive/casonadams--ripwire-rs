@@ -31,9 +31,9 @@
 | `lego` | Retrieval | Interface contract view with all implementors across the workspace. |
 | `grep` | Search | Trigram literal search annotated with enclosing symbols and definitions. |
 | `find_symbol` | Navigation | 1-hop symbol neighborhood: callers, callees, definitions, and ambiguity metrics. |
-| `find_referencing_symbols` | Navigation | Direct (1-hop) callers of a symbol. |
-| `impact` | Navigation | Transitive blast radius of a symbol via call hierarchy. |
-| `uses` | Navigation | Statically resolvable use-sites (call, read, write, import, extends). |
+| `find_referencing_symbols` | Navigation | Direct (1-hop) callers of a symbol or database table. |
+| `impact` | Navigation | Transitive blast radius of a symbol or database table via call hierarchy. |
+| `uses` | Navigation | Statically resolvable use-sites (call, read, write, import, extends), including embedded SQL table lineage from application strings. |
 | `path_between` | Architecture | Shortest directed call path between two symbols. |
 | `connect` | Architecture | Minimal directed connecting subgraph relating 2..16 symbols. |
 | `analyze` | Architecture | Architecture map ranked by PageRank or chosen metric. |

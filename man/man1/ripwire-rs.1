@@ -59,7 +59,7 @@ ripwire-rs \- high-throughput agent context router and deterministic static anal
 \fIAGENT\fR
 \fBripwire-rs\fR is a high-throughput context router and deterministic static analysis engine designed for AI coding agents, developer CLI workflows, and automated CI/CD safety gates. It is a Rust port and rewrite of \fBredhat-et/ripwire\fR, originally authored by David Brewster.
 .PP
-It indexes codebases across 36 programming languages using multi-threaded parallel Tree-Sitter grammar queries, builds a resolved workspace call graph with multi-tier scoping precedence, executes Personalized PageRank over compressed sparse row (CSR) transpose matrices with dangling node mass redistribution, and streams dense, token-budgeted XML representations to stdout.
+It indexes codebases across 36 programming languages using multi-threaded parallel Tree-Sitter grammar queries, extracts language-agnostic embedded SQL table lineage from application string literals without extra flags, builds a resolved workspace call graph with multi-tier scoping precedence, executes Personalized PageRank over compressed sparse row (CSR) transpose matrices with dangling node mass redistribution, and streams dense, token-budgeted XML representations to stdout.
 Output formats are minified, self-documenting XML designed to maximize LLM in-context reasoning efficiency while eliminating hallucinated code dependencies and false-negative omissions.
 
 .SH ORIENTATION & BUDGET OPTIONS
@@ -105,16 +105,16 @@ Generate executive Markdown architecture report summarizing symbols, connectivit
 .SH NAVIGATION & GRAPH OPTIONS
 .TP
 .BI \-\-callers= SYM
-Query direct 1-hop incoming callers of symbol \fISYM\fR.
+Query direct 1-hop incoming callers of symbol \fISYM\fR. For database tables, lists all functions and methods querying or mutating the table across all host languages.
 .TP
 .BI \-\-callees= SYM
 Query direct 1-hop outgoing callees called by symbol \fISYM\fR.
 .TP
 .BI \-\-impact= SYM
-Compute transitive blast radius (reachability graph) reaching symbol \fISYM\fR.
+Compute transitive blast radius (reachability graph) reaching symbol \fISYM\fR across code and database schema migrations.
 .TP
 .BI \-\-uses= SYM
-Query all static use-sites (calls, definitions, reads) of symbol \fISYM\fR.
+Query all static use-sites (calls, definitions, reads, writes, imports, extends) of symbol \fISYM\fR, including cross-language embedded SQL table lineage from application string literals.
 .TP
 .BI \-\-find\-symbol= SYM
 Query both incoming callers and outgoing callees of symbol \fISYM\fR in one view.
@@ -484,6 +484,11 @@ Fully qualified canonical identifier (e.g. \fBsrc/domain.rs::Interner::len\fR).
 Expand full body of an interned method:
 .RS
 .B ripwire-rs . \-\-expand="Interner::len"
+.RE
+.PP
+Query cross-language read and write lineage for an embedded SQL database table:
+.RS
+.B ripwire-rs . \-\-uses="carrier_sim_swap"
 .RE
 .PP
 Run pre-PR test gate check (exits 4 on untested blast radius):

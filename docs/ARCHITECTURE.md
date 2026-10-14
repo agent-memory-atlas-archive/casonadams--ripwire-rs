@@ -57,6 +57,12 @@
    - Output serializes directly to a 64 KB `BufWriter` on `stdout`.
    - Never accumulates the full serialized document in memory.
    - Enforces configurable pack budgets (default 64 KB / 16K tokens) to prevent context saturation.
+
+4. **Language-Agnostic Embedded SQL Lineage**:
+   - Zero extra flags: executes automatically during standard parallel AST ingest.
+   - String literals, raw strings, and template strings across all host languages (Dart, Rust, Python, TypeScript, Go, Java, C#, etc.) are scanned for SQL DML keyword sequences (`SELECT ... FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM`).
+   - Keyword pairs classify table accesses into typed reference roles (`RefRole::Read` and `RefRole::Write`).
+   - The reference resolution ladder binds these table accesses directly to `.sql` DDL definitions (`CREATE TABLE ...`), unifying database entities into the same CSR in-edge graph as application functions and methods.
 ## Lineage & Acknowledgments
 
 This crate is a pure Rust port and rewrite of the groundbreaking [ripwire (C++23)](https://github.com/redhat-et/ripwire) static analysis engine, originally conceived and authored by **David Brewster** at **Red Hat Emerging Technologies**.

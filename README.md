@@ -14,9 +14,9 @@ Rust port and rewrite of [redhat-et/ripwire](https://github.com/redhat-et/ripwir
 # 1. Orientation: generate ranked architecture map (top 200 symbols)
 ripwire-rs . --top-k=200
 
-# 2. Navigation: query direct callers and transitive blast radius
+# 2. Navigation: query direct callers, uses, or database table lineage
 ripwire-rs . --callers="Interner::len"
-
+ripwire-rs . --uses="carrier_sim_swap"   # cross-language embedded SQL table lineage
 # 3. Pre-Commit Gate: name tests to run and check untested blast radius (exit 4 on failure)
 ripwire-rs . --test-gate
 
@@ -48,6 +48,7 @@ ripwire-rs mcp
 ## Features
 
 - **Multi-Language AST Analysis**: 36 languages indexed via Tree-Sitter (Rust, TypeScript, JavaScript, Python, Go, C, C++, CUDA, Metal, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS, SQL, Protobuf, GraphQL, Dockerfile, Objective-C/C++).
+- **Language-Agnostic Embedded SQL Lineage**: Zero extra flags. Automatically extracts SQL DML (`SELECT ... FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM`) out of string literals across all 36 host languages (Dart, Rust, Python, TypeScript, Go, Java, C#, etc.). Assigns typed `RefRole::Read` and `RefRole::Write` references directly to `.sql` table/view definitions in the call graph, allowing `--callers`, `--uses`, and `--impact` to seamlessly bridge database migrations, backend services, and test suites.
 - **Personalized PageRank & HITS**: Transitive blast radius and structural authority calculations converging in milliseconds over lock-free sparse matrices.
 - **Pre-Commit & Pre-PR Verification Gates**: Parameter arity contract verification (`--edit-check`), surgical test reachability mapping (`--affected`), test execution gate (`--test-gate`), architectural baseline sidecars (`--baseline`, `--baseline-update`), quality census (`--pin-census`), git-changed re-ranking (`--map-diff`), integration seams (`--seams`), composite PR review context (`--pr-context`), merge conflict scouting (`--merge-scout`), Delta Maintainability Model (`--dmm`), pre-hoc worktree collision forecasting (`--plan-lanes`), and code quality regressions vs git HEAD (`--quality-delta`).
 - **Code Health & Architecture Enforcement**: Dead code detection (`--dead-code`), clone detection (`--clones`), Louvain community clustering (`--communities`), architectural layering rules (`--arch` with glob wildcards), Mermaid flowchart export (`--mermaid`), hierarchical zoom (`--zoom`), AST code smell linter (`--lint`, `--sarif`, `--lint-catalog`, `--lint-select`), nonlocal mutable state tracking (`--nonlocal-state`), unified 6-family quality panel (`--quality-panel`), LP64 memory layout & cache-line field affinity (`--layout`, `--field-affinity`), local reasoning (`--context-ratio`), naming consistency (`--naming-consistency`, `--naming-locals`, `--naming-calibration`), and multi-family ensemble ranking (`--ensemble`).

@@ -25,8 +25,40 @@ ripwire-rs . --callers="Interner::len"
 ripwire-rs . --callees="src/domain.rs:new"
 ripwire-rs . --impact="Type.method"
 
+# Query static use-sites (call, read, write, import, extends)
+ripwire-rs . --uses="Interner"
+
+# Cross-language embedded SQL table lineage (zero flags required)
+ripwire-rs . --callers="carrier_sim_swap"
+ripwire-rs . --uses="carrier_sim_swap"
+ripwire-rs . --impact="carrier_sim_swap"
 # Export self-contained interactive SVG/HTML visualizer
 ripwire-rs . --html=callgraph.html --color-by=community
+
+---
+## Language-Agnostic Embedded SQL Lineage
+
+**When & Where:** When auditing database schema changes, tracking table mutations, refactoring SQL migrations, or understanding which backend services and endpoints read from or write to a database table.
+
+SQL queries come **for free automatically** during standard AST ingestion—no new flag is required.
+
+Whenever `ripwire-rs` indexes a repository, any string literal in any host language (Dart, Rust, Python, TypeScript, Go, Java, C#, etc.) containing SQL DML (`SELECT ... FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM`) automatically emits `RefRole::Read` and `RefRole::Write` references attributed to the enclosing function or method, and resolves them directly to `.sql` table/view symbols in the call graph.
+
+```bash
+# List all functions/methods across the codebase that query or mutate carrier_sim_swap
+ripwire-rs . --callers="carrier_sim_swap"
+
+# List every read and write site with exact file:line and enclosing symbol
+ripwire-rs . --uses="carrier_sim_swap"
+
+# Calculate transitive blast radius from a table to all downstream callers and tests
+ripwire-rs . --impact="carrier_sim_swap"
+
+# Safety gates automatically trace from .sql migration files through to application tests
+ripwire-rs . --test-gate
+ripwire-rs . --situ
+```
+* **Benefits:** Eliminates the blind spot between database schemas and application code, turning string-embedded SQL queries into typed graph edges without runtime dependencies or database connections.
 
 ## Detail Ladder & Progressive Expansion
 

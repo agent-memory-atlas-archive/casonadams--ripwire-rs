@@ -424,7 +424,7 @@
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Emits the 1-hop neighborhood of a symbol: all direct incoming callers, outgoing callees, definitions, and ambiguity metrics formatted as XML.</p>
+            <p class="cmd-desc">Emits the 1-hop neighborhood of a symbol: all direct incoming callers, outgoing callees, definitions, and ambiguity metrics formatted as XML. Works seamlessly across code symbols and database tables (e.g. <code>ripwire-rs . --callers=carrier_sim_swap</code> lists all functions across Dart, Rust, Python, TypeScript, Go, etc. that query or mutate that table).</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
@@ -445,7 +445,7 @@
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Computes the full transitive downstream blast radius of modifying <code>&lt;SYM&gt;</code>, ranking all dependent symbols by PageRank influence.</p>
+            <p class="cmd-desc">Computes the full transitive downstream blast radius of modifying <code>&lt;SYM&gt;</code>, ranking all dependent symbols by PageRank influence. Automatically traces blast radius across language boundaries—including from <code>.sql</code> migration files through to application services and test suites that touch altered tables (pairs with <code>--affected</code>, <code>--test-gate</code>, and <code>--situ</code>).</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
@@ -457,6 +457,27 @@
           </div>
         </div>
       </div>
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs --uses &lt;SYM&gt;</code></div>
+          <span class="cmd-badge">Lineage &amp; Uses</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Emits every statically resolvable use-site of <code>&lt;SYM&gt;</code> across the repository (calls, reads, writes, imports, inheritance)—including cross-language embedded SQL table lineage extracted automatically from application string literals.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Zero extra flags required. During standard AST ingestion across all 36 languages, string literals containing SQL DML (<code>SELECT ... FROM</code>, <code>JOIN</code>, <code>INSERT INTO</code>, <code>UPDATE</code>, <code>DELETE FROM</code>) automatically emit <code>RefRole::Read</code> and <code>RefRole::Write</code> references attributed to the enclosing function or method, resolving directly to <code>.sql</code> table definitions in the workspace graph.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">When refactoring database schemas or migrating tables (e.g. <code>ripwire-rs . --uses=carrier_sim_swap</code>) to identify every backend service, repository method, query function, or migration touching that table.</p>
+          </div>
+        </div>
+      </div>
+
 
       <div class="cmd-card">
         <div class="cmd-header">
@@ -792,9 +813,9 @@
             <tr><td><code>lego</code></td><td>Retrieval</td><td>Interface contract view with all implementors across the workspace.</td></tr>
             <tr><td><code>grep</code></td><td>Search</td><td>Trigram literal search annotated with enclosing symbols and definitions.</td></tr>
             <tr><td><code>find_symbol</code></td><td>Navigation</td><td>1-hop symbol neighborhood: callers, callees, definitions, and ambiguity metrics.</td></tr>
-            <tr><td><code>find_referencing_symbols</code></td><td>Navigation</td><td>Direct (1-hop) callers of a symbol.</td></tr>
-            <tr><td><code>impact</code></td><td>Navigation</td><td>Transitive blast radius of a symbol via call hierarchy.</td></tr>
-            <tr><td><code>uses</code></td><td>Navigation</td><td>Statically resolvable use-sites (call, read, write, import, extends).</td></tr>
+            <tr><td><code>find_referencing_symbols</code></td><td>Navigation</td><td>Direct (1-hop) callers of a symbol or database table.</td></tr>
+            <tr><td><code>impact</code></td><td>Navigation</td><td>Transitive blast radius of a symbol or database table via call and reference hierarchy.</td></tr>
+            <tr><td><code>uses</code></td><td>Navigation</td><td>Statically resolvable use-sites (call, read, write, import, extends), including embedded SQL table lineage from application strings.</td></tr>
             <tr><td><code>path_between</code></td><td>Architecture</td><td>Shortest directed call path between two symbols.</td></tr>
             <tr><td><code>connect</code></td><td>Architecture</td><td>Minimal directed connecting subgraph relating 2..16 symbols.</td></tr>
             <tr><td><code>analyze</code></td><td>Architecture</td><td>Architecture map ranked by PageRank or chosen metric.</td></tr>
@@ -836,6 +857,7 @@
         <li><strong><a href="https://en.wikipedia.org/wiki/Technical_debt" target="_blank" rel="noopener">Maintenance Hotspots</a></strong>: Multiplies historical change frequency (churn) by cognitive complexity to surface defect-prone hotspots (<a href="https://en.wikipedia.org/wiki/Software_maintenance" target="_blank" rel="noopener">software maintenance</a>).</li>
         <li><strong><a href="https://en.wikipedia.org/wiki/Cyclomatic_complexity" target="_blank" rel="noopener">McCabe Cyclomatic &amp; Essential Complexity</a></strong>: Counts independent control flow paths ($M = E - N + 2P$) and <a href="https://en.wikipedia.org/wiki/Essential_complexity" target="_blank" rel="noopener">essential unstructured jump complexity</a>.</li>
         <li><strong><a href="https://en.wikipedia.org/wiki/Halstead_complexity_measures" target="_blank" rel="noopener">Posnett Code Readability</a></strong>: Information-theoretic readability metric combining entropy, Halstead volume, line length, and identifier vocabularies (<a href="https://doi.org/10.1145/1985441.1985454" target="_blank" rel="noopener">Posnett et al.</a>).</li>
+        <li><strong>Language-Agnostic Embedded SQL Lineage</strong>: Zero-flag, automated SQL DML extraction across string literals in all 36 host languages. Maps <code>SELECT ... FROM</code> and <code>JOIN</code> to <code>RefRole::Read</code>, and <code>INSERT INTO</code>, <code>UPDATE</code>, <code>DELETE FROM</code> to <code>RefRole::Write</code>, directly bridging relational database schemas (<code>.sql</code> files) to application services and test suites in the global call graph.</li>
       </ul>
       <h2 id="library">Rust Library API</h2>
       <p>

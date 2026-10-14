@@ -39,6 +39,7 @@ ripwire-rs . --html=graph.html --color-by=community
 - Before editing or renaming a shared function or method signature.
 - During incident post-mortems and bug reproduction to trace caller paths.
 - Verifying the blast radius of modifying a core data model or interface.
+- Auditing database migration impact before altering SQL schemas or renaming tables.
 
 ### Commands
 ```bash
@@ -51,6 +52,11 @@ ripwire-rs . --callees="ingest_files"
 # Transitive reachability graph: full blast radius across the whole codebase
 ripwire-rs . --impact="Interner"
 
+
+# Cross-language embedded SQL table lineage (zero extra flags required)
+ripwire-rs . --callers="carrier_sim_swap"
+ripwire-rs . --uses="carrier_sim_swap"
+ripwire-rs . --impact="carrier_sim_swap"
 # Extract ego-graph around a symbol (depth 1, fanout 32)
 ripwire-rs . --around="Interner::new" --around-depth=2 --around-fanout=16
 
@@ -68,6 +74,7 @@ ripwire-rs . --slice="compute:x" --slice-flow=both
 - **Full Transitive Impact**: Identifies downstream callers up to 16 hops deep ranked by Personalized PageRank.
 - **Root-Cause Tracing**: `--path-between` and `--connect` expose the exact sequence of intermediary function calls bridging two components.
 - **Side-Effect Verification**: ARISE slicing isolates exact variable lifetimes and mutation points inside a function.
+- **Cross-Language Database Lineage**: Embedded SQL queries come for free during standard AST ingestion. Any string literal in Dart, Rust, Python, TypeScript, Go, Java, etc. containing SQL DML automatically maps to `.sql` table symbols with typed `read` and `write` roles.
 
 ---
 
