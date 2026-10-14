@@ -92,10 +92,11 @@ fn add_skill_entry(
     entries: &mut Vec<(String, String)>,
 ) {
     if let Ok(stripped) = path.strip_prefix(base)
-        && let Some(rel_src) = stripped.to_str()
+        && let Some(raw_src) = stripped.to_str()
     {
-        let rel_dest = rel_src.strip_prefix("hermes/").unwrap_or(rel_src);
-        entries.push((rel_dest.to_string(), rel_src.to_string()));
+        let rel_src = raw_src.replace('\\', "/");
+        let rel_dest = rel_src.strip_prefix("hermes/").unwrap_or(&rel_src);
+        entries.push((rel_dest.to_string(), rel_src));
     }
 }
 
