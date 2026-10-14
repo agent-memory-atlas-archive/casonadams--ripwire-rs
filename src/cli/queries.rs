@@ -157,7 +157,12 @@ fn execute_doc_search_query<W: Write>(
         crate::serialize::serialize_whereis_xml(&val, out)?;
         Ok(true)
     } else if ws.doc_drift {
-        let val = crate::mcp::doc_tools::call_doc_drift_in_root(root, ingest, interner);
+        let val = crate::mcp::doc_tools::call_doc_drift_with_history(
+            root,
+            ingest,
+            interner,
+            with_history,
+        );
         crate::serialize::serialize_doc_drift_xml(&val, out)?;
         Ok(true)
     } else if ws.flags {

@@ -158,6 +158,37 @@ fn scan_doc_text_for_drift(
 }
 
 pub fn call_doc_drift_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
+    call_doc_drift_with_history(root, ingest, interner, false)
+}
+
+fn enrich_drift_item_history(root: &str, item: &mut Value, head_sha: &str) {
+    let Some(sym) = item["referenced"].as_str().map(str::to_string) else {
+        return;
+    };
+    let Some(hist) = probe_name_history(root, &sym, head_sha) else {
+        return;
+    };
+    let fate = &hist["fate"];
+    if let Some(v) = fate["v"].as_str() {
+        item["fate"] = Value::String(v.to_string());
+    }
+    if let Some(c) = fate["commit"].as_str() {
+        item["commit"] = Value::String(c.to_string());
+    }
+    if let Some(d) = fate["date"].as_str() {
+        item["date"] = Value::String(d.to_string());
+    }
+    if let Some(s) = fate["subject"].as_str() {
+        item["subject"] = Value::String(s.to_string());
+    }
+}
+
+pub fn call_doc_drift_with_history(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    with_history: bool,
+) -> Value {
     let mut drift_items = Vec::new();
     let file_map: HashMap<&str, u32> = ingest
         .files
@@ -179,6 +210,12 @@ pub fn call_doc_drift_in_root(root: &str, ingest: &IngestResult, interner: &Inte
                 .or_else(|_| fs::read_to_string(doc_path))
         {
             scan_doc_text_for_drift(&text, doc_path, &file_map, &sym_set, &mut drift_items);
+        }
+    }
+    if with_history {
+        let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
+        for item in &mut drift_items {
+            enrich_drift_item_history(root, item, &head_sha);
         }
     }
 
@@ -1146,5 +1183,11 @@ mod tests {
         assert_eq!(drift.len(), 2);
         assert!(drift.iter().any(|d| d["referenced"] == "src/lib.rs:50"));
         assert!(drift.iter().any(|d| d["referenced"] == "deletedFunction"));
+        enrich_drift_item_history(".", &mut drift[1], "HEAD");
+        assert!(drift[1].get("fate").is_some());
+        let mut xml_buf = Vec::new();
+        crate::serialize::serialize_doc_drift_xml(&json!({"drift": drift}), &mut xml_buf).unwrap();
+        let xml_str = String::from_utf8(xml_buf).unwrap();
+        assert!(xml_str.contains("fate=\""));
     }
 }

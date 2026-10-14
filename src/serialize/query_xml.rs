@@ -410,7 +410,23 @@ pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result
                         .or_else(|| d["target_file"].as_str())
                         .unwrap_or(""),
                 );
-                writeln!(out, "  <a p=\"{file}\" l=\"{line}\" ref=\"{ref_str}\"/>")?;
+                let mut extra = String::new();
+                if let Some(fate) = d["fate"].as_str() {
+                    extra.push_str(&format!(" fate=\"{}\"", escape_xml_str(fate)));
+                }
+                if let Some(commit) = d["commit"].as_str() {
+                    extra.push_str(&format!(" commit=\"{}\"", escape_xml_str(commit)));
+                }
+                if let Some(date) = d["date"].as_str() {
+                    extra.push_str(&format!(" date=\"{}\"", escape_xml_str(date)));
+                }
+                if let Some(subj) = d["subject"].as_str() {
+                    extra.push_str(&format!(" subject=\"{}\"", escape_xml_str(subj)));
+                }
+                writeln!(
+                    out,
+                    "  <a p=\"{file}\" l=\"{line}\" ref=\"{ref_str}\"{extra}/>"
+                )?;
             }
         }
         Ok(())

@@ -527,11 +527,15 @@ pub fn dispatch_graph_and_doc_tools(
                 sym,
             ))
         }
-        "doc_drift" => Ok(doc_tools::call_doc_drift_in_root(
-            &state.root,
-            &state.ingest,
-            &state.interner,
-        )),
+        "doc_drift" => {
+            let with_hist = args["with_history"].as_bool().unwrap_or(false);
+            Ok(doc_tools::call_doc_drift_with_history(
+                &state.root,
+                &state.ingest,
+                &state.interner,
+                with_hist,
+            ))
+        }
         "flags" => Ok(doc_tools::call_flags(&state.ingest, &state.interner)),
         "owners" => {
             let path = args["path"].as_str().or_else(|| args["file"].as_str());
