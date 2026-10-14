@@ -65,19 +65,19 @@
 
     <!-- Quick-Jump Navigation -->
     <div class="workflows-nav">
-      <a href="#orientation" class="wf-pill">🧭 1. Orientation &amp; Scoping</a>
-      <a href="#navigation" class="wf-pill">🔍 2. Navigation &amp; Blast Radius</a>
-      <a href="#safety-gates" class="wf-pill">🛡️ 3. Pre-Commit &amp; PR Gates</a>
-      <a href="#code-health" class="wf-pill">📈 4. Code Health &amp; Auditing</a>
-      <a href="#agent-context" class="wf-pill">🤖 5. Agent Context Delivery</a>
-      <a href="#ci-cd" class="wf-pill">⚙️ 6. CI / CD &amp; PR Gates</a>
+      <a href="#orientation" class="wf-pill">1. Orientation &amp; Scoping</a>
+      <a href="#navigation" class="wf-pill">2. Navigation &amp; Blast Radius</a>
+      <a href="#safety-gates" class="wf-pill">3. Pre-Commit &amp; PR Gates</a>
+      <a href="#code-health" class="wf-pill">4. Code Health &amp; Auditing</a>
+      <a href="#agent-context" class="wf-pill">5. Agent Context Delivery</a>
+      <a href="#ci-cd" class="wf-pill">6. CI / CD &amp; PR Gates</a>
     </div>
 
     <!-- Workflow 1 -->
     <div class="cmd-card" id="orientation" style="margin-bottom: 32px;">
       <div class="cmd-header">
         <div class="cmd-title">
-          <span style="margin-right: 8px;">🧭</span> 1. Orientation &amp; Scoping: Landing Cold in a Repository
+          1. Orientation &amp; Scoping: Landing Cold in a Repository
         </div>
         <span class="cmd-badge">Scoping</span>
       </div>
@@ -150,7 +150,7 @@
     <div class="cmd-card" id="navigation" style="margin-bottom: 32px;">
       <div class="cmd-header">
         <div class="cmd-title">
-          <span style="margin-right: 8px;">🔍</span> 2. Navigation &amp; Blast Radius: Safe Refactoring &amp; Impact Analysis
+          2. Navigation &amp; Blast Radius: Safe Refactoring &amp; Impact Analysis
         </div>
         <span class="cmd-badge">Refactoring</span>
       </div>
@@ -243,7 +243,7 @@
     <div class="cmd-card" id="safety-gates" style="margin-bottom: 32px;">
       <div class="cmd-header">
         <div class="cmd-title">
-          <span style="margin-right: 8px;">🛡️</span> 3. Pre-Commit &amp; PR Safety Gates: Zero Broken Contracts
+          3. Pre-Commit &amp; PR Safety Gates: Zero Broken Contracts
         </div>
         <span class="cmd-badge">Safety Gate</span>
       </div>
@@ -336,7 +336,7 @@
     <div class="cmd-card" id="code-health" style="margin-bottom: 32px;">
       <div class="cmd-header">
         <div class="cmd-title">
-          <span style="margin-right: 8px;">📈</span> 4. Code Health &amp; Technical Debt Auditing
+          4. Code Health &amp; Technical Debt Auditing
         </div>
         <span class="cmd-badge">Architecture</span>
       </div>
@@ -429,7 +429,7 @@
     <div class="cmd-card" id="agent-context" style="margin-bottom: 32px;">
       <div class="cmd-header">
         <div class="cmd-title">
-          <span style="margin-right: 8px;">🤖</span> 5. Deep Inspection &amp; Agent Context Delivery
+          5. Deep Inspection &amp; Agent Context Delivery
         </div>
         <span class="cmd-badge">AI Context</span>
       </div>
@@ -543,7 +543,7 @@
     <div class="cmd-card" id="ci-cd" style="margin-bottom: 32px;">
       <div class="cmd-header">
         <div class="cmd-title">
-          <span style="margin-right: 8px;">⚙️</span> 6. Continuous Integration (CI) Workflows &amp; Automated PR Gates
+          6. Continuous Integration (CI) Workflows &amp; Automated PR Gates
         </div>
         <span class="cmd-badge">CI / CD</span>
       </div>
@@ -683,8 +683,9 @@ jobs:
           ? document.getElementById(btn.dataset.copyTarget)?.textContent
           : btn.dataset.copy;
         if (!text) return;
-          await navigator.clipboard.writeText(text);
+        try {
           const orig = btn.textContent;
+          await navigator.clipboard.writeText(text);
           btn.textContent = 'Copied!';
           btn.style.borderColor = 'var(--success)';
           btn.style.color = 'var(--success)';

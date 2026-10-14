@@ -399,8 +399,15 @@ a:hover, a:focus-visible {
 }
 
 .feature-icon {
-  font-size: 2rem;
+  display: flex;
+  align-items: center;
   margin-bottom: 16px;
+  color: var(--accent);
+}
+
+.feature-icon svg {
+  width: 28px;
+  height: 28px;
 }
 
 .feature-title {
