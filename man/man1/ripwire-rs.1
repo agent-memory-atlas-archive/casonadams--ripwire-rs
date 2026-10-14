@@ -81,6 +81,9 @@ Ranking signal algorithm: \fBpagerank\fR (default, structural authority), \fBaut
 .TP
 .BI \-\-legend= MODE
 Schema documentation comment posture: \fBcompact\fR (default, includes in-context AST schema header comment) or \fBnone\fR (suppresses leading XML comments).
+.TP
+.B \-\-legend\-dict
+Emit full schema legend dictionary explaining all XML and JSON tags and attribute abbreviations.
 
 .SH DETAIL LADDER & BODY OPTIONS
 .TP
@@ -95,6 +98,9 @@ Pack source bodies of the top \fIN\fR highest PageRank symbols.
 .TP
 .B \-\-tree
 Orient file by file, showing each file's top 3 symbols by rank.
+.TP
+.B \-\-report
+Generate executive Markdown architecture report summarizing symbols, connectivity, and quality health.
 
 .SH NAVIGATION & GRAPH OPTIONS
 .TP
@@ -118,6 +124,9 @@ Compute the minimal connecting subgraph relating 2 to 16 named symbols.
 .TP
 .BI \-\-path= A:B ", " \-\-path\-between= A:B
 Find the shortest directed call path from source symbol \fIA\fR to destination \fIB\fR (\fIA:B\fR or \fIA,B\fR).
+.TP
+.B \-\-with\-graph
+Include resolved call-graph edges in task and retrieval output.
 
 .SH SEARCH & RETRIEVAL OPTIONS
 .TP
@@ -147,6 +156,30 @@ Map stack trace lines, compiler error messages, or sanitizer frames onto indexed
 .TP
 .B \-\-owners
 Analyze recency-weighted Git commit authorship and calculate per-file bus-factor metrics.
+.TP
+.BI \-\-grep\-in= DIR
+Restrict trigram text search to files whose path matches substring \fIDIR\fR.
+.TP
+.BI \-\-grep\-scope= SCOPE
+Restrict trigram text search to hits enclosed inside symbol or namespace \fISCOPE\fR.
+.TP
+.BI \-\-and= PAT
+Conjunction filter for search: require matches to also contain pattern \fIPAT\fR.
+.TP
+.BI \-\-not= PAT
+Negation filter for search: exclude matches containing pattern \fIPAT\fR.
+.TP
+.BI \-\-in= SCOPE
+Scope filter: require matches to be located inside enclosing symbol, class, or directory \fISCOPE\fR.
+.TP
+.B \-\-handles
+Emit compact opaque refetch handles on retrieval rows for low-token follow-ups.
+.TP
+.BI \-\-refetch= HANDLE
+Expand a compact refetch handle previously emitted by \fB\-\-handles\fR.
+.TP
+.BI \-\-help\-task= TASK
+Recommend the single best ripwire verb and syntax for natural-language task \fITASK\fR.
 
 .SH VERIFICATION & SAFETY GATES
 .TP
@@ -207,6 +240,14 @@ Scan codebase for AST code smells (complexity spikes, deep nesting, dead functio
 .B \-\-lint\-catalog
 Print built-in AST code smell catalog with severity rankings.
 .TP
+.BI \-\-lint\-select= RULES
+Select specific comma-separated AST lint rules to run (e.g. \fBcomplexity-spike,deep-nesting\fR).
+.TP
+.BI \-\-lint\-ignore= RULES
+Ignore specific comma-separated AST lint rules during lint scan.
+.TP
+.B \-\-naming\-calibration
+Calibrate naming consistency lens rules against git rename history.
 .BI \-\-at= FILE:LINE
 Resolve innermost symbol definition enclosing \fIFILE:LINE\fR. Exits 1 if no symbol spans line.
 .TP
@@ -236,6 +277,39 @@ Atomically insert source code immediately before a symbol definition.
 .TP
 .BI \-\-insert\-after\-symbol= TEXT
 Atomically insert source code immediately after a symbol definition.
+.TP
+.BI \-\-edit\-target\-file= FILE
+Specify target file to disambiguate symbol during atomic code replacement.
+.TP
+.B \-\-no\-post\-check
+Skip post-edit contract, arity, and syntax verification.
+.TP
+.B \-\-allow\-remote\-edits
+Allow atomic symbol edits when connected over remote network transport.
+.TP
+.B \-\-baseline
+Pin architectural baseline sidecar stamped with git \fBHEAD\fR.
+.TP
+.B \-\-baseline\-update
+Update architectural baseline sidecar with newly introduced violations.
+.TP
+.B \-\-pin\-census
+Pin quality census snapshot.
+.TP
+.BI \-\-scope= SCOPE
+Partition \fB\-\-quality\-delta\fR analysis by author or team ownership scope \fISCOPE\fR.
+.TP
+.B \-\-cochange\-groups
+Cluster co-changing files into multi-file change groups.
+.TP
+.BI \-\-cochange\-recur= K
+Minimum sub-window recurrence count threshold for co-change pairs (default: 2).
+.TP
+.BI \-\-partition [=K]
+Partition repository codebase into \fIK\fR cohesive module clusters.
+.TP
+.B \-\-no\-stable
+Disable stable dependency violation warnings in \fB\-\-deps\fR output.
 .SH ARCHITECTURE & CODE INTELLIGENCE
 .TP
 .B \-\-dead\-code
@@ -283,6 +357,8 @@ Perform ARISE intra-procedural def-use variable dataflow slicing for variable \f
 .BI \-\-slice\-flow= DIRECTION
 Dataflow direction for \fB\-\-slice\fR: \fBfwd\fR (default, forward dependencies), \fBback\fR (backward origins), or \fBboth\fR.
 .TP
+.BI \-\-slice\-depth= N
+Maximum hop depth for ARISE intra-procedural def-use variable dataflow slice (default: 8).
 .B \-\-flags
 Scan codebase for dark feature gates, environment reads, and compile-time flags.
 .TP
@@ -302,6 +378,57 @@ Execute up to 16 heterogeneous sub-queries sequentially from a newline-delimited
 .TP
 .BI \-\-add\-skills [=DIR]
 Install 17 pre-packaged ripwire-rs agent skills and active manifest (\fB.ripwire\-rs\-manifest\-v1\fR) to \fI~/.agents/skills\fR (or custom \fIDIR\fR). Replaces stale or broken symlinks safely. Alias: \fB\-\-install\-skills\fR.
+.TP
+.BI \-\-exclude= GLOB
+Exclude glob or directory pattern from crawling and indexing.
+.TP
+.B \-\-no\-ignore
+Do not respect \fB.gitignore\fR rules during directory traversal.
+.TP
+.B \-\-ignore\-tests
+Exclude test files and test directories from analysis.
+.TP
+.BI \-\-max\-file\-size= BYTES
+Maximum file size in bytes to index (default: 2 MB).
+.TP
+.B \-\-no\-redact
+Disable secret redaction on emitted code snippets.
+.TP
+.B \-\-compress
+Compress output using compact token dialect.
+.TP
+.BI \-\-export= FILE
+Export full repository symbol index to JSON file \fIFILE\fR.
+.TP
+.BI \-\-index\-out= FILE
+Write binary index cache directly to file \fIFILE\fR.
+.TP
+.B \-\-lsp
+Enable language server protocol (LSP) bridge.
+.TP
+.BI \-\-mcp\-token= TOKEN
+Require authentication token \fITOKEN\fR for MCP transport.
+.TP
+.BI \-\-agent= AGENT
+Target agent profile for output token shaping and syntax formatting.
+.TP
+.BI \-\-with\-profile= FILE
+Annotate code symbols with runtime performance profile weights from \fIFILE\fR.
+.TP
+.BI \-\-run\-trace= CMD
+Execute runtime trace command \fICMD\fR and map executed frames onto indexed symbols.
+.TP
+.BI \-\-run\-timeout= SEC
+Timeout in seconds for \fB\-\-run\-trace\fR execution (default: 30).
+.TP
+.B \-\-eval\-mined
+Run evaluation benchmark against mined git commits.
+.TP
+.B \-\-eval\-skills
+Run agent skill effectiveness evaluation benchmark.
+.TP
+.B \-\-eval\-stray
+Run cross-branch divergent stray content evaluation benchmark.
 .SH VISUALIZATION OPTIONS
 .TP
 .BI \-\-html [=FILE]

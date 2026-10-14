@@ -79,7 +79,8 @@ fn write_pr_file_context<W: Write>(f: &PrFileContext, out: &mut W) -> io::Result
         f.changed_symbols.len()
     )?;
     for s in &f.changed_symbols {
-        writeln!(out, "      <s n=\"{s}\"/>")?;
+        let esc = crate::serialize::escape_xml_str(s);
+        writeln!(out, "      <s n=\"{esc}\"/>")?;
     }
     writeln!(out, "    </changed-symbols>")?;
     writeln!(

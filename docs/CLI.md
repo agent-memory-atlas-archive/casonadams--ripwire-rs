@@ -95,6 +95,25 @@ ripwire-rs . --plan-lanes=3 --task="refactor parser"
 
 # Security audit of agent skill files for exfiltration or command injection
 ripwire-rs . --scan-skills
+
+# Pin architectural baseline sidecar or update it with new violations
+ripwire-rs . --baseline
+ripwire-rs . --baseline-update
+
+# Pin quality census snapshot
+ripwire-rs . --pin-census
+
+# Partition quality-delta by author/team ownership scope
+ripwire-rs . --quality-delta --scope="core"
+
+# Cluster co-changing files into multi-file change groups and set recurrence threshold
+ripwire-rs . --cochange --cochange-groups --cochange-recur=3
+
+# Partition codebase into cohesive modules
+ripwire-rs . --partition=5
+
+# Target file for symbol edit disambiguation and skip post-edit verification
+ripwire-rs . --edit-target-file="src/domain.rs" --no-post-check --allow-remote-edits
 * **Benefits:** Catches breaking signature changes, eliminates test suite bloat by running only affected tests, and stops architectural decay before merging.
 
 ---
@@ -170,6 +189,25 @@ ripwire-rs . --ensemble
 
 # Doc comment to identifier coherence verification
 ripwire-rs . --comment-coherence
+
+# Set maximum hop depth for intra-procedural slicing (default: 8)
+ripwire-rs . --slice="compute:x" --slice-flow=fwd --slice-depth=12
+
+# Select or ignore specific AST lint rules
+ripwire-rs . --lint --lint-select="complexity-spike,deep-nesting"
+ripwire-rs . --lint --lint-ignore="magic-number"
+
+# Calibrate naming rules against git rename history
+ripwire-rs . --naming-consistency --naming-calibration
+
+# Generate executive markdown architecture report
+ripwire-rs . --report
+
+# Emit full schema legend dictionary
+ripwire-rs . --legend-dict
+
+# Disable stable dependency violation section in --deps
+ripwire-rs . --deps --no-stable
 * **Benefits:** Focuses engineering attention directly on defect-prone hotspots, hidden file coupling, and dead code with mathematical precision.
 
 ---
@@ -234,6 +272,35 @@ ripwire-rs . --eval
 ripwire-rs . --eval-retrieval
 # Install 17 pre-packaged ripwire-rs agent skills to ~/.agents/skills (or custom path)
 ripwire-rs --add-skills
+
+# Restrict grep to path substring or enclosing symbol scope
+ripwire-rs . --grep="Interner" --grep-in="src/" --grep-scope="domain"
+
+# Conjunction, negation, and enclosing scope filters for structural search
+ripwire-rs . --grep="cache" --and="payload" --not="deprecated" --in="src/cache.rs"
+
+# Emit compact refetch handles and re-expand them
+ripwire-rs . --for="parser" --handles
+ripwire-rs . --refetch="h:abc123"
+
+# Recommend the best ripwire verb for a natural-language task
+ripwire-rs . --help-task="find callers of function and test blast radius"
+
+# Crawler filtering: exclude patterns, ignore gitignore, ignore test files, file size limits
+ripwire-rs . --exclude="vendor/*" --no-ignore --ignore-tests --max-file-size=500000
+
+# Compress output with compact token dialect or export full index
+ripwire-rs . --compress
+ripwire-rs . --export="index.json" --index-out="index.bin"
+
+# Annotate symbols with runtime profile weights or trace execution
+ripwire-rs . --with-profile="flamegraph.perf"
+ripwire-rs . --run-trace="cargo test" --run-timeout=30
+
+# Additional benchmark evaluation modes: mined git commits, skills, and stray branches
+ripwire-rs . --eval-mined
+ripwire-rs . --eval-skills
+ripwire-rs . --eval-stray
 ```
 * **Benefits:** Minimal prompt token consumption with maximum semantic density for coding agents.
 

@@ -466,6 +466,89 @@
         </div>
       </div>
 
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs . --grep &lt;PAT&gt; [--grep-in &lt;DIR&gt;] [--and &lt;PAT&gt;] [--not &lt;PAT&gt;] [--in &lt;SCOPE&gt;]</code></div>
+          <span class="cmd-badge">Search</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Literal trigram search with boolean filtering (<code>--and</code>, <code>--not</code>), path substring restriction (<code>--grep-in</code>), and enclosing symbol scoping (<code>--in</code>, <code>--grep-scope</code>), annotating every hit with its enclosing AST definition.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Scans source files with boundary checking and filters by path or symbol scope, resolving the innermost AST symbol spanning each matching line.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Finding symbol references or keywords scoped to a specific directory or parent module while excluding noise.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs . --baseline / --baseline-update / --pin-census</code></div>
+          <span class="cmd-badge">Safety Gate</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Pins and updates architectural baselines and quality census snapshots stamped with git HEAD, enabling progressive ratcheting of codebase health without false alarms on legacy code.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Writes baseline sidecar files recording known violations so <code>--quality-delta</code> enforces zero net-new regressions.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Establishing a quality ratchet in legacy codebases or ratcheting quality improvements across release branches.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs . --report / --legend-dict</code></div>
+          <span class="cmd-badge">Inspection</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Generates executive Markdown architecture summaries (<code>--report</code>) or emits full schema legend dictionaries (<code>--legend-dict</code>) explaining all AST tags and attribute abbreviations.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Synthesizes connectivity, ranking, and quality panel metrics into human-readable Markdown or machine-verifiable schema definitions.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Creating architectural documentation for PR descriptions or configuring coding agent prompt preambles.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs . --help-task &lt;TASK&gt;</code></div>
+          <span class="cmd-badge">Retrieval</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Analyzes a natural-language engineering task description and recommends the optimal ripwire verb, flags, and syntax to answer it with minimal token cost.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Maps intent keywords and structural goals against ripwire's operational ontology, returning recommended command invocations.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Coding agent prompt routing and developer onboarding when deciding which ripwire command fits a complex debugging task.</p>
+          </div>
+        </div>
+      </div>
       <h2 id="subcommands">Structured Subcommands</h2>
       <p>Categorized workflow groups providing focused subcommands for developer and agent workflows:</p>
 

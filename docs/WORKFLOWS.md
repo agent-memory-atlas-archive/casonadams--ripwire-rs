@@ -248,7 +248,7 @@ ripwire-rs . --test-gate
 # Quality Regression Gate: checks quality regressions against base branch / HEAD (exits 2 on violation)
 ripwire-rs . --quality-delta
 
-# Upstream Parity Validation: verifies 1:1 input/output equivalence across 39 commands
+# Upstream Parity Validation: verifies 1:1 input/output equivalence across 67 commands
 make validate REPO=.
 
 # Performance & Resource Benchmark: benchmarks speed and peak memory against upstream ripwire
