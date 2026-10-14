@@ -811,4 +811,72 @@ class WorkerService {
             crate::gate::contract::ContractStatus::Unchanged
         );
     }
+
+    #[test]
+    fn test_embedded_sql_table_lineage_across_languages() {
+        let reg = LanguageRegistry::new().unwrap();
+        let interner = crate::domain::Interner::new();
+
+        let sql_migration = br#"
+CREATE TABLE mobile.user_records (
+    id UUID PRIMARY KEY,
+    status TEXT NOT NULL
+);
+CREATE TABLE audit_events (
+    id SERIAL PRIMARY KEY
+);
+"#;
+        let dart_repo = br#"
+class AccountRepository {
+  Future<void> createRecord(dynamic db) async {
+    await db.query("INSERT INTO mobile.user_records (id, status) VALUES ($1, $2)");
+  }
+  Future<void> loadActive(dynamic db) async {
+    await db.query("SELECT r.id FROM \"mobile\".\"user_records\" r JOIN audit_events a ON a.id = r.id WHERE r.status = 'active'");
+  }
+  Future<void> purgeOld(dynamic db) async {
+    await db.query("DELETE FROM ONLY mobile.user_records WHERE status = 'archived'");
+    await db.query("UPDATE audit_events SET id = 0");
+  }
+}
+"#;
+        let ingest = ingest_in_memory_files(
+            &[
+                ("migrations/001_init.sql", Lang::Sql, sql_migration),
+                ("lib/account_repo.dart", Lang::Dart, dart_repo),
+            ],
+            &reg,
+            &interner,
+        );
+        let graph = crate::graph::Graph::build(&ingest, &interner);
+        let ranks = vec![1.0; ingest.symbols.len()];
+
+        let uses_val = crate::mcp::graph_tools::call_uses(&ingest, &interner, "user_records");
+        assert_eq!(uses_val["count"], 3);
+        let sites = uses_val["uses"].as_array().unwrap();
+        assert!(
+            sites
+                .iter()
+                .any(|s| s["role"] == "write" && s["enclosing"] == "createRecord")
+        );
+        assert!(
+            sites
+                .iter()
+                .any(|s| s["role"] == "read" && s["enclosing"] == "loadActive")
+        );
+        assert!(
+            sites
+                .iter()
+                .any(|s| s["role"] == "write" && s["enclosing"] == "purgeOld")
+        );
+
+        let table_sym = ingest
+            .symbols
+            .iter()
+            .find(|s| interner.resolve(&s.name) == "user_records")
+            .expect("SQL table user_records");
+        let nav = crate::navigate::navigate_1hop(table_sym.id, &ingest, &graph, &ranks, &interner)
+            .unwrap();
+        assert_eq!(nav.callers.len(), 3);
+    }
 }

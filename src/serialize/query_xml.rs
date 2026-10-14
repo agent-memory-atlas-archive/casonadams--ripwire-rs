@@ -133,10 +133,26 @@ pub fn serialize_grep_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> 
                 let line = h["line"].as_u64().unwrap_or(1);
                 let enc = escape_xml_str(h["enclosing"].as_str().unwrap_or("main"));
                 let text = h["text"].as_str().unwrap_or("");
-                writeln!(
+                write!(out, "  <f p=\"{file}\">")?;
+                if let Some(bef) = h["before"].as_array() {
+                    for b in bef {
+                        let bl = b["line"].as_u64().unwrap_or(1);
+                        let bt = b["text"].as_str().unwrap_or("");
+                        write!(out, "<b l=\"{bl}\"><![CDATA[{bt}]]></b>")?;
+                    }
+                }
+                write!(
                     out,
-                    "  <f p=\"{file}\"><hit l=\"{line}\" in=\"{enc}\"><![CDATA[{text}]]></hit></f>"
+                    "<hit l=\"{line}\" in=\"{enc}\"><![CDATA[{text}]]></hit>"
                 )?;
+                if let Some(aft) = h["after"].as_array() {
+                    for a in aft {
+                        let al = a["line"].as_u64().unwrap_or(1);
+                        let at = a["text"].as_str().unwrap_or("");
+                        write!(out, "<a l=\"{al}\"><![CDATA[{at}]]></a>")?;
+                    }
+                }
+                writeln!(out, "</f>")?;
             }
         }
         if enc_set.is_empty() {

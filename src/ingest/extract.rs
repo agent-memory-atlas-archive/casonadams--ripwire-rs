@@ -582,6 +582,134 @@ fn record_extracted_item(
         record_ref_item(&ext, source_bytes, refs);
     }
 }
+const SQL_DISALLOWED_TARGETS: &[&str] = &[
+    "select", "where", "set", "values", "null", "true", "false", "lateral", "unnest", "dual",
+    "only", "stdin", "stdout", "json", "jsonb", "table", "index", "each", "row",
+];
+
+fn is_sql_string_node(kind: &str) -> bool {
+    kind.contains("string") || kind == "raw_string_literal" || kind == "template_string"
+}
+
+fn has_sql_dml_anchor(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    for kw in [b"select" as &[u8], b"insert", b"update", b"delete", b"join"] {
+        if bytes.windows(kw.len()).any(|w| w.eq_ignore_ascii_case(kw)) {
+            return true;
+        }
+    }
+    false
+}
+
+fn trim_sql_punct(s: &str) -> &str {
+    s.trim_matches(|c: char| {
+        matches!(
+            c,
+            '"' | '\'' | '`' | '(' | ')' | ',' | ';' | ':' | '[' | ']' | '\\'
+        )
+    })
+}
+
+fn clean_sql_token(tok: &str) -> &str {
+    let t = trim_sql_punct(tok);
+    let last = t.rsplit('.').next().unwrap_or(t);
+    trim_sql_punct(last)
+}
+
+fn is_valid_sql_table_ident(ident: &str) -> bool {
+    if ident.len() < 2
+        || ident.starts_with('$')
+        || !ident
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        || !ident
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return false;
+    }
+    !SQL_DISALLOWED_TARGETS
+        .iter()
+        .any(|&kw| ident.eq_ignore_ascii_case(kw))
+}
+
+fn classify_sql_keyword_pair(prev: &str, curr: &str) -> Option<RefRole> {
+    if curr.eq_ignore_ascii_case("from") {
+        if prev.eq_ignore_ascii_case("delete") {
+            Some(RefRole::Write)
+        } else if prev.eq_ignore_ascii_case("distinct") || prev.eq_ignore_ascii_case("extract") {
+            None
+        } else {
+            Some(RefRole::Read)
+        }
+    } else if curr.eq_ignore_ascii_case("join") {
+        Some(RefRole::Read)
+    } else if (curr.eq_ignore_ascii_case("into") && prev.eq_ignore_ascii_case("insert"))
+        || (curr.eq_ignore_ascii_case("update") && !prev.eq_ignore_ascii_case("for"))
+    {
+        Some(RefRole::Write)
+    } else {
+        None
+    }
+}
+
+fn scan_sql_tokens_in_literal(text: &str, start_byte: usize, line: u32, refs: &mut Vec<RawRef>) {
+    if !has_sql_dml_anchor(text) {
+        return;
+    }
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    for i in 0..tokens.len() {
+        let prev = if i > 0 {
+            clean_sql_token(tokens[i - 1])
+        } else {
+            ""
+        };
+        let curr = clean_sql_token(tokens[i]);
+        let Some(role) = classify_sql_keyword_pair(prev, curr) else {
+            continue;
+        };
+        let mut target_idx = i + 1;
+        if target_idx < tokens.len()
+            && clean_sql_token(tokens[target_idx]).eq_ignore_ascii_case("only")
+        {
+            target_idx += 1;
+        }
+        if let Some(&raw_target) = tokens.get(target_idx) {
+            let table = clean_sql_token(raw_target);
+            if is_valid_sql_table_ident(table) {
+                refs.push(RawRef {
+                    callee_name: table.to_string(),
+                    qualifier: None,
+                    line,
+                    start_byte,
+                    role,
+                    arg_count: 0,
+                    arg_count_known: false,
+                });
+            }
+        }
+    }
+}
+
+fn extract_embedded_sql_refs(
+    node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+    refs: &mut Vec<RawRef>,
+) {
+    if is_sql_string_node(node.kind()) {
+        if let Ok(text) = node.utf8_text(source_bytes) {
+            let line = node.start_position().row as u32 + 1;
+            scan_sql_tokens_in_literal(text, node.start_byte(), line, refs);
+        }
+        return;
+    }
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            extract_embedded_sql_refs(child, source_bytes, refs);
+        }
+    }
+}
 
 pub fn parse_file_tree(
     source_bytes: &[u8],
@@ -612,11 +740,19 @@ pub fn parse_file_tree(
                 record_extracted_item(ext, source_bytes, lang, &mut defs, &mut refs);
             }
         }
+        if lang != Lang::Sql && lang != Lang::Markdown && lang != Lang::Json && lang != Lang::Yaml {
+            extract_embedded_sql_refs(tree.root_node(), source_bytes, &mut refs);
+        }
 
         defs.sort_by(|a, b| {
             a.start_byte
                 .cmp(&b.start_byte)
                 .then_with(|| a.name.cmp(&b.name))
+                .then_with(|| {
+                    let a_prio = u8::from(a.kind != SymKind::Method);
+                    let b_prio = u8::from(b.kind != SymKind::Method);
+                    a_prio.cmp(&b_prio)
+                })
         });
         defs.dedup_by(|a, b| a.start_byte == b.start_byte && a.name == b.name);
 

@@ -736,6 +736,95 @@ fn test_all_new_feature_coverage() {
     let _ = ripwire_rs::navigate::resolve_symbol_at("src/lib.rs", 1, &ingest, &interner);
     let _ = ripwire_rs::metrics::execute_biggest_first_query(".", &ingest, &interner, &mut out);
     assert!(ripwire_rs::cli::execute_html_export(".", None, "lang").is_ok());
+    let mut detail_cli = ripwire_rs::cli::Cli::default();
+    detail_cli.detail.naming_consistency = true;
+    let _ = ripwire_rs::cli::dispatch_top_detail(&detail_cli, ".");
+    detail_cli.detail.naming_consistency = false;
+    detail_cli.detail.report = true;
+    let _ = ripwire_rs::cli::dispatch_top_detail(&detail_cli, ".");
+    detail_cli.detail.report = false;
+    detail_cli.detail.legend_dict = true;
+    let _ = ripwire_rs::cli::dispatch_top_detail(&detail_cli, ".");
+
+    let mut ws2 = ripwire_rs::cli::TopWorkspaceArgs {
+        skipped: true,
+        ..Default::default()
+    };
+    let _ = ripwire_rs::cli::execute_workspace_doc_query(
+        &ws2, ".", &ingest, &interner, false, &mut out,
+    );
+    ws2.skipped = false;
+    ws2.flip = Some("DEBUG".into());
+    let _ = ripwire_rs::cli::execute_workspace_doc_query(
+        &ws2, ".", &ingest, &interner, false, &mut out,
+    );
+    ws2.flip = None;
+    ws2.plan_lint = Some("README.md".into());
+    let _ = ripwire_rs::cli::execute_workspace_doc_query(
+        &ws2, ".", &ingest, &interner, false, &mut out,
+    );
+
+    for h_task in [
+        "who calls foo",
+        "blast radius",
+        "stack trace",
+        "find clones",
+        "run tests",
+        "general",
+    ] {
+        let r_help = ripwire_rs::cli::TopRetrievalArgs {
+            help_task: Some(h_task.into()),
+            ..Default::default()
+        };
+        let _ = ripwire_rs::cli::execute_retrieval_dispatch(
+            &r_help, ".", &ingest, &graph, &pr, &interner, &mut out,
+        );
+    }
+    let r_grep_ctx = ripwire_rs::cli::TopRetrievalArgs {
+        grep: Some("fn".into()),
+        grep_context: Some(1),
+        ..Default::default()
+    };
+    let _ = ripwire_rs::cli::execute_retrieval_dispatch(
+        &r_grep_ctx,
+        ".",
+        &ingest,
+        &graph,
+        &pr,
+        &interner,
+        &mut out,
+    );
+    let orient_cli = Cli {
+        command: Some(Commands::Orient(ripwire_rs::cli::OrientArgs {
+            path: Some(".".into()),
+            for_task: Some("Interner".into()),
+        })),
+        ..Default::default()
+    };
+    assert!(run_cli_args(orient_cli).is_ok());
+    let mut part_safety = ripwire_rs::cli::TopSafetyArgs {
+        partition: Some(None),
+        ..Default::default()
+    };
+    let _ = ripwire_rs::cli::execute_safety_dispatch(
+        &part_safety,
+        ".",
+        &ingest,
+        &graph,
+        &interner,
+        &mut out,
+    );
+    part_safety.partition = None;
+    part_safety.edit_plan = Some("{\"version\":1,\"edits\":[]}".into());
+    part_safety.dry_run = true;
+    let _ = ripwire_rs::cli::execute_safety_dispatch(
+        &part_safety,
+        ".",
+        &ingest,
+        &graph,
+        &interner,
+        &mut out,
+    );
 
     for agent in ["claude", "cursor", "codex", "opencode", "aider"] {
         let cli = Cli {

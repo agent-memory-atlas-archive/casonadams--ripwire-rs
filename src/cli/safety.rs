@@ -464,6 +464,43 @@ fn execute_edit_plan_dispatch<W: Write>(
     Ok(if res.get("error").is_some() { 1 } else { 0 })
 }
 
+fn execute_partition_or_baseline_queries<W: Write>(
+    s: &TopSafetyArgs,
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<Option<i32>> {
+    if s.partition.is_some() {
+        let mut stdout_buf = Vec::new();
+        crate::cli::queries::execute_communities_query(
+            root,
+            None,
+            ingest,
+            graph,
+            interner,
+            &mut stdout_buf,
+        )?;
+        out.write_all(&stdout_buf)?;
+        return Ok(Some(0));
+    }
+    if s.pin_census || s.baseline || s.baseline_update {
+        let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
+        let short_sha = &head_sha[..9.min(head_sha.len())];
+        let snap = crate::gate::baseline::compute_snapshot(ingest, graph, interner, short_sha);
+        let baseline_path = Path::new(root).join(crate::gate::baseline::DEFAULT_BASELINE_FILE);
+        crate::gate::baseline::write_baseline_file(&snap, &baseline_path)?;
+        writeln!(
+            out,
+            "ripwire: pinned quality baseline stamped at {short_sha} -> {}",
+            baseline_path.display()
+        )?;
+        return Ok(Some(0));
+    }
+    Ok(None)
+}
+
 fn execute_tool_safety_queries<W: Write>(
     s: &TopSafetyArgs,
     root: &str,
@@ -511,7 +548,7 @@ fn execute_tool_safety_queries<W: Write>(
         return execute_edit_plan_dispatch(plan_spec, root, s.dry_run, ingest, interner, out)
             .map(Some);
     }
-    Ok(None)
+    execute_partition_or_baseline_queries(s, root, ingest, graph, interner, out)
 }
 
 fn execute_verification_queries<W: Write>(

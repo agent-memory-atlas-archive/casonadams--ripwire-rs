@@ -333,17 +333,48 @@ fn execute_workspace_owners<W: Write>(cli: &Cli, root: &str, out: &mut W) -> io:
     crate::serialize::serialize_owners_xml(&val, out)
 }
 
+fn execute_detail_extended<W: Write>(
+    cli: &Cli,
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    stdout: &mut W,
+) -> io::Result<()> {
+    let detail = &cli.detail;
+    if detail.lint {
+        let findings = crate::metrics::lint::run_lint_scan(ingest, graph, interner);
+        if cli.arch.sarif {
+            crate::metrics::lint::serialize_lint_sarif(&findings, stdout)
+        } else {
+            crate::metrics::lint::serialize_lint_xml(root, &findings, stdout)
+        }
+    } else if detail.lint_catalog {
+        crate::metrics::lint::serialize_lint_catalog(stdout)
+    } else if detail.naming_locals {
+        crate::metrics::serialize_naming_consistency_xml(root, true, ingest, interner, stdout)
+    } else if detail.naming_consistency {
+        crate::metrics::serialize_naming_consistency_xml(root, false, ingest, interner, stdout)
+    } else if detail.naming_calibration {
+        crate::metrics::serialize_naming_calibration_xml(root, ingest, interner, stdout)
+    } else if detail.report {
+        crate::metrics::serialize_executive_report_md(
+            root, ingest, graph, &pr.ranks, interner, stdout,
+        )
+    } else if detail.legend_dict {
+        writeln!(
+            stdout,
+            "<legend-dict schema=\"ripwire.legend-dict/v1\"><entry k=\"f\" v=\"file\"/><entry k=\"s\" v=\"symbol\"/><entry k=\"c\" v=\"calls\"/><entry k=\"t\" v=\"kind\"/><entry k=\"n\" v=\"name\"/><entry k=\"l\" v=\"line\"/><entry k=\"k\" v=\"pagerank\"/><entry k=\"ccx\" v=\"cognitive_complexity\"/></legend-dict>"
+        )
+    } else {
+        Ok(())
+    }
+}
+
 pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let detail = &cli.detail;
-    if detail.expand.is_none()
-        && detail.outline.is_none()
-        && detail.pack_top_n.is_none()
-        && !detail.tree
-        && !detail.biggest_first
-        && !detail.nonlocal_state
-        && !detail.lint
-        && !detail.lint_catalog
-    {
+    if !detail.is_active() {
         return None;
     }
 
@@ -352,8 +383,8 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         let mut stdout_lock = io::stdout().lock();
         let mut stdout = crate::serialize::XmlWriter::with_format(
             &mut stdout_lock,
-            cli.modifiers.is_pretty(),
-            cli.modifiers.is_json(),
+            cli.modifiers.is_pretty() || detail.report,
+            cli.modifiers.is_json() && !detail.report,
         );
 
         if let Some(syms) = detail.expand.as_deref() {
@@ -374,15 +405,8 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         } else if detail.nonlocal_state {
             let funcs = crate::metrics::nonlocal::find_nonlocal_state(&ingest, &graph, &interner);
             crate::metrics::nonlocal::serialize_nonlocal_state_xml(root, &funcs, &mut stdout)?;
-        } else if detail.lint {
-            let findings = crate::metrics::lint::run_lint_scan(&ingest, &graph, &interner);
-            if cli.arch.sarif {
-                crate::metrics::lint::serialize_lint_sarif(&findings, &mut stdout)?;
-            } else {
-                crate::metrics::lint::serialize_lint_xml(root, &findings, &mut stdout)?;
-            }
-        } else if detail.lint_catalog {
-            crate::metrics::lint::serialize_lint_catalog(&mut stdout)?;
+        } else {
+            execute_detail_extended(cli, root, &ingest, &graph, &pr, &interner, &mut stdout)?;
         }
         stdout.flush()?;
         Ok(())
@@ -607,13 +631,34 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
     execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)?;
     stdout.flush()
 }
+fn execute_orient_subcommand(orient_args: &OrientArgs) -> io::Result<()> {
+    let root = orient_args.path.as_deref().unwrap_or(".");
+    let Some(task) = orient_args.for_task.as_deref() else {
+        return execute_stream_xml(root);
+    };
+    let (ingest, graph, pr, interner) = load_repo_analysis_cached(root, None, false)?;
+    let val = crate::mcp::retrieval::call_for_task_with_options(
+        &ingest,
+        &interner,
+        &pr.ranks,
+        task,
+        crate::mcp::retrieval::ForTaskOptions {
+            root,
+            graph: Some(&graph),
+            ..Default::default()
+        },
+    );
+    let mut stdout_lock = io::stdout().lock();
+    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+    crate::serialize::serialize_for_xml(&val, &mut stdout)?;
+    stdout.flush()
+}
+
 pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
     match command {
         Commands::Mcp(mcp_args) => run_mcp_stdio(mcp_args.path.as_deref().unwrap_or(".")),
         Commands::Navigate(nav_args) => execute_navigate(nav_args),
-        Commands::Orient(orient_args) => {
-            execute_stream_xml(orient_args.path.as_deref().unwrap_or("."))
-        }
+        Commands::Orient(orient_args) => execute_orient_subcommand(orient_args),
         Commands::Gate(gate_args) => {
             let root = gate_args.path.as_deref().unwrap_or(".");
             let sub_gate = GateDispatchArgs {

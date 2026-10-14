@@ -188,6 +188,23 @@ pub struct TopDetailArgs {
     #[arg(long = "legend-dict")]
     pub legend_dict: bool,
 }
+impl TopDetailArgs {
+    pub fn is_active(&self) -> bool {
+        self.expand.is_some()
+            || self.outline.is_some()
+            || self.pack_top_n.is_some()
+            || self.tree
+            || self.biggest_first
+            || self.nonlocal_state
+            || self.lint
+            || self.lint_catalog
+            || self.naming_locals
+            || self.naming_consistency
+            || self.naming_calibration
+            || self.report
+            || self.legend_dict
+    }
+}
 
 /// Top-level pre-PR safety and verification flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
@@ -291,19 +308,22 @@ pub struct TopSafetyArgs {
 }
 impl TopSafetyArgs {
     pub fn is_active(&self) -> bool {
-        let has_target = self.test_gate.is_some()
+        self.test_gate.is_some()
             || self.situ.is_some()
             || self.safe_delete.is_some()
             || self.exercises.is_some()
             || self.seams
-            || self.pr_context.is_some();
-        let has_tool = self.merge_scout.is_some()
+            || self.pr_context.is_some()
+            || self.merge_scout.is_some()
             || self.dmm.is_some()
             || self.plan_lanes.is_some()
             || self.scan_skills.is_some()
             || self.edit_plan.is_some()
-            || self.edit_payload.is_some();
-        has_target || has_tool
+            || self.edit_payload.is_some()
+            || self.partition.is_some()
+            || self.pin_census
+            || self.baseline
+            || self.baseline_update
     }
 }
 
@@ -633,6 +653,8 @@ impl TopRetrievalArgs {
             &self.ast_match,
             &self.pattern,
             &self.regex,
+            &self.help_task,
+            &self.refetch,
         ];
         opts.iter().any(|o| o.is_some()) || self.pack_signatures
     }
@@ -712,6 +734,9 @@ impl TopWorkspaceArgs {
             || self.handoff
             || self.notes
             || self.note_add.is_some()
+            || self.flip.is_some()
+            || self.plan_lint.is_some()
+            || self.skipped
             || self.replace_symbol_body.is_some()
             || self.insert_before_symbol.is_some()
             || self.insert_after_symbol.is_some()

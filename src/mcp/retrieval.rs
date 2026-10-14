@@ -559,6 +559,18 @@ pub fn call_grep_in_root(
     pattern: &str,
     path_filter: Option<&str>,
 ) -> Value {
+    call_grep_with_context(root, ingest, interner, pattern, path_filter, 0, 0)
+}
+
+pub fn call_grep_with_context(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    pattern: &str,
+    path_filter: Option<&str>,
+    before_lines: usize,
+    after_lines: usize,
+) -> Value {
     let mut hits = Vec::new();
     let root_path = std::path::Path::new(root);
 
@@ -577,7 +589,8 @@ pub fn call_grep_in_root(
             continue;
         };
 
-        for (line_idx, line) in text.lines().enumerate() {
+        let all_lines: Vec<&str> = text.lines().collect();
+        for (line_idx, &line) in all_lines.iter().enumerate() {
             if line.contains(pattern) {
                 let line_num = line_idx as u32 + 1;
                 let enclosing = ingest
@@ -587,11 +600,22 @@ pub fn call_grep_in_root(
                     .max_by_key(|s| s.line)
                     .map(|s| interner.resolve(&s.name));
 
+                let b_start = line_idx.saturating_sub(before_lines);
+                let before: Vec<Value> = (b_start..line_idx)
+                    .map(|i| json!({"line": i + 1, "text": all_lines[i]}))
+                    .collect();
+                let a_end = (line_idx + 1 + after_lines).min(all_lines.len());
+                let after: Vec<Value> = ((line_idx + 1)..a_end)
+                    .map(|i| json!({"line": i + 1, "text": all_lines[i]}))
+                    .collect();
+
                 hits.push(json!({
                     "path": path,
                     "line": line_num,
                     "text": line.trim(),
-                    "enclosing": enclosing
+                    "enclosing": enclosing,
+                    "before": before,
+                    "after": after
                 }));
             }
         }

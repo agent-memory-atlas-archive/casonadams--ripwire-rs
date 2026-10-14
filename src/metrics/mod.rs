@@ -10,8 +10,10 @@ pub mod quality_panel;
 pub mod readability;
 
 pub use analysis_lenses::{
-    compute_comment_coherence, compute_context_ratio, compute_ensemble,
+    classify_identifier_casing, compute_comment_coherence, compute_context_ratio, compute_ensemble,
     serialize_comment_coherence_xml, serialize_context_ratio_xml, serialize_ensemble_xml,
+    serialize_executive_report_md, serialize_naming_calibration_xml,
+    serialize_naming_consistency_xml,
 };
 pub use dmm::{DmmProperty, DmmReport, compute_dmm_report, serialize_dmm_xml};
 pub use eval::{run_cochange_eval, run_retrieval_eval};

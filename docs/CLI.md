@@ -17,9 +17,9 @@ ripwire-rs . --token-budget=8192
 ripwire-rs . --max-tokens=4096
 ripwire-rs . --top-k=200
 
-# Control schema legend comment posture (compact or none)
-ripwire-rs . --legend=compact
-
+# Control schema legend comment posture (compact or none) and formatting (--pretty, --json)
+ripwire-rs . --legend=compact --pretty
+ripwire-rs . --top-k=20 --json
 # Query symbol relationships by bare name, scoped name, or file:name
 ripwire-rs . --callers="Interner::len"
 ripwire-rs . --callees="src/domain.rs:new"
@@ -112,7 +112,8 @@ ripwire-rs . --cochange --cochange-groups --cochange-recur=3
 # Partition codebase into cohesive modules
 ripwire-rs . --partition=5
 
-# Target file for symbol edit disambiguation and skip post-edit verification
+# Execute transactional versioned JSON edit plan (with --dry-run validation)
+ripwire-rs . --dry-run --edit-plan=plan.json
 ripwire-rs . --edit-target-file="src/domain.rs" --no-post-check --allow-remote-edits
 * **Benefits:** Catches breaking signature changes, eliminates test suite bloat by running only affected tests, and stops architectural decay before merging.
 
@@ -160,9 +161,9 @@ ripwire-rs . --biggest-first
 # Detect functions accessing reachable global / file-static mutable state
 ripwire-rs . --nonlocal-state
 
-# Scan codebase for AST code smells (complexity spikes, deep nesting, dead functions)
+# Scan codebase for AST code smells (XML or SARIF 2.1.0 JSON output)
 ripwire-rs . --lint
-
+ripwire-rs . --lint --sarif
 # Print built-in AST code smell catalog
 ripwire-rs . --lint-catalog
 
@@ -273,9 +274,8 @@ ripwire-rs . --eval-retrieval
 # Install 17 pre-packaged ripwire-rs agent skills to ~/.agents/skills (or custom path)
 ripwire-rs --add-skills
 
-# Restrict grep to path substring or enclosing symbol scope
-ripwire-rs . --grep="Interner" --grep-in="src/" --grep-scope="domain"
-
+# Restrict grep to path substring, enclosing symbol scope, or include context lines
+ripwire-rs . --grep="Interner" --grep-in="src/" --grep-scope="domain" --grep-context=2
 # Conjunction, negation, and enclosing scope filters for structural search
 ripwire-rs . --grep="cache" --and="payload" --not="deprecated" --in="src/cache.rs"
 
@@ -307,13 +307,13 @@ ripwire-rs . --eval-stray
 ---
 ## Workflow Subcommands
 
-- `ripwire-rs orient [PATH]`: Codebase orientation and structural summaries.
+- `ripwire-rs orient [PATH] [--for <TASK>]`: Codebase orientation and task-ranked summaries.
 - `ripwire-rs navigate [PATH] --symbol <SYM> [--callers|--callees|--impact]`: Symbol neighborhood analysis.
 - `ripwire-rs gate [PATH] [--edit-check|--affected|--quality-delta|--test-gate]`: Verification safety gates.
 - `ripwire-rs metrics [PATH] [--hotspots|--complexity|--clones]`: Code health metrics.
-- `ripwire-rs slice [PATH] --symbol <SYM> --var <VAR>`: Intra-procedural slicing.
-- `ripwire-rs mcp`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
-- `ripwire-rs skills [DIR]`: Install and manage 17 ripwire-rs agent skills in `~/.agents/skills`.
+- `ripwire-rs slice [PATH] <SYM:VAR> [--flow <fwd|back|both>]`: Intra-procedural slicing.
+- `ripwire-rs mcp [PATH]`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
+- `ripwire-rs [PATH] --lsp`: Launch stdio JSON-RPC Language Server Protocol (LSP) server bridge.
 - `ripwire-rs wrap <AGENT>`: Generate agent integration recipe (`claude`, `cursor`, `codex`, `windsurf`, `gemini`, `opencode`, `aider`).
 - `ripwire-rs [PATH] [--cache <PATH>] [--no-cache]`: Persistent binary on-disk caching in TMPDIR (or custom path) for sub-second repeat queries.
 - `make bench [REPO=<PATH>]`: Multi-metric performance and resident set size (RSS) benchmark against C++ `ripwire`.

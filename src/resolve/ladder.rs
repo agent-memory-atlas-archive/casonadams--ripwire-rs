@@ -148,6 +148,9 @@ pub fn select_precedence_tier(
 /// Resolve a single reference according to the precedence ladder.
 #[must_use]
 fn is_candidate_compatible(sym: &Symbol, r: &Reference) -> bool {
+    if sym.lang == crate::domain::Lang::Sql && matches!(r.role, RefRole::Read | RefRole::Write) {
+        return true;
+    }
     sym.lang.is_compatible(r.lang) && (!r.arg_count_known || r.arg_count <= sym.params)
 }
 
@@ -156,7 +159,7 @@ pub fn filter_candidates(
     r: &Reference,
     symbols: &[Symbol],
 ) -> Option<CandBuffer> {
-    let mut cands = CandBuffer::new();
+    let mut cands = CandBuffer::default();
     for &id in all_cands {
         if is_candidate_compatible(&symbols[id as usize], r) {
             cands.push(id);
@@ -167,7 +170,7 @@ pub fn filter_candidates(
     }
 
     if let Some(q) = r.qualifier {
-        let mut qualified = CandBuffer::new();
+        let mut qualified = CandBuffer::default();
         for &id in cands.as_slice() {
             if symbols[id as usize].scope == Some(q) {
                 qualified.push(id);
@@ -187,7 +190,8 @@ pub fn resolve_call_reference(
     file_dirs: &[u32],
     by_name: &HashMap<Spur, Vec<NodeId>>,
 ) -> Option<ResolvedRef> {
-    if r.role != RefRole::Call || r.from_symbol == NO_NODE {
+    if r.from_symbol == NO_NODE || !matches!(r.role, RefRole::Call | RefRole::Read | RefRole::Write)
+    {
         return None;
     }
     let all_cands = by_name.get(&r.callee_name)?;

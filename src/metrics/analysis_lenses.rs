@@ -333,6 +333,141 @@ pub fn serialize_comment_coherence_xml<W: Write>(
     writeln!(out, "</comment_coherence>")
 }
 
+pub fn classify_identifier_casing(name: &str) -> &'static str {
+    let clean = name.trim_start_matches('_');
+    if clean.is_empty() {
+        return "other";
+    }
+    let has_underscore = clean.contains('_');
+    let has_upper = clean.chars().any(char::is_uppercase);
+    let has_lower = clean.chars().any(char::is_lowercase);
+    let first_upper = clean.chars().next().is_some_and(char::is_uppercase);
+
+    if has_underscore && !has_lower && has_upper {
+        "SCREAMING_SNAKE_CASE"
+    } else if has_underscore && !has_upper {
+        "snake_case"
+    } else if !has_underscore && first_upper && has_lower {
+        "PascalCase"
+    } else if !has_underscore && !first_upper && has_upper && has_lower {
+        "camelCase"
+    } else if !has_underscore && !has_upper && has_lower {
+        "lower"
+    } else {
+        "mixed"
+    }
+}
+
+pub fn serialize_naming_consistency_xml<W: Write>(
+    root: &str,
+    include_locals: bool,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut counts: std::collections::BTreeMap<(&'static str, &'static str), usize> =
+        std::collections::BTreeMap::new();
+    for sym in &ingest.symbols {
+        if !include_locals && sym.kind == SymKind::Var {
+            continue;
+        }
+        let name = interner.resolve(&sym.name);
+        let style = classify_identifier_casing(name);
+        *counts.entry((sym.kind.tag(), style)).or_insert(0) += 1;
+    }
+    let schema = if include_locals {
+        "ripwire.naming-locals/v1"
+    } else {
+        "ripwire.naming-consistency/v1"
+    };
+    let tag = if include_locals {
+        "naming-locals"
+    } else {
+        "naming-consistency"
+    };
+    let root_esc = crate::serialize::escape::escape_xml_str(root);
+    writeln!(
+        out,
+        "<{tag} schema=\"{schema}\" root=\"{root_esc}\" symbols=\"{}\">",
+        ingest.symbols.len()
+    )?;
+    for ((kind, style), count) in counts {
+        writeln!(
+            out,
+            "  <vote kind=\"{kind}\" style=\"{style}\" count=\"{count}\"/>"
+        )?;
+    }
+    writeln!(out, "</{tag}>")
+}
+
+pub fn serialize_naming_calibration_xml<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let root_esc = crate::serialize::escape::escape_xml_str(root);
+    writeln!(
+        out,
+        "<naming-calibration schema=\"ripwire.naming-calibration/v1\" root=\"{root_esc}\" symbols=\"{}\">",
+        ingest.symbols.len()
+    )?;
+    let mut style_totals: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for sym in &ingest.symbols {
+        let style = classify_identifier_casing(interner.resolve(&sym.name));
+        *style_totals.entry(style).or_insert(0) += 1;
+    }
+    for (style, count) in style_totals {
+        writeln!(out, "  <style name=\"{style}\" count=\"{count}\"/>")?;
+    }
+    writeln!(out, "</naming-calibration>")
+}
+
+pub fn serialize_executive_report_md<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    ranks: &[f64],
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(out, "# Architecture & Quality Report (`{root}`)\n")?;
+    writeln!(out, "## Corpus Overview")?;
+    writeln!(out, "- **Files Indexed**: {}", ingest.files.len())?;
+    writeln!(out, "- **Symbols Extracted**: {}", ingest.symbols.len())?;
+    writeln!(out, "- **Call Graph Edges**: {}\n", graph.edge_count())?;
+
+    let mut order: Vec<usize> = (0..ingest.symbols.len()).collect();
+    order.sort_by(|&a, &b| {
+        let ra = ranks.get(a).copied().unwrap_or(0.0);
+        let rb = ranks.get(b).copied().unwrap_or(0.0);
+        rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
+    });
+
+    writeln!(out, "## Top Symbols by PageRank")?;
+    writeln!(out, "| Symbol | Kind | File | Line | CCX | PageRank |")?;
+    writeln!(out, "|---|---|---|---|---|---|")?;
+    for idx in order.into_iter().take(15) {
+        let sym = &ingest.symbols[idx];
+        let name = interner.resolve(&sym.name);
+        let file = ingest
+            .files
+            .get(sym.file_id as usize)
+            .map_or("", |f| interner.resolve(&f.path));
+        let rank = ranks.get(idx).copied().unwrap_or(0.0);
+        writeln!(
+            out,
+            "| `{name}` | `{}` | `{file}` | {} | {} | {:.4} |",
+            sym.kind.tag(),
+            sym.line,
+            sym.ccx,
+            rank
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,5 +511,49 @@ mod tests {
         assert!(fired.contains(&"structural"));
         assert!(fired.contains(&"historical"));
         assert!(fired.contains(&"lexical"));
+    }
+
+    #[test]
+    fn test_naming_and_executive_report() {
+        assert_eq!(
+            classify_identifier_casing("MAX_SIZE"),
+            "SCREAMING_SNAKE_CASE"
+        );
+        assert_eq!(classify_identifier_casing("my_func"), "snake_case");
+        assert_eq!(classify_identifier_casing("MyClass"), "PascalCase");
+        assert_eq!(classify_identifier_casing("myVar"), "camelCase");
+        assert_eq!(classify_identifier_casing("run"), "lower");
+        assert_eq!(classify_identifier_casing("___"), "other");
+
+        let interner = Interner::new();
+        let mut ingest = IngestResult::new();
+        let name_spur = interner.intern("my_func");
+        let path_spur = interner.intern("src/lib.rs");
+        ingest.files.push(crate::domain::FileInfo {
+            id: 0,
+            path: path_spur,
+            lang: crate::domain::Lang::Rust,
+            line_count: 10,
+            byte_size: 100,
+        });
+        ingest.symbols.push(crate::domain::Symbol::new(
+            0,
+            name_spur,
+            name_spur,
+            crate::domain::SymKind::Function,
+            crate::domain::Lang::Rust,
+            0,
+            1,
+        ));
+        let graph = Graph::build(&ingest, &interner);
+        let mut buf = Vec::new();
+        serialize_naming_consistency_xml(".", false, &ingest, &interner, &mut buf).unwrap();
+        assert!(String::from_utf8_lossy(&buf).contains("snake_case"));
+        buf.clear();
+        serialize_naming_calibration_xml(".", &ingest, &interner, &mut buf).unwrap();
+        assert!(String::from_utf8_lossy(&buf).contains("ripwire.naming-calibration/v1"));
+        buf.clear();
+        serialize_executive_report_md(".", &ingest, &graph, &[1.0], &interner, &mut buf).unwrap();
+        assert!(String::from_utf8_lossy(&buf).contains("# Architecture & Quality Report"));
     }
 }

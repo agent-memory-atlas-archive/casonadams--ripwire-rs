@@ -1,4 +1,4 @@
-.TH RIPWIRE-RS 1 "2026-10-13" "ripwire-rs 0.4.0" "User Commands"
+.TH RIPWIRE-RS 1 "2026-10-14" "ripwire-rs 0.4.1" "User Commands"
 .SH NAME
 ripwire-rs \- high-throughput agent context router and deterministic static analysis engine
 .SH SYNOPSIS
@@ -404,7 +404,10 @@ Export full repository symbol index to JSON file \fIFILE\fR.
 Write binary index cache directly to file \fIFILE\fR.
 .TP
 .B \-\-lsp
-Enable language server protocol (LSP) bridge.
+Launch stdio JSON-RPC Language Server Protocol (LSP) server bridge supporting \fBinitialize\fR, \fBtextDocument/definition\fR, \fBtextDocument/references\fR, \fBtextDocument/documentSymbol\fR, and \fBtextDocument/hover\fR.
+.TP
+.B \-\-pretty
+Pretty-print indented XML output (default is minified token-optimized single-line XML).
 .TP
 .BI \-\-mcp\-token= TOKEN
 Require authentication token \fITOKEN\fR for MCP transport.

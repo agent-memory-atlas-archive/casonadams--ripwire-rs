@@ -220,6 +220,62 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
     )
 }
 
+fn execute_flip_or_plan_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
+    if let Some(gate) = ws.flip.as_deref() {
+        let val = crate::mcp::doc_tools::call_flags(ingest, interner);
+        let gate_esc = crate::serialize::escape::escape_xml_str(gate);
+        let root_esc = crate::serialize::escape::escape_xml_str(root);
+        writeln!(
+            out,
+            "<flip schema=\"ripwire.flip/v1\" gate=\"{gate_esc}\" root=\"{root_esc}\">"
+        )?;
+        if let Some(arr) = val["flags"].as_array() {
+            for f in arr {
+                let name = f["name"].as_str().unwrap_or("");
+                if name.contains(gate) {
+                    let p =
+                        crate::serialize::escape::escape_xml_str(f["path"].as_str().unwrap_or(""));
+                    let l = f["line"].as_u64().unwrap_or(1);
+                    writeln!(
+                        out,
+                        "  <site p=\"{p}\" l=\"{l}\" gate=\"{}\"/>",
+                        crate::serialize::escape::escape_xml_str(name)
+                    )?;
+                }
+            }
+        }
+        writeln!(out, "</flip>")?;
+        Ok(true)
+    } else if let Some(plan_file) = ws.plan_lint.as_deref() {
+        let content = std::fs::read_to_string(plan_file).unwrap_or_default();
+        let headings = content.lines().filter(|l| l.starts_with('#')).count();
+        let tasks = content.lines().filter(|l| l.contains("- [")).count();
+        let f_esc = crate::serialize::escape::escape_xml_str(plan_file);
+        writeln!(
+            out,
+            "<plan-lint schema=\"ripwire.plan-lint/v1\" file=\"{f_esc}\" headings=\"{headings}\" tasks=\"{tasks}\" ok=\"{}\"/>",
+            usize::from(headings > 0)
+        )?;
+        Ok(true)
+    } else if ws.skipped {
+        let root_esc = crate::serialize::escape::escape_xml_str(root);
+        writeln!(
+            out,
+            "<skipped schema=\"ripwire.skipped/v1\" root=\"{root_esc}\" max_file_size=\"{}\" count=\"0\"/>",
+            crate::crawler::DEFAULT_MAX_FILE_SIZE
+        )?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 fn execute_session_tools_query<W: Write>(
     ws: &TopWorkspaceArgs,
     root: &str,
@@ -243,7 +299,7 @@ fn execute_session_tools_query<W: Write>(
         execute_note_append(note, out)?;
         Ok(true)
     } else {
-        Ok(false)
+        execute_flip_or_plan_query(ws, root, ingest, interner, out)
     }
 }
 
@@ -1074,6 +1130,26 @@ fn execute_task_or_signatures<W: Write>(
     Ok(false)
 }
 
+fn recommend_verb_for_task(task: &str) -> (&'static str, &'static str) {
+    let lower = task.to_ascii_lowercase();
+    if lower.contains("caller") || lower.contains("who calls") {
+        ("--callers", "1-hop callers of a named symbol")
+    } else if lower.contains("blast") || lower.contains("impact") || lower.contains("safe") {
+        ("--impact", "transitive caller blast radius")
+    } else if lower.contains("trace") || lower.contains("crash") || lower.contains("error") {
+        ("--from-trace", "map stack trace onto indexed symbols")
+    } else if lower.contains("duplicate") || lower.contains("clone") {
+        ("--clones", "AST near-miss code clone detector")
+    } else if lower.contains("test") || lower.contains("gate") {
+        (
+            "--test-gate",
+            "affected test suite and untested blast radius",
+        )
+    } else {
+        ("--for", "task-lens BM25 + PageRank symbol retrieval")
+    }
+}
+
 fn execute_pattern_or_match<W: Write>(
     ret: &TopRetrievalArgs,
     root: &str,
@@ -1095,14 +1171,27 @@ fn execute_pattern_or_match<W: Write>(
             .map_err(io::Error::other)?;
         crate::serialize::serialize_grep_xml(&val, out)?;
     } else if let Some(pat) = ret.regex.as_deref() {
-        let val = crate::mcp::retrieval::call_grep_in_root(
+        let before = ret.grep_before.or(ret.grep_context).unwrap_or(0);
+        let after = ret.grep_after.or(ret.grep_context).unwrap_or(0);
+        let val = crate::mcp::retrieval::call_grep_with_context(
             root,
             ingest,
             interner,
             pat,
             ret.grep_in.as_deref(),
+            before,
+            after,
         );
         crate::serialize::serialize_grep_xml(&val, out)?;
+    } else if let Some(task) = ret.help_task.as_deref() {
+        let (verb, reason) = recommend_verb_for_task(task);
+        let t_esc = crate::serialize::escape::escape_xml_str(task);
+        writeln!(
+            out,
+            "<help-task schema=\"ripwire.help-task/v1\" task=\"{t_esc}\" recommended=\"{verb}\" why=\"{reason}\"/>"
+        )?;
+    } else if let Some(handle) = ret.refetch.as_deref() {
+        execute_expand_or_outline_query(root, handle, false, ingest, interner, out)?;
     }
     Ok(())
 }
@@ -1153,12 +1242,16 @@ pub fn execute_retrieval_dispatch<W: Write>(
         return Ok(());
     }
     if let Some(pat) = ret.grep.as_deref() {
-        let val = crate::mcp::retrieval::call_grep_in_root(
+        let before = ret.grep_before.or(ret.grep_context).unwrap_or(0);
+        let after = ret.grep_after.or(ret.grep_context).unwrap_or(0);
+        let val = crate::mcp::retrieval::call_grep_with_context(
             root,
             ingest,
             interner,
             pat,
             ret.grep_in.as_deref(),
+            before,
+            after,
         );
         crate::serialize::serialize_grep_xml(&val, out)
     } else if let Some(syms) = ret.connect.as_deref() {
