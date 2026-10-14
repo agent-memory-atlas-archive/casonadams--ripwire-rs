@@ -52,6 +52,13 @@ pub fn compute_plan_lanes(
         "lane_count": n,
         "claim_key": "path+scope+name",
         "on_conflict": "producing-lane-rebases",
+        "contract_touch_rule": "halt-and-broadcast",
+        "landing_rule": "least-blast-first",
+        "landing_order": (1..=n).collect::<Vec<_>>(),
+        "carve": {"strategy": "round-robin"},
+        "core": [],
+        "pairs": [],
+        "warnings": [],
         "corpus": {
             "files": ingest.files.len(),
             "symbols": ingest.symbols.len(),

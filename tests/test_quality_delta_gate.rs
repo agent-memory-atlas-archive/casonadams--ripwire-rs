@@ -94,7 +94,7 @@ fn test_quality_delta_clean_vs_regression() {
 
     let xml = reg_report.to_xml_string();
     assert!(xml.contains("gating=\"1\""));
-    assert!(xml.contains("<r kind=\"complexity\" sym=\"evaluate\" p=\"src/calc.rs:1\" was=\"10\" now=\"25\" gating=\"1\"/>"));
+    assert!(xml.contains("<r kind=\"complexity\" sym=\"evaluate\" p=\"src/calc.rs:1\" was=\"10\" now=\"25\" gating=\"1\" bar=\"15\"/>"));
 }
 
 #[test]

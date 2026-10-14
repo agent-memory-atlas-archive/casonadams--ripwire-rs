@@ -11,6 +11,7 @@ pub struct RankedStreamArgs<'a> {
     pub pack_budget: Option<usize>,
     pub top_k: Option<usize>,
     pub emit_legend: bool,
+    pub legend_full: bool,
     pub map_diff: bool,
 }
 
@@ -28,11 +29,11 @@ pub fn execute_stream_xml_with<W: Write>(
         pack_budget: None,
         top_k: None,
         emit_legend: true,
+        legend_full: false,
         map_diff: false,
     };
     execute_stream_xml_ranked(&args, ingest, graph, pr, interner, out)
 }
-
 pub fn execute_stream_xml_ranked<W: Write>(
     args: &RankedStreamArgs<'_>,
     ingest: &IngestResult,
@@ -46,6 +47,14 @@ pub fn execute_stream_xml_ranked<W: Write>(
         .or(Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES));
     let rank_mode = args.rank_by.to_ascii_lowercase();
 
+    let map_diff_at = if args.map_diff {
+        Some(
+            crate::git::history::compute_git_at_stamp(args.root)
+                .unwrap_or_else(|| "HEAD".to_string()),
+        )
+    } else {
+        None
+    };
     let (ranks, rank_lbl) = if args.map_diff {
         let changed_files = crate::cli::safety::get_working_tree_changed_files(args.root);
         let n = ingest.symbols.len();
@@ -63,7 +72,7 @@ pub fn execute_stream_xml_ranked<W: Write>(
             &tel,
             &crate::rank::pagerank::PageRankConfig::default(),
         );
-        (custom.ranks, Some("map-diff".to_string()))
+        (custom.ranks, None)
     } else if rank_mode == "authority" {
         let hits = graph.hits();
         (hits.authority, Some("authority".to_string()))
@@ -92,6 +101,8 @@ pub fn execute_stream_xml_ranked<W: Write>(
             pack_budget_bytes: budget_bytes,
             rank_by: rank_lbl,
             emit_legend: args.emit_legend,
+            legend_full: args.legend_full,
+            map_diff_at,
             metrics: false,
         },
     )

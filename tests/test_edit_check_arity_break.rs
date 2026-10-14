@@ -149,7 +149,7 @@ fn test_edit_check_arity_break() {
 
     // Verify XML formatting
     let xml = report.to_xml_string();
-    assert!(xml.contains("<edit-check schema=\"ripwire.edit-check/v1\" sym=\"compute\" p=\"src/service.rs\" status=\"contract-change\" callers=\"2\" incompatible=\"1\">"));
+    assert!(xml.contains("<edit-check schema=\"ripwire.edit-check/v1\" sym=\"compute\" t=\"fn\" p=\"src/service.rs\" status=\"contract-change\" defs=\"1\" callers=\"2\" incompatible=\"1\""));
     assert!(
         xml.contains("<c n=\"legacy_worker\" p=\"src/legacy_caller.rs:15\" incompatible=\"1\">")
     );

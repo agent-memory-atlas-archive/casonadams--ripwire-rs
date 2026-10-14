@@ -134,24 +134,28 @@ pub fn serialize_quality_panel_xml<W: Write>(
     rep: &QualityPanelReport,
     out: &mut W,
 ) -> io::Result<()> {
+    let total = rep.rows.len();
+    let shown = total.min(40);
+    let capped = usize::from(shown < total);
     writeln!(
         out,
-        "<quality_panel schema=\"ripwire.quality-panel/v1\" preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" shown=\"{}\">",
+        "<!-- ripwire quality-panel schema=ripwire.quality-panel/v1: every quality family in ONE report. -->\n<quality_panel schema=\"ripwire.quality-panel/v1\" preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"0\" cscope=\"0\" cranked=\"0\" ccut=\"0\" lscope=\"{}\" sfiles=\"0\" sscope=\"0\" cells=\"0\" tested_scope=\"0\" deep_untested=\"0\" shown=\"{shown}\" capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" root=\".\" at=\"HEAD\">",
         rep.preset,
         rep.cut,
         rep.eligible,
         rep.ranked,
         rep.below_cut,
         rep.no_family,
-        rep.rows.len()
+        rep.eligible,
+        rep.eligible,
     )?;
 
-    for r in &rep.rows {
+    for r in rep.rows.iter().take(shown) {
         let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
         let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
         writeln!(
             out,
-            "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"{}\" fired=\"{}\"/>",
+            "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"{}\" fired=\"{}\" unavail=\"confusion\"/>",
             r.line, r.fam, r.of, r.fired
         )?;
     }

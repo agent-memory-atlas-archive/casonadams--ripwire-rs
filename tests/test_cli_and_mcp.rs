@@ -424,7 +424,7 @@ fn test_top_retrieval_and_workspace_queries() {
         execute_retrieval_dispatch(&r_ex, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
     );
     let r_lego = TopRetrievalArgs {
-        lego: Some("Iface".into()),
+        lego: Some("run_cli".into()),
         ..Default::default()
     };
     assert!(

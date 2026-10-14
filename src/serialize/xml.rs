@@ -16,18 +16,22 @@ pub struct SerializeOptions {
     pub pack_budget_bytes: Option<usize>,
     pub rank_by: Option<String>,
     pub emit_legend: bool,
+    pub legend_full: bool,
+    pub map_diff_at: Option<String>,
     pub metrics: bool,
 }
 
 impl Default for SerializeOptions {
     fn default() -> Self {
         Self {
-            root: ".".into(),
+            root: ".".to_string(),
             top_k: None,
             include_pr: true,
             pack_budget_bytes: Some(DEFAULT_PACK_BUDGET_BYTES),
             rank_by: None,
             emit_legend: false,
+            legend_full: false,
+            map_diff_at: None,
             metrics: false,
         }
     }
@@ -348,6 +352,37 @@ fn serialize_symbol_buckets(
 }
 
 /// Stream minified XML with custom ranks and budget enforcement.
+fn write_cli_root_open<W: Write>(
+    w: &mut W,
+    options: &SerializeOptions,
+    pr_iters: u32,
+    est_tokens: usize,
+) -> io::Result<()> {
+    w.write_all(b"<r")?;
+    if !options.legend_full {
+        let schema = if options.map_diff_at.is_some() {
+            "ripwire.map-diff/v1"
+        } else if options.metrics {
+            "ripwire.metrics/v1"
+        } else {
+            "ripwire.map/v1"
+        };
+        write!(w, " schema=\"{schema}\"")?;
+    }
+    if let Some(at) = &options.map_diff_at {
+        write!(w, " at=\"{at}\"")?;
+    }
+    w.write_all(b" root=\"")?;
+    escape_xml_write(w, &options.root)?;
+    w.write_all(b"\"")?;
+    if let Some(rb) = &options.rank_by {
+        write!(w, " rank_by=\"{rb}\" est_tokens=\"{est_tokens}\">")
+    } else {
+        write!(w, " est_tokens=\"{est_tokens}\" pr_iters=\"{pr_iters}\">")
+    }
+}
+
+/// Stream minified XML with custom ranks and budget enforcement.
 pub fn serialize_xml_with_ranks<W: Write>(
     ctx: &StreamXmlContext<'_>,
     writer: &mut W,
@@ -373,38 +408,33 @@ pub fn serialize_xml_with_ranks<W: Write>(
     let buf = BufWriter::with_capacity(DEFAULT_STREAM_BUFFER_CAPACITY, writer);
     let mut counter = CountingWriter::new(buf);
     let ambiguous = ctx.graph.amb_out.iter().map(|&a| a as usize).sum::<usize>();
-    if options.emit_legend {
+    if options.emit_legend || options.metrics {
         counter.write_all(SCHEMA_COMMENT)?;
         write!(
             counter,
-            " files={} symbols={} edges={} shown={} ambiguous={} unresolved=0 -->",
+            " files={} symbols={} edges={} shown=\"{}\" ambiguous={} unresolved=0 -->",
             ctx.ingest.file_count(),
             ctx.ingest.symbol_count(),
             ctx.graph.edge_count(),
             symbols_shown,
             ambiguous
         )?;
-    }
-    let root_ctx = RootElementContext {
-        root: &options.root,
-        files: ctx.ingest.file_count(),
-        symbols: ctx.ingest.symbol_count(),
-        edges: ctx.graph.edge_count(),
-        shown: symbols_shown,
-        pr_iters: ctx.pr_iters,
-        converged: ctx.pr_converged,
-        rank_by: options.rank_by.as_deref(),
-        ambiguous,
-        unresolved: 0,
-        schema: if options.metrics {
-            Some("ripwire.metrics/v1")
-        } else {
-            None
-        },
-    };
-    if root_ctx.rank_by.is_some() {
-        write_root_open_with_rank_by(&mut counter, &root_ctx)?;
+        let est_tokens = (body_buf.len() + 1200) * 2 / 5;
+        write_cli_root_open(&mut counter, options, ctx.pr_iters, est_tokens)?;
     } else {
+        let root_ctx = RootElementContext {
+            root: &options.root,
+            files: ctx.ingest.file_count(),
+            symbols: ctx.ingest.symbol_count(),
+            edges: ctx.graph.edge_count(),
+            shown: symbols_shown,
+            pr_iters: ctx.pr_iters,
+            converged: ctx.pr_converged,
+            rank_by: options.rank_by.as_deref(),
+            ambiguous,
+            unresolved: 0,
+            schema: None,
+        };
         write_root_open(&mut counter, &root_ctx)?;
     }
     counter.write_all(&body_buf)?;

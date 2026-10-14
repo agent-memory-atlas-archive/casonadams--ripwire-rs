@@ -172,7 +172,9 @@ fn assemble_defs(headings: &[HeadingEntry], rel_path: &str, source_len: usize) -
         kind: SymKind::Section,
         line: 1,
         start_byte: 0,
+        body_byte: 0,
         end_byte: source_len,
+        loc: 1,
         params: 0,
         metrics: crate::metrics::ComplexityMetrics::default(),
     });
@@ -200,7 +202,9 @@ fn assemble_defs(headings: &[HeadingEntry], rel_path: &str, source_len: usize) -
             kind: SymKind::Section,
             line: h.line,
             start_byte: h.start_byte,
+            body_byte: h.start_byte,
             end_byte,
+            loc: 1,
             params: 0,
             metrics: crate::metrics::ComplexityMetrics::default(),
         });

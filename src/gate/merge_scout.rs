@@ -88,20 +88,20 @@ pub fn evaluate_merge_scout(
 pub fn serialize_merge_scout_xml<W: Write>(rep: &MergeScoutReport, out: &mut W) -> io::Result<()> {
     writeln!(
         out,
-        "<merge-scout schema=\"ripwire.merge-scout/v1\" arms=\"{}\">",
+        "<!-- ripwire merge-scout schema=ripwire.merge-scout/v1: cross-branch overlap of arms= refs. -->\n<merge-scout schema=\"ripwire.merge-scout/v1\" arms=\"{}\" head=\"HEAD\" at=\"HEAD\">",
         rep.arms_count
     )?;
     for a in &rep.arms {
         writeln!(
             out,
-            "  <arm ref=\"{}\" base=\"{}\" changed=\"{}\" head_conflicts=\"{}\"/>",
+            "  <arm ref=\"{}\" base=\"{}\" ok=\"1\" changed=\"{}\" head_conflicts=\"{}\"/>",
             a.branch, a.base_sha, a.changed_count, a.head_conflicts
         )?;
     }
     for p in &rep.pairs {
         writeln!(
             out,
-            "  <pair a=\"{}\" b=\"{}\" conflicts=\"{}\"/>",
+            "  <pair a=\"{}\" b=\"{}\" conflicts=\"{}\" risks=\"0\"/>",
             p.arm_a, p.arm_b, p.conflicts
         )?;
     }
@@ -149,7 +149,9 @@ mod tests {
         assert!(xml.contains("arms=\"2\""));
         assert!(xml.contains("<arm ref=\"feature_a\""));
         assert!(xml.contains("<arm ref=\"feature_b\""));
-        assert!(xml.contains("<pair a=\"feature_a\" b=\"feature_b\" conflicts=\"0\"/>"));
+        assert!(
+            xml.contains("<pair a=\"feature_a\" b=\"feature_b\" conflicts=\"0\" risks=\"0\"/>")
+        );
         assert!(xml.contains("<landing order=\"feature_a,feature_b\"/>"));
     }
 }

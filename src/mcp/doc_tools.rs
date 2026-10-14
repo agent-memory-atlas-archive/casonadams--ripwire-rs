@@ -221,16 +221,23 @@ pub fn call_flags(ingest: &IngestResult, interner: &Interner) -> Value {
 
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
-        scan_file_flags(
-            path,
-            &mut flags,
-            &mut compile_count,
-            &mut cmake_count,
-            &mut env_count,
-        );
+        if path.ends_with(".c")
+            || path.ends_with(".h")
+            || path.ends_with(".cpp")
+            || path.ends_with(".hpp")
+            || path.ends_with("CMakeLists.txt")
+        {
+            scan_file_flags(
+                path,
+                &mut flags,
+                &mut compile_count,
+                &mut cmake_count,
+                &mut env_count,
+            );
+        }
     }
 
-    let dark_gates = env_count;
+    let dark_gates = compile_count + cmake_count;
     json!({
         "files": ingest.files.len(),
         "flags_count": flags.len(),
@@ -560,43 +567,141 @@ fn probe_name_history(root: &str, sym_name: &str, head_sha: &str) -> Option<Valu
     }))
 }
 
-fn collect_blob_whereis_hits(
-    root: &str,
-    symbol_name: &str,
-    def_locations: &std::collections::HashSet<(String, u32)>,
-) -> Option<Vec<Value>> {
-    let out = std::process::Command::new("git")
-        .args(["-C", root, "grep", "-n", "-w", symbol_name, "HEAD"])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
+fn is_word_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+fn line_contains_word(line: &str, word: &str) -> bool {
+    if word.is_empty() || line.len() < word.len() {
+        return false;
     }
-    let text = String::from_utf8_lossy(&out.stdout);
-    let mut hits = Vec::new();
-    for line in text.lines().take(500) {
-        let mut parts = line.splitn(3, ':');
-        let _ref = parts.next();
-        let path = parts.next().unwrap_or("");
-        let rest = parts.next().unwrap_or("");
-        let mut line_parts = rest.splitn(2, ':');
-        let line_num: u32 = line_parts.next().and_then(|l| l.parse().ok()).unwrap_or(0);
-        let code_text = line_parts.next().unwrap_or("").trim();
-        let is_def = def_locations.contains(&(path.to_string(), line_num));
+    let bytes = line.as_bytes();
+    let wlen = word.len();
+    let mut offset = 0;
+    while let Some(pos) = line[offset..].find(word) {
+        let idx = offset + pos;
+        let before_ok = idx == 0 || !is_word_byte(bytes[idx - 1]);
+        let after_ok = idx + wlen >= bytes.len() || !is_word_byte(bytes[idx + wlen]);
+        if before_ok && after_ok {
+            return true;
+        }
+        offset = idx + 1;
+    }
+    false
+}
+
+fn head_tip_and_date(root: &str, at_stamp: &str) -> (String, String) {
+    let tip = at_stamp
+        .strip_suffix("+dirty")
+        .unwrap_or(at_stamp)
+        .to_string();
+    if let Ok(repo) = gix::open(std::path::Path::new(root))
+        && let Ok(head) = repo.head_commit()
+        && let Ok(time) = head.time()
+    {
+        let days = time.seconds / 86_400;
+        let z = days + 719_468;
+        let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
+        let doe = (z - era * 146_097) as u32;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+        let y = (yoe as i64) + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let year = if m <= 2 { y + 1 } else { y };
+        return (tip, format!("{year:04}-{m:02}-{d:02}"));
+    }
+    (tip, "1970-01-01".to_string())
+}
+
+fn scan_file_whereis_hits(
+    root_path: &std::path::Path,
+    rel_path: &str,
+    symbol_name: &str,
+    tip: &str,
+    date: &str,
+    def_lines: Option<&std::collections::HashSet<u32>>,
+) -> Vec<Value> {
+    let mut file_hits = Vec::new();
+    let full_path = if root_path == std::path::Path::new(".") {
+        std::path::PathBuf::from(rel_path)
+    } else {
+        root_path.join(rel_path)
+    };
+    let Ok(content) = std::fs::read_to_string(full_path) else {
+        return file_hits;
+    };
+    for (idx, raw_line) in content.lines().enumerate() {
+        if !line_contains_word(raw_line, symbol_name) {
+            continue;
+        }
+        let line_num = (idx + 1) as u32;
+        let is_def = def_lines.is_some_and(|s| s.contains(&line_num));
         let kind = if is_def { "def" } else { "ref" };
-        hits.push(json!({
+        let code_text: String = raw_line.trim().chars().take(200).collect();
+        file_hits.push(json!({
             "ref": "HEAD",
+            "tip": tip,
+            "date": date,
             "symbol": symbol_name,
             "kind": kind,
-            "file": path,
-            "path": path,
+            "file": rel_path,
+            "path": rel_path,
             "line": line_num,
             "text": code_text,
             "on_head": true,
             "is_def": is_def,
         }));
     }
-    Some(hits)
+    file_hits
+}
+
+fn collect_worktree_whereis_hits(
+    ingest: &IngestResult,
+    interner: &Interner,
+    root: &str,
+    symbol_name: &str,
+    tip: &str,
+    date: &str,
+    defs_by_file: &std::collections::HashMap<u32, std::collections::HashSet<u32>>,
+) -> Vec<Value> {
+    use rayon::prelude::*;
+    let root_path = std::path::Path::new(root);
+    let mut hits: Vec<Value> = ingest
+        .files
+        .par_iter()
+        .flat_map(|fi| {
+            let rel_path = interner.resolve(&fi.path);
+            scan_file_whereis_hits(
+                root_path,
+                rel_path,
+                symbol_name,
+                tip,
+                date,
+                defs_by_file.get(&fi.id),
+            )
+        })
+        .collect();
+    if hits.is_empty() {
+        let mut h = collect_head_defs(ingest, interner, root, symbol_name);
+        let mut refs = collect_head_refs(ingest, interner, root, symbol_name);
+        h.append(&mut refs);
+        for item in &mut h {
+            item["tip"] = json!(tip);
+            item["date"] = json!(date);
+        }
+        return h;
+    }
+    hits.sort_by(|a, b| {
+        let a_def = a["is_def"].as_bool().unwrap_or(false);
+        let b_def = b["is_def"].as_bool().unwrap_or(false);
+        b_def
+            .cmp(&a_def)
+            .then_with(|| a["path"].as_str().cmp(&b["path"].as_str()))
+            .then_with(|| a["line"].as_u64().cmp(&b["line"].as_u64()))
+    });
+    hits
 }
 
 /// Execute `whereis` tool: identify where a symbol lives (definitions and references).
@@ -608,34 +713,27 @@ pub fn call_whereis(
     with_history: bool,
 ) -> Value {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let mut def_locations = std::collections::HashSet::new();
+    let (tip, date) = head_tip_and_date(root, &at_stamp);
+    let mut defs_by_file: std::collections::HashMap<u32, std::collections::HashSet<u32>> =
+        std::collections::HashMap::new();
     for sym in &ingest.symbols {
-        if interner.resolve(&sym.name) == symbol_name
-            && let Some(fi) = ingest.files.get(sym.file_id as usize)
-        {
-            def_locations.insert((interner.resolve(&fi.path).to_string(), sym.line));
+        if interner.resolve(&sym.name) == symbol_name {
+            defs_by_file
+                .entry(sym.file_id)
+                .or_default()
+                .insert(sym.line);
         }
     }
 
-    let mut hits = match collect_blob_whereis_hits(root, symbol_name, &def_locations) {
-        Some(mut blob_hits) => {
-            blob_hits.sort_by(|a, b| {
-                let a_def = a["is_def"].as_bool().unwrap_or(false);
-                let b_def = b["is_def"].as_bool().unwrap_or(false);
-                b_def
-                    .cmp(&a_def)
-                    .then_with(|| a["path"].as_str().cmp(&b["path"].as_str()))
-                    .then_with(|| a["line"].as_u64().cmp(&b["line"].as_u64()))
-            });
-            blob_hits
-        }
-        None => {
-            let mut h = collect_head_defs(ingest, interner, root, symbol_name);
-            let mut refs = collect_head_refs(ingest, interner, root, symbol_name);
-            h.append(&mut refs);
-            h
-        }
-    };
+    let mut hits = collect_worktree_whereis_hits(
+        ingest,
+        interner,
+        root,
+        symbol_name,
+        &tip,
+        &date,
+        &defs_by_file,
+    );
 
     let on_head = !hits.is_empty();
     let blobs = ingest.files.len();

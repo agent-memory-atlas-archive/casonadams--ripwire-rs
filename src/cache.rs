@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
-const CACHE_VERSION: u32 = 1;
+const CACHE_VERSION: u32 = 3;
 
 /// Serialized binary cache payload for fast warm repository queries.
 #[derive(Serialize, Deserialize)]
@@ -27,11 +27,7 @@ pub fn compute_cache_key(root: &str) -> String {
     if let Ok(repo) = gix::open(path)
         && let Ok(head) = repo.head_commit()
     {
-        let mut key = head.id().to_string();
-        if !crate::cli::safety::get_working_tree_changed_files(root).is_empty() {
-            key.push_str("+dirty");
-        }
-        return key;
+        return head.id().to_string();
     }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     root.hash(&mut hasher);

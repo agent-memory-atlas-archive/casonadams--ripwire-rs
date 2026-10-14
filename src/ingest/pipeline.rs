@@ -197,7 +197,13 @@ pub fn build_file_symbols(
             sym.scope = Some(interner.intern(sc));
         }
         sym.sig_start_byte = def.start_byte as u32;
+        sym.sig_end_byte = if def.body_byte > def.start_byte {
+            def.body_byte as u32
+        } else {
+            def.end_byte as u32
+        };
         sym.end_byte = def.end_byte as u32;
+        sym.loc = def.loc.max(1);
         sym.cx = def.metrics.cx;
         sym.ccx = def.metrics.ccx;
         sym.max_nest = def.metrics.max_nest;

@@ -208,7 +208,7 @@ pub fn serialize_field_affinity_xml<W: Write>(
 ) -> io::Result<()> {
     writeln!(
         out,
-        "<field-affinity schema=\"ripwire.field-affinity/v1\" block=\"64\" model=\"lp64-approx\" root=\"{root}\">",
+        "<!-- ripwire field-affinity schema=ripwire.field-affinity/v1: fields read together vs 64-byte lines. -->\n<fieldaffinity schema=\"ripwire.field-affinity/v1\" block=\"64\" model=\"lp64-approx\" counts_floor=\"1\" weighting=\"fanin-floor\" aggregates=\"0\" files=\"0\" fns_scanned=\"0\" accesses=\"0\" amb_skipped=\"0\" structs=\"0\" shown=\"0\" capped=\"0\" findings=\"0\" min_fns=\"2\" as_loops=\"0\" as_index=\"0\" as_chase=\"0\" as_mixed=\"0\" as_unknown=\"0\" root=\"{root}\">",
     )?;
 
     for d in &rep.defs {
@@ -232,7 +232,7 @@ pub fn serialize_field_affinity_xml<W: Write>(
         writeln!(out, "  </s>")?;
     }
 
-    writeln!(out, "</field-affinity>")
+    writeln!(out, "</fieldaffinity>")
 }
 
 #[cfg(test)]

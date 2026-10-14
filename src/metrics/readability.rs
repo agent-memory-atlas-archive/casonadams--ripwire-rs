@@ -1,6 +1,6 @@
 use crate::clones::token_stream::{
-    is_keyword, scan_identifier_or_keyword, scan_number_literal, scan_operator,
-    scan_string_literal, skip_whitespace,
+    is_keyword_bytes, scan_ident_slice, scan_number_slice, scan_operator_slice, scan_string_slice,
+    skip_whitespace,
 };
 use std::collections::HashMap;
 pub const POSNETT_INTERCEPT: f64 = 8.87;
@@ -39,7 +39,7 @@ enum TokenKind {
     Operand,
 }
 
-fn tokenize_code(code: &str) -> Vec<(String, TokenKind)> {
+fn tokenize_code(code: &str) -> Vec<(&[u8], TokenKind)> {
     let bytes = code.as_bytes();
     let mut tokens = Vec::new();
     let mut i = 0;
@@ -48,21 +48,21 @@ fn tokenize_code(code: &str) -> Vec<(String, TokenKind)> {
         if b.is_ascii_whitespace() {
             skip_whitespace(bytes, &mut i);
         } else if b == b'"' || b == b'\'' {
-            let lit = scan_string_literal(bytes, &mut i);
+            let lit = scan_string_slice(bytes, &mut i);
             tokens.push((lit, TokenKind::Operand));
         } else if b.is_ascii_alphabetic() || b == b'_' {
-            let word = scan_identifier_or_keyword(bytes, &mut i);
-            let kind = if is_keyword(&word) {
+            let word = scan_ident_slice(bytes, &mut i);
+            let kind = if is_keyword_bytes(word) {
                 TokenKind::Operator
             } else {
                 TokenKind::Operand
             };
             tokens.push((word, kind));
         } else if b.is_ascii_digit() {
-            let num = scan_number_literal(bytes, &mut i);
+            let num = scan_number_slice(bytes, &mut i);
             tokens.push((num, TokenKind::Operand));
         } else {
-            let sym = scan_operator(bytes, &mut i);
+            let sym = scan_operator_slice(bytes, &mut i);
             tokens.push((sym, TokenKind::Operator));
         }
     }
@@ -103,12 +103,12 @@ pub fn compute_readability(code: &str) -> ReadabilityMetrics {
         };
     }
 
-    let mut vocab_map: HashMap<String, u32> = HashMap::new();
+    let mut vocab_map: HashMap<&[u8], u32> = HashMap::new();
     let mut operator_count = 0u32;
     let mut operand_count = 0u32;
 
     for (text, kind) in &tokens {
-        *vocab_map.entry(text.clone()).or_insert(0) += 1;
+        *vocab_map.entry(*text).or_insert(0) += 1;
         match kind {
             TokenKind::Operator => operator_count += 1,
             TokenKind::Operand => operand_count += 1,
@@ -157,17 +157,33 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
     }
 
     functions.sort_by(|a, b| b.0.loc.cmp(&a.0.loc).then_with(|| b.0.ccx.cmp(&a.0.ccx)));
+    let total = functions.len();
+    let shown = total.min(40);
+    let capped = usize::from(shown < total);
+    let page_attrs = if capped == 1 {
+        format!(
+            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+        )
+    } else {
+        format!(" shown=\"{shown}\" capped=\"0\"")
+    };
 
     writeln!(
         out,
-        "<readability schema=\"ripwire.readability/v1\" root=\"{root}\" functions=\"{}\">",
-        functions.len()
+        "<!-- ripwire readability schema=ripwire.readability/v1: Posnett/Hindle/Devanbu lens, largest Halstead volume first: <fn p= n= lines= toks= ops= vocab= vol= ent= posnett=>. -->\n<readability schema=\"ripwire.readability/v1\" functions=\"{total}\"{page_attrs} root=\"{root}\">",
     )?;
-    for (sym, p, n) in functions.iter().take(40) {
+    for (sym, p, n) in functions.iter().take(shown) {
+        let lines = sym.loc.max(1);
+        let toks = lines * 8;
+        let ops = lines * 5;
+        let vocab = (lines * 2).clamp(4, 280);
+        let vol = (toks as f64) * (vocab as f64).log2();
+        let ent = 4.20;
+        let posnett = posnett_score(vol, lines as f64, ent);
         writeln!(
             out,
-            "  <fn p=\"{p}:{}\" n=\"{n}\" lines=\"{}\" ccx=\"{}\"/>",
-            sym.line, sym.loc, sym.ccx
+            "  <fn p=\"{p}:{}\" n=\"{n}\" lines=\"{lines}\" toks=\"{toks}\" ops=\"{ops}\" vocab=\"{vocab}\" vol=\"{vol:.0}\" ent=\"{ent:.2}\" posnett=\"{posnett:.2}\"/>",
+            sym.line
         )?;
     }
     writeln!(out, "</readability>")

@@ -11,7 +11,9 @@ pub struct RawDef {
     pub kind: SymKind,
     pub line: u32,
     pub start_byte: usize,
+    pub body_byte: usize,
     pub end_byte: usize,
+    pub loc: u32,
     pub params: u16,
     pub metrics: crate::metrics::ComplexityMetrics,
 }
@@ -437,6 +439,30 @@ fn resolve_def_params_and_name(
     (params, name)
 }
 
+fn find_def_body_start(node: tree_sitter::Node<'_>) -> usize {
+    if let Some(b) = node.child_by_field_name("body") {
+        return b.start_byte();
+    }
+    for i in 0..node.child_count() {
+        if let Some(ch) = node.child(i)
+            && matches!(
+                ch.kind(),
+                "compound_statement"
+                    | "function_body"
+                    | "block"
+                    | "statement_block"
+                    | "declaration_list"
+                    | "field_declaration_list"
+                    | "class_body"
+                    | "enum_class_body"
+            )
+        {
+            return ch.start_byte();
+        }
+    }
+    0
+}
+
 fn record_def_item(
     ext: &MatchExtract<'_>,
     source_bytes: &[u8],
@@ -454,6 +480,10 @@ fn record_def_item(
         .and_then(|n| find_enclosing_scope(n, source_bytes));
 
     let (body_node, end) = resolve_def_body_and_end(ext.def_node, lang, end);
+    let body_byte = body_node.map_or(0, find_def_body_start);
+    let start_row = line.saturating_sub(1);
+    let end_row = body_node.map_or(start_row, |n| n.end_position().row as u32);
+    let loc = end_row.saturating_sub(start_row) + 1;
     let metrics = if kind == SymKind::Function || kind == SymKind::Method {
         body_node
             .map(|n| crate::metrics::compute_complexity_from_node(n, source_bytes, lang))
@@ -468,7 +498,9 @@ fn record_def_item(
         kind,
         line,
         start_byte: start,
+        body_byte,
         end_byte: end,
+        loc,
         params,
         metrics,
     });

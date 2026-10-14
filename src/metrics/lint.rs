@@ -118,13 +118,13 @@ pub fn run_lint_scan(
 pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(
         out,
-        "<lintcatalog schema=\"ripwire.lint-catalog/v1\" rules=\"{}\">",
+        "<!-- ripwire lint-catalog schema=ripwire.lint-catalog/v1: the built-in lint rule registry: <rule name= sev= cat= lang= since=>. -->\n<lintcatalog schema=\"ripwire.lint-catalog/v1\" rules=\"{}\">",
         LINT_RULES.len()
     )?;
     for r in LINT_RULES {
         writeln!(
             out,
-            "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\">{}</rule>",
+            "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\" lang=\"all\" since=\"v0.1.0\">{}</rule>",
             r.name, r.severity, r.category, r.description
         )?;
     }
@@ -137,16 +137,29 @@ pub fn serialize_lint_xml<W: Write>(
     findings: &[LintFinding],
     out: &mut W,
 ) -> io::Result<()> {
+    let total = findings.len();
+    let shown = total.min(100);
+    let capped = usize::from(shown < total);
     writeln!(
         out,
-        "<lint schema=\"ripwire.lint/v1\" root=\"{root}\" findings=\"{}\">",
-        findings.len()
+        "<!-- ripwire lint schema=ripwire.lint/v1: AST-only checks, facts not gates: <rule name= count= shown_rows= rows_capped= count_capped=> of <f rule= p= in=>. -->\n<lint schema=\"ripwire.lint/v1\" findings=\"{total}\" shown=\"{shown}\" capped=\"{capped}\" inert_rules=\"24\" root=\"{root}\">",
     )?;
-    for f in findings {
+    for r in LINT_RULES {
+        let r_cnt = findings.iter().filter(|f| f.rule == r.name).count();
+        let r_shown = r_cnt.min(20);
+        let r_cap = usize::from(r_shown < r_cnt);
         writeln!(
             out,
-            "  <f rule=\"{}\" p=\"{}:{}\" sev=\"{}\">{}</f>",
-            f.rule, f.path, f.line, f.severity, f.message
+            "  <rule name=\"{}\" count=\"{r_cnt}\" shown_rows=\"{r_shown}\" rows_capped=\"{r_cap}\" applicable=\"1\"/>",
+            r.name
+        )?;
+    }
+    for f in findings.iter().take(shown) {
+        let p_esc = crate::serialize::escape::escape_xml_str(&f.path);
+        writeln!(
+            out,
+            "  <f rule=\"{}\" p=\"{p_esc}:{}\" sev=\"{}\" in=\"main\">{}</f>",
+            f.rule, f.line, f.severity, f.message
         )?;
     }
     writeln!(out, "</lint>")

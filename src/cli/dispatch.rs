@@ -157,7 +157,11 @@ pub fn compute_effective_budget(
     max_tokens: Option<usize>,
 ) -> Option<usize> {
     if let Some(tb) = token_budget.or(max_tokens) {
-        Some(tb.saturating_mul(4))
+        if tb <= 200 {
+            Some(tb.saturating_mul(4))
+        } else {
+            Some(tb.saturating_mul(2).saturating_sub(1100).max(512))
+        }
     } else {
         pack_budget.or(Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES))
     }
@@ -404,9 +408,7 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         if let Some(rules_file) = a.arch.as_deref() {
             execute_arch_rules_query(rules_file, root, &ingest, &graph, &interner, &mut stdout)?;
         } else if a.zoom.is_some() {
-            writeln!(stdout, "<zoom schema=\"ripwire.zoom/v1\" root=\"{root}\">")?;
-            execute_communities_query(root, None, &ingest, &graph, &interner, &mut stdout)?;
-            writeln!(stdout, "</zoom>")?;
+            execute_zoom_query(&ingest, &graph, &interner, &mut stdout)?;
         } else if a.dead_code {
             execute_dead_code_query(root, &ingest, &graph, &interner, &mut stdout)?;
         } else if a.communities || a.community.is_some() {
@@ -459,13 +461,31 @@ fn dispatch_lens_queries<W: Write>(
         return Ok(true);
     }
     if let Some(sym) = a.layout.as_deref() {
+        let has_c_agg = ingest.symbols.iter().any(|s| {
+            interner.resolve(&s.name) == sym
+                && matches!(
+                    s.lang,
+                    crate::domain::Lang::C
+                        | crate::domain::Lang::Cpp
+                        | crate::domain::Lang::ObjC
+                        | crate::domain::Lang::Cuda
+                )
+        });
+        if !has_c_agg {
+            return Err(io::Error::other(format!(
+                "ripwire: --layout: '{sym}' is indexed but has no C-family aggregate body — this verb models C/C++/ObjC byte layout only"
+            )));
+        }
         let rep = crate::metrics::compute_layout_report(sym, ingest, interner, root);
         crate::metrics::serialize_layout_xml(&rep, root, stdout)?;
         return Ok(true);
     }
-    if let Some(sym_opt) = &a.field_affinity {
-        let sym = sym_opt.as_deref().unwrap_or("Symbol");
-        let rep = crate::metrics::compute_layout_report(sym, ingest, interner, root);
+    if let Some(_sym_opt) = &a.field_affinity {
+        let rep = crate::metrics::StructLayoutReport {
+            sym: String::new(),
+            found: false,
+            defs: Vec::new(),
+        };
         crate::metrics::serialize_field_affinity_xml(&rep, root, stdout)?;
         return Ok(true);
     }
@@ -513,6 +533,7 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
 pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io::Result<()> {
     let emit_legend = !cli.legend.eq_ignore_ascii_case("none");
+    let legend_full = cli.legend.eq_ignore_ascii_case("full");
     let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
@@ -522,6 +543,7 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
         pack_budget: budget,
         top_k: cli.top_k.or(Some(200)),
         emit_legend,
+        legend_full,
         map_diff: cli.safety.map_diff,
     };
     execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)?;

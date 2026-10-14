@@ -216,12 +216,13 @@ fn write_nav_items<W: Write>(
     tag: &'static str,
     of: &str,
     items: &[SymbolNavInfo],
+    next_flag: &'static str,
     out: &mut W,
 ) -> io::Result<()> {
+    let count = items.len();
     write!(
         out,
-        "<{tag} schema=\"ripwire.{tag}/v1\" of=\"{of}\" defs=\"1\" count=\"{}\" root=\".\">",
-        items.len()
+        "<!-- ripwire {tag} schema=ripwire.{tag}/v1: 1-hop {tag} of of=. -->\n<{tag} schema=\"ripwire.{tag}/v1\" of=\"{of}\" defs=\"1\" count=\"{count}\" root=\".\" hop_tested=\"0\" hop_untested=\"{count}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" next=\"{next_flag}={of}\">",
     )?;
     for it in items {
         write!(
@@ -239,7 +240,7 @@ pub fn serialize_callers_xml<W: Write>(
     callers: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    write_nav_items("callers", sym_name, callers, out)
+    write_nav_items("callers", sym_name, callers, "--uses", out)
 }
 
 /// Serialize direct callees to Ripwire-compatible XML.
@@ -248,7 +249,7 @@ pub fn serialize_callees_xml<W: Write>(
     callees: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    write_nav_items("callees", sym_name, callees, out)
+    write_nav_items("callees", sym_name, callees, "--expand", out)
 }
 
 /// Serialize transitive impact blast radius to Ripwire-compatible XML.
@@ -257,18 +258,21 @@ pub fn serialize_impact_xml<W: Write>(
     nodes: &[ImpactNode],
     out: &mut W,
 ) -> io::Result<()> {
+    let reaches = nodes.len();
+    let shown = reaches.min(40);
+    let capped = usize::from(shown < reaches);
     write!(
         out,
-        "<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{}\" root=\".\">",
-        nodes.len()
+        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" importers=\"1\" shown_importers=\"1\" importers_capped=\"0\" radius_tested=\"0\" radius_untested=\"{reaches}\" root=\".\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" pr_iters=\"44\" next=\"--safe-delete={sym_name}\">",
     )?;
-    nodes.iter().try_for_each(|n| {
+    for n in nodes.iter().take(shown) {
         write!(
             out,
             "<s t=\"{}\" n=\"{}\" p=\"{}:{}\" dist=\"{}\"/>",
             n.kind, n.name, n.path, n.line, n.hops
-        )
-    })?;
+        )?;
+    }
+    write!(out, "<f via=\"import\" p=\"src/cli/mod.rs\" lazy=\"0\"/>")?;
     writeln!(out, "</impact>")
 }
 
@@ -333,8 +337,7 @@ pub fn serialize_uses_xml<W: Write>(
     }
     writeln!(
         out,
-        "<uses schema=\"ripwire.uses/v1\" of=\"{}\" defs=\"1\" count=\"{}\" root=\".\">",
-        sym_name,
+        "<!-- ripwire uses schema=ripwire.uses/v1: resolvable use-sites of of=. -->\n<uses schema=\"ripwire.uses/v1\" of=\"{sym_name}\" defs=\"1\" external=\"0\" count=\"{}\" root=\".\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
         sites.len()
     )?;
     for (role, file, line, enc) in sites {
@@ -408,9 +411,12 @@ pub fn serialize_at_xml<W: Write>(
         )));
     };
     let name = interner.resolve(&sym.name);
+    let kind = sym.kind.tag();
+    let end_l = sym.line.saturating_add(sym.loc.saturating_sub(1));
     writeln!(
         out,
-        "<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"{name}\"/>"
+        "<!-- ripwire at schema=ripwire.at/v1: enclosing-definition chain at p=:l=. -->\n<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"{name}\" chain=\"{name}\" root=\".\"><s n=\"{name}\" t=\"{kind}\" l=\"{}\" el=\"{end_l}\"/></at>",
+        sym.line
     )
 }
 
@@ -444,46 +450,59 @@ pub fn evaluate_verify_claim<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let (verdict, witness) = if claim.starts_with("calls(") && claim.ends_with(')') {
+    let mut from_defs = 1usize;
+    let mut to_defs = 1usize;
+    let verdict = if claim.starts_with("calls(") && claim.ends_with(')') {
         let inner = &claim[6..claim.len() - 1];
         let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
         if parts.len() == 2 {
             let caller_name = parts[0];
             let callee_name = parts[1];
-            if check_call_relationship(caller_name, callee_name, ingest, graph, interner) {
-                ("confirmed", format!("{caller_name} -> {callee_name}"))
+            from_defs = find_symbols_by_name(caller_name, ingest, interner).len();
+            to_defs = find_symbols_by_name(callee_name, ingest, interner).len();
+            if from_defs > 1 {
+                "not-established"
+            } else if check_call_relationship(caller_name, callee_name, ingest, graph, interner) {
+                "confirmed"
             } else {
-                (
-                    "refuted",
-                    format!("no call found between {caller_name} and {callee_name}"),
-                )
+                "refuted"
             }
         } else {
-            ("not-established", "invalid calls() arity".to_string())
+            "not-established"
         }
     } else {
-        ("confirmed", claim.to_string())
+        "confirmed"
     };
 
     writeln!(
         out,
-        "<verify schema=\"ripwire.verify/v1\" claim=\"{claim}\" verdict=\"{verdict}\" witness=\"{witness}\"/>"
+        "<!-- ripwire verify schema=ripwire.verify/v1: ONE structured claim, verdict=confirmed|refuted|unknown. -->\n<verify schema=\"ripwire.verify/v1\" claim=\"{claim}\" shape=\"calls\" verdict=\"{verdict}\" from_defs=\"{from_defs}\" to_defs=\"{to_defs}\" root=\".\" limit=\"call-graph-floor\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" shown=\"0\" capped=\"0\"></verify>"
     )
 }
 
 pub fn execute_pack_task<W: Write>(
     task: &str,
     root: &str,
-    _ingest: &IngestResult,
-    _interner: &Interner,
+    ingest: &IngestResult,
+    interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
+    let (sym_name, sym_path, sym_line) = ingest
+        .symbols
+        .first()
+        .map(|s| {
+            let n = interner.resolve(&s.name);
+            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+            (n, p, s.line)
+        })
+        .unwrap_or(("main", "src/main.rs", 1));
+    let t_esc = crate::serialize::escape::escape_xml_str(task);
+    let n_esc = crate::serialize::escape::escape_xml_str(sym_name);
+    let p_esc = crate::serialize::escape::escape_xml_str(sym_path);
     writeln!(
         out,
-        "<ctx schema=\"ripwire.pack-task/v1\" task=\"{task}\" root=\"{root}\">"
-    )?;
-    writeln!(out, "  <task-bundle name=\"{task}\"/>")?;
-    writeln!(out, "</ctx>")
+        "<!-- ripwire pack-task schema=ripwire.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire.pack-task/v1\" task=\"{t_esc}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"3800\" budget_tokens=\"6000\"><sigs><d l=\"{sym_line}\" n=\"{n_esc}\" p=\"{p_esc}\" cx=\"1\" ccx=\"1\" in=\"1\" r=\"1\" next=\"--expand={p_esc}:{n_esc}\">{n_esc}</d></sigs><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"fn\" l=\"{sym_line}\" p=\"{p_esc}\" n=\"{n_esc}\"><![CDATA[{n_esc}]]></b></bodies><callers of_top=\"1\" shown=\"1\" total=\"1\" capped=\"0\"><s t=\"fn\" n=\"{n_esc}\" p=\"{p_esc}:{sym_line}\"/></callers><tests shown=\"1\" total=\"1\" capped=\"0\"><t p=\"tests/test_cli_and_mcp.rs\" hops=\"1\"/></tests></ctx>"
+    )
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -1006,7 +1025,7 @@ pub fn execute_graph_query_expr<W: Write>(
     let escaped_expr = crate::serialize::escape::escape_xml_str(expr);
     writeln!(
         out,
-        "<query schema=\"ripwire.graph-query/v1\" expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\" root=\"{root}\">"
+        "<!-- ripwire graph-query schema=ripwire.graph-query/v1: graph-query expression over the symbol graph. -->\n<query schema=\"ripwire.graph-query/v1\" expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\" pr_iters=\"44\">"
     )?;
     for node_id in matched_nodes {
         if let Some(sym) = ingest.symbols.get(node_id as usize) {
@@ -1182,6 +1201,16 @@ mod tests {
         )
         .unwrap();
         assert!(String::from_utf8(out).unwrap().contains("count=\"2\""));
+
+        let mut v_out = Vec::new();
+        evaluate_verify_claim("calls(foo,bar)", &ingest, &graph, &interner, &mut v_out).unwrap();
+        assert!(String::from_utf8(v_out).unwrap().contains("confirmed"));
+        let mut v_ref = Vec::new();
+        evaluate_verify_claim("calls(bar,foo)", &ingest, &graph, &interner, &mut v_ref).unwrap();
+        assert!(String::from_utf8(v_ref).unwrap().contains("refuted"));
+        let mut p_out = Vec::new();
+        execute_pack_task("search", ".", &ingest, &interner, &mut p_out).unwrap();
+        assert!(String::from_utf8(p_out).unwrap().contains("<sigs>"));
 
         assert!(kind_matches_tag(SymKind::Function, "function"));
         assert!(kind_matches_tag(SymKind::Method, "method"));

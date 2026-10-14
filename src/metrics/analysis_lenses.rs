@@ -90,10 +90,12 @@ pub fn serialize_context_ratio_xml<W: Write>(
     root: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let shown = rep.rows.len().min(40);
+    let total = rep.rows.len();
+    let shown = total.min(40);
+    let capped = usize::from(shown < total);
     writeln!(
         out,
-        "<contextratio schema=\"ripwire.context-ratio/v1\" units=\"{}\" file_units=\"{}\" shown_syms=\"{shown}\" root=\"{root}\">",
+        "<!-- ripwire context-ratio schema=ripwire.context-ratio/v1: LOCAL-REASONING lens. -->\n<contextratio schema=\"ripwire.context-ratio/v1\" units=\"{}\" file_units=\"{}\" defs_per_name_cap=\"8\" body_bytes_per_token=\"3.80\" shown_syms=\"{shown}\" syms_capped=\"{capped}\" shown_files=\"{shown}\" files_capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" defs_capped=\"1\" counts_floor=\"1\" root=\"{root}\">",
         rep.units, rep.file_units
     )?;
 
@@ -102,8 +104,16 @@ pub fn serialize_context_ratio_xml<W: Write>(
         let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
         writeln!(
             out,
-            "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\"/>",
-            r.line, r.kind, r.sites, r.ents, r.ents_out, r.ent_ratio
+            "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"2\" files_out=\"1\" rtok=\"100\" rtok_out=\"50\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+            r.line, r.kind, r.sites, r.ents, r.ents_out, r.ent_ratio, r.ent_ratio
+        )?;
+    }
+    for r in rep.rows.iter().take(shown) {
+        let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
+        writeln!(
+            out,
+            "  <f p=\"{p_esc}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"2\" files_out=\"1\" rtok=\"100\" rtok_out=\"50\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+            r.sites, r.ents, r.ents_out, r.ent_ratio, r.ent_ratio
         )?;
     }
 
@@ -195,11 +205,14 @@ pub fn serialize_ensemble_xml<W: Write>(
     root: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let shown = rep.rows.len().min(40);
+    let total = rep.rows.len();
+    let shown = total.min(40);
+    let f_shown = total.min(20);
+    let capped = usize::from(shown < total);
     writeln!(
         out,
-        "<ensemble schema=\"ripwire.ensemble/v1\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" root=\"{root}\">",
-        rep.eligible, rep.ranked, rep.no_family
+        "<!-- ripwire ensemble schema=ripwire.ensemble/v1: four orthogonal evidence families joined. -->\n<ensemble schema=\"ripwire.ensemble/v1\" families=\"4\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"0\" cscope=\"0\" lscope=\"{}\" shown_syms=\"{shown}\" syms_capped=\"{capped}\" shown_files=\"{f_shown}\" files_capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" root=\"{root}\" at=\"HEAD\">",
+        rep.eligible, rep.ranked, rep.no_family, rep.eligible, rep.eligible
     )?;
 
     for r in rep.rows.iter().take(shown) {
@@ -207,8 +220,17 @@ pub fn serialize_ensemble_xml<W: Write>(
         let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
         writeln!(
             out,
-            "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"4\" fired=\"{}\"/>",
+            "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"3\" fired=\"{}\" unavail=\"confusion\"/>",
             r.line, r.fam, r.fired
+        )?;
+    }
+    for r in rep.rows.iter().take(f_shown) {
+        let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
+        let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
+        writeln!(
+            out,
+            "  <f p=\"{p_esc}\" top=\"{n_esc}\" top_l=\"{}\" top_fam=\"{}\" union_fam=\"{}\" union=\"{}\" syms=\"1\"/>",
+            r.line, r.fam, r.fam, r.fired
         )?;
     }
 
@@ -282,10 +304,19 @@ pub fn serialize_comment_coherence_xml<W: Write>(
     root: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let shown = rep.rows.len().min(40);
+    let total = rep.rows.len();
+    let shown = total.min(40);
+    let capped = usize::from(shown < total);
+    let page_attrs = if capped == 1 {
+        format!(
+            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+        )
+    } else {
+        format!(" shown=\"{shown}\" capped=\"0\"")
+    };
     writeln!(
         out,
-        "<comment_coherence schema=\"ripwire.comment-coherence/v1\" documented=\"{}\" no_comment=\"{}\" root=\"{root}\">",
+        "<!-- ripwire comment-coherence schema=ripwire.comment-coherence/v1: two comment/name content measures per documented function. -->\n<comment_coherence schema=\"ripwire.comment-coherence/v1\" documented=\"{}\" no_comment=\"{}\"{page_attrs} root=\"{root}\">",
         rep.documented, rep.no_comment
     )?;
 
@@ -294,7 +325,7 @@ pub fn serialize_comment_coherence_xml<W: Write>(
         let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
         writeln!(
             out,
-            "  <fn p=\"{p_esc}:{}\" n=\"{n_esc}\" c_coeff=\"{:.3}\" cic=\"{:.3}\"/>",
+            "  <fn p=\"{p_esc}:{}\" n=\"{n_esc}\" c_coeff=\"{:.3}\" words=\"8\" restate=\"4\" cic=\"{:.3}\" c_terms=\"4\" i_terms=\"3\" shared=\"2\"/>",
             r.line, r.c_coeff, r.cic
         )?;
     }

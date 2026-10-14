@@ -26,15 +26,25 @@ pub struct HotspotsReport {
 
 impl crate::serialize::ToXmlString for HotspotsReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let total = self.ranked_count;
+        let shown = self.files.len().min(40);
+        let capped = usize::from(shown < total);
+        let page_attrs = if capped == 1 {
+            format!(
+                " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+            )
+        } else {
+            format!(" shown=\"{shown}\" capped=\"0\"")
+        };
         writeln!(
             out,
-            "<hotspots schema=\"ripwire.hotspots/v1\" window=\"12mo@HEAD\" files=\"{}\" ranked=\"{}\" unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\">",
+            "<!-- ripwire hotspots schema=ripwire.hotspots/v1: maintenance pain = churn x ccx over window=. -->\n<hotspots schema=\"ripwire.hotspots/v1\" window=\"12mo@HEAD\" files=\"{}\" ranked=\"{}\"{page_attrs} unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\" root=\".\" at=\"HEAD\">",
             self.total_files,
             self.ranked_count,
             self.unranked_no_churn,
             self.unranked_no_complexity
         )?;
-        for f in &self.files {
+        for f in self.files.iter().take(shown) {
             writeln!(
                 out,
                 "  <f p=\"{}\" churn=\"{}\" ccx=\"{}\" score=\"{}\" top=\"{}\" top_ccx=\"{}\" top_l=\"{}\"/>",

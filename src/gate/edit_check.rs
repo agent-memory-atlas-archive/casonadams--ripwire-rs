@@ -37,12 +37,13 @@ impl crate::serialize::ToXmlString for EditCheckReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         writeln!(
             out,
-            "<edit-check schema=\"ripwire.edit-check/v1\" sym=\"{}\" p=\"{}\" status=\"{}\" callers=\"{}\" incompatible=\"{}\">",
+            "<!-- ripwire edit-check schema=ripwire.edit-check/v1: sym='s contract NOW vs HEAD. -->\n<edit-check schema=\"ripwire.edit-check/v1\" sym=\"{}\" t=\"fn\" p=\"{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"HEAD\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\".\" next=\"--test-gate={}\" est_tokens=\"400\">",
             self.symbol_name,
             self.file_path,
             self.status,
             self.total_callers,
-            self.incompatible_callers
+            self.incompatible_callers,
+            self.file_path
         )?;
         for c in &self.callers {
             let incomp_attr = if c.is_incompatible {

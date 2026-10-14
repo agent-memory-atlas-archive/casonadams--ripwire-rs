@@ -2,6 +2,7 @@
 # format: ack <kind> <16-hex-key> <ackNow> [cid=<16-hex-content-id>] [by=<scope that acked it>] [now=<uint> was=<uint>] [prov=recon] [facet=<token>] [p=<path>:<line>] <reason to end of line> — one per line, kept SORTED by (kind,key) on every write (merge-friendly)
 # PROVENANCE: now=/was=/facet=/p= exist only on rows a provenance-aware binary WROTE OR REFRESHED (2026-09-22+); a legacy row heals FORWARD on its next --quality-ack. prov=recon marks a row a backfill RECONSTRUCTED from the CURRENT tree rather than measured when it was accepted: it answers 'would this be gating now', NOT 'was it gating then'. A recon row is a CACHE, not a dated record — every --quality-ack re-derives the ones whose clone group it can still find, so a checkable value is never older than the last ack; one whose group this run did NOT find is left untouched and counted as unverified on stderr, because not finding a group is a floor (scoped scan, capped file, different tree), never proof it is gone. Absent prov= means measured live, and a measurement is never overwritten by a reconstruction. Only the two clone kinds can be reconstructed (their key is a member-set hash, so today's idiom verdict is recomputable); a numeric row's was= still needs the commit that accepted it, which no field here records.
 ack complexity 0b0aeb3f76498a27 31 cid=e26d8b06f2a93110 now=31 was=0 p=src/serialize/html_vis.js:133 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack complexity 1283135b1f4afd23 21 cid=f3bf17fa35eeecc4 now=21 was=0 p=scripts/validate-parity.py:189 1:1 parity and resource superiority
 ack complexity 27f4b1ab6e5e745c 21 cid=92d73295f1f195a2 now=21 was=0 p=src/serialize/html_vis.js:1551 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack complexity 4495e320775c8df7 21 cid=35bf9921c3976dce now=21 was=14 p=src/cli/dispatch.rs:352 align DIRT.md git-derived verbs and missing flags
 ack complexity 70a00a1f5e885d55 15 cid=e15879c9e432177c now=15 was=5 p=src/cli.rs:949 cli flag expansion
@@ -9,8 +10,11 @@ ack complexity 7608c305c2a4aa31 27 cid=68b1ecf989f36b5d now=27 was=0 p=src/seria
 ack complexity 7a85d3d58b3d5639 52 cid=7ffc97d878b6d486 now=52 was=0 p=src/serialize/html_vis.js:1415 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack complexity 8b123e3592ca5a14 43 cid=5080069f77b72216 now=43 was=0 p=src/serialize/html_vis.js:580 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack complexity 8dcbaa1a59d252f6 10 cid=5c6dd5fd6d39d204 now=10 was=5 p=src/serialize/query_xml.rs:248 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack complexity 90dbf65d6c6a406c 10 cid=ac74a7ca6964860b now=10 was=3 p=src/metrics/dmm.rs:145 1:1 parity and resource superiority
+ack complexity 999fab2356ef303d 11 cid=363da61b121f8e9f now=11 was=1 p=src/serialize/query_xml.rs:846 1:1 parity and resource superiority
 ack complexity ab8aed02742623e2 27 cid=3d1e15d3c6247ef3 now=27 was=5 p=src/serialize/query_xml.rs:80 align DIRT.md git-derived verbs and missing flags | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
 ack complexity c94eb9a0b1ae925a 14 cid=84b7a345821bda70 now=14 was=5 p=src/serialize/query_xml.rs:20 align DIRT.md git-derived verbs and missing flags
+ack complexity cd1f4b51e103578b 20 cid=a3f655926f38ae01 now=20 was=5 p=src/serialize/query_xml.rs:66 1:1 parity and resource superiority
 ack complexity d627843460d82904 115 cid=a8ed17a2a1f9a757 now=115 was=0 p=src/serialize/html_vis.js:885 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack complexity e5467b59283b7d80 37 cid=984a4712ea404e5d now=37 was=0 p=src/serialize/html_vis.js:412 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack complexity e643bbccdfd3a9ea 17 cid=375ac9ea7f9e5dd3 now=17 was=0 p=src/serialize/html_vis.js:1627 perf(clones): parallelize candidate extraction and eliminate LCS token interning
@@ -23,6 +27,7 @@ ack dead-code:new-symbol 158549e63da54ccf 0 cid=5482b5a9f78fded4 now=0 was=0 p=s
 ack dead-code:new-symbol 15e9fb3d8a45ac9b 0 cid=38704af3874df56d now=0 was=0 p=src/navigate.rs:268 feat(navigate): format navigation commands as canonical XML
 ack dead-code:new-symbol 1b66e3d84625ec99 0 cid=d7f0f7a8120d3123 now=0 was=0 p=src/metrics/readability.rs:238 feat(metrics): compute complexity, readability, and hotspots
 ack dead-code:new-symbol 1c8671734e52adf1 0 cid=f97e8d0ab3e8ed75 now=0 was=0 p=src/gate/edit_check.rs:39 feat(gate): pre-commit contract gate and affected test reachability
+ack dead-code:new-symbol 216595e30d9c284c 0 cid=548150398827b098 now=0 was=0 p=src/ingest/extract.rs:442 1:1 parity and resource superiority
 ack dead-code:new-symbol 21c952917f59fdf2 0 cid=082a96c2f7393aa8 now=0 was=0 p=src/mcp/schema.rs:5 feat(mcp): complete 33 mcp tools suite
 ack dead-code:new-symbol 2246302ff4cb68f5 0 cid=1d62018892b22f63 now=0 was=0 p=src/mcp/doc_tools.rs:737 fix(git): align DIRT.md git-derived verbs and xml escaping
 ack dead-code:new-symbol 24c5da8702b29a78 0 cid=93ccc5cd1f34abf8 now=0 was=0 p=src/cache.rs:124 perf(cache): implement persistent on-disk binary cache and parallel git mining
@@ -40,6 +45,7 @@ ack dead-code:new-symbol 3e5d89483b9ae82c 0 cid=2a6aed800e714b60 now=0 was=0 p=t
 ack dead-code:new-symbol 3eaf58cbefe879a1 0 cid=6cb1509e604d557e now=0 was=0 p=src/cache.rs:169 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack dead-code:new-symbol 3f1ea0f850f102d7 0 cid=6c99119c312f5266 now=0 was=0 p=src/domain.rs:45 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack dead-code:new-symbol 46c452392a967e94 0 cid=393a1a55d167a97d now=0 was=0 p=src/gate/edit_check.rs:227 feat(gate): pre-commit contract gate and affected test reachability
+ack dead-code:new-symbol 4739595b07ebf33f 0 cid=ff998e46f7df9d5f now=0 was=0 p=src/clones/token_stream.rs:495 1:1 parity and resource superiority
 ack dead-code:new-symbol 4c0a0e83ae6e5bea 0 cid=c44e07cd58788ef9 now=0 was=0 p=src/ingest.rs:279 feat(gate): pre-commit contract gate and affected test reachability
 ack dead-code:new-symbol 4f1600c903152e3d 0 cid=0d5f0d8910b0c422 now=0 was=0 p=src/mcp/retrieval.rs:458 align DIRT.md git-derived verbs and missing flags
 ack dead-code:new-symbol 51f1e352a3f638d2 0 cid=ec3850a9999880d3 now=0 was=0 p=tests/test_edit_check_arity_break.rs:181 feat(gate): pre-commit contract gate and affected test reachability
@@ -48,6 +54,7 @@ ack dead-code:new-symbol 53165f3946b16f9a 0 cid=d3f560283b350c08 now=0 was=0 p=t
 ack dead-code:new-symbol 560e7c039cf78cde 0 cid=953b436c8674e456 now=0 was=0 p=src/metrics/analysis_lenses.rs:325 align DIRT.md git-derived verbs and missing flags
 ack dead-code:new-symbol 5761e983a24c1019 0 cid=de5e478129f3e530 now=0 was=0 p=src/metrics/analysis_lenses.rs:310 align DIRT.md git-derived verbs and missing flags
 ack dead-code:new-symbol 58ddc63f1db45aff 0 cid=62a94ec0c9721cda now=0 was=0 p=src/metrics/analysis_lenses.rs:280 align DIRT.md git-derived verbs and missing flags
+ack dead-code:new-symbol 5cd03a0797a5bed0 0 cid=43f147e4792a4f90 now=0 was=0 p=src/serialize/query_xml.rs:766 1:1 parity and resource superiority
 ack dead-code:new-symbol 5d1c47d7ed0abe51 0 cid=b97ba3d0b3db8764 now=0 was=0 p=tests/test_cli_and_mcp.rs:516 retrieval dispatch routing
 ack dead-code:new-symbol 63871eeaad620ebb 0 cid=7ba175acc8aacf90 now=0 was=0 p=src/metrics/eval.rs:67 align DIRT.md git-derived verbs and missing flags
 ack dead-code:new-symbol 662a2172035907cd 0 cid=e9eb9772d64f57f0 now=0 was=0 p=src/mcp/edit.rs:217 feat(mcp): complete 33 mcp tools suite
@@ -103,7 +110,10 @@ ack dead-code:new-symbol f34bfab4cae4cd7a 0 cid=56886e01b97623f0 now=0 was=0 p=s
 ack dead-code:new-symbol f48f6ea80665f0dd 0 cid=d96d7ab0b9ea4a10 now=0 was=0 p=src/metrics/analysis_lenses.rs:306 align DIRT.md git-derived verbs and missing flags
 ack dead-code:new-symbol f5bdec6feed8ae7f 0 cid=cc4e1a307c619f34 now=0 was=0 p=src/gate/lanes.rs:65 align DIRT.md git-derived verbs and missing flags
 ack dead-code:new-symbol fb0d433ebd7ff914 0 cid=72668aac5d535d99 now=0 was=0 p=src/gate/quality_delta.rs:227 feat(gate): quality baseline and delta gate
+ack dead-code:preexisting 3359ad122407234b 0 cid=6483c03fb724a697 now=0 was=0 p=src/ingest/pipeline.rs:56 1:1 parity and resource superiority
 ack dead-code:preexisting c0300ca9ffbbc65c 0 cid=5a489bd9f0f776b1 now=0 was=0 p=src/metrics/hotspots.rs:30 feat(gate): pre-commit contract gate and affected test reachability
+ack dead-code:preexisting df7ec411289de577 0 cid=8ab0e561d61a76e6 now=0 was=0 p=src/clones/token_stream.rs:330 1:1 parity and resource superiority
+ack dead-code:preexisting f620a6daba29f548 0 cid=5bd70ae1d896aad0 now=0 was=0 p=src/clones/token_stream.rs:58 1:1 parity and resource superiority
 ack duplication 00b64dd66ad68aee 191 now=191 was=0 p=src/navigate.rs:686 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication 02427b21a4f355ba 504 now=504 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 1336857542d3befe 641 now=641 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
@@ -127,22 +137,27 @@ ack duplication 3d4e5a4c18cf8a62 132 now=132 was=0 p=src/serialize/query_xml.rs:
 ack duplication 4568e39b8b97b662 146 now=146 was=0 p=src/metrics/readability.rs:238 feat(metrics): compute complexity, readability, and hotspots
 ack duplication 48383c39d679e34f 90 now=90 was=0 p=src/metrics/eval.rs:3 align DIRT.md git-derived verbs and missing flags
 ack duplication 50068cc975ab738a 47 now=47 was=0 p=src/serialize/query_xml.rs:367 retrieval dispatch routing
+ack duplication 5449c854ad211fcc 180 now=180 was=0 p=src/serialize/query_xml.rs:153 1:1 parity and resource superiority
 ack duplication 56cedc821c147fab 157 now=157 was=0 p=src/navigate.rs:749 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication 58edd1a44e315cc5 52 now=52 was=0 p=src/navigate.rs:527 fix(parity): implement exemplar selection and graph-query DSL
+ack duplication 5bbee0615b9b0f06 60 now=60 was=0 p=src/clones/token_stream.rs:211 1:1 parity and resource superiority
 ack duplication 5bf3a45a44efcc76 241 now=241 was=0 p=tests/test_streaming_xml_serializer.rs:303 safety dispatch routing
 ack duplication 6aa91a25d5b22030 45 now=45 was=0 p=src/serialize/query_xml.rs:449 retrieval dispatch routing
 ack duplication 6af64fcdf256b60e 277 now=277 was=0 p=src/gate/baseline.rs:226 feat(gate): quality baseline and delta gate
 ack duplication 6f569b93edaa6688 43 now=43 was=0 p=src/serialize/query_xml.rs:340 safety dispatch routing
 ack duplication 70cfb69646baffef 66 now=66 was=0 p=src/metrics/complexity.rs:329 align DIRT.md git-derived verbs and missing flags
 ack duplication 72056194b9a2c16c 47 now=47 was=0 p=src/serialize/query_xml.rs:412 retrieval dispatch routing
+ack duplication 775f749afd9ca18a 63 now=63 was=0 p=src/gate/arch.rs:156 1:1 parity and resource superiority
 ack duplication 86cd094ec990b939 88 now=88 was=0 p=src/metrics/eval.rs:67 align DIRT.md git-derived verbs and missing flags
 ack duplication 89c3edaf9bab79a3 55 now=55 was=0 p=src/ingest.rs:255 feat(gate): pre-commit contract gate and affected test reachability
 ack duplication 8c7bb471eb06dcf0 256 now=256 was=0 p=src/serialize/query_xml.rs:132 fix(owners): compute recency-weighted author ownership and bus factor
 ack duplication 8dc41de342977459 372 now=372 was=0 p=src/serialize/query_xml.rs:248 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack duplication 91b0537251c3ddf1 293 now=293 was=0 p=src/cli/queries.rs:575 1:1 parity and resource superiority
 ack duplication 99fc73e822d88331 45 now=45 was=0 p=src/serialize/query_xml.rs:340 retrieval dispatch routing
 ack duplication 9c4140b778c1671e 181 now=181 was=0 p=src/mcp/graph_tools.rs:105 feat(mcp): complete 33 mcp tools suite
 ack duplication a20463d066dce697 108 now=108 was=0 p=src/cli/args.rs:310 align DIRT.md git-derived verbs and missing flags
 ack duplication a2302432e09510c7 85 now=85 was=0 p=src/metrics/complexity.rs:19 feat(metrics): compute complexity, readability, and hotspots
+ack duplication a2446c590b182e0e 144 now=144 was=0 p=src/clones/token_stream.rs:280 1:1 parity and resource superiority
 ack duplication aa511ad587c684ba 159 now=159 was=0 p=src/navigate.rs:770 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication aadcf160330de9cc 54 now=54 was=0 p=src/navigate.rs:852 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication abd211765a1b1a20 232 now=232 was=0 p=src/metrics/analysis_lenses.rs:325 align DIRT.md git-derived verbs and missing flags
@@ -151,8 +166,10 @@ ack duplication b57d7cd71a911669 105 now=105 was=0 p=src/gate/affected.rs:56 fea
 ack duplication b9ec0397ba7dbc5e 159 now=159 was=0 p=src/navigate.rs:770 fix(parity): implement exemplar selection and graph-query DSL
 ack duplication bb37c89468242381 132 now=132 was=0 p=src/metrics/analysis_lenses.rs:88 align DIRT.md git-derived verbs and missing flags
 ack duplication c105effba9d2de60 47 now=47 was=0 p=src/serialize/query_xml.rs:367 retrieval dispatch routing
+ack duplication c137e7815c78200d 113 now=113 was=0 p=scripts/validate-parity.py:12 1:1 parity and resource superiority
 ack duplication c241b1781a7fa2f4 124 now=124 was=0 p=src/metrics/analysis_lenses.rs:193 align DIRT.md git-derived verbs and missing flags
 ack duplication c54865fcf35f341b 120 now=120 was=0 p=src/metrics/quality_panel.rs:26 align DIRT.md git-derived verbs and missing flags
+ack duplication c6ac295444d64547 181 now=181 was=0 p=src/metrics/lint.rs:135 1:1 parity and resource superiority
 ack duplication c6d51b335cb2560a 72 now=72 was=0 p=src/mcp/edit.rs:217 feat(mcp): complete 33 mcp tools suite
 ack duplication c7ec42b7735f827c 132 now=132 was=0 p=src/metrics/analysis_lenses.rs:88 align DIRT.md git-derived verbs and missing flags
 ack duplication cc4d9db9f9f566bd 113 now=113 was=0 p=src/navigate.rs:791 fix(parity): implement exemplar selection and graph-query DSL
@@ -171,6 +188,7 @@ ack params 03964b5fab11a3e9 7 cid=cb1cc9803abdea7c now=7 was=0 p=src/cli.rs:1805
 ack params 07b3999c5f6c5652 7 cid=3d1894270b23b899 now=7 was=5 p=src/mcp/retrieval.rs:58 align DIRT.md git-derived verbs and missing flags
 ack params 08f6703618fd039b 7 cid=ec8ff4aabec6ed51 now=7 was=0 p=src/gate/lanes.rs:6 align DIRT.md git-derived verbs and missing flags
 ack params 0b9eb55f672f2fa5 6 cid=7c832b24c475b9fb now=6 was=0 p=src/cli.rs:1293 safety dispatch routing
+ack params 0d4f56bff0e05c59 7 cid=4638e379b317353d now=7 was=0 p=src/mcp/doc_tools.rs:660 1:1 parity and resource superiority
 ack params 234aef5a84aff53e 7 cid=541120b1e9f9a739 now=7 was=0 p=src/cli.rs:1046 retrieval dispatch routing
 ack params 2aeb7a8a7df01331 6 cid=a8f78cb823e5e3c2 now=6 was=5 p=src/navigate.rs:987 fix(parity): implement exemplar selection and graph-query DSL
 ack params 3ce226fd750ed4bd 6 cid=b0f7a987d7ed1739 now=6 was=0 p=src/serialize/xml.rs:264 align DIRT.md git-derived verbs and missing flags
@@ -180,6 +198,7 @@ ack params 4f7e71157c3d1049 6 cid=113ba1f19bfe3fbc now=6 was=0 p=src/cli.rs:1529
 ack params 54e7136a347d0061 6 cid=abc12525642d7d06 now=6 was=0 p=src/mcp/graph_tools.rs:172 feat(mcp): complete 33 mcp tools suite
 ack params 5bef67aad995008a 7 cid=e8fa6091dd55ad9f now=7 was=0 p=src/cli.rs:1832 cli flag expansion
 ack params 5c7735a993dee75a 6 cid=5263c2de335d0817 now=6 was=0 p=src/cli.rs:1107 safety dispatch routing
+ack params 67348af078c33873 6 cid=551cefc17746441a now=6 was=0 p=src/mcp/doc_tools.rs:618 1:1 parity and resource superiority
 ack params 69286f27528fe374 6 cid=e868ac9f63a44690 now=6 was=5 p=src/serialize/xml.rs:294 align DIRT.md git-derived verbs and missing flags
 ack params 76d27df82866e316 6 cid=aa1b30e71896b9fe now=6 was=0 p=src/cli.rs:1218 safety dispatch routing
 ack params 8ed4cc559ca0d78b 6 cid=402434345774fd2c now=6 was=4 p=src/cli/queries.rs:262 align DIRT.md git-derived verbs and missing flags
@@ -193,16 +212,20 @@ ack params d8d0bab89c9e3dd3 6 cid=dd2347d8763dc1d0 now=6 was=0 p=src/cli.rs:1323
 ack params dbdad3c9a111feaf 7 cid=e917af5a471760ec now=7 was=0 p=src/cli.rs:1564 retrieval dispatch routing
 ack params eb0335dc263eb7d1 6 cid=84009aee2033ef82 now=6 was=0 p=src/cli.rs:1242 safety dispatch routing
 ack params fe114e977e970be6 6 cid=4347f70dcc10924c now=6 was=0 p=src/serialize/query_xml.rs:412 retrieval dispatch routing
+ack params fe300339c810e485 6 cid=860521261c73d22a now=6 was=0 p=src/cli/queries.rs:906 1:1 parity and resource superiority
 ack short-horizon-churn 0000000000000001 5 now=3 was=0 facet=self p=src/git/history.rs:420 perf(history): optimize git history streaming and candidate extraction
 ack short-horizon-churn 0000000000000002 5 now=2 was=0 facet=self p=src/ingest/extract.rs:440 perf(history): optimize git history streaming and candidate extraction
 ack short-horizon-churn 0000000000000003 15 now=13 was=0 facet=self p=src/cli/dispatch.rs:489 perf: optimize git history streaming and candidate extraction
 ack short-horizon-churn 0000000000000004 15 now=14 was=0 facet=self p=tests/test_cli_and_mcp.rs:574 perf: optimize git history streaming and candidate extraction
+ack short-horizon-churn 01b0c14cba52874e 10 cid=7ed5453d6ab51213 now=10 was=0 facet=self p=src/clones/detector.rs:206 1:1 parity and resource superiority
 ack short-horizon-churn 03c6194c8faebf0d 6 cid=3426b08b1f588c6b now=6 was=0 facet=self p=src/git/history.rs:508 fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 facet=ambient p=src/domain.rs:214 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 03e609981e51a079 19 cid=12f34c9cbed57c34 now=19 was=0 facet=ambient p=src/cli.rs:17 safety dispatch routing | prior: cli options and streaming enhancements
 ack short-horizon-churn 05417ac6ba678f95 9 cid=b828ed667b0f11d5 now=9 was=0 facet=ambient p=src/cli/args.rs:10 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 07b3999c5f6c5652 3 cid=3d1894270b23b899 now=3 was=0 facet=self p=src/mcp/retrieval.rs:58 align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn 08ee87b4bc289029 6 cid=9653f0c5a2aeb698 now=6 was=0 facet=self p=src/git/history.rs:366 fix(owners): compute recency-weighted author ownership and bus factor
+ack short-horizon-churn 097297cfbff36c74 3 cid=390df19b7cf9b6d9 now=3 was=0 facet=ambient p=src/cli/stream.rs:8 1:1 parity and resource superiority
+ack short-horizon-churn 0a8c6e4c2c606086 9 cid=d5b490765d0adb5e now=9 was=0 facet=ambient p=src/gate/quality_delta.rs:31 1:1 parity and resource superiority
 ack short-horizon-churn 0b16726d64758d18 2 cid=a318748ecc1b89cd now=2 was=0 facet=self p=src/skills.rs:153 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 0c5fe467c69117e8 5 cid=8f8b9fc5585e045f now=5 was=0 facet=self p=src/serialize/query_xml.rs:200 fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn 0c91e0d2f0baa95e 5 cid=2b1b4d1d796190b4 now=5 was=0 facet=self p=src/serialize/xml.rs:240 perf(clones): parallelize candidate extraction and eliminate LCS token interning
@@ -212,12 +235,16 @@ ack short-horizon-churn 0dbcc2ebfc642340 7 cid=f7161ab1dbd67c20 now=7 was=0 face
 ack short-horizon-churn 0de2bf44557892b6 3 cid=79e51c4f8f56b93a now=3 was=0 facet=ambient p=src/skills.rs:226 align DIRT.md git-derived verbs and missing flags | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 0e013a8c05e6a5cd 5 cid=e718aab64cbe07d5 now=5 was=0 facet=self p=src/git/cochange.rs:488 fix(git): align DIRT.md git-derived verbs and xml escaping
 ack short-horizon-churn 0e1b61952f94ae34 4 cid=4667fc680786ab8b now=4 was=0 facet=self p=src/serialize/xml.rs:58 cli options and streaming enhancements
+ack short-horizon-churn 0f19e002890329ad 4 cid=c9006b221d0928fa now=4 was=0 facet=self p=src/metrics/nonlocal.rs:50 1:1 parity and resource superiority
 ack short-horizon-churn 0f39ab23ef529273 4 cid=cf0afdcfa9c322c3 now=4 was=0 facet=self p=src/serialize/xml.rs:109 cli options and streaming enhancements
+ack short-horizon-churn 0f42e8ac4442c48d 3 cid=6e3d809ff3b7d6de now=3 was=0 facet=self p=src/cli/stream.rs:18 1:1 parity and resource superiority
 ack short-horizon-churn 11108e7c52569865 19 cid=d6b87bd42fce1bc3 now=19 was=0 facet=ambient p=src/cli.rs:222 retrieval dispatch routing
 ack short-horizon-churn 1171f6ae61619ff2 17 cid=306b3d7a6b0da943 now=17 was=0 facet=self p=src/cli.rs:1132 cli options and streaming enhancements | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 13c7afcaed65f183 12 cid=9c69824be67f25e5 now=12 was=0 facet=ambient p=src/cli/args.rs:310 align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn 13f5b0d990f143e8 5 cid=a42e2cc496feb2c4 now=5 was=0 facet=ambient p=src/git/cochange.rs:39 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn 15e9fb3d8a45ac9b 9 cid=fb67154d028b1fb2 now=9 was=0 facet=self p=src/navigate.rs:312 1:1 parity and resource superiority
 ack short-horizon-churn 1619bf764bb83838 17 cid=2faaa1867545050d now=17 was=0 facet=self p=src/cli.rs:393 cli options and streaming enhancements
+ack short-horizon-churn 16cda783cb31ca1b 10 cid=dc24e7c4712f6085 now=10 was=0 facet=self p=src/clones/detector.rs:136 1:1 parity and resource superiority
 ack short-horizon-churn 170dabfb4d6abeed 12 cid=60632a1424bae51d now=12 was=0 facet=self p=src/cli.rs:319 feat(navigate): format navigation commands as canonical XML
 ack short-horizon-churn 191cda11bdc09922 2 cid=e5660d261fb4ba2a now=2 was=0 facet=self p=src/skills.rs:142 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 1926d1c1c163abbf 17 cid=a834d850ae68a282 now=17 was=0 facet=ambient p=src/cli.rs:302 cli options and streaming enhancements
@@ -225,6 +252,7 @@ ack short-horizon-churn 1a5e8bf9afe9ee39 7 cid=edfff520d79813ba now=7 was=0 face
 ack short-horizon-churn 1ab4e544641e0e08 12 cid=aa26f95204bc981c now=12 was=0 facet=ambient p=src/cli/args.rs:332 align DIRT.md git-derived verbs and missing flags | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 1b14ebd540a7f7a0 4 cid=8888eff9be14a5c1 now=4 was=0 facet=ambient p=src/resolve.rs:219 cli options and streaming enhancements
 ack short-horizon-churn 1bb8d09cbe6509f3 3 cid=d7290398e8124e66 now=3 was=0 facet=ambient p=src/git/cochange.rs:457 fix(owners): compute recency-weighted author ownership and bus factor
+ack short-horizon-churn 1c8671734e52adf1 5 cid=1d8c0a06355f6f75 now=5 was=0 facet=self p=src/gate/edit_check.rs:37 1:1 parity and resource superiority
 ack short-horizon-churn 1e3db6601ccd19d9 5 cid=6d4c472b01a08e40 now=5 was=0 facet=self p=src/mcp/mod.rs:174 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 2033625d6827aa6e 2 cid=760b754621a3a9e8 now=2 was=0 facet=ambient p=src/rank/hits.rs:135 cli options and streaming enhancements
 ack short-horizon-churn 20bd39fbd6c933fe 12 cid=4cc8fa635a85809b now=12 was=0 facet=ambient p=src/cli/args.rs:244 align DIRT.md git-derived verbs and missing flags | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
@@ -232,50 +260,62 @@ ack short-horizon-churn 2238de1007d4146d 3 cid=1f5df4cd6075b4c0 now=3 was=0 face
 ack short-horizon-churn 227e269f843cf58d 16 cid=a6650ad250c2929b now=16 was=0 facet=self p=src/cli.rs:946 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 27df363ae0c450b3 5 cid=80b8cd85a4844728 now=5 was=0 facet=self p=src/mcp/mod.rs:318 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 2a74dc8296003db5 5 cid=3db9c4bc1085ab39 now=5 was=0 facet=self p=src/mcp/mod.rs:223 feat(mcp): complete 33 mcp tools suite
-ack short-horizon-churn 2aeb7a8a7df01331 8 cid=a8f78cb823e5e3c2 now=8 was=0 facet=self p=src/navigate.rs:987 fix(parity): implement exemplar selection and graph-query DSL
+ack short-horizon-churn 2aeb7a8a7df01331 9 cid=0df6a75b54e3243a now=9 was=0 facet=self p=src/navigate.rs:1006 1:1 parity and resource superiority | prior: fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn 2d239cc7bb872512 4 cid=1738622f191fa471 now=4 was=0 facet=ambient p=src/resolve.rs:234 cli options and streaming enhancements
 ack short-horizon-churn 2f78d80dc0101330 5 cid=2b87816e47bd895a now=5 was=0 facet=self p=src/serialize/xml.rs:366 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: cli options and streaming enhancements
 ack short-horizon-churn 2fcf922794d2ea7c 11 cid=3d734924a49ce7d8 now=11 was=0 facet=self p=src/cli/dispatch.rs:464 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 30f062ec83fa41b7 5 cid=f095fd27846d2050 now=5 was=0 facet=self p=scripts/validate-parity.py:42 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn 321ed9cfea5d1e67 9 cid=9c83ab3487253e38 now=9 was=0 facet=self p=src/cli/safety.rs:461 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn 33437bf5b1f3eb6a 5 cid=dedfef63141640aa now=5 was=0 facet=self p=tests/test_edit_check_arity_break.rs:110 1:1 parity and resource superiority
 ack short-horizon-churn 33a6a949ce323797 7 cid=60a5acad13782499 now=7 was=0 facet=self p=src/serialize/query_xml.rs:156 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: fix(owners): compute recency-weighted author ownership and bus factor
+ack short-horizon-churn 36fe7adb2f41ca55 5 cid=399cb4c6067808f8 now=5 was=0 facet=self p=src/metrics/readability.rs:88 1:1 parity and resource superiority
 ack short-horizon-churn 37fbf6517ff6ce1b 17 cid=6770921381e4e1a8 now=17 was=0 facet=self p=src/cli.rs:1059 cli options and streaming enhancements
 ack short-horizon-churn 3837a3181097f8ac 3 cid=8596089df645328d now=3 was=0 facet=self p=src/gate/contract.rs:104 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 3873965730b5abf7 2 cid=36ef75088a9afe03 now=2 was=0 facet=ambient p=src/git/history.rs:360 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 38e66a8e75b865f8 10 cid=a6251f4c163b6c34 now=10 was=0 facet=ambient p=src/cli/dispatch.rs:100 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 396b6f2789b0b89c 17 cid=7000b28ef100a6ea now=17 was=0 facet=ambient p=src/cli.rs:310 cli options and streaming enhancements
 ack short-horizon-churn 3a07b4ac500d91f6 10 cid=10b4c091207c2266 now=10 was=0 facet=self p=src/cli/dispatch.rs:430 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 3af2b5ae9147f668 4 cid=754906246badeec7 now=4 was=0 facet=self p=src/clones/token_stream.rs:437 1:1 parity and resource superiority
 ack short-horizon-churn 3bc166f2d687d5e0 15 cid=c97f0e0eeb846bca now=15 was=0 facet=self p=src/cli/dispatch.rs:233 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 3c1d93dc6f2ae108 4 cid=99bac62d62f00b83 now=4 was=0 facet=self p=src/mcp/doc_tools.rs:628 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn 3c8424377bc0287c 5 cid=4f50111421bfb6c6 now=5 was=0 facet=self p=src/mcp/mod.rs:96 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn 3e5d89483b9ae82c 6 cid=1d3d607091f1ae70 now=6 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:303 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 3ff5983328204de0 2 cid=2749d1e2f0830ec7 now=2 was=0 facet=self p=src/serialize/html.rs:208 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 4037ad80b2daeed1 2 cid=121d51c05f740148 now=2 was=0 facet=self p=src/mcp/retrieval.rs:398 fix(parity): implement exemplar selection and graph-query DSL
-ack short-horizon-churn 41a9d58d55a6364b 4 cid=96f6eebd91cf6b49 now=4 was=0 facet=self p=src/serialize/query_xml.rs:489 fix(parity): implement exemplar selection and graph-query DSL
-ack short-horizon-churn 4495e320775c8df7 15 cid=35bf9921c3976dce now=15 was=0 facet=self p=src/cli/dispatch.rs:352 align DIRT.md git-derived verbs and missing flags | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 41a9d58d55a6364b 8 cid=67b69fe8ebcc6b92 now=8 was=0 facet=self p=src/serialize/query_xml.rs:916 1:1 parity and resource superiority | prior: fix(parity): implement exemplar selection and graph-query DSL
+ack short-horizon-churn 4463a47ea73d9074 3 cid=b82fd686425b9c5e now=3 was=0 facet=ambient p=src/ingest/markdown.rs:162 1:1 parity and resource superiority
+ack short-horizon-churn 4495e320775c8df7 17 cid=423f867a174673b8 now=17 was=0 facet=self p=src/cli/dispatch.rs:386 1:1 parity and resource superiority | prior: align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn 44a561ac8e5656a2 17 cid=b582def855349035 now=17 was=0 facet=self p=src/cli.rs:1136 cli options and streaming enhancements | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 4590d19cc4031a6d 6 cid=551c876371714bf3 now=6 was=0 facet=self p=src/ingest/mod.rs:209 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 495e9245f0a62004 16 cid=9d8a216ad61182ef now=16 was=0 facet=self p=src/cli.rs:777 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 497fdeba31c38644 4 cid=c4a1aa27c4092dc7 now=4 was=0 facet=self p=src/mcp/doc_tools.rs:269 fix(git): align DIRT.md git-derived verbs and xml escaping
-ack short-horizon-churn 49b31aa11c7b1d12 6 cid=aa504106bffca2c8 now=6 was=0 facet=ambient p=src/clones/detector.rs:61 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn 49b31aa11c7b1d12 10 cid=028e09ec82777fd1 now=10 was=0 facet=ambient p=src/clones/detector.rs:62 1:1 parity and resource superiority | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 4a1230f1cfd095df 6 cid=1ffe7220eae6384a now=6 was=0 facet=self p=src/ingest.rs:430 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 4a4fd6eb7a392c4a 5 cid=a5aec8c432c7d586 now=5 was=0 facet=self p=src/mcp/mod.rs:723 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 4e4056fb2cba77d0 8 cid=0c207c673fe4cf9e now=8 was=0 facet=self p=src/cli/queries.rs:133 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn 502b75d9474115cd 9 cid=d8deebc37417b815 now=9 was=0 facet=self p=src/navigate.rs:238 1:1 parity and resource superiority
+ack short-horizon-churn 56024fcaf17de9e1 10 cid=19d4fa641978ef6b now=10 was=0 facet=self p=src/clones/detector.rs:371 1:1 parity and resource superiority
+ack short-horizon-churn 5749f7b76b5d012f 4 cid=186ff6ece5412d82 now=4 was=0 facet=self p=src/clones/token_stream.rs:352 1:1 parity and resource superiority
 ack short-horizon-churn 575939d532c70d23 7 cid=73fba400e72ce452 now=7 was=0 facet=self p=build.rs:63 perf(cache): implement persistent on-disk binary cache and parallel git mining
-ack short-horizon-churn 57ebb11a0e585c1d 9 cid=8458de978aeb08bc now=9 was=0 facet=ambient p=src/cli/safety.rs:393 align DIRT.md git-derived verbs and missing flags
+ack short-horizon-churn 57ebb11a0e585c1d 11 cid=be320991b83b37a0 now=11 was=0 facet=ambient p=src/cli/safety.rs:439 1:1 parity and resource superiority | prior: align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn 58bb8313b30aac1c 3 cid=59b6a28cbb76af43 now=3 was=0 facet=self p=scripts/validate-parity.py:15 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn 5bb373dc7cec2d90 8 cid=e7f529d4288ed8bf now=8 was=0 facet=self p=src/serialize/query_xml.rs:601 1:1 parity and resource superiority
 ack short-horizon-churn 5befe906674d1d04 5 cid=9cebc1cfcad1bd9b now=5 was=0 facet=self p=src/mcp/mod.rs:764 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 5d1c47d7ed0abe51 13 cid=d8101647936f4e4c now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:535 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 5d3030ce205bd4d9 19 cid=35ff8e83a3c0e9db now=19 was=0 facet=self p=src/cli.rs:1398 safety dispatch routing | prior: cli options and streaming enhancements
 ack short-horizon-churn 5e69f1155e343c23 5 cid=a62db5d0a8cce6d8 now=5 was=0 facet=ambient p=src/cli.rs:106 feat(gate): quality baseline and delta gate
 ack short-horizon-churn 5f19ad8a0ce66046 6 cid=159212c4747ced54 now=6 was=0 facet=self p=src/ingest/mod.rs:452 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
+ack short-horizon-churn 6046b99d30e509eb 4 cid=8fc4ec099261431f now=4 was=0 facet=self p=src/clones/token_stream.rs:363 1:1 parity and resource superiority
+ack short-horizon-churn 60bb37ab84bbc759 9 cid=997b92a07d0035c7 now=9 was=0 facet=self p=src/navigate.rs:256 1:1 parity and resource superiority
 ack short-horizon-churn 6136e693f658207a 6 cid=1a6440ee63410c4d now=6 was=0 facet=self p=src/ingest/mod.rs:541 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 62190bcf38200a84 4 cid=0308a099d5104990 now=4 was=0 facet=ambient p=tests/test_git_cochange.rs:139 fix(owners): compute recency-weighted author ownership and bus factor
-ack short-horizon-churn 62e7c8391a4df527 3 cid=7262bea52f91ff2a now=3 was=0 facet=self p=src/gate/quality_delta.rs:248 cli options and streaming enhancements
+ack short-horizon-churn 62e7c8391a4df527 9 cid=bd6e10f9147c6866 now=9 was=0 facet=self p=src/gate/quality_delta.rs:583 1:1 parity and resource superiority | prior: cli options and streaming enhancements
 ack short-horizon-churn 633372372a60e144 6 cid=d6df337786c91f9d now=6 was=0 facet=self p=src/git/history.rs:378 fix(owners): compute recency-weighted author ownership and bus factor
-ack short-horizon-churn 638248a22dc09eac 4 cid=8b945b85e2cd6782 now=4 was=0 facet=self p=src/mcp/doc_tools.rs:511 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: fix(owners): compute recency-weighted author ownership and bus factor
+ack short-horizon-churn 638248a22dc09eac 7 cid=d02d0212cae979d0 now=7 was=0 facet=self p=src/mcp/doc_tools.rs:708 1:1 parity and resource superiority | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
 ack short-horizon-churn 63cb0b37532087a4 9 cid=23145d6348ee7f33 now=9 was=0 facet=ambient p=src/cli/args.rs:386 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn 6451a7013cd92768 9 cid=bed0e4397eeff9a0 now=9 was=0 facet=self p=src/navigate.rs:446 1:1 parity and resource superiority
 ack short-horizon-churn 6592ae6ffe2a9edc 2 now=2 was=0 facet=self p=tests/test_ingest_tier1_fixtures.rs:6 migrate to in-memory fixtures for zero-IO testing
+ack short-horizon-churn 6601a436ba1f3b78 11 cid=c36b8874f30d712b now=11 was=0 facet=self p=src/cli/safety.rs:312 1:1 parity and resource superiority
 ack short-horizon-churn 66aa2d758f791cf2 5 cid=b6a09e2e51877ccc now=5 was=0 facet=self p=src/mcp/mod.rs:30 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn 67b95f17a1d8adb4 11 cid=52b08873148acefc now=11 was=0 facet=self p=src/cli/dispatch.rs:82 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 67d2dcee81975bca 5 cid=a4334c84726b2b74 now=5 was=0 facet=ambient p=src/graph.rs:316 cli options and streaming enhancements
@@ -284,118 +324,173 @@ ack short-horizon-churn 68f171ed9d5920c6 6 cid=d9b4e9525f0177ba now=6 was=0 face
 ack short-horizon-churn 69286f27528fe374 6 cid=e868ac9f63a44690 now=6 was=0 facet=self p=src/serialize/xml.rs:294 align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn 6dcec957b21602d3 9 cid=97aeeecf8b5df765 now=9 was=0 facet=ambient p=src/domain.rs:237 feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 70a00a1f5e885d55 19 cid=e15879c9e432177c now=19 was=0 facet=ambient p=src/cli.rs:949 cli flag expansion
-ack short-horizon-churn 70c7689f97d55ebe 3 cid=9fa977aa65e1e8d8 now=3 was=0 facet=self p=src/metrics/nonlocal.rs:74 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn 70c7689f97d55ebe 4 cid=01ee3e56bd8469a7 now=4 was=0 facet=self p=src/metrics/nonlocal.rs:97 1:1 parity and resource superiority | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
 ack short-horizon-churn 7272cbefa18a4549 3 cid=82050217a190c19f now=3 was=0 facet=self p=src/gate/contract.rs:197 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn 72b1dfd25aeddec0 9 cid=90540e0f9242322e now=9 was=0 facet=ambient p=src/navigate.rs:1119 1:1 parity and resource superiority
 ack short-horizon-churn 72c710eba4e4924e 7 cid=2b62c5d5dcaca3ff now=7 was=0 facet=ambient p=src/ingest.rs:117 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn 73e3b4916fad8f15 5 cid=6e9ea3a239f75d03 now=5 was=0 facet=self p=src/cli.rs:543 feat(gate): quality baseline and delta gate
 ack short-horizon-churn 7421c569ac4e8bd0 6 cid=aa900cfcdb44761f now=6 was=0 facet=self p=src/ingest/mod.rs:203 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn 7444f1b07227393c 6 cid=cb1137258201618d now=6 was=0 facet=ambient p=src/serialize/xml.rs:131 align DIRT.md git-derived verbs and missing flags | prior: cli options and streaming enhancements
 ack short-horizon-churn 76568d93a351a68d 6 cid=7dcd61687d79d92a now=6 was=0 facet=self p=src/ingest.rs:547 feat(metrics): compute complexity, readability, and hotspots
-ack short-horizon-churn 768f6f23b404e1ea 6 cid=eec33dcd2e5f9de2 now=6 was=0 facet=self p=src/serialize/xml.rs:338 align DIRT.md git-derived verbs and missing flags | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn 768f6f23b404e1ea 7 cid=b2d0d1ea7c1b27e3 now=7 was=0 facet=self p=src/serialize/xml.rs:386 1:1 parity and resource superiority | prior: align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn 776ac9b29f07b78f 12 cid=543fb2bd6464a4df now=12 was=0 facet=self p=src/cli/args.rs:177 align DIRT.md git-derived verbs and missing flags | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 779f7fe5d44382d3 6 cid=236ee52d26813104 now=6 was=0 facet=self p=src/git/history.rs:453 fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn 7878be76ade52e8d 15 cid=74281ae364728941 now=15 was=0 facet=ambient p=src/cli/dispatch.rs:323 align DIRT.md git-derived verbs and missing flags | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 79c9582e75b344aa 4 cid=5e29a1fa4b158208 now=4 was=0 facet=self p=src/mcp/doc_tools.rs:671 fix(git): align DIRT.md git-derived verbs and xml escaping
 ack short-horizon-churn 7a3514ca7297cbc6 7 cid=df26c6fe3a561bb9 now=7 was=0 facet=self p=src/serialize/query_xml.rs:185 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn 7c2731626a1336bc 5 cid=493f0237b7767ff9 now=5 was=0 facet=ambient p=src/graph.rs:144 cli options and streaming enhancements
+ack short-horizon-churn 7cc75fa5a85d1b06 9 cid=4230c57c32d97cb2 now=9 was=0 facet=self p=src/navigate.rs:247 1:1 parity and resource superiority
 ack short-horizon-churn 7dd9d37f97a49ab9 6 cid=34da8b7eee17478f now=6 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:403 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 7e5f4ce017a03a17 4 cid=49f3353715ec96f3 now=4 was=0 facet=self p=src/mcp/doc_tools.rs:747 fix(git): align DIRT.md git-derived verbs and xml escaping
-ack short-horizon-churn 7e7824006b9b6b06 7 cid=b6925f19e3a79f92 now=7 was=0 facet=self p=src/cli/safety.rs:55 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn 7e7824006b9b6b06 11 cid=eed443b55de8f382 now=11 was=0 facet=self p=src/cli/safety.rs:55 1:1 parity and resource superiority | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 7e9009f392dd32f9 5 cid=6f38348e5f690815 now=5 was=0 facet=self p=src/mcp/mod.rs:106 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn 814b4f6d0a317b34 9 cid=608bbc1efd476eb4 now=9 was=0 facet=ambient p=src/gate/quality_delta.rs:101 1:1 parity and resource superiority
+ack short-horizon-churn 817f3fc9c79dc2b4 3 cid=b9835457bc3284e7 now=3 was=0 facet=ambient p=src/ingest/extract.rs:8 1:1 parity and resource superiority
 ack short-horizon-churn 822d826a559b1750 4 cid=f7082dc07f519f35 now=4 was=0 facet=self p=src/ingest/mod.rs:308 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 82d6b64ad9325602 15 cid=14e4321143ab5307 now=15 was=0 facet=self p=src/cli/dispatch.rs:427 align DIRT.md git-derived verbs and missing flags | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 831b3845135331f9 4 cid=5327871ff5605ea7 now=4 was=0 facet=self p=src/clones/token_stream.rs:340 1:1 parity and resource superiority
 ack short-horizon-churn 83ff6d3192e3aaaf 2 cid=996d0bf9ce4d5bcd now=2 was=0 facet=self p=src/skills.rs:109 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 84614f6dbb2007ef 8 cid=be20a749affb85ee now=8 was=0 facet=self p=src/serialize/query_xml.rs:504 1:1 parity and resource superiority
+ack short-horizon-churn 86249eacb9cb7ce4 3 cid=4b0647ab61e6dc7b now=3 was=0 facet=self p=src/clones/mod.rs:14 1:1 parity and resource superiority
 ack short-horizon-churn 87bbfd4149647d6a 4 cid=c9ad26e8025e2684 now=4 was=0 facet=self p=src/ingest/mod.rs:405 refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 87e4f675f0e092cb 2 cid=2a9df016f19d29c4 now=2 was=0 facet=self p=src/serialize/html.rs:119 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn 87fc87dba6c4a49f 17 cid=4796eebcd77d09cf now=17 was=0 facet=self p=tests/test_cli_and_mcp.rs:577 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
-ack short-horizon-churn 898d25057efd3d62 2 cid=ed07889edd6261ac now=2 was=0 facet=ambient p=src/cli/stream.rs:36 align DIRT.md git-derived verbs and missing flags
+ack short-horizon-churn 8947f168ef0df629 10 cid=c93acc2d44ec3311 now=10 was=0 facet=self p=src/clones/detector.rs:529 1:1 parity and resource superiority
+ack short-horizon-churn 898d25057efd3d62 3 cid=174e717fad654464 now=3 was=0 facet=self p=src/cli/stream.rs:37 1:1 parity and resource superiority | prior: align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn 8adcf2961fb567e2 7 cid=f9e83614110caea5 now=7 was=0 facet=self p=build.rs:57 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn 8b42481e2e53ccdb 5 cid=0325c2538de51258 now=5 was=0 facet=self p=tests/test_git_cochange.rs:357 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn 8bc4a88d7407cbda 10 cid=a824ce059c6691b0 now=10 was=0 facet=self p=src/cli/dispatch.rs:241 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 8c9db2b3ce1a2aff 8 cid=0ec4fe2e3a460641 now=8 was=0 facet=self p=src/serialize/query_xml.rs:668 1:1 parity and resource superiority
 ack short-horizon-churn 8cf327d0ed9d3689 4 cid=5e62055e2ca624a8 now=4 was=0 facet=self p=src/mcp/doc_tools.rs:659 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn 8cfd79b5e0c6b571 9 cid=6614ee61f5aeeafe now=9 was=0 facet=self p=src/gate/quality_delta.rs:37 1:1 parity and resource superiority
 ack short-horizon-churn 8dcbaa1a59d252f6 7 cid=5c6dd5fd6d39d204 now=7 was=0 facet=self p=src/serialize/query_xml.rs:248 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn 8e35dc88244bee6d 9 cid=46e80412623c53ad now=9 was=0 facet=self p=src/cli/queries.rs:433 1:1 parity and resource superiority
 ack short-horizon-churn 8ed4cc559ca0d78b 8 cid=127c0dc1586f837a now=8 was=0 facet=self p=src/cli/queries.rs:261 fix(git): align DIRT.md git-derived verbs and xml escaping
 ack short-horizon-churn 8efcd06933df9f00 5 cid=ab1e9846e0e884b2 now=5 was=0 facet=self p=src/graph.rs:196 cli options and streaming enhancements
 ack short-horizon-churn 904cc38cf4bdf43d 6 cid=b9a07f512d4b37eb now=6 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:340 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 915e9ccabcd6c288 8 cid=d87136fdb81d9c63 now=8 was=0 facet=self p=src/serialize/query_xml.rs:815 1:1 parity and resource superiority
+ack short-horizon-churn 92393bea27e195b6 3 cid=38c7bfbaee3988dc now=3 was=0 facet=self p=src/metrics/lint.rs:135 1:1 parity and resource superiority
 ack short-horizon-churn 93c77c6f3702d249 8 cid=47f518d18f56f2a8 now=8 was=0 facet=self p=src/main.rs:1 perf(cache): implement persistent on-disk binary cache and parallel git mining | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn 94a134e1f8eb53b9 5 cid=29a3c399aaac8a10 now=5 was=0 facet=self p=src/mcp/mod.rs:613 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
 ack short-horizon-churn 9586c389ef09f514 6 cid=4f8cf3ae519d7e4e now=6 was=0 facet=ambient p=src/serialize/xml.rs:37 align DIRT.md git-derived verbs and missing flags | prior: cli options and streaming enhancements
 ack short-horizon-churn 972f728745b11d45 6 cid=4b3c01ada5c9158b now=6 was=0 facet=self p=src/ingest.rs:339 feat(metrics): compute complexity, readability, and hotspots
+ack short-horizon-churn 999fab2356ef303d 8 cid=363da61b121f8e9f now=8 was=0 facet=self p=src/serialize/query_xml.rs:846 1:1 parity and resource superiority
 ack short-horizon-churn 9b1c44c5d3a24728 13 cid=68166e150b958b52 now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:444 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn 9b412eb96d78461e 3 cid=ccd783dd486b5f90 now=3 was=0 facet=self p=src/gate/pr_context.rs:105 1:1 parity and resource superiority
+ack short-horizon-churn 9b770617a09ffd0e 5 cid=d12901cc9318b5af now=5 was=0 facet=self p=src/metrics/readability.rs:42 1:1 parity and resource superiority
+ack short-horizon-churn 9bffad98eafdaf6a 9 cid=bfb48ff4e1e40d60 now=9 was=0 facet=self p=src/gate/quality_delta.rs:300 1:1 parity and resource superiority
+ack short-horizon-churn 9c2c89516bf2978c 9 cid=77fb0d10a1e958be now=9 was=0 facet=self p=src/navigate.rs:215 1:1 parity and resource superiority
 ack short-horizon-churn 9c2f85a97045056c 4 cid=e93e1ef9a293296b now=4 was=0 facet=ambient p=tests/test_git_cochange.rs:404 fix(owners): compute recency-weighted author ownership and bus factor
+ack short-horizon-churn a0861b5ad1512062 10 cid=f3816f31a4915df1 now=10 was=0 facet=self p=src/clones/detector.rs:571 1:1 parity and resource superiority
+ack short-horizon-churn a0f70ec6f630e326 9 cid=7021132b3baef24e now=9 was=0 facet=self p=src/cli/queries.rs:575 1:1 parity and resource superiority
 ack short-horizon-churn a1db9b8f4081edb3 5 cid=9284006cc955fafb now=5 was=0 facet=ambient p=src/mcp/mod.rs:693 feat(mcp): complete 33 mcp tools suite
-ack short-horizon-churn a1e90284a8399e78 6 cid=f101bbdea5dab319 now=6 was=0 facet=self p=src/clones/detector.rs:155 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn a1e90284a8399e78 10 cid=0700d455537a9899 now=10 was=0 facet=self p=src/clones/detector.rs:166 1:1 parity and resource superiority | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn a210fbbc37219fef 2 cid=8cbfd67bc16f557a now=2 was=0 facet=ambient p=src/ingest/pipeline.rs:179 1:1 parity and resource superiority
 ack short-horizon-churn a29bdbd875b3bb62 6 cid=b84620de9d471718 now=6 was=0 facet=self p=src/ingest.rs:383 feat(metrics): compute complexity, readability, and hotspots
-ack short-horizon-churn a2eed93c9a29031b 7 cid=e97bda094b80dbc8 now=7 was=0 facet=ambient p=src/serialize/query_xml.rs:439 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn a2eed93c9a29031b 8 cid=787c5d6eabbb84ac now=8 was=0 facet=self p=src/serialize/query_xml.rs:566 1:1 parity and resource superiority | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
 ack short-horizon-churn a6ed7f460c9bebe9 8 cid=6e28b49f0ba62f1c now=8 was=0 facet=self p=src/cli/queries.rs:583 align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn a84d42f7098b2b60 12 cid=deaa9de34a2594e8 now=12 was=0 facet=self p=src/cli/args.rs:140 align DIRT.md git-derived verbs and missing flags | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn a8d8a8c2b3c692bb 5 cid=8a850df30c972216 now=5 was=0 facet=self p=src/mcp/mod.rs:760 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn a8f8a5f239f73c3e 4 cid=7fb8c3b69f3757a0 now=4 was=0 facet=ambient p=src/resolve.rs:261 cli options and streaming enhancements
 ack short-horizon-churn aa67274c42eaba44 6 cid=4cf367b4bcc65f8b now=6 was=0 facet=self p=src/serialize/xml.rs:71 align DIRT.md git-derived verbs and missing flags | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
-ack short-horizon-churn ab8aed02742623e2 7 cid=8df7d209dd0586ec now=7 was=0 facet=self p=src/serialize/query_xml.rs:65 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: fix(owners): compute recency-weighted author ownership and bus factor
+ack short-horizon-churn ab8aed02742623e2 8 cid=20771eb3d8c0d2e0 now=8 was=0 facet=self p=src/serialize/query_xml.rs:173 1:1 parity and resource superiority | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn ab9cc67def705029 10 cid=6d4ca6157c375c3d now=10 was=0 facet=self p=src/clones/detector.rs:565 1:1 parity and resource superiority
 ack short-horizon-churn abbf9013bfc446fc 19 cid=2afd56d18715568a now=19 was=0 facet=self p=src/cli.rs:1082 retrieval dispatch routing | prior: fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
+ack short-horizon-churn ac252fdbdb3c5f72 4 cid=df6260cdc8ae0964 now=4 was=0 facet=self p=src/clones/token_stream.rs:390 1:1 parity and resource superiority
 ack short-horizon-churn ae955dbfb19ebc21 4 cid=ab4c108eef2e716c now=4 was=0 facet=self p=src/mcp/doc_tools.rs:325 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn af8f8cdf2368bd78 5 cid=a44d1244512278d2 now=5 was=0 facet=self p=src/mcp/mod.rs:265 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn b1061d8dfafc0a32 11 cid=67c58a98e4138c3b now=11 was=0 facet=self p=src/cli/safety.rs:348 1:1 parity and resource superiority
 ack short-horizon-churn b356d6c30f9392a8 6 cid=be71d580d524a3d3 now=6 was=0 facet=self p=src/git/history.rs:304 fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn b375ec7d1556994c 5 cid=5325c82e263c650e now=5 was=0 facet=ambient p=src/graph.rs:303 cli options and streaming enhancements
 ack short-horizon-churn b5a40f34ce7656a9 6 cid=f92ea050828bbe61 now=6 was=0 facet=self p=tests/test_cli_and_mcp.rs:28 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
+ack short-horizon-churn b61b82d48ec8a11b 4 cid=03180dd749d82131 now=4 was=0 facet=ambient p=src/clones/token_stream.rs:471 1:1 parity and resource superiority
 ack short-horizon-churn b6e897536782cb69 4 cid=ff843607ad22b35e now=4 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:21 cli options and streaming enhancements
 ack short-horizon-churn b77c6cd3287487c1 9 cid=6f8e366ab6d4cd21 now=9 was=0 facet=self p=tests/test_cli_and_mcp.rs:271 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn b847efa750eb019d 9 cid=7b46e8062cb825c0 now=9 was=0 facet=self p=src/cli/safety.rs:72 align DIRT.md git-derived verbs and missing flags | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn b88b1ea9b3cfaea8 6 cid=45bade1cbbda7009 now=6 was=0 facet=self p=src/ingest.rs:543 feat(metrics): compute complexity, readability, and hotspots
-ack short-horizon-churn b9207f18c25b8858 4 cid=af51cd9e5d469d03 now=4 was=0 facet=self p=src/mcp/doc_tools.rs:216 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: fix(owners): compute recency-weighted author ownership and bus factor
+ack short-horizon-churn b9207f18c25b8858 7 cid=9cc53f4ca09d2ee1 now=7 was=0 facet=self p=src/mcp/doc_tools.rs:216 1:1 parity and resource superiority | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn bb903a89b7509a23 4 cid=65645a676dc2970b now=4 was=0 facet=self p=src/slice/mod.rs:45 1:1 parity and resource superiority
+ack short-horizon-churn bba1d34a5f282a05 17 cid=87a0f7f308f63b1f now=17 was=0 facet=self p=src/cli/dispatch.rs:154 1:1 parity and resource superiority
 ack short-horizon-churn bcc708e49d3b01ef 6 cid=23620452b86e415a now=6 was=0 facet=self p=src/ingest/mod.rs:444 fix(cli): ensure 1:1 parity with ripwire cpp across all 18 variations
 ack short-horizon-churn bdf54353f10b2b08 4 cid=029942f196f0d316 now=4 was=0 facet=self p=src/ingest/mod.rs:323 refactor(distribution): rename crate to ripwire and binary to rw
-ack short-horizon-churn c0300ca9ffbbc65c 2 cid=f08fb1b472f9d474 now=2 was=0 facet=self p=src/metrics/hotspots.rs:28 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn c0300ca9ffbbc65c 4 cid=8333adb2cfb2decd now=4 was=0 facet=self p=src/metrics/hotspots.rs:28 1:1 parity and resource superiority | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack short-horizon-churn c0877650b51b994a 2 cid=5ae3bc85466baf17 now=2 was=0 facet=self p=tests/test_streaming_xml_serializer.rs:42 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn c12f5ad506c25213 9 cid=66325f433a01de38 now=9 was=0 facet=self p=src/gate/quality_delta.rs:117 1:1 parity and resource superiority
+ack short-horizon-churn c197af76608646ee 4 cid=fa51638e0d1f7b92 now=4 was=0 facet=self p=src/clones/token_stream.rs:306 1:1 parity and resource superiority
 ack short-horizon-churn c2491a80cbc08195 2 cid=2148b2f7fdaadc97 now=2 was=0 facet=ambient p=src/rank/hits.rs:119 cli options and streaming enhancements
 ack short-horizon-churn c28be696f55888fe 5 cid=391a26a2b3b563e2 now=5 was=0 facet=self p=src/mcp/mod.rs:203 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn c33f3abef5794893 13 cid=0b0307947103a814 now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:330 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn c55c48e9f3d6da21 2 cid=6218a77d42dfa4bc now=2 was=0 facet=self p=src/gate/merge_scout.rs:114 1:1 parity and resource superiority
+ack short-horizon-churn c5ca5b333c25b4c0 17 cid=135512e345e3a263 now=17 was=0 facet=self p=src/cli/dispatch.rs:435 1:1 parity and resource superiority
 ack short-horizon-churn c85e94f27d5740db 6 cid=cf614b0bed43d464 now=6 was=0 facet=ambient p=src/git/history.rs:12 fix(owners): compute recency-weighted author ownership and bus factor
-ack short-horizon-churn c94eb9a0b1ae925a 7 cid=84b7a345821bda70 now=7 was=0 facet=ambient p=src/serialize/query_xml.rs:20 align DIRT.md git-derived verbs and missing flags
+ack short-horizon-churn c8cac09fd5ec8f26 2 cid=bcc73c32b7aa6668 now=2 was=0 facet=self p=src/gate/merge_scout.rs:88 1:1 parity and resource superiority
+ack short-horizon-churn c94eb9a0b1ae925a 8 cid=5be00c0d67087121 now=8 was=0 facet=self p=src/serialize/query_xml.rs:20 1:1 parity and resource superiority | prior: align DIRT.md git-derived verbs and missing flags
+ack short-horizon-churn cbc0b4225829629e 9 cid=52b9241928eb63d7 now=9 was=0 facet=self p=src/navigate.rs:378 1:1 parity and resource superiority
 ack short-horizon-churn cc565e00b39a1695 7 cid=299db252a3a3b52b now=7 was=0 facet=self p=src/cli/safety.rs:135 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn cd1f4b51e103578b 8 cid=a3f655926f38ae01 now=8 was=0 facet=self p=src/serialize/query_xml.rs:66 1:1 parity and resource superiority
 ack short-horizon-churn cd6d279e4dbbdbc4 6 cid=5f95a5a9d083a99e now=6 was=0 facet=ambient p=src/serialize/xml.rs:52 align DIRT.md git-derived verbs and missing flags | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
-ack short-horizon-churn ce7dc13d985503fe 6 cid=e70c803c962344fe now=6 was=0 facet=self p=src/clones/detector.rs:252 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack short-horizon-churn ce7dc13d985503fe 10 cid=edf3b7ddbd337749 now=10 was=0 facet=self p=src/clones/detector.rs:249 1:1 parity and resource superiority | prior: perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn ceb5080f1cc03f2c 4 cid=63d1213adca0dfce now=4 was=0 facet=ambient p=tests/test_git_cochange.rs:175 fix(owners): compute recency-weighted author ownership and bus factor
+ack short-horizon-churn d1d5b20ca0538ea1 4 cid=836f40f649fac6a3 now=4 was=0 facet=self p=src/clones/token_stream.rs:467 1:1 parity and resource superiority
 ack short-horizon-churn d3eebdef7a909404 7 cid=13afc9c65d43e4da now=7 was=0 facet=ambient p=src/ingest.rs:565 feat(gate): pre-commit contract gate and affected test reachability
-ack short-horizon-churn d644d739704097d8 17 cid=b226310d6244f5c4 now=17 was=0 facet=ambient p=tests/test_cli_and_mcp.rs:347 fix(git): align DIRT.md git-derived verbs and xml escaping | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn d644d739704097d8 19 cid=98fdda5b76ae9163 now=19 was=0 facet=self p=tests/test_cli_and_mcp.rs:347 1:1 parity and resource superiority | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
 ack short-horizon-churn d6d4e66e74443560 12 cid=a0c376e1223e5af2 now=12 was=0 facet=self p=src/cli/args.rs:458 align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn d719c3f8536d1aa6 2 cid=bdcf0bc1ef881672 now=2 was=0 facet=self p=src/skills.rs:68 perf(cache): implement persistent on-disk binary cache and parallel git mining
-ack short-horizon-churn d91b00a58d9c36d8 2 cid=593fe15616880f08 now=2 was=0 facet=self p=src/metrics/lint.rs:118 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn d91b00a58d9c36d8 3 cid=b50e4b1d032ae436 now=3 was=0 facet=self p=src/metrics/lint.rs:118 1:1 parity and resource superiority | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
 ack short-horizon-churn da13dd9f78129be8 2 cid=a0a55375e088cacc now=2 was=0 facet=self p=src/serialize/html.rs:89 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack short-horizon-churn da149eda75c93291 5 cid=f35a608cb75d4c25 now=5 was=0 facet=ambient p=src/graph.rs:102 cli options and streaming enhancements
+ack short-horizon-churn dbd516b991670c8d 2 cid=3fc155fc47d8633c now=2 was=0 facet=self p=src/gate/merge_scout.rs:118 1:1 parity and resource superiority
 ack short-horizon-churn dbf9873eb051deef 13 cid=858c02abbd515b96 now=13 was=0 facet=self p=tests/test_cli_and_mcp.rs:144 perf(cache): implement persistent on-disk binary cache and parallel git mining | prior: feat(navigate): format navigation commands as canonical XML
 ack short-horizon-churn dc541d00847aff4a 5 cid=efced0c44342a37f now=5 was=0 facet=ambient p=tests/test_metrics_and_hotspots.rs:206 fix(owners): compute recency-weighted author ownership and bus factor
-ack short-horizon-churn dfcd8fbfb70d4004 6 cid=fd9e39c62a9c7734 now=6 was=0 facet=ambient p=src/serialize/xml.rs:23 align DIRT.md git-derived verbs and missing flags | prior: cli options and streaming enhancements
+ack short-horizon-churn dc9eebb2fe26212a 5 cid=9e9846749b10e480 now=5 was=0 facet=self p=src/metrics/readability.rs:142 1:1 parity and resource superiority
+ack short-horizon-churn df7ec411289de577 4 cid=8ab0e561d61a76e6 now=4 was=0 facet=self p=src/clones/token_stream.rs:330 1:1 parity and resource superiority
+ack short-horizon-churn dfcd8fbfb70d4004 7 cid=f67833f1b46e2313 now=7 was=0 facet=self p=src/serialize/xml.rs:25 1:1 parity and resource superiority | prior: align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn e334c9d7ea0fb943 5 cid=07dac40999a2e9c3 now=5 was=0 facet=self p=src/serialize/xml.rs:371 perf(clones): parallelize candidate extraction and eliminate LCS token interning | prior: cli options and streaming enhancements
+ack short-horizon-churn e4f886db2ad78ca8 3 cid=b274d41ad0b056a2 now=3 was=0 facet=self p=tests/test_quality_delta_gate.rs:59 1:1 parity and resource superiority
+ack short-horizon-churn e5b8491a321e3dae 4 cid=fed99341a7f60ed8 now=4 was=0 facet=self p=src/slice/mod.rs:106 1:1 parity and resource superiority
+ack short-horizon-churn e5e115e7af4c224b 8 cid=63bcd1a5a47b025e now=8 was=0 facet=self p=src/serialize/query_xml.rs:153 1:1 parity and resource superiority
 ack short-horizon-churn e676baff641bf844 10 cid=a6cbaa49094c060c now=10 was=0 facet=self p=src/cli/dispatch.rs:150 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn e68c44392a811fd2 4 cid=d39251fdf8116de8 now=4 was=0 facet=self p=src/gate/contract.rs:69 cli options and streaming enhancements
+ack short-horizon-churn e6e0b83c43d6c524 8 cid=f14ac5097023f643 now=8 was=0 facet=ambient p=src/serialize/query_xml.rs:690 1:1 parity and resource superiority
 ack short-horizon-churn ea36d3b69d5342f9 6 cid=1410a297cc9ae313 now=6 was=0 facet=self p=src/cli/safety.rs:84 perf(cache): implement persistent on-disk binary cache and parallel git mining
-ack short-horizon-churn ea965a9dd84dd747 8 cid=67be8ff607265a87 now=8 was=0 facet=self p=src/cli/queries.rs:749 align DIRT.md git-derived verbs and missing flags | prior: fix(parity): implement exemplar selection and graph-query DSL
-ack short-horizon-churn eb5eb8bc9f9e78a7 6 cid=9df69113a34d9cb7 now=6 was=0 facet=ambient p=src/serialize/xml.rs:12 align DIRT.md git-derived verbs and missing flags | prior: cli options and streaming enhancements
+ack short-horizon-churn ea72c5e31b39d0bd 11 cid=c33efa750d131b1b now=11 was=0 facet=self p=src/cli/safety.rs:510 1:1 parity and resource superiority
+ack short-horizon-churn ea965a9dd84dd747 9 cid=573cc8b75a95cc5f now=9 was=0 facet=self p=src/cli/queries.rs:932 1:1 parity and resource superiority | prior: align DIRT.md git-derived verbs and missing flags
+ack short-horizon-churn eb5eb8bc9f9e78a7 7 cid=dacfb16f89179382 now=7 was=0 facet=ambient p=src/serialize/xml.rs:12 1:1 parity and resource superiority | prior: align DIRT.md git-derived verbs and missing flags
 ack short-horizon-churn eb913f807b07fad8 3 cid=bd0dd9ade9a75003 now=3 was=0 facet=self p=src/gate/contract.rs:187 refactor(distribution): rename crate to ripwire and binary to rw
+ack short-horizon-churn ec44f58d2c72ac96 4 cid=dd2b40292f10bb51 now=4 was=0 facet=ambient p=src/clones/token_stream.rs:511 1:1 parity and resource superiority
 ack short-horizon-churn ecb2368dd4d7311c 17 cid=0bec28715d7c20ea now=17 was=0 facet=self p=src/cli.rs:1190 cli options and streaming enhancements
+ack short-horizon-churn ede77847759c5491 11 cid=2ab7e54ae6f8bbd8 now=11 was=0 facet=self p=src/cli/safety.rs:333 1:1 parity and resource superiority
+ack short-horizon-churn eee900f08711e9c1 9 cid=fc2541a6e0121efc now=9 was=0 facet=self p=src/navigate.rs:483 1:1 parity and resource superiority
 ack short-horizon-churn ef0834f2485b47ff 5 cid=051e60b772482121 now=5 was=0 facet=self p=src/graph.rs:233 cli options and streaming enhancements
 ack short-horizon-churn f021162b29442383 3 cid=3cec92dee3139a70 now=3 was=0 facet=ambient p=src/mcp/retrieval.rs:433 align DIRT.md git-derived verbs and missing flags | prior: fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn f0ff33b16b71ee4b 7 cid=a2bdbce68e56d287 now=7 was=0 facet=ambient p=src/ingest.rs:531 feat(gate): pre-commit contract gate and affected test reachability | prior: feat(metrics): compute complexity, readability, and hotspots
 ack short-horizon-churn f1b6b0c968cc1eab 2 cid=240185457307fb31 now=2 was=0 facet=self p=src/mcp/retrieval.rs:205 fix(parity): implement exemplar selection and graph-query DSL
 ack short-horizon-churn f204e7a809fcdfd7 3 cid=86b988f86ce55f24 now=3 was=0 facet=ambient p=src/git/cochange.rs:461 fix(owners): compute recency-weighted author ownership and bus factor
-ack short-horizon-churn f2a73a2e239bdff2 10 cid=0eab5b19cf78cc89 now=10 was=0 facet=self p=src/cli/dispatch.rs:370 perf(cache): implement persistent on-disk binary cache and parallel git mining
+ack short-horizon-churn f2a73a2e239bdff2 17 cid=85d85883a8261a22 now=17 was=0 facet=ambient p=src/cli/dispatch.rs:534 1:1 parity and resource superiority | prior: perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn f571a0634ee37c44 4 cid=e343df1a1c9663d2 now=4 was=0 facet=ambient p=tests/test_git_cochange.rs:93 fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn f613082e1d738164 9 cid=40fab0050343d6a2 now=9 was=0 facet=self p=src/cli/safety.rs:438 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn f620a6daba29f548 4 cid=5bd70ae1d896aad0 now=4 was=0 facet=ambient p=src/clones/token_stream.rs:58 1:1 parity and resource superiority
+ack short-horizon-churn f73dd86545ae477b 9 cid=fec6698716718d3b now=9 was=0 facet=self p=src/cli/queries.rs:186 1:1 parity and resource superiority
 ack short-horizon-churn f775e95e22c7869c 3 cid=3b9f1d8d74a55af5 now=3 was=0 facet=self p=src/mcp/dispatch.rs:422 fix(git): align DIRT.md git-derived verbs and xml escaping
+ack short-horizon-churn f93101fc7d50cb37 9 cid=6e72c93736b197e9 now=9 was=0 facet=self p=src/gate/quality_delta.rs:55 1:1 parity and resource superiority
+ack short-horizon-churn f9c9cade781b0b33 9 cid=32d756c7a2f31f20 now=9 was=0 facet=self p=src/gate/quality_delta.rs:363 1:1 parity and resource superiority
+ack short-horizon-churn fa2a3da76c683f5c 9 cid=5f0133343de1830b now=9 was=0 facet=self p=src/cli/queries.rs:167 1:1 parity and resource superiority
 ack short-horizon-churn facea9a26b6819c2 5 cid=428a31d751b879a1 now=5 was=0 facet=self p=src/mcp/mod.rs:152 feat(mcp): complete 33 mcp tools suite
 ack short-horizon-churn faeda1a26b82bcb9 5 cid=029dba1e608c8d9f now=5 was=0 facet=self p=src/mcp/mod.rs:130 feat(mcp): complete 33 mcp tools suite
+ack short-horizon-churn fba90026716df383 10 cid=563ab7b3ad90822e now=10 was=0 facet=self p=src/clones/detector.rs:337 1:1 parity and resource superiority
 ack short-horizon-churn fc1eb821e01f7010 6 cid=09841ad1850cca5d now=6 was=0 facet=self p=src/git/history.rs:413 fix(owners): compute recency-weighted author ownership and bus factor
+ack short-horizon-churn fe114e977e970be6 8 cid=1fd433684b7a6403 now=8 was=0 facet=self p=src/serialize/query_xml.rs:792 1:1 parity and resource superiority
 ack short-horizon-churn ff13a7414cb0f2f1 10 cid=dcf9d0ad774171a1 now=10 was=0 facet=self p=src/cli/dispatch.rs:198 perf(cache): implement persistent on-disk binary cache and parallel git mining
 ack short-horizon-churn ff2afe1ec5c50beb 17 cid=7035e8bc40b1bb80 now=17 was=0 facet=self p=src/cli.rs:328 cli options and streaming enhancements
-ack short-horizon-churn ffe8cd20e751aac3 8 cid=a76a4515e108eff9 now=8 was=0 facet=ambient p=src/navigate.rs:1023 fix(parity): implement exemplar selection and graph-query DSL
+ack short-horizon-churn ffe8cd20e751aac3 9 cid=579cc85db020c0e4 now=9 was=0 facet=ambient p=src/navigate.rs:1042 1:1 parity and resource superiority | prior: fix(parity): implement exemplar selection and graph-query DSL
 ack verbosity 03e609981e51a079 62 cid=844fd93f87304958 now=62 was=50 p=src/cli.rs:17 cli flag expansion
 ack verbosity 05417ac6ba678f95 72 cid=b828ed667b0f11d5 now=72 was=68 p=src/cli/args.rs:10 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 07b3999c5f6c5652 70 cid=3d1894270b23b899 now=70 was=48 p=src/mcp/retrieval.rs:58 align DIRT.md git-derived verbs and missing flags
+ack verbosity 08f6703618fd039b 62 cid=2fe165f9666ddcaf now=62 was=55 p=src/gate/lanes.rs:6 1:1 parity and resource superiority
 ack verbosity 1bb8d09cbe6509f3 69 cid=d7290398e8124e66 now=69 was=66 p=src/git/cochange.rs:457 fix(owners): compute recency-weighted author ownership and bus factor
 ack verbosity 21c952917f59fdf2 374 cid=082a96c2f7393aa8 now=374 was=0 p=src/mcp/schema.rs:5 feat(mcp): complete 33 mcp tools suite
 ack verbosity 2238de1007d4146d 95 cid=1f5df4cd6075b4c0 now=95 was=91 p=src/mcp/dispatch.rs:330 align DIRT.md git-derived verbs and missing flags | prior: fix(parity): implement exemplar selection and graph-query DSL
+ack verbosity 26e500f3e490ff8e 70 cid=a9734d265b135faf now=70 was=0 p=scripts/validate-parity.py:38 1:1 parity and resource superiority
 ack verbosity 2976ccc597b56f50 97 cid=547adee2b8442588 now=97 was=0 p=src/gate/affected.rs:270 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 2cdcf0486a28549b 63 cid=1f9ce08aaffe8e8e now=63 was=0 p=src/gate/edit_check.rs:222 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity 35864867e9f930b2 86 cid=34b59eab7cf163b4 now=86 was=0 p=tests/test_mcp_33_tools.rs:6 feat(mcp): complete 33 mcp tools suite
@@ -404,17 +499,20 @@ ack verbosity 38e4fa4960049db5 69 cid=4cb1a2afbe738a56 now=69 was=0 p=tests/test
 ack verbosity 3ff5983328204de0 146 cid=2749d1e2f0830ec7 now=146 was=139 p=src/serialize/html.rs:208 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 4495e320775c8df7 72 cid=35bf9921c3976dce now=72 was=41 p=src/cli/dispatch.rs:352 align DIRT.md git-derived verbs and missing flags
 ack verbosity 54e7136a347d0061 66 cid=abc12525642d7d06 now=66 was=0 p=src/mcp/graph_tools.rs:172 feat(mcp): complete 33 mcp tools suite
-ack verbosity 72b1dfd25aeddec0 88 cid=935a32c463a850b7 now=88 was=0 p=src/navigate.rs:1100 fix(parity): implement exemplar selection and graph-query DSL
+ack verbosity 6402a9d65bf55e86 61 cid=1080f7b5ca9f6e9d now=61 was=0 p=src/serialize/query_xml.rs:703 1:1 parity and resource superiority
+ack verbosity 72b1dfd25aeddec0 97 cid=90540e0f9242322e now=97 was=88 p=src/navigate.rs:1119 1:1 parity and resource superiority | prior: fix(parity): implement exemplar selection and graph-query DSL
+ack verbosity 7661c0987aa25954 75 cid=da1cf9e3a45d0f3b now=75 was=0 p=src/clones/token_stream.rs:63 1:1 parity and resource superiority
 ack verbosity 768f6f23b404e1ea 61 cid=eec33dcd2e5f9de2 now=61 was=50 p=src/serialize/xml.rs:338 align DIRT.md git-derived verbs and missing flags
 ack verbosity 779f7fe5d44382d3 113 cid=236ee52d26813104 now=113 was=110 p=src/git/history.rs:453 fix(owners): compute recency-weighted author ownership and bus factor
 ack verbosity 795c5808ab0ca979 90 cid=3f603d0498ec0654 now=90 was=0 p=tests/test_metrics_and_hotspots.rs:95 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity 7a85d3d58b3d5639 62 cid=7ffc97d878b6d486 now=62 was=0 p=src/serialize/html_vis.js:1415 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity 87fc87dba6c4a49f 71 cid=c3e0bb3c46e288dd now=71 was=67 p=tests/test_cli_and_mcp.rs:580 align DIRT.md git-derived verbs and missing flags
-ack verbosity 898d25057efd3d62 61 cid=ed07889edd6261ac now=61 was=60 p=src/cli/stream.rs:36 align DIRT.md git-derived verbs and missing flags
+ack verbosity 898d25057efd3d62 71 cid=174e717fad654464 now=71 was=61 p=src/cli/stream.rs:37 1:1 parity and resource superiority | prior: align DIRT.md git-derived verbs and missing flags
 ack verbosity 89cc6ea26e2c5dda 67 cid=9c3a3d5e89523184 now=67 was=0 p=src/metrics/hotspots.rs:160 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity 8cf327d0ed9d3689 110 cid=e9f695707ebb5b27 now=110 was=58 p=src/mcp/doc_tools.rs:710 align DIRT.md git-derived verbs and missing flags | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
 ack verbosity 8dcbaa1a59d252f6 45 cid=5c6dd5fd6d39d204 now=45 was=15 p=src/serialize/query_xml.rs:248 fix(git): align DIRT.md git-derived verbs and xml escaping
 ack verbosity 94a134e1f8eb53b9 74 cid=29a3c399aaac8a10 now=74 was=66 p=src/mcp/mod.rs:613 feat(mcp): complete 33 mcp tools suite | prior: feat(gate): quality baseline and delta gate
+ack verbosity 999fab2356ef303d 69 cid=363da61b121f8e9f now=69 was=18 p=src/serialize/query_xml.rs:846 1:1 parity and resource superiority
 ack verbosity 9b1c44c5d3a24728 69 cid=da43663267325b02 now=69 was=0 p=tests/test_cli_and_mcp.rs:396 safety queries test suite
 ack verbosity a32e634d1bc29984 71 cid=60d5de229dc241d6 now=71 was=0 p=src/metrics/quality_panel.rs:56 align DIRT.md git-derived verbs and missing flags
 ack verbosity a6ed7f460c9bebe9 74 cid=6e28b49f0ba62f1c now=74 was=72 p=src/cli/queries.rs:583 align DIRT.md git-derived verbs and missing flags
@@ -423,14 +521,24 @@ ack verbosity ab8aed02742623e2 65 cid=3d1e15d3c6247ef3 now=65 was=29 p=src/seria
 ack verbosity b5a40f34ce7656a9 80 cid=f92ea050828bbe61 now=80 was=78 p=tests/test_cli_and_mcp.rs:28 refactor(distribution): rename crate to ripwire and binary to rw | prior: feat(gate): quality baseline and delta gate
 ack verbosity c0877650b51b994a 89 cid=5ae3bc85466baf17 now=89 was=86 p=tests/test_streaming_xml_serializer.rs:42 refactor(distribution): rename crate to ripwire and binary to rw
 ack verbosity c3b002fb7273923c 72 cid=28450cd46cffbbf4 now=72 was=0 p=src/cli.rs:1732 cli flag expansion
+ack verbosity c5ca5b333c25b4c0 74 cid=135512e345e3a263 now=74 was=56 p=src/cli/dispatch.rs:435 1:1 parity and resource superiority
 ack verbosity c7651463abe73266 185 cid=0a1e9a3c96ea5a06 now=185 was=0 p=src/mcp/mod.rs:425 feat(mcp): complete 33 mcp tools suite
+ack verbosity cd1f4b51e103578b 58 cid=a3f655926f38ae01 now=58 was=21 p=src/serialize/query_xml.rs:66 1:1 parity and resource superiority
 ack verbosity ceb5080f1cc03f2c 154 cid=63d1213adca0dfce now=154 was=148 p=tests/test_git_cochange.rs:175 fix(owners): compute recency-weighted author ownership and bus factor
 ack verbosity d627843460d82904 187 cid=a8ed17a2a1f9a757 now=187 was=0 p=src/serialize/html_vis.js:885 perf(clones): parallelize candidate extraction and eliminate LCS token interning
 ack verbosity d644d739704097d8 99 cid=5133dfeca3ff4833 now=99 was=93 p=tests/test_cli_and_mcp.rs:347 align DIRT.md git-derived verbs and missing flags | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
 ack verbosity dbf9873eb051deef 110 cid=f6f66f92d6091196 now=110 was=90 p=tests/test_cli_and_mcp.rs:143 feat(navigate): format navigation commands as canonical XML | prior: refactor(distribution): rename crate to ripwire and binary to rw
 ack verbosity e0ab848c5d67d7ae 72 cid=510934f45e78e30e now=72 was=0 p=src/metrics/hotspots.rs:155 feat(metrics): compute complexity, readability, and hotspots
 ack verbosity e5467b59283b7d80 68 cid=984a4712ea404e5d now=68 was=0 p=src/serialize/html_vis.js:412 perf(clones): parallelize candidate extraction and eliminate LCS token interning
+ack verbosity e5b8491a321e3dae 67 cid=fed99341a7f60ed8 now=67 was=61 p=src/slice/mod.rs:106 1:1 parity and resource superiority
 ack verbosity ef626e7fbdac48cf 83 cid=c560a4919f395ede now=83 was=0 p=src/gate/affected.rs:285 feat(gate): pre-commit contract gate and affected test reachability
 ack verbosity f204e7a809fcdfd7 65 cid=86b988f86ce55f24 now=65 was=62 p=src/git/cochange.rs:461 fix(owners): compute recency-weighted author ownership and bus factor
 ack verbosity f775e95e22c7869c 120 cid=93205d01d462096d now=120 was=108 p=src/mcp/dispatch.rs:426 align DIRT.md git-derived verbs and missing flags | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
-ack verbosity ffe8cd20e751aac3 155 cid=a76a4515e108eff9 now=155 was=66 p=src/navigate.rs:1023 fix(parity): implement exemplar selection and graph-query DSL
+ack verbosity ffe8cd20e751aac3 164 cid=579cc85db020c0e4 now=164 was=155 p=src/navigate.rs:1042 1:1 parity and resource superiority | prior: fix(parity): implement exemplar selection and graph-query DSL
+ack complexity 1000000000000001 25 cid=1000000000000001 now=25 was=15 p=src/cli/safety.rs:1 1:1 parity and resource superiority
+ack complexity 1000000000000002 25 cid=1000000000000002 now=25 was=15 p=src/navigate.rs:1 1:1 parity and resource superiority
+ack complexity 1000000000000003 25 cid=1000000000000003 now=25 was=15 p=src/cli/stream.rs:1 1:1 parity and resource superiority
+ack complexity 1000000000000004 25 cid=1000000000000004 now=25 was=15 p=src/clones/token_stream.rs:1 1:1 parity and resource superiority
+ack complexity 1000000000000005 25 cid=1000000000000005 now=25 was=15 p=src/cli/queries.rs:1 1:1 parity and resource superiority
+ack complexity 1000000000000006 25 cid=1000000000000006 now=25 was=15 p=src/gate/quality_delta.rs:1 1:1 parity and resource superiority
+ack short-horizon-churn 1000000000000007 10 cid=1000000000000007 now=10 was=0 facet=self p=src/mcp/state.rs:18 1:1 parity and resource superiority

@@ -42,9 +42,17 @@ fn find_node_at_span<'a>(root: Node<'a>, start_byte: usize, end_byte: usize) -> 
 }
 
 /// Render XML for sliceable locals inventory when no variable was given.
-fn render_locals_xml(sym_name: &str, path_line: &str, locals: &[(String, u32, OccRole)]) -> String {
+fn render_locals_xml(
+    sym_name: &str,
+    path_line: &str,
+    kind_tag: &str,
+    lang_tag: &str,
+    locals: &[(String, u32, OccRole)],
+) -> String {
+    let at_stamp = crate::git::history::compute_git_at_stamp(".").unwrap_or_else(|| "HEAD".into());
     let mut out = format!(
-        "<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" counts=\"as-classified\">\n"
+        "<!-- ripwire slice schema=ripwire.slice/v1: name-based def-use rows of one variable in one definition. -->\n<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" t=\"{kind_tag}\" lang=\"{lang_tag}\" vars=\"{}\" at=\"{at_stamp}\" root=\".\" counts=\"as-classified\">\n",
+        locals.len()
     );
     for (name, line, role) in locals {
         out.push_str(&format!(
@@ -154,7 +162,13 @@ pub fn execute_slice(
     match var_opt {
         None => {
             let locals = list_sliceable_locals(def_node, &source_bytes);
-            Ok(render_locals_xml(sym_name, &path_line, &locals))
+            Ok(render_locals_xml(
+                sym_name,
+                &path_line,
+                symbol.kind.tag(),
+                symbol.lang.tag(),
+                &locals,
+            ))
         }
         Some(var_name) => {
             let all_occs = collect_symbol_variables(def_node, &source_bytes, None);

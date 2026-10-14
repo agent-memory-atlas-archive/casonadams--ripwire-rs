@@ -1,31 +1,19 @@
 #!/usr/bin/env python3
-import sys
+import importlib.util
 import os
-import subprocess
 import re
-import shutil
-import glob
+import subprocess
+import sys
 
-target_dir = sys.argv[1] if len(sys.argv) > 1 else ".."
-target_dir = os.path.abspath(target_dir)
+_SPEC = importlib.util.spec_from_file_location(
+    "bench_perf", os.path.join(os.path.dirname(__file__), "benchmark-performance.py")
+)
+_MOD = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MOD)
+locate_bench_binaries = _MOD.locate_bench_binaries
+measure_process = _MOD.measure_process
 
-rs_bin = os.path.abspath("target/release/ripwire-rs")
-if not os.path.exists(rs_bin):
-    rs_bin = os.path.abspath("target/release/rw")
-if not os.path.exists(rs_bin):
-    rs_bin = shutil.which("ripwire-rs") or shutil.which("rw")
-if not rs_bin:
-    print("Error: 'ripwire-rs' release binary not found. Run 'cargo build --release' first.", file=sys.stderr)
-    sys.exit(1)
-
-cpp_bin = os.path.expanduser("~/.local/bin/ripwire")
-if not os.path.exists(cpp_bin):
-    cpp_bin = shutil.which("ripwire")
-if not cpp_bin:
-    print("Error: upstream 'ripwire' binary not found in ~/.local/bin/ripwire or PATH.", file=sys.stderr)
-    sys.exit(1)
-
-def find_repos(path):
+def find_git_repos(path):
     if os.path.isdir(os.path.join(path, ".git")):
         return [path]
     repos = []
@@ -35,51 +23,24 @@ def find_repos(path):
             repos.append(full)
     return repos
 
-repos = find_repos(target_dir)
-if not repos:
-    print(f"Error: no git repositories found in {target_dir}", file=sys.stderr)
-    sys.exit(1)
 
-def run_timed(cmd):
-    p = subprocess.run(["/usr/bin/time", "-l"] + cmd, capture_output=True, text=True)
-    out = p.stderr
-    m_time = re.search(r"([0-9.]+)\s+real", out)
-    real_sec = float(m_time.group(1)) if m_time else 0.0
-    m_rss = re.search(r"([0-9]+)\s+maximum resident set size", out)
-    max_rss_mb = (int(m_rss.group(1)) / (1024 * 1024)) if m_rss else 0.0
-    return p, real_sec, max_rss_mb
-
-def get_top_symbol(repo_path):
-    p = subprocess.run([rs_bin, repo_path, "--top-k=5"], capture_output=True, text=True)
-    syms = re.findall(r'<s [^>]*n="([a-zA-Z0-9_]+)"', p.stdout)
-    for s in syms:
-        if len(s) > 2:
-            return s
+def pick_repo_symbol(rs_bin, repo_path):
+    proc = subprocess.run([rs_bin, repo_path, "--top-k=5"], capture_output=True, text=True)
+    syms = re.findall(r'<s [^>]*n="([a-zA-Z0-9_]+)"', proc.stdout)
+    for sym in syms:
+        if len(sym) > 2:
+            return sym
     return "main"
 
-print("==========================================================================================")
-print(f"Multi-Repo Parity, Speed & Memory Sweep: {len(repos)} repositories")
-print(f"Rust binary: {rs_bin}")
-print(f"C++ binary:  {cpp_bin}")
-print("==========================================================================================")
 
-total_runs = 0
-faster_runs = 0
-lower_mem_runs = 0
-
-fmt = "{:<16} | {:>8.3f}s | {:>8.3f}s | {:>7.2f}x | {:>7.1f}MB | {:>7.1f}MB | {:>9} | {:>6}"
-
-for r in repos:
-    repo_name = os.path.basename(r)
-    sym = get_top_symbol(r)
+def run_repo_suite(rs_bin, cpp_bin, repo_path):
+    repo_name = os.path.basename(repo_path)
+    sym = pick_repo_symbol(rs_bin, repo_path)
     print(f"\n--- Repository: {repo_name} (Symbol: {sym}) ---")
-    print("Operation        | Rust Time | C++ Time  | Speedup | Rust RSS| C++ RSS | RSS Delta | Verdict")
-    print("-" * 90)
-
-    # Warm cache
-    subprocess.run([rs_bin, r], capture_output=True)
-    subprocess.run([cpp_bin, r], capture_output=True)
-
+    print("Operation        | RS Wall | C++ Wall|   RS CPU|  C++ CPU|  RS RSS | C++ RSS | Verdict")
+    print("-" * 88)
+    subprocess.run([rs_bin, repo_path], capture_output=True)
+    subprocess.run([cpp_bin, repo_path], capture_output=True)
     suite = [
         ("Map (Warm)", []),
         ("Callers", [f"--callers={sym}"]),
@@ -93,38 +54,42 @@ for r in repos:
         ("Hotspots", ["--hotspots"]),
         ("Clones", ["--clones"]),
     ]
-
+    fmt = "{:<16} | {:>6.3f}s | {:>6.3f}s | {:>6.3f}s | {:>6.3f}s | {:>5.1f}MB | {:>5.1f}MB | {}"
+    stats = [0, 0, 0, 0]
     for name, args in suite:
-        total_runs += 1
-        _, rs_t, rs_m = run_timed([rs_bin, r] + args)
-        _, cpp_t, cpp_m = run_timed([cpp_bin] + args + [r])
+        stats[0] += 1
+        _, rs_w, rs_c, rs_m = measure_process([rs_bin, repo_path] + args)
+        _, cpp_w, cpp_c, cpp_m = measure_process([cpp_bin, repo_path] + args)
+        ok_w = rs_w <= max(cpp_w * 1.15, cpp_w + 0.02)
+        ok_c = rs_c <= max(cpp_c * 1.15, cpp_c + 0.02)
+        ok_m = rs_m <= max(cpp_m * 1.20, cpp_m + 2.0)
+        stats[1] += int(ok_w)
+        stats[2] += int(ok_c)
+        stats[3] += int(ok_m)
+        verdict = "\033[32mPASS\033[0m" if (ok_w and ok_c and ok_m) else "\033[33mWARN\033[0m"
+        print(fmt.format(name, rs_w, cpp_w, rs_c, cpp_c, rs_m, cpp_m, verdict))
+    return stats
 
-        speedup = cpp_t / rs_t if rs_t > 0 else 1.0
-        rss_pct = ((rs_m - cpp_m) / cpp_m * 100) if cpp_m > 0 else 0.0
-        rss_str = f"{rss_pct:+.1f}%"
 
-        is_faster = rs_t <= (cpp_t * 1.15)  # 15% margin for variance
-        is_lower_mem = rs_m <= (cpp_m * 1.25)  # 25% margin for allocator baseline
+def main():
+    target_dir = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else "..")
+    rs_bin, cpp_bin = locate_bench_binaries()
+    repos = find_git_repos(target_dir)
+    if not repos:
+        print(f"Error: no git repositories found in {target_dir}", file=sys.stderr)
+        sys.exit(1)
+    totals = [0, 0, 0, 0]
+    for repo_path in repos:
+        res = run_repo_suite(rs_bin, cpp_bin, repo_path)
+        for idx in range(4):
+            totals[idx] += res[idx]
+    runs = max(totals[0], 1)
+    w_pct, c_pct, m_pct = (totals[1] * 100 / runs), (totals[2] * 100 / runs), (totals[3] * 100 / runs)
+    print("\n" + "=" * 88)
+    print(f"Summary: {totals[0]} runs | Wall: {w_pct:.1f}% | CPU: {c_pct:.1f}% | RSS: {m_pct:.1f}%")
+    if min(w_pct, c_pct, m_pct) < 85.0:
+        sys.exit(1)
 
-        if is_faster:
-            faster_runs += 1
-        if is_lower_mem:
-            lower_mem_runs += 1
 
-        verdict = "PASS" if is_faster and is_lower_mem else "WARN"
-        v_color = "\033[32mPASS\033[0m" if verdict == "PASS" else "\033[33mWARN\033[0m"
-        print(fmt.format(name, rs_t, cpp_t, speedup, rs_m, cpp_m, rss_str, v_color))
-
-print("\n" + "=" * 90)
-speed_pct = (faster_runs / total_runs * 100) if total_runs > 0 else 0
-mem_pct = (lower_mem_runs / total_runs * 100) if total_runs > 0 else 0
-print(f"Summary: {total_runs} benchmark runs across {len(repos)} repositories")
-print(f"Speed Invariant (Rust <= C++): {faster_runs}/{total_runs} ({speed_pct:.1f}%)")
-print(f"Memory Invariant (Rust RSS <= C++ RSS): {lower_mem_runs}/{total_runs} ({mem_pct:.1f}%)")
-
-if speed_pct >= 80.0:
-    print("\033[32mPERFORMANCE INVARIANT VERIFIED: ripwire-rs performs better or on-par across repos.\033[0m")
-    sys.exit(0)
-else:
-    print("\033[31mPERFORMANCE DEFECT DETECTED: ripwire-rs fell behind C++ on >20% of benchmarks.\033[0m")
-    sys.exit(1)
+if __name__ == "__main__":
+    main()

@@ -193,24 +193,27 @@ pub fn find_integration_seams(
 
 /// Serialize seams report to canonical XML format.
 pub fn serialize_seams_xml<W: Write>(root: &str, rep: &SeamsReport, out: &mut W) -> io::Result<()> {
+    let total = rep.seam_pairs_count;
+    let shown = total.min(20);
+    let capped = usize::from(shown < total);
+    let page_attrs = format!(
+        " shown=\"{shown}\" capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+    );
     writeln!(
         out,
-        "<seams schema=\"ripwire.seams/v1\" root=\"{root}\" modules=\"{}\" bridges=\"{}\" untested=\"{}\" test_files=\"{}\" seam_pairs=\"{}\">",
-        rep.modules_count,
-        rep.bridges_count,
-        rep.untested_count,
-        rep.test_files_count,
-        rep.seam_pairs_count
+        "<!-- ripwire seams schema=ripwire.seams/v1: cross-directory call edges NO test reaches. -->\n<seams schema=\"ripwire.seams/v1\" root=\"{root}\" modules=\"{}\" bridges=\"{}\" untested=\"{}\" test_files=\"{}\" seam_pairs=\"{total}\"{page_attrs} pr_iters=\"44\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
+        rep.modules_count, rep.bridges_count, rep.untested_count, rep.test_files_count,
     )?;
-    for g in &rep.groups {
+    for g in rep.groups.iter().take(shown) {
+        let e_len = g.edges.len();
+        let e_shown = e_len.min(5);
+        let e_cap = usize::from(e_shown < e_len);
         writeln!(
             out,
-            "  <seam from=\"{}\" to=\"{}\" untested=\"{}\">",
-            g.from_dir,
-            g.to_dir,
-            g.edges.len()
+            "  <seam from=\"{}\" to=\"{}\" untested=\"{e_len}\" shown=\"{e_shown}\" capped=\"{e_cap}\">",
+            g.from_dir, g.to_dir
         )?;
-        for e in &g.edges {
+        for e in g.edges.iter().take(e_shown) {
             writeln!(
                 out,
                 "    <edge caller=\"{}\" p=\"{}\" callee=\"{}\" cp=\"{}\"/>",

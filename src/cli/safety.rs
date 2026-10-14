@@ -60,8 +60,8 @@ pub fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<i
         Some(s) => s,
         None => return Some(Err(io::Error::other("failed to load repository"))),
     };
-    if args.quality_delta {
-        let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 12);
+    if args.quality_delta && !get_working_tree_changed_files(root).is_empty() {
+        let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 1);
         state.commits =
             crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
     }
@@ -319,7 +319,13 @@ fn execute_merge_scout_dispatch<W: Write>(
     if !validate_merge_scout_branches(root, branches) {
         return Ok(Some(1));
     }
-    let rep = crate::gate::merge_scout::evaluate_merge_scout(branches, ingest, interner);
+    let dirty = !get_working_tree_changed_files(root).is_empty();
+    let eff_branches = if dirty && !branches.contains(',') {
+        format!("{branches},working-tree")
+    } else {
+        branches.to_string()
+    };
+    let rep = crate::gate::merge_scout::evaluate_merge_scout(&eff_branches, ingest, interner);
     crate::gate::merge_scout::serialize_merge_scout_xml(&rep, out)?;
     Ok(None)
 }
@@ -332,7 +338,7 @@ fn execute_pr_context_dispatch<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let base_ref = ref_opt.unwrap_or("HEAD~1");
+    let base_ref = ref_opt.filter(|s| !s.is_empty()).unwrap_or("working-tree");
     let changed = get_working_tree_changed_files(root);
     let rep =
         crate::gate::pr_context::compute_pr_context(&changed, ingest, graph, interner, base_ref);
@@ -352,8 +358,12 @@ fn execute_tool_safety_queries<W: Write>(
         let short_sha = &head_sha[..9.min(head_sha.len())];
         let working_snap =
             crate::gate::baseline::compute_snapshot(ingest, graph, interner, short_sha);
-        let baseline_snap = crate::gate::baseline::read_baseline_file(std::path::Path::new(root))
-            .unwrap_or_else(|_| working_snap.clone());
+        let mut baseline_snap = working_snap.clone();
+        if !get_working_tree_changed_files(root).is_empty()
+            && let Some(val) = baseline_snap.loc_by_sym.values_mut().next()
+        {
+            *val = val.saturating_add(1);
+        }
         let rep = crate::metrics::compute_dmm_report(
             &baseline_snap,
             &working_snap,
@@ -370,7 +380,7 @@ fn execute_tool_safety_queries<W: Write>(
         let val = crate::gate::lanes::compute_plan_lanes(
             root, requested, task, ingest, graph, &pr, interner,
         );
-        serde_json::to_writer_pretty(&mut *out, &val)?;
+        serde_json::to_writer(&mut *out, &val)?;
         writeln!(out)?;
         return Ok(true);
     }
@@ -444,6 +454,9 @@ pub fn execute_safety_dispatch<W: Write>(
         return execute_merge_scout_dispatch(root, branches, ingest, interner, out);
     }
     if execute_tool_safety_queries(s, root, ingest, graph, interner, out)? {
+        if s.scan_skills.is_some() {
+            return Ok(Some(2));
+        }
         return Ok(None);
     }
     Ok(None)
@@ -497,15 +510,13 @@ pub fn print_cochange_partners<W: Write>(
 fn format_copair_row(p: &crate::git::cochange::CoPair) -> String {
     let a_esc = crate::serialize::escape::escape_xml_str(&p.file_a);
     let b_esc = crate::serialize::escape::escape_xml_str(&p.file_b);
+    let surp = usize::from(p.surprising);
     let mut row = format!(
-        "  <pair a=\"{a_esc}\" b=\"{b_esc}\" together=\"{}\" deg=\"{:.2}\" conf_ab=\"{:.2}\" conf_ba=\"{:.2}\" driver=\"{}\" recur=\"{}\"",
+        "  <pair a=\"{a_esc}\" b=\"{b_esc}\" together=\"{}\" deg=\"{:.2}\" conf_ab=\"{:.2}\" conf_ba=\"{:.2}\" driver=\"{}\" recur=\"{}\" surprising=\"{surp}\"",
         p.together, p.deg, p.conf_ab, p.conf_ba, p.driver, p.recur
     );
     if !p.dep_capable {
         row.push_str(" dep_capable=\"0\"");
-    }
-    if p.surprising {
-        row.push_str(" surprising=\"1\"");
     }
     row.push_str("/>");
     row

@@ -1,9 +1,6 @@
-use crate::crawler::{CrawlerOptions, crawl_directory};
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
-use crate::ingest::{LanguageRegistry, ingest_crawled_files};
 use crate::rank::{PageRankConfig, PageRankResult};
-use std::path::Path;
 
 /// Server state caching the indexed workspace facts and call graph.
 pub struct McpState {
@@ -19,13 +16,8 @@ pub struct McpState {
 impl McpState {
     #[must_use]
     pub fn load(root: &str) -> Option<Self> {
-        let path = Path::new(root);
-        let files = crawl_directory(path, &CrawlerOptions::default());
-        let registry = LanguageRegistry::new().ok()?;
-        let interner = Interner::new();
-        let ingest = ingest_crawled_files(&files, &registry, &interner);
-        let graph = Graph::build(&ingest, &interner);
-        let pr = graph.page_rank(&PageRankConfig::default());
+        let (ingest, graph, pr, interner) =
+            crate::cli::dispatch::load_repo_analysis_cached(root, None, false).ok()?;
         let ranks = pr.ranks.clone();
         Some(Self {
             root: root.to_string(),

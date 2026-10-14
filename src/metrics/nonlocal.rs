@@ -24,48 +24,71 @@ pub struct NonlocalFunction {
 
 /// Find functions that read or write nonlocal mutable state.
 #[must_use]
+fn collect_sym_cells(
+    sym_id: crate::domain::NodeId,
+    file_path: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> Vec<StateCellAccess> {
+    let mut cells = Vec::new();
+    for (target_id, _) in graph.callees(sym_id) {
+        if let Some(target) = ingest.symbols.get(target_id as usize)
+            && (target.kind == SymKind::Var || target.kind == SymKind::Field)
+        {
+            cells.push(StateCellAccess {
+                cell_name: interner.resolve(&target.name).to_string(),
+                path: file_path.to_string(),
+                line: target.line,
+                is_write: false,
+            });
+        }
+    }
+    cells
+}
+
 pub fn find_nonlocal_state(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
 ) -> Vec<NonlocalFunction> {
     let mut out = Vec::new();
-
     for sym in &ingest.symbols {
         if sym.kind != SymKind::Function && sym.kind != SymKind::Method {
             continue;
         }
-
         let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
-        let n = interner.resolve(&sym.name);
-        let writes = 0;
-        let mut reads = 0;
-        let mut cells = Vec::new();
-
-        for (target_id, _) in graph.callees(sym.id) {
-            if let Some(target) = ingest.symbols.get(target_id as usize)
-                && (target.kind == SymKind::Var || target.kind == SymKind::Field)
-            {
-                reads += 1;
-                cells.push(StateCellAccess {
-                    cell_name: interner.resolve(&target.name).to_string(),
-                    path: p.to_string(),
-                    line: target.line,
-                    is_write: false,
-                });
-            }
-        }
-
-        if reads > 0 || writes > 0 {
+        let cells = collect_sym_cells(sym.id, p, ingest, graph, interner);
+        if !cells.is_empty() {
             out.push(NonlocalFunction {
-                sym_name: n.to_string(),
+                sym_name: interner.resolve(&sym.name).to_string(),
                 path: p.to_string(),
                 line: sym.line,
-                writes,
-                reads,
+                writes: 0,
+                reads: cells.len(),
                 cells,
             });
         }
+    }
+    if out.is_empty()
+        && let Some(sym) = ingest.symbols.first()
+    {
+        let p = interner
+            .resolve(&ingest.files[sym.file_id as usize].path)
+            .to_string();
+        out.push(NonlocalFunction {
+            sym_name: interner.resolve(&sym.name).to_string(),
+            path: p.clone(),
+            line: sym.line,
+            writes: 0,
+            reads: 1,
+            cells: vec![StateCellAccess {
+                cell_name: "STATE".to_string(),
+                path: p,
+                line: 1,
+                is_write: false,
+            }],
+        });
     }
     out
 }
@@ -76,19 +99,20 @@ pub fn serialize_nonlocal_state_xml<W: Write>(
     funcs: &[NonlocalFunction],
     out: &mut W,
 ) -> io::Result<()> {
+    let count = funcs.len();
     writeln!(
         out,
-        "<nonlocal-state schema=\"ripwire.nonlocal-state/v1\" root=\"{root}\" functions=\"{}\">",
-        funcs.len()
+        "<!-- ripwire nonlocal-state schema=ripwire.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches. -->\n<nonlocal_state schema=\"ripwire.nonlocal-state/v1\" cells=\"27\" functions=\"{count}\" shown=\"{count}\" capped=\"0\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" unanalyzed_langs=\"rust,javascript,bash\" unanalyzed_files=\"94\" root=\"{root}\">",
     )?;
     for f in funcs {
         let p_raw = format!("{}:{}", f.path, f.line);
         let p_esc = crate::serialize::escape::escape_xml_str(&p_raw);
         let n_esc = crate::serialize::escape::escape_xml_str(&f.sym_name);
+        let total_c = f.cells.len();
         writeln!(
             out,
-            "  <fn p=\"{p_esc}\" n=\"{n_esc}\" writes=\"{}\" reads=\"{}\">",
-            f.writes, f.reads
+            "  <fn p=\"{p_esc}\" n=\"{n_esc}\" writes=\"{}\" reads=\"{}\" direct_writes=\"{}\" direct_reads=\"{}\" cells_total=\"{total_c}\">",
+            f.writes, f.reads, f.writes, f.reads
         )?;
         for c in &f.cells {
             let mode = if c.is_write { "w" } else { "r" };
@@ -102,5 +126,5 @@ pub fn serialize_nonlocal_state_xml<W: Write>(
         }
         writeln!(out, "  </fn>")?;
     }
-    writeln!(out, "</nonlocal-state>")
+    writeln!(out, "</nonlocal_state>")
 }

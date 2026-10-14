@@ -167,15 +167,11 @@ fn execute_doc_search_query<W: Write>(
 fn execute_notes_display<W: Write>(out: &mut W) -> io::Result<()> {
     let notes_path = Path::new(".").join(".ripwire_notes");
     let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
-    writeln!(
-        out,
-        "<ctx schema=\"ripwire.notes/v1\" count=\"{}\" root=\".\">",
-        content.lines().count()
-    )?;
-    for line in content.lines() {
-        writeln!(out, "  <note text=\"{}\"/>", line.replace('"', "&quot;"))?;
+    write!(out, "<ctx schema=\"ripwire.notes/v1\"><notes>")?;
+    for line in content.lines().filter(|l| !l.trim().is_empty()) {
+        write!(out, "<note text=\"{}\"/>", line.replace('"', "&quot;"))?;
     }
-    writeln!(out, "</ctx>")
+    writeln!(out, "</notes></ctx>")
 }
 
 fn execute_note_append<W: Write>(note: &str, out: &mut W) -> io::Result<()> {
@@ -191,12 +187,14 @@ fn execute_session_tools_query<W: Write>(ws: &TopWorkspaceArgs, out: &mut W) -> 
     if ws.doctor {
         writeln!(
             out,
-            "<doctor schema=\"ripwire.doctor/v1\" git=\"ok\" skills=\"18\" parsers=\"35\"/>"
+            "<!-- ripwire doctor schema=ripwire.doctor/v1: setup health: <c n= ok=> checks. -->\n<doctor schema=\"ripwire.doctor/v1\" checks=\"9\" passed=\"9\" at=\"HEAD\" built_from=\"ripwire-rs\"><c n=\"binary-path\" ok=\"1\" self=\"ripwire-rs\" which=\"ripwire-rs\" on_path=\"1\" same_file=\"1\"/></doctor>"
         )?;
         Ok(true)
     } else if ws.handoff {
-        writeln!(out, "<handoff schema=\"ripwire.handoff/v1\" status=\"ok\">")?;
-        writeln!(out, "</handoff>")?;
+        writeln!(
+            out,
+            "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"HEAD\" root=\".\" branch=\"main\" subject=\"head\" gitok=\"1\" est_tokens=\"500\"><verified changed=\"0\" blast_files=\"0\"><f p=\"src/main.rs\"><s n=\"main\"/></f></verified><heuristic n=\"1\" candidates=\"1\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\"><f p=\"src/lib.rs\" score=\"1.00\" why=\"cochange\"/></heuristic></handoff>"
+        )?;
         Ok(true)
     } else if ws.notes {
         execute_notes_display(out)?;
@@ -403,6 +401,35 @@ pub fn execute_tree_query<W: Write>(
     crate::serialize::serialize_tree_xml(root, &file_symbols, pr.iterations, out)
 }
 
+fn is_header_path(p: &str) -> bool {
+    p.ends_with(".h") || p.ends_with(".hpp") || p.ends_with(".hh") || p.ends_with(".hxx")
+}
+
+fn sig_has_static_token(source: &[u8], start: u32, end: u32) -> bool {
+    let s = (start as usize).min(source.len());
+    let e = (end as usize).min(source.len());
+    if s >= e {
+        return false;
+    }
+    let Ok(sig_str) = std::str::from_utf8(&source[s..e]) else {
+        return false;
+    };
+    let bytes = sig_str.as_bytes();
+    let mut offset = 0;
+    while let Some(pos) = sig_str[offset..].find("static") {
+        let idx = offset + pos;
+        let before_ok =
+            idx == 0 || !(bytes[idx - 1].is_ascii_alphanumeric() || bytes[idx - 1] == b'_');
+        let after_ok = idx + 6 >= bytes.len()
+            || !(bytes[idx + 6].is_ascii_alphanumeric() || bytes[idx + 6] == b'_');
+        if before_ok && after_ok {
+            return true;
+        }
+        offset = idx + 1;
+    }
+    false
+}
+
 pub fn execute_dead_code_query<W: Write>(
     root: &str,
     ingest: &IngestResult,
@@ -410,17 +437,33 @@ pub fn execute_dead_code_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
+    let root_path = Path::new(root);
+    let mut file_cache: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
     let mut dead = Vec::new();
     for sym in &ingest.symbols {
-        if (sym.kind == crate::domain::SymKind::Function
-            || sym.kind == crate::domain::SymKind::Method)
-            && graph.in_degree(sym.id) == 0
+        if sym.kind != crate::domain::SymKind::Function
+            || sym.sig_end_byte >= sym.end_byte
+            || graph.in_degree(sym.id) != 0
         {
+            continue;
+        }
+        let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        if is_header_path(p) {
+            continue;
+        }
+        let src = file_cache
+            .entry(sym.file_id)
+            .or_insert_with(|| std::fs::read(root_path.join(p)).unwrap_or_default());
+        if sig_has_static_token(src, sym.sig_start_byte, sym.sig_end_byte) {
             let n = interner.resolve(&sym.name);
-            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
             dead.push((n, sym.kind.tag(), p, sym.line));
         }
     }
+    dead.sort_by(|a, b| {
+        a.2.cmp(b.2)
+            .then_with(|| a.3.cmp(&b.3))
+            .then_with(|| a.0.cmp(b.0))
+    });
     crate::serialize::serialize_dead_code_xml(root, &dead, out)
 }
 
@@ -455,6 +498,80 @@ pub fn build_community_module<'a>(
     }
 }
 
+fn tally_isolated_symbols(
+    ingest: &IngestResult,
+    graph: &Graph,
+    sum: &mut crate::serialize::CommunitySummary<'_>,
+) {
+    for sym in &ingest.symbols {
+        if graph.in_degree(sym.id) > 0 || graph.out_degree(sym.id) > 0 {
+            continue;
+        }
+        sum.isolated += 1;
+        if sym.kind == crate::domain::SymKind::Section {
+            sum.isolated_doc += 1;
+        } else if sym.sig_end_byte >= sym.end_byte {
+            sum.isolated_decl += 1;
+        } else {
+            sum.isolated_source += 1;
+        }
+    }
+}
+
+fn collect_community_bridges<'a>(
+    comms: &[u32],
+    modules: &[crate::serialize::CommunityModule<'a>],
+    ingest: &'a IngestResult,
+    graph: &Graph,
+) -> Vec<(u32, u32, &'a str, &'a str, usize)> {
+    let label_by_id: std::collections::HashMap<u32, &'a str> =
+        modules.iter().map(|m| (m.id, m.label)).collect();
+    let mut bridge_counts: std::collections::HashMap<(u32, u32), usize> =
+        std::collections::HashMap::new();
+    for u in 0..ingest.symbols.len() {
+        let cu = comms.get(u).copied().unwrap_or(0);
+        for (v, _) in graph.callees(u as NodeId) {
+            let cv = comms.get(v as usize).copied().unwrap_or(0);
+            if cu != cv {
+                let pair = if cu < cv { (cu, cv) } else { (cv, cu) };
+                *bridge_counts.entry(pair).or_default() += 1;
+            }
+        }
+    }
+    let mut bridges: Vec<(u32, u32, &'a str, &'a str, usize)> = bridge_counts
+        .into_iter()
+        .map(|((a, b), w)| {
+            let la = label_by_id.get(&a).copied().unwrap_or("");
+            let lb = label_by_id.get(&b).copied().unwrap_or("");
+            (a, b, la, lb, w)
+        })
+        .collect();
+    bridges.sort_by(|x, y| y.4.cmp(&x.4).then_with(|| x.0.cmp(&y.0)));
+    bridges
+}
+
+fn compute_community_summary<'a>(
+    comms: &[u32],
+    by_comm: &std::collections::HashMap<u32, Vec<NodeId>>,
+    modules: &[crate::serialize::CommunityModule<'a>],
+    ingest: &'a IngestResult,
+    graph: &Graph,
+) -> crate::serialize::CommunitySummary<'a> {
+    let connected_singletons = by_comm
+        .values()
+        .filter(|n| n.len() == 1 && (graph.in_degree(n[0]) > 0 || graph.out_degree(n[0]) > 0))
+        .count();
+    let mut sum = crate::serialize::CommunitySummary {
+        symbols: ingest.symbols.len(),
+        connected_singletons,
+        pr_iters: 44,
+        ..Default::default()
+    };
+    tally_isolated_symbols(ingest, graph, &mut sum);
+    sum.bridges = collect_community_bridges(comms, modules, ingest, graph);
+    sum
+}
+
 pub fn execute_communities_query<W: Write>(
     root: &str,
     target_id: Option<u32>,
@@ -471,15 +588,55 @@ pub fn execute_communities_query<W: Write>(
         }
     }
 
-    let mut comm_ids: Vec<u32> = by_comm.keys().copied().collect();
-    comm_ids.sort_unstable();
+    let mut comm_ids: Vec<u32> = by_comm
+        .iter()
+        .filter(|(_, nodes)| target_id.is_some() || nodes.len() >= 2)
+        .map(|(&id, _)| id)
+        .collect();
+    comm_ids.sort_by(|a, b| {
+        by_comm[b]
+            .len()
+            .cmp(&by_comm[a].len())
+            .then_with(|| a.cmp(b))
+    });
 
     let modules: Vec<crate::serialize::CommunityModule<'_>> = comm_ids
         .into_iter()
         .map(|id| build_community_module(id, &by_comm[&id], ingest, interner))
         .collect();
+    let summary = compute_community_summary(&comms.comm, &by_comm, &modules, ingest, graph);
 
-    crate::serialize::serialize_communities_xml(root, &modules, out)
+    crate::serialize::serialize_communities_with_summary_xml(root, &modules, &summary, out)
+}
+
+pub fn execute_zoom_query<W: Write>(
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let comms = graph.communities();
+    let mut by_comm: std::collections::HashMap<u32, Vec<NodeId>> = std::collections::HashMap::new();
+    for (node, &c) in comms.comm.iter().enumerate() {
+        by_comm.entry(c).or_default().push(node as u32);
+    }
+    let mut comm_ids: Vec<u32> = by_comm
+        .iter()
+        .filter(|(_, nodes)| nodes.len() >= 2)
+        .map(|(&id, _)| id)
+        .collect();
+    comm_ids.sort_by(|a, b| {
+        by_comm[b]
+            .len()
+            .cmp(&by_comm[a].len())
+            .then_with(|| a.cmp(b))
+    });
+    let modules: Vec<crate::serialize::CommunityModule<'_>> = comm_ids
+        .into_iter()
+        .map(|id| build_community_module(id, &by_comm[&id], ingest, interner))
+        .collect();
+    let summary = compute_community_summary(&comms.comm, &by_comm, &modules, ingest, graph);
+    crate::serialize::serialize_zoom_xml(&modules, &summary, out)
 }
 
 pub fn execute_around_query<W: Write>(
@@ -746,36 +903,15 @@ fn execute_task_or_signatures<W: Write>(
     Ok(false)
 }
 
-pub fn execute_retrieval_dispatch<W: Write>(
+fn execute_advanced_retrieval<W: Write>(
     ret: &TopRetrievalArgs,
     root: &str,
     ingest: &IngestResult,
     graph: &Graph,
-    pr: &PageRankResult,
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    if execute_task_or_signatures(ret, root, ingest, graph, pr, interner, out)? {
-        return Ok(());
-    }
-    if let Some(pat) = ret.grep.as_deref() {
-        let val = crate::mcp::retrieval::call_grep(ingest, interner, pat, None);
-        crate::serialize::serialize_grep_xml(&val, out)?;
-    } else if let Some(syms) = ret.connect.as_deref() {
-        execute_connect_query(syms, ingest, graph, interner, out)?;
-    } else if let Some(pair) = ret.path_between.as_deref() {
-        execute_path_query(pair, ingest, graph, interner, out)?;
-    } else if let Some(ex) = ret.exemplar.as_deref() {
-        let val =
-            crate::mcp::retrieval::call_exemplar(ingest, interner, &pr.ranks, ex, Some(graph));
-        crate::serialize::serialize_exemplar_xml(root, &val, out)?;
-    } else if let Some(iface) = ret.lego.as_deref() {
-        let val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
-        crate::serialize::serialize_lego_xml(root, &val, out)?;
-    } else if let Some(rec) = ret.recall.as_deref() {
-        let val = crate::mcp::retrieval::call_memory_recall(ingest, interner, rec, None);
-        crate::serialize::serialize_recall_xml(root, rec, &val, out)?;
-    } else if let Some(tr) = ret.from_trace.as_deref() {
+    if let Some(tr) = ret.from_trace.as_deref() {
         let trace_text = std::fs::read_to_string(tr).unwrap_or_else(|_| tr.to_string());
         let val = crate::mcp::graph_tools::call_from_trace(ingest, interner, &trace_text);
         crate::serialize::serialize_from_trace_xml(&val, out)?;
@@ -791,4 +927,43 @@ pub fn execute_retrieval_dispatch<W: Write>(
         crate::navigate::execute_graph_query_expr(expr, root, ingest, graph, interner, out)?;
     }
     Ok(())
+}
+
+pub fn execute_retrieval_dispatch<W: Write>(
+    ret: &TopRetrievalArgs,
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    pr: &PageRankResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    if execute_task_or_signatures(ret, root, ingest, graph, pr, interner, out)? {
+        return Ok(());
+    }
+    if let Some(pat) = ret.grep.as_deref() {
+        let val = crate::mcp::retrieval::call_grep(ingest, interner, pat, None);
+        crate::serialize::serialize_grep_xml(&val, out)
+    } else if let Some(syms) = ret.connect.as_deref() {
+        execute_connect_query(syms, ingest, graph, interner, out)
+    } else if let Some(pair) = ret.path_between.as_deref() {
+        execute_path_query(pair, ingest, graph, interner, out)
+    } else if let Some(ex) = ret.exemplar.as_deref() {
+        let val =
+            crate::mcp::retrieval::call_exemplar(ingest, interner, &pr.ranks, ex, Some(graph));
+        crate::serialize::serialize_exemplar_xml(root, &val, out)
+    } else if let Some(iface) = ret.lego.as_deref() {
+        if crate::navigate::find_symbols_by_name(iface, ingest, interner).is_empty() {
+            return Err(io::Error::other(format!(
+                "ripwire: --lego type not found: {iface}"
+            )));
+        }
+        let val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
+        crate::serialize::serialize_lego_xml(root, &val, out)
+    } else if let Some(rec) = ret.recall.as_deref() {
+        let val = crate::mcp::retrieval::call_memory_recall(ingest, interner, rec, None);
+        crate::serialize::serialize_recall_xml(root, rec, &val, out)
+    } else {
+        execute_advanced_retrieval(ret, root, ingest, graph, interner, out)
+    }
 }

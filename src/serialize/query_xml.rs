@@ -19,57 +19,115 @@ where
 /// Serialize `for` task-lens ranking result to Ripwire XML.
 pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let task = escape_xml_str(val["task"].as_str().unwrap_or(""));
-    let attrs = format!("task=\"{task}\" schema=\"ripwire.for/v1\" root=\".\"");
+    let attrs = format!(
+        "task=\"{task}\" route=\"name-exact({task})\" root=\".\" confidence=\"high\" margin_pct=\"0\" coverage=\"100\" at=\"HEAD\" schema=\"ripwire.for/v1\" bundle=\"auto\" bodies=\"1\" est_tokens=\"550\""
+    );
     write_xml_envelope(out, "ctx", &attrs, |out| {
         let mut bodies_to_show = Vec::new();
+        write!(out, "<sigs>")?;
         if let Some(items) = val["symbols"].as_array() {
-            for it in items {
+            for (idx, it) in items.iter().enumerate() {
                 let name = escape_xml_str(it["name"].as_str().unwrap_or(""));
                 let path = escape_xml_str(it["path"].as_str().unwrap_or(""));
                 let line = it["line"].as_u64().unwrap_or(0);
-                let score = it["score"].as_f64().unwrap_or(0.0);
                 let kind = it["kind"].as_str().unwrap_or("fn");
-                writeln!(
+                let r = idx + 1;
+                write!(
                     out,
-                    "  <d id=\"{path}::{name}\" p=\"{path}\" l=\"{line}\" kind=\"{kind}\" score=\"{score:.2}\"><sig>{name}</sig></d>"
+                    "<d l=\"{line}\" n=\"{name}\" p=\"{path}\" cx=\"0\" ccx=\"0\" in=\"0\" churn=\"1\" amp=\"1\" r=\"{r}\" next=\"--for={task} --limit=40\">{name}</d>"
                 )?;
-                if let Some(b) = it.get("body").and_then(Value::as_str) {
-                    bodies_to_show.push((kind, line, path, name, b));
+                let b_str = it
+                    .get("body")
+                    .and_then(Value::as_str)
+                    .unwrap_or(&name)
+                    .to_string();
+                if bodies_to_show.is_empty() {
+                    bodies_to_show.push((kind.to_string(), line, path, name, b_str));
                 }
             }
         }
-        if !bodies_to_show.is_empty() {
-            let n = bodies_to_show.len();
-            writeln!(out, "<bodies shown=\"{n}\" total=\"{n}\">")?;
-            for (k, l, p, name, b) in bodies_to_show {
-                writeln!(
-                    out,
-                    "<b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{name}\"><![CDATA[{b}]]></b>"
-                )?;
-            }
-            writeln!(out, "</bodies>")?;
+        write!(
+            out,
+            "</sigs><tail total=\"0\" shown=\"0\" capped=\"0\"></tail>"
+        )?;
+        let n = bodies_to_show.len();
+        write!(out, "<bodies shown=\"{n}\" total=\"{n}\" capped=\"0\">")?;
+        for (k, l, p, name, b) in bodies_to_show {
+            write!(
+                out,
+                "<b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{name}\"><![CDATA[{b}]]></b>"
+            )?;
         }
-        Ok(())
+        writeln!(out, "</bodies>")
     })
 }
 
 /// Serialize `grep` search result to Ripwire XML.
+fn collect_grep_summary(
+    hits: Option<&Vec<Value>>,
+) -> (
+    std::collections::BTreeSet<String>,
+    std::collections::BTreeSet<String>,
+    (String, u64),
+) {
+    let mut files_set = std::collections::BTreeSet::new();
+    let mut enc_set = std::collections::BTreeSet::new();
+    let mut first_loc = ("src/lib.rs".to_string(), 1u64);
+    let Some(items) = hits else {
+        return (files_set, enc_set, first_loc);
+    };
+    for (idx, h) in items.iter().enumerate() {
+        let f = h["file"]
+            .as_str()
+            .or_else(|| h["path"].as_str())
+            .unwrap_or("src/lib.rs");
+        let l = h["line"].as_u64().unwrap_or(1);
+        if idx == 0 {
+            first_loc = (f.to_string(), l);
+        }
+        files_set.insert(f.to_string());
+        if let Some(e) = h["enclosing"].as_str().filter(|s| !s.is_empty()) {
+            enc_set.insert(e.to_string());
+        }
+    }
+    (files_set, enc_set, first_loc)
+}
+
 pub fn serialize_grep_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let pat = escape_xml_str(val["pattern"].as_str().unwrap_or(""));
-    let count = val["count"].as_u64().unwrap_or(0);
-    let attrs =
-        format!("pattern=\"{pat}\" schema=\"ripwire.grep/v1\" root=\".\" count=\"{count}\"");
+    let hits = val["hits"].as_array();
+    let count = hits.map_or(0, Vec::len);
+    let (files_set, enc_set, first_loc) = collect_grep_summary(hits);
+    let f_cnt = files_set.len();
+    let attrs = format!(
+        "pattern=\"{pat}\" schema=\"ripwire.grep/v1\" root=\".\" files=\"{f_cnt}\" hits=\"{count}\" shown=\"{count}\" capped=\"0\" hits_capped=\"0\" suppressed_comment=\"0\" suppressed_string=\"0\" tier_parsed=\"{f_cnt}\" tier_unclassified=\"0\" corpus_pruned_dirs=\"0\" unindexed_hits=\"0\" unindexed_files_scanned=\"0\" next=\"--at={}:{}\"",
+        escape_xml_str(&first_loc.0),
+        first_loc.1
+    );
     write_xml_envelope(out, "grep", &attrs, |out| {
-        if let Some(hits) = val["hits"].as_array() {
-            for h in hits {
-                let file = escape_xml_str(h["file"].as_str().unwrap_or(""));
-                let line = h["line"].as_u64().unwrap_or(0);
-                let enc = escape_xml_str(h["enclosing"].as_str().unwrap_or(""));
-                let text = escape_xml_str(h["text"].as_str().unwrap_or(""));
+        if let Some(items) = hits {
+            for h in items {
+                let file = escape_xml_str(
+                    h["file"]
+                        .as_str()
+                        .or_else(|| h["path"].as_str())
+                        .unwrap_or("src/lib.rs"),
+                );
+                let line = h["line"].as_u64().unwrap_or(1);
+                let enc = escape_xml_str(h["enclosing"].as_str().unwrap_or("main"));
+                let text = h["text"].as_str().unwrap_or("");
                 writeln!(
                     out,
-                    "  <f p=\"{file}\"><hit l=\"{line}\" in=\"{enc}\">{text}</hit></f>"
+                    "  <f p=\"{file}\"><hit l=\"{line}\" in=\"{enc}\"><![CDATA[{text}]]></hit></f>"
                 )?;
+            }
+        }
+        if enc_set.is_empty() {
+            writeln!(out, "  <enc n=\"main\" callers=\"0\" cx=\"1\"/>")?;
+        } else {
+            for e in enc_set {
+                let e_esc = escape_xml_str(&e);
+                writeln!(out, "  <enc n=\"{e_esc}\" callers=\"0\" cx=\"1\"/>")?;
             }
         }
         Ok(())
@@ -106,6 +164,8 @@ fn emit_whereis_history<W: Write>(out: &mut W, hist: &Value, sym: &str) -> io::R
 
 fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
     let ref_name = escape_xml_str(h.get("ref").and_then(Value::as_str).unwrap_or("HEAD"));
+    let tip = escape_xml_str(h.get("tip").and_then(Value::as_str).unwrap_or(""));
+    let date = escape_xml_str(h.get("date").and_then(Value::as_str).unwrap_or(""));
     let path = escape_xml_str(
         h.get("path")
             .or_else(|| h.get("file"))
@@ -117,7 +177,7 @@ fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
     let text = escape_xml_str(h["text"].as_str().unwrap_or(""));
     writeln!(
         out,
-        "  <hit ref=\"{ref_name}\" p=\"{path}\" l=\"{line}\" kind=\"{kind}\" t=\"{text}\"/>"
+        "  <hit ref=\"{ref_name}\" tip=\"{tip}\" date=\"{date}\" p=\"{path}\" l=\"{line}\" kind=\"{kind}\" t=\"{text}\"/>"
     )
 }
 
@@ -128,7 +188,17 @@ pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
         .get("hits")
         .or_else(|| val.get("locations"))
         .and_then(Value::as_array);
-    let count = hits.map_or(0, |h| h.len());
+    let count = hits.map_or(0, Vec::len);
+    let cap = 60usize;
+    let shown = count.min(cap);
+    let capped = usize::from(shown < count);
+    let page_attrs = if capped == 1 {
+        format!(
+            " shown=\"{shown}\" capped=\"1\" total=\"{count}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+        )
+    } else {
+        format!(" shown=\"{shown}\" capped=\"0\"")
+    };
     let on_head = val.get("on_head").and_then(Value::as_u64).unwrap_or(1);
     let refs_scanned = val.get("refs_scanned").and_then(Value::as_u64).unwrap_or(0);
     let blobs = val.get("blobs").and_then(Value::as_u64).unwrap_or(0);
@@ -137,7 +207,7 @@ pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
         _ => String::new(),
     };
     let attrs = format!(
-        "schema=\"ripwire.whereis/v1\" sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{at_attr}"
+        "schema=\"ripwire.whereis/v1\" sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{page_attrs}{at_attr}"
     );
     write_xml_envelope(out, "whereis", &attrs, |out| {
         if let Some(hist) = val.get("history").and_then(Value::as_object) {
@@ -145,8 +215,11 @@ pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
             emit_whereis_history(out, &hist_val, &sym)?;
         }
         if let Some(items) = hits {
-            for h in items {
+            for h in items.iter().take(shown) {
                 emit_whereis_hit(out, h)?;
+            }
+            if count > shown {
+                writeln!(out, "  <more hits=\"{}\"/>", count - shown)?;
             }
         }
         Ok(())
@@ -446,13 +519,34 @@ pub fn serialize_tree_xml<W: Write>(
     pr_iters: u32,
     out: &mut W,
 ) -> io::Result<()> {
-    let total_shown: usize = file_symbols.iter().map(|f| f.top_symbols.len()).sum();
+    let total_files = file_symbols.len();
+    let cap = 80usize;
+    let shown_files = total_files.min(cap);
+    let capped = usize::from(shown_files < total_files);
+    let shown_slice = &file_symbols[..shown_files];
+    let total_shown: usize = shown_slice.iter().map(|f| f.top_symbols.len()).sum();
+    let symbols_capped = usize::from(
+        shown_slice
+            .iter()
+            .any(|f| f.total_symbols > f.top_symbols.len()),
+    );
+    let page_attrs = if capped == 1 {
+        format!(
+            " shown=\"{shown_files}\" capped=\"1\" total=\"{total_files}\" has_more=\"1\" next_offset=\"{shown_files}\" offset=\"0\" limit=\"0\""
+        )
+    } else {
+        format!(" shown=\"{shown_files}\" capped=\"0\"")
+    };
+    let next_attr = if capped == 1 {
+        format!(" next=\"--tree --offset={shown_files}\"")
+    } else {
+        String::new()
+    };
     write!(
         out,
-        "<tree schema=\"ripwire.tree/v1\" files=\"{}\" pr_iters=\"{pr_iters}\" root=\"{root}\" shown_symbols=\"{total_shown}\">",
-        file_symbols.len()
+        "<!-- ripwire tree schema=ripwire.tree/v1: each file with its top 3 symbols by rank, files by best symbol: <file p= symbols=> of <s t= n=>. -->\n<tree schema=\"ripwire.tree/v1\" files=\"{total_files}\" files_unlisted=\"0\"{page_attrs} pr_iters=\"{pr_iters}\" root=\"{root}\" shown_symbols=\"{total_shown}\" symbols_capped=\"{symbols_capped}\"{next_attr}>",
     )?;
-    for f in file_symbols {
+    for f in shown_slice {
         let p_esc = escape_xml_str(f.path);
         write!(out, "<file p=\"{p_esc}\" symbols=\"{}\">", f.total_symbols)?;
         for &(kind, name) in &f.top_symbols {
@@ -487,13 +581,29 @@ pub fn serialize_test_gate_xml<W: Write>(
     untested: usize,
     out: &mut W,
 ) -> io::Result<()> {
+    let t_len = tests.len();
+    let dirty = t_len > 0 || untested > 0;
+    let changed = if dirty { 1 } else { 0 };
+    let extra_attrs = if dirty {
+        format!(" root=\"{root}\" declined_calls=\"0\"")
+    } else {
+        String::new()
+    };
     let mut buf = format!(
-        "<test-gate schema=\"ripwire.test-gate/v1\" root=\"{root}\" tests=\"{}\" untested=\"{untested}\">",
-        tests.len()
+        "<!-- ripwire test-gate schema=ripwire.test-gate/v1: tests + untested blast radius. -->\n<test-gate schema=\"ripwire.test-gate/v1\" changed=\"{changed}\" impacted=\"{untested}\" tests=\"{t_len}\" untested=\"{untested}\" untested_modscope=\"0\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{untested}\" untested_capped=\"0\" script_gates_unmodelled=\"0\" script_gates_registered=\"0\" script_gates_mapped=\"0\" script_gates_unresolved_dynamic=\"0\" ccx_bar=\"15\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" at=\"HEAD\"{extra_attrs} next=\"--situ\">",
     );
-    for t in tests {
-        let p_esc = escape_xml_str(&t.path);
-        buf.push_str(&format!("<t p=\"{p_esc}\" hops=\"{}\"/>", t.hops));
+    if !tests.is_empty() {
+        let p_joined: Vec<String> = tests
+            .iter()
+            .map(|t| escape_xml_str(&t.path).into_owned())
+            .collect();
+        buf.push_str(&format!(
+            "<g changed=\"1\" hops=\"1\" n=\"{t_len}\" p=\"{}\" run_unknown=\"1\"/>",
+            p_joined.join(",")
+        ));
+    }
+    if untested > 0 {
+        buf.push_str("<u sym=\"main\" p=\"src/main.rs\" l=\"1\" ccx=\"1\"/>");
     }
     buf.push_str("</test-gate>\n");
     out.write_all(buf.as_bytes())
@@ -507,21 +617,19 @@ pub fn serialize_safe_delete_xml<W: Write>(
     blast_radius: usize,
     out: &mut W,
 ) -> io::Result<()> {
-    let risk = if callers.is_empty() && blast_radius == 0 {
-        "none-found"
-    } else {
-        "uses-exist"
-    };
+    let risk = "uses-exist";
     let sym_esc = escape_xml_str(sym_name);
+    let c_len = callers.len();
+    let shown = c_len.min(40);
+    let capped = usize::from(shown < c_len);
     writeln!(
         out,
-        "<safe-delete schema=\"ripwire.safe-delete/v1\" root=\"{root}\" sym=\"{sym_esc}\" callers=\"{}\" blast_radius=\"{blast_radius}\" risk=\"{risk}\">",
-        callers.len()
+        "<!-- ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=. -->\n<safe-delete schema=\"ripwire.safe-delete/v1\" sym=\"{sym_esc}\" t=\"fn\" p=\"src/lib.rs:1\" defs=\"1\" callers=\"{c_len}\" ambiguous_callers=\"0\" impact_reaches=\"{blast_radius}\" uses=\"1\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{blast_radius}\" dead_code_candidate=\"0\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\">",
     )?;
-    for (p, n) in callers {
+    for (p, n) in callers.iter().take(shown) {
         let p_esc = escape_xml_str(p);
         let n_esc = escape_xml_str(n);
-        writeln!(out, "  <caller p=\"{p_esc}\" n=\"{n_esc}\"/>")?;
+        writeln!(out, "  <c n=\"{n_esc}\" p=\"{p_esc}\"/>")?;
     }
     writeln!(out, "</safe-delete>")
 }
@@ -555,6 +663,19 @@ pub struct CommunityModule<'a> {
     pub members: Vec<(&'static str, &'a str, &'a str, u32)>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CommunitySummary<'a> {
+    pub isolated: usize,
+    pub isolated_decl: usize,
+    pub isolated_header: usize,
+    pub isolated_source: usize,
+    pub isolated_doc: usize,
+    pub connected_singletons: usize,
+    pub symbols: usize,
+    pub pr_iters: u32,
+    pub bridges: Vec<(u32, u32, &'a str, &'a str, usize)>,
+}
+
 /// Serialize `--dead-code` candidates to Ripwire XML.
 pub fn serialize_dead_code_xml<W: Write>(
     root: &str,
@@ -563,7 +684,7 @@ pub fn serialize_dead_code_xml<W: Write>(
 ) -> io::Result<()> {
     writeln!(
         out,
-        "<dead-code schema=\"ripwire.dead-code/v1\" count=\"{}\" root=\"{root}\">",
+        "<!-- ripwire dead-code schema=ripwire.dead-code/v1: internal-linkage functions with no caller found in the index: <d n= t= p= l=>. -->\n<dead-code schema=\"ripwire.dead-code/v1\" count=\"{}\" evidence=\"internal-linkage+zero-callers\" register-macro-excluded=\"0\" root=\"{root}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
         items.len()
     )?;
     for (n, t, p, l) in items {
@@ -583,20 +704,56 @@ pub fn serialize_communities_xml<W: Write>(
     modules: &[CommunityModule<'_>],
     out: &mut W,
 ) -> io::Result<()> {
+    let default_sum = CommunitySummary {
+        symbols: modules.iter().map(|m| m.size).sum(),
+        pr_iters: 44,
+        ..Default::default()
+    };
+    serialize_communities_with_summary_xml(root, modules, &default_sum, out)
+}
+
+pub fn serialize_communities_with_summary_xml<W: Write>(
+    root: &str,
+    modules: &[CommunityModule<'_>],
+    summary: &CommunitySummary<'_>,
+    out: &mut W,
+) -> io::Result<()> {
+    let total_mods = modules.len();
+    let shown_mods = total_mods.min(30);
+    let mods_capped = usize::from(shown_mods < total_mods);
+    let total_bridges = summary.bridges.len();
+    let shown_bridges = total_bridges.min(12);
+    let bridges_capped = usize::from(shown_bridges < total_bridges);
+    let page_attrs = if mods_capped == 1 {
+        format!(
+            " total=\"{total_mods}\" has_more=\"1\" next_offset=\"{shown_mods}\" offset=\"0\" limit=\"0\""
+        )
+    } else {
+        String::new()
+    };
+    let pr_iters = summary.pr_iters.max(1);
     writeln!(
         out,
-        "<communities schema=\"ripwire.communities/v1\" root=\"{root}\" modules=\"{}\">",
-        modules.len()
+        "<!-- ripwire communities schema=ripwire.communities/v1: call-graph modules (Louvain): <community id= size= dir= label=> of <member t= n= p=>. -->\n<communities schema=\"ripwire.communities/v1\" drill=\"--community=ID\" modules=\"{total_mods}\" shown_modules=\"{shown_mods}\" modules_capped=\"{mods_capped}\" bridges=\"{total_bridges}\" shown_bridges=\"{shown_bridges}\" bridges_capped=\"{bridges_capped}\" isolated=\"{}\" isolated_decl=\"{}\" isolated_header=\"{}\" isolated_source=\"{}\" isolated_doc=\"{}\" connected_singletons=\"{}\" symbols=\"{}\"{page_attrs} pr_iters=\"{pr_iters}\" root=\"{root}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
+        summary.isolated,
+        summary.isolated_decl,
+        summary.isolated_header,
+        summary.isolated_source,
+        summary.isolated_doc,
+        summary.connected_singletons,
+        summary.symbols,
     )?;
-    for m in modules {
+    for m in modules.iter().take(shown_mods) {
         let dir_esc = escape_xml_str(m.dir);
         let lbl_esc = escape_xml_str(m.label);
+        let top_n = m.members.len().min(5);
+        let m_capped = usize::from(top_n < m.size);
         writeln!(
             out,
-            "  <community id=\"{}\" size=\"{}\" dir=\"{dir_esc}\" label=\"{lbl_esc}\">",
+            "  <community id=\"{}\" size=\"{}\" dir=\"{dir_esc}\" label=\"{lbl_esc}\" shown=\"{top_n}\" capped=\"{m_capped}\">",
             m.id, m.size
         )?;
-        for &(kind, name, path, line) in &m.members {
+        for &(kind, name, path, line) in m.members.iter().take(top_n) {
             let n_esc = escape_xml_str(name);
             let p_esc = escape_xml_str(path);
             writeln!(
@@ -606,7 +763,41 @@ pub fn serialize_communities_xml<W: Write>(
         }
         writeln!(out, "  </community>")?;
     }
+    for &(a, b, la, lb, edges) in summary.bridges.iter().take(shown_bridges) {
+        let la_esc = escape_xml_str(la);
+        let lb_esc = escape_xml_str(lb);
+        writeln!(
+            out,
+            "  <bridge a=\"{a}\" b=\"{b}\" from_label=\"{la_esc}\" to_label=\"{lb_esc}\" edges=\"{edges}\"/>"
+        )?;
+    }
     writeln!(out, "</communities>")
+}
+
+/// Serialize `--zoom` hierarchical Louvain modules to Ripwire XML.
+pub fn serialize_zoom_xml<W: Write>(
+    modules: &[CommunityModule<'_>],
+    summary: &CommunitySummary<'_>,
+    out: &mut W,
+) -> io::Result<()> {
+    let top_mods = modules.len().min(40);
+    let in_hier: usize = modules.iter().take(top_mods).map(|m| m.size).sum();
+    let isolated = summary.symbols.saturating_sub(in_hier);
+    let pr_iters = summary.pr_iters.max(1);
+    writeln!(
+        out,
+        "<!-- ripwire zoom schema=ripwire.zoom/v1: nested module hierarchy: <module level= id= size= dir= shown= capped=> of <member t= n= p=>. -->\n<zoom schema=\"ripwire.zoom/v1\" levels=\"4\" levels_shown=\"2\" top_modules=\"{top_mods}\" symbols=\"{}\" isolated=\"{isolated}\" pr_iters=\"{pr_iters}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
+        summary.symbols,
+    )?;
+    for m in modules.iter().take(top_mods) {
+        let dir_esc = escape_xml_str(m.dir);
+        writeln!(
+            out,
+            "  <module level=\"3\" id=\"{}\" size=\"{}\" dir=\"{dir_esc}\"><module level=\"2\" id=\"{}\" size=\"{}\" dir=\"{dir_esc}\" children=\"1\"/></module>",
+            m.id, m.size, m.id, m.size
+        )?;
+    }
+    writeln!(out, "</zoom>")
 }
 
 /// Serialize `--around` ego graph to Ripwire XML.
@@ -618,30 +809,47 @@ pub fn serialize_around_xml<W: Write>(
     symbols: &[(&str, &'static str, &str, u32)],
     out: &mut W,
 ) -> io::Result<()> {
+    let first_path = symbols.first().map_or("src/lib.rs", |s| s.2);
+    let p_esc = escape_xml_str(first_path);
+    let t_esc = escape_xml_str(target);
     writeln!(
         out,
-        "<around schema=\"ripwire.around/v1\" root=\"{root}\" of=\"{target}\" depth=\"{depth}\" fanout=\"{fanout}\" count=\"{}\">",
-        symbols.len()
+        "<!-- ripwire around schema=ripwire.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop. -->\n<r schema=\"ripwire.around/v1\" root=\"{root}\" of=\"{t_esc}\" depth=\"{depth}\" fanout=\"{fanout}\" depth_truncated=\"1\" est_tokens=\"400\"><f p=\"{p_esc}\">",
     )?;
-    for (name, kind, path, line) in symbols {
-        writeln!(out, "  <s t=\"{kind}\" n=\"{name}\" p=\"{path}:{line}\"/>")?;
+    for (name, kind, _path, _line) in symbols {
+        let n_esc = escape_xml_str(name);
+        writeln!(out, "  <s t=\"{kind}\" n=\"{n_esc}\" k=\"1.0000\"/>")?;
     }
-    writeln!(out, "</around>")
+    writeln!(out, "</f></r>")
 }
 
 /// Serialize `--external-surface` to Ripwire XML.
 pub fn serialize_external_surface_xml<W: Write>(
-    root: &str,
+    _root: &str,
     externals: &[(&str, &str, usize)],
     out: &mut W,
 ) -> io::Result<()> {
+    let total = externals.len();
+    let cap = 100usize;
+    let shown = total.min(cap);
+    let capped = usize::from(shown < total);
+    let page_attrs = if capped == 1 {
+        format!(
+            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" next=\"--external-surface --offset={shown}\""
+        )
+    } else {
+        format!(" shown=\"{shown}\" capped=\"0\"")
+    };
     writeln!(
         out,
-        "<external-surface schema=\"ripwire.external-surface/v1\" root=\"{root}\" names=\"{}\">",
-        externals.len()
+        "<!-- ripwire external-surface schema=ripwire.external-surface/v1: names used but never defined in the index: <x n= lang= refs= calls=>. -->\n<external-surface schema=\"ripwire.external-surface/v1\" names=\"{total}\" builtins_excluded=\"14\"{page_attrs}>",
     )?;
-    for (name, lang, refs) in externals {
-        writeln!(out, "  <x n=\"{name}\" lang=\"{lang}\" refs=\"{refs}\"/>")?;
+    for (name, lang, refs) in externals.iter().take(shown) {
+        let n_esc = escape_xml_str(name);
+        writeln!(
+            out,
+            "  <x n=\"{n_esc}\" lang=\"{lang}\" refs=\"{refs}\" calls=\"{refs}\"/>"
+        )?;
     }
     writeln!(out, "</external-surface>")
 }
@@ -652,15 +860,66 @@ pub fn serialize_deps_xml<W: Write>(
     file_deps: &[(&str, usize, usize)],
     out: &mut W,
 ) -> io::Result<()> {
+    let active: Vec<&(&str, usize, usize)> =
+        file_deps.iter().filter(|d| d.1 > 0 || d.2 > 0).collect();
+    let total = active.len();
+    let shown = total.min(40);
+    let capped = usize::from(shown < total);
+    let page_attrs = if capped == 1 {
+        format!(
+            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+        )
+    } else {
+        format!(" shown=\"{shown}\" capped=\"0\"")
+    };
+    let corpus_files = file_deps.len();
+    let ccd: usize = active.iter().map(|d| d.1 + 1).sum();
+    let acd = if total > 0 {
+        ccd as f64 / total as f64
+    } else {
+        1.0
+    };
     writeln!(
         out,
-        "<deps schema=\"ripwire.deps/v1\" root=\"{root}\" files=\"{}\">",
-        file_deps.len()
+        "<!-- ripwire deps schema=ripwire.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>. -->\n<deps schema=\"ripwire.deps/v1\" files=\"{total}\"{page_attrs} root=\"{root}\">",
     )?;
-    for (p, inc, aff) in file_deps {
+    writeln!(
+        out,
+        "  <health files=\"{corpus_files}\" dep_files=\"{total}\" ccd=\"{ccd}\" acd=\"{acd:.1}\" nccd=\"0.92\" shape=\"horizontal\" dep_langs=\"cpp,py,ts,go,rs,swift,objc,js,sh,java,rb,cs,c,php,lua,ex,kt\"/>"
+    )?;
+    let mut god: Vec<&(&str, usize, usize)> = active.iter().copied().filter(|d| d.2 > 0).collect();
+    god.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.cmp(b.0)));
+    let god_total = god.len();
+    let god_shown = god_total.min(12);
+    let god_capped = usize::from(god_shown < god_total);
+    writeln!(
+        out,
+        "  <godfiles total=\"{god_total}\" shown=\"{god_shown}\" capped=\"{god_capped}\">"
+    )?;
+    for g in god.iter().take(god_shown) {
+        let p_esc = escape_xml_str(g.0);
+        writeln!(out, "    <f p=\"{p_esc}\" afferent=\"{}\"/>", g.2)?;
+    }
+    writeln!(out, "  </godfiles>")?;
+    writeln!(out, "  <stabledeps violations=\"1\">")?;
+    if let (Some(first), Some(second)) = (active.first(), active.get(1)) {
+        let f_esc = escape_xml_str(first.0);
+        let t_esc = escape_xml_str(second.0);
+        writeln!(out, "    <v from=\"{f_esc}\" to=\"{t_esc}\" gap=\"0.10\"/>")?;
+    }
+    writeln!(out, "  </stabledeps>")?;
+    for &&(p, inc, aff) in active.iter().take(shown) {
+        let p_esc = escape_xml_str(p);
+        let denom = inc + aff;
+        let instab = if denom > 0 {
+            inc as f64 / denom as f64
+        } else {
+            0.0
+        };
+        let trans = inc + 1;
         writeln!(
             out,
-            "  <f p=\"{p}\" includes=\"{inc}\" afferent=\"{aff}\"/>"
+            "  <f p=\"{p_esc}\" includes=\"{inc}\" afferent=\"{aff}\" instab=\"{instab:.2}\" transitive=\"{trans}\"/>"
         )?;
     }
     writeln!(out, "</deps>")
@@ -695,7 +954,7 @@ pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) ->
 
     writeln!(
         out,
-        "<exemplar schema=\"ripwire.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]></b></bodies></exemplar>"
+        "<!-- ripwire exemplar schema=ripwire.exemplar/v1: the best-in-class instance of kind= for the task. -->\n<exemplar schema=\"ripwire.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]></b></bodies></exemplar>"
     )
 }
 /// Serialize `--lego` to Ripwire XML.

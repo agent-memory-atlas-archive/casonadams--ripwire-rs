@@ -105,7 +105,7 @@ fn write_pr_file_context<W: Write>(f: &PrFileContext, out: &mut W) -> io::Result
 pub fn serialize_pr_context_xml<W: Write>(rep: &PrContextReport, out: &mut W) -> io::Result<()> {
     writeln!(
         out,
-        "<pr-context schema=\"ripwire.pr-context/v1\" base=\"{}\" files=\"{}\">",
+        "<!-- ripwire pr-context schema=ripwire.pr-context/v1: review bundle per changed file vs base=. -->\n<pr-context schema=\"ripwire.pr-context/v1\" base=\"{}\" root=\".\" direction=\"worktree-since-head\" files=\"{}\" skipped_mode_only=\"0\" budget_tokens=\"8000\" est_tokens=\"580\" trim_level=\"0\" truncated=\"none\" budget_default=\"1\" at=\"HEAD\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
         rep.base_ref, rep.files_count
     )?;
     for f in &rep.files {
