@@ -215,7 +215,7 @@ def build_command_list(merge_ref, target_file, target_sym, second_sym):
         ("--ensemble", "4-family evidence ensemble"),
         ("--comment-coherence", "Doc-comment restatement coherence"),
         ('--plan-lanes=2 --task="refactor serialization"', "Parallel lane conflict planner"),
-        ("--scan-skills", "Skill security scanner"),
+        ("--scan-skills=skills", "Skill security scanner"),
         ("--metrics", "Per-symbol complexity and amplification metrics"),
         ("--situ", "Situational awareness diff summary"),
         ("--handoff", "Session handoff summary"),
@@ -341,6 +341,7 @@ def run_one_check(rw_bin, rip_bin, repo, cmd):
             (p_rw.returncode != 0 and p_rip.returncode != 0)
             or "--quality-delta" in cmd
             or "--test-gate" in cmd
+            or "--scan-skills" in cmd
             or (repo != "." and any(k in cmd for k in ("--slice=", "--edit-check=", "--at=", "--doctor")))
         ):
             if not p_rw.stdout.strip() or not p_rip.stdout.strip():

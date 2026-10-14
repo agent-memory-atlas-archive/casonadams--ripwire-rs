@@ -56,7 +56,7 @@ fn test_all_33_mcp_tools_invocable() {
 
     let interner = Interner::new();
     let ingest = IngestResult::new();
-    let mut state = Some(McpState::from_ingest(".", ingest, interner));
+    let mut state = Some(McpState::from_ingest(":memory:", ingest, interner));
 
     for name in all_33_names {
         let req = json!({
@@ -80,8 +80,8 @@ fn test_all_33_mcp_tools_invocable() {
                 }
             }
         });
-        let raw_resp =
-            dispatch_json_rpc(&req.to_string(), &mut state, ".").expect("response from dispatch");
+        let raw_resp = dispatch_json_rpc(&req.to_string(), &mut state, ":memory:")
+            .expect("response from dispatch");
         let resp: Value = serde_json::from_str(&raw_resp).expect("valid json response");
         assert_eq!(resp["jsonrpc"], "2.0");
         assert_eq!(resp["id"], 100);
@@ -92,5 +92,4 @@ fn test_all_33_mcp_tools_invocable() {
             resp
         );
     }
-    let _ = std::fs::remove_file(".ripwire_quality_baseline");
 }

@@ -411,23 +411,9 @@ fn sig_has_static_token(source: &[u8], start: u32, end: u32) -> bool {
     if s >= e {
         return false;
     }
-    let Ok(sig_str) = std::str::from_utf8(&source[s..e]) else {
-        return false;
-    };
-    let bytes = sig_str.as_bytes();
-    let mut offset = 0;
-    while let Some(pos) = sig_str[offset..].find("static") {
-        let idx = offset + pos;
-        let before_ok =
-            idx == 0 || !(bytes[idx - 1].is_ascii_alphanumeric() || bytes[idx - 1] == b'_');
-        let after_ok = idx + 6 >= bytes.len()
-            || !(bytes[idx + 6].is_ascii_alphanumeric() || bytes[idx + 6] == b'_');
-        if before_ok && after_ok {
-            return true;
-        }
-        offset = idx + 1;
-    }
-    false
+    source[s..e]
+        .split(|&b| !b.is_ascii_alphanumeric() && b != b'_')
+        .any(|token| token == b"static")
 }
 
 pub fn execute_dead_code_query<W: Write>(
@@ -968,5 +954,24 @@ pub fn execute_retrieval_dispatch<W: Write>(
         crate::serialize::serialize_recall_xml(root, rec, &val, out)
     } else {
         execute_advanced_retrieval(ret, root, ingest, graph, interner, out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sig_has_static_token() {
+        assert!(sig_has_static_token(b"static void foo()", 0, 17));
+        assert!(sig_has_static_token(b"inline static int bar()", 0, 23));
+        assert!(sig_has_static_token(b"static", 0, 6));
+        assert!(sig_has_static_token(b"foo static bar", 0, 14));
+        assert!(!sig_has_static_token(b"mystatic void foo()", 0, 19));
+        assert!(!sig_has_static_token(b"static_fn void foo()", 0, 20));
+        assert!(!sig_has_static_token(b"void foo()", 0, 10));
+        assert!(!sig_has_static_token(b"static void foo()", 10, 5));
+        assert!(!sig_has_static_token(b"", 0, 0));
+        assert!(sig_has_static_token(b"static", 0, 100));
     }
 }

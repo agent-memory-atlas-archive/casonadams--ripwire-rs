@@ -352,7 +352,7 @@ fn execute_tool_safety_queries<W: Write>(
     graph: &Graph,
     interner: &Interner,
     out: &mut W,
-) -> io::Result<bool> {
+) -> io::Result<Option<i32>> {
     if let Some(_range_opt) = &s.dmm {
         let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
         let short_sha = &head_sha[..9.min(head_sha.len())];
@@ -371,7 +371,7 @@ fn execute_tool_safety_queries<W: Write>(
             &head_sha,
         );
         crate::metrics::serialize_dmm_xml(&rep, out)?;
-        return Ok(true);
+        return Ok(Some(0));
     }
     if let Some(lanes_opt) = &s.plan_lanes {
         let requested = lanes_opt.unwrap_or(2);
@@ -382,7 +382,7 @@ fn execute_tool_safety_queries<W: Write>(
         );
         serde_json::to_writer(&mut *out, &val)?;
         writeln!(out)?;
-        return Ok(true);
+        return Ok(Some(0));
     }
     if let Some(dir_opt) = &s.scan_skills {
         let path_str = if dir_opt.as_deref().unwrap_or("").is_empty() {
@@ -392,7 +392,12 @@ fn execute_tool_safety_queries<W: Write>(
         };
         let rep = crate::skills::scan_skills_directory(std::path::Path::new(path_str))?;
         crate::skills::serialize_skill_scan_xml(&rep, out)?;
-        return Ok(true);
+        let code = match rep.verdict {
+            "critical" => 2,
+            "warn" => 1,
+            _ => 0,
+        };
+        return Ok(Some(code));
     }
     if let Some(plan) = s.edit_plan.as_deref().or(s.edit_payload.as_deref()) {
         writeln!(
@@ -400,9 +405,9 @@ fn execute_tool_safety_queries<W: Write>(
             "<edit dry_run=\"{}\" force=\"{}\">{}</edit>",
             s.dry_run, s.force, plan
         )?;
-        return Ok(true);
+        return Ok(Some(0));
     }
-    Ok(false)
+    Ok(None)
 }
 
 fn execute_verification_queries<W: Write>(
@@ -453,9 +458,9 @@ pub fn execute_safety_dispatch<W: Write>(
     if let Some(branches) = s.merge_scout.as_deref() {
         return execute_merge_scout_dispatch(root, branches, ingest, interner, out);
     }
-    if execute_tool_safety_queries(s, root, ingest, graph, interner, out)? {
-        if s.scan_skills.is_some() {
-            return Ok(Some(2));
+    if let Some(code) = execute_tool_safety_queries(s, root, ingest, graph, interner, out)? {
+        if code > 0 {
+            return Ok(Some(code));
         }
         return Ok(None);
     }
@@ -653,15 +658,22 @@ pub fn execute_quality_baseline_with<W: Write>(
         &state.interner,
         head_sha,
     );
+    if state.root == ":memory:" || state.root.is_empty() {
+        writeln!(
+            out,
+            "ripwire: pinned quality baseline stamped at {head_sha} -> in-memory"
+        )?;
+        return Ok(());
+    }
     let baseline_path = Path::new(&state.root).join(crate::gate::baseline::DEFAULT_BASELINE_FILE);
     crate::gate::baseline::write_baseline_file(&snap, &baseline_path)?;
     writeln!(
         out,
         "ripwire: pinned quality baseline stamped at {head_sha} -> {}",
         baseline_path.display()
-    )
+    )?;
+    Ok(())
 }
-
 pub fn execute_quality_delta_with<W: Write>(
     state: &crate::mcp::McpState,
     out: &mut W,
