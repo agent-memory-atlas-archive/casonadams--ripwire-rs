@@ -45,7 +45,7 @@ pub fn execute_nav_symbol_query<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let ids = crate::navigate::find_symbols_by_name(sym, ingest, interner);
-    let Some(&id) = ids.first() else {
+    if ids.is_empty() {
         let flag = match mode {
             NavMode::Callers => "--callers",
             NavMode::Callees => "--callees",
@@ -56,16 +56,19 @@ pub fn execute_nav_symbol_query<W: Write>(
         return Err(io::Error::other(format!(
             "ripwire: {flag} symbol not found: {sym}"
         )));
-    };
+    }
     match mode {
         NavMode::Uses => crate::navigate::serialize_uses_xml(sym, ingest, interner, out),
         NavMode::Impact => {
-            let impact =
-                crate::navigate::transitive_impact(id, ingest, graph, ranks, interner, None);
+            let impact = crate::navigate::transitive_impact_multi(
+                &ids, ingest, graph, ranks, interner, None,
+            );
             crate::navigate::serialize_impact_xml(sym, &impact, out)
         }
         NavMode::Callers | NavMode::Callees | NavMode::FindSymbol => {
-            if let Some(nav) = crate::navigate::navigate_1hop(id, ingest, graph, ranks, interner) {
+            if let Some(nav) =
+                crate::navigate::navigate_1hop_multi(&ids, ingest, graph, ranks, interner)
+            {
                 serialize_1hop_mode(sym, mode, &nav, out)?;
             }
             Ok(())

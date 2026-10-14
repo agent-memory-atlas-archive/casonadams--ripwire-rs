@@ -146,6 +146,47 @@ pub fn navigate_1hop(
     })
 }
 
+/// Compute 1-hop neighborhood unioned across multiple symbol definitions/overloads.
+#[must_use]
+pub fn navigate_1hop_multi(
+    sym_ids: &[NodeId],
+    ingest: &IngestResult,
+    graph: &Graph,
+    ranks: &[f64],
+    interner: &Interner,
+) -> Option<NavNeighborhood> {
+    let &first_id = sym_ids.first()?;
+    let target = get_symbol_nav_info(first_id, ingest, ranks, interner, 1.0)?;
+    let mut seen_callers = HashSet::new();
+    let mut callers = Vec::new();
+    let mut seen_callees = HashSet::new();
+    let mut callees = Vec::new();
+
+    for &sym_id in sym_ids {
+        for (caller_id, weight) in graph.callers(sym_id) {
+            if seen_callers.insert(caller_id)
+                && let Some(info) = get_symbol_nav_info(caller_id, ingest, ranks, interner, weight)
+            {
+                callers.push(info);
+            }
+        }
+        for (callee_id, weight) in graph.callees(sym_id) {
+            if seen_callees.insert(callee_id)
+                && let Some(info) = get_symbol_nav_info(callee_id, ingest, ranks, interner, weight)
+            {
+                callees.push(info);
+            }
+        }
+    }
+    callers.sort_by(|a, b| b.rank.total_cmp(&a.rank).then_with(|| a.id.cmp(&b.id)));
+    callees.sort_by(|a, b| b.rank.total_cmp(&a.rank).then_with(|| a.id.cmp(&b.id)));
+    Some(NavNeighborhood {
+        target,
+        callers,
+        callees,
+    })
+}
+
 fn create_impact_node(
     curr: NodeId,
     depth: u32,
@@ -183,15 +224,31 @@ pub fn transitive_impact(
     interner: &Interner,
     max_depth: Option<u32>,
 ) -> Vec<ImpactNode> {
+    transitive_impact_multi(&[seed_id], ingest, graph, ranks, interner, max_depth)
+}
+
+#[must_use]
+pub fn transitive_impact_multi(
+    seed_ids: &[NodeId],
+    ingest: &IngestResult,
+    graph: &Graph,
+    ranks: &[f64],
+    interner: &Interner,
+    max_depth: Option<u32>,
+) -> Vec<ImpactNode> {
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut results = Vec::new();
+    let seeds: HashSet<NodeId> = seed_ids.iter().copied().collect();
 
-    visited.insert(seed_id);
-    queue.push_back((seed_id, 0u32));
+    for &seed_id in seed_ids {
+        if visited.insert(seed_id) {
+            queue.push_back((seed_id, 0u32));
+        }
+    }
 
     while let Some((curr, depth)) = queue.pop_front() {
-        if curr != seed_id
+        if !seeds.contains(&curr)
             && let Some(node) = create_impact_node(curr, depth, ingest, ranks, interner)
         {
             results.push(node);

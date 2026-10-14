@@ -828,15 +828,20 @@ CREATE TABLE audit_events (
 "#;
         let dart_repo = br#"
 class AccountRepository {
+  AccountRepository(this.a, {required this.b});
   Future<void> createRecord(dynamic db) async {
+    AccountRepository(1, b: 2);
     await db.query("INSERT INTO mobile.user_records (id, status) VALUES ($1, $2)");
   }
   Future<void> loadActive(dynamic db) async {
     await db.query("SELECT r.id FROM \"mobile\".\"user_records\" r JOIN audit_events a ON a.id = r.id WHERE r.status = 'active'");
   }
-  Future<void> purgeOld(dynamic db) async {
+  Future<void> purgeOld(dynamic db, {int limit = 10, bool force = false}) async {
     await db.query("DELETE FROM ONLY mobile.user_records WHERE status = 'archived'");
     await db.query("UPDATE audit_events SET id = 0");
+  }
+  Future<void> runMaintenance(dynamic db) async {
+    await purgeOld(db, limit: 50, force: true);
   }
 }
 "#;
@@ -878,5 +883,30 @@ class AccountRepository {
         let nav = crate::navigate::navigate_1hop(table_sym.id, &ingest, &graph, &ranks, &interner)
             .unwrap();
         assert_eq!(nav.callers.len(), 3);
+
+        let purge_sym = ingest
+            .symbols
+            .iter()
+            .find(|s| interner.resolve(&s.name) == "purgeOld")
+            .expect("purgeOld method");
+        assert_eq!(purge_sym.params, 3);
+        let purge_nav =
+            crate::navigate::navigate_1hop(purge_sym.id, &ingest, &graph, &ranks, &interner)
+                .unwrap();
+        assert_eq!(purge_nav.callers.len(), 1);
+        assert_eq!(purge_nav.callers[0].name, "runMaintenance");
+
+        let mut callers_buf = Vec::new();
+        crate::cli::execute_nav_symbol_query(
+            "AccountRepository",
+            crate::cli::NavMode::Callers,
+            &ingest,
+            &graph,
+            &ranks,
+            &interner,
+            &mut callers_buf,
+        )
+        .unwrap();
+        assert!(String::from_utf8_lossy(&callers_buf).contains("n=\"createRecord\""));
     }
 }

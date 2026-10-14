@@ -60,8 +60,33 @@ pub fn execute_navigate_with<W: Write>(
         return Ok(());
     }
 
-    for id in ids {
-        print_symbol_nav_to(id, args, sym_name, ctx, out)?;
+    if args.callers || args.callees || args.impact {
+        if args.impact {
+            let impact = crate::navigate::transitive_impact_multi(
+                &ids,
+                ctx.ingest,
+                ctx.graph,
+                ctx.ranks,
+                ctx.interner,
+                None,
+            );
+            crate::navigate::serialize_impact_xml(sym_name, &impact, out)?;
+        } else if let Some(nav) = crate::navigate::navigate_1hop_multi(
+            &ids,
+            ctx.ingest,
+            ctx.graph,
+            ctx.ranks,
+            ctx.interner,
+        ) {
+            if args.callers {
+                crate::navigate::serialize_callers_xml(sym_name, &nav.callers, out)?;
+            } else {
+                crate::navigate::serialize_callees_xml(sym_name, &nav.callees, out)?;
+            }
+        }
+        return Ok(());
+    } else if let Some(&first_id) = ids.first() {
+        print_symbol_nav_to(first_id, args, sym_name, ctx, out)?;
     }
     Ok(())
 }

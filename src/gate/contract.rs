@@ -84,6 +84,28 @@ pub(crate) fn read_head_blob_bytes(repo_path: &Path, rel_path: &str) -> Option<V
     Some(obj.data.to_vec())
 }
 
+fn resolve_head_visibility(
+    name: Option<&str>,
+    def_node: Option<tree_sitter::Node<'_>>,
+    bytes: &[u8],
+    lang: Lang,
+) -> bool {
+    if matches!(
+        lang,
+        Lang::Dart
+            | Lang::Python
+            | Lang::Ruby
+            | Lang::Elixir
+            | Lang::Lua
+            | Lang::Bash
+            | Lang::GDScript
+            | Lang::Go
+    ) {
+        return name.is_none_or(|n| is_symbol_name_public(n, lang));
+    }
+    def_node.is_none_or(|dn| check_node_visibility(dn, bytes, lang))
+}
+
 fn parse_head_signature_match(
     m: &tree_sitter::QueryMatch<'_, '_>,
     query: &tree_sitter::Query,
@@ -92,7 +114,7 @@ fn parse_head_signature_match(
 ) -> (Option<String>, u16, bool) {
     let mut name = None;
     let mut params = 0u16;
-    let mut is_pub = false;
+    let mut def_node = None;
 
     for capture in m.captures {
         let cap_name = query.capture_names()[capture.index as usize];
@@ -103,9 +125,10 @@ fn parse_head_signature_match(
             }
         } else if cap_name.starts_with("definition.") {
             params = extract_param_count(node);
-            is_pub = check_node_visibility(node, bytes, lang);
+            def_node = Some(node);
         }
     }
+    let is_pub = resolve_head_visibility(name.as_deref(), def_node, bytes, lang);
     (name, params, is_pub)
 }
 
@@ -153,33 +176,42 @@ pub fn load_head_symbol_contract(
     Ok(None)
 }
 
-fn is_counted_param(param: tree_sitter::Node<'_>, is_kt: bool) -> bool {
-    if is_kt {
+fn is_optional_param_decl(kind: &str) -> bool {
+    kind.contains("parameter") || kind == "constructor_param"
+}
+
+fn count_single_param(param: tree_sitter::Node<'_>, is_kt: bool) -> u16 {
+    if param.kind() == "optional_formal_parameters" {
+        return (0..param.named_child_count())
+            .filter_map(|i| param.named_child(i))
+            .filter(|p| is_optional_param_decl(p.kind()))
+            .count() as u16;
+    }
+    u16::from(if is_kt {
         param.kind() == "parameter"
     } else {
         !param.kind().contains("comment")
-    }
+    })
 }
 
 fn count_param_children(child: tree_sitter::Node<'_>) -> u16 {
     let is_kt = child.kind() == "function_value_parameters";
-    let mut count = 0u16;
-    for j in 0..child.named_child_count() {
-        if let Some(param) = child.named_child(j)
-            && is_counted_param(param, is_kt)
-        {
-            count = count.saturating_add(1);
-        }
-    }
-    count
+    (0..child.named_child_count())
+        .filter_map(|j| child.named_child(j))
+        .map(|p| count_single_param(p, is_kt))
+        .sum()
 }
 
 #[must_use]
 fn unwrap_signature_node(def_node: tree_sitter::Node<'_>) -> tree_sitter::Node<'_> {
-    if def_node.kind() == "method_signature"
-        && let Some(first) = def_node.named_child(0)
-    {
-        return first;
+    if matches!(def_node.kind(), "method_signature" | "declaration") {
+        for i in 0..def_node.named_child_count() {
+            if let Some(ch) = def_node.named_child(i)
+                && ch.kind().contains("signature")
+            {
+                return ch;
+            }
+        }
     }
     def_node
 }
@@ -267,7 +299,8 @@ pub fn check_node_visibility(
             | Lang::Bash
             | Lang::GDScript
     ) {
-        let is_private = def_node
+        let node = unwrap_signature_node(def_node);
+        let is_private = node
             .child_by_field_name("name")
             .and_then(|n| n.utf8_text(source_bytes).ok())
             .is_some_and(|s| s.starts_with('_'));
@@ -355,5 +388,43 @@ mod tests {
         let fn_node = tree.root_node().child(0).unwrap();
         assert_eq!(extract_param_count(fn_node), 2);
         assert!(check_node_visibility(fn_node, code, Lang::Rust));
+    }
+
+    #[test]
+    fn test_dart_private_method_visibility_and_named_params() {
+        let dart_code = br#"
+class SwapRecord {
+  SwapRecord(this.a, this.b, {required this.c, this.d, this.e});
+  Future<void> _prepare(String x, {int y = 1, bool z = false}) async {}
+}
+void makeSwap() {
+  SwapRecord(1, 2, c: 3, d: 4);
+}
+"#;
+        let reg = LanguageRegistry::new().unwrap();
+        let (ts_lang, query) = reg.get(Lang::Dart).unwrap();
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(ts_lang).unwrap();
+        let tree = parser.parse(dart_code, None).unwrap();
+        let mut cursor = tree_sitter::QueryCursor::new();
+        let mut matches = cursor.matches(query, tree.root_node(), dart_code.as_slice());
+
+        let mut found_prepare = false;
+        let mut found_ctor = false;
+        while let Some(m) = matches.next() {
+            let (name, params, is_pub) =
+                parse_head_signature_match(m, query, dart_code, Lang::Dart);
+            if name.as_deref() == Some("_prepare") {
+                found_prepare = true;
+                assert!(!is_pub, "private Dart method _prepare must not be public");
+                assert_eq!(params, 3, "1 positional + 2 named parameters");
+            } else if name.as_deref() == Some("SwapRecord") && params > 0 {
+                found_ctor = true;
+                assert!(is_pub);
+                assert_eq!(params, 5, "2 positional + 3 named parameters");
+            }
+        }
+        assert!(found_prepare);
+        assert!(found_ctor);
     }
 }
