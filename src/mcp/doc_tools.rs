@@ -550,6 +550,45 @@ fn probe_name_history(root: &str, sym_name: &str, head_sha: &str) -> Option<Valu
     }))
 }
 
+fn collect_blob_whereis_hits(
+    root: &str,
+    symbol_name: &str,
+    def_locations: &std::collections::HashSet<(String, u32)>,
+) -> Option<Vec<Value>> {
+    let out = std::process::Command::new("git")
+        .args(["-C", root, "grep", "-n", "-w", symbol_name, "HEAD"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut hits = Vec::new();
+    for line in text.lines().take(500) {
+        let mut parts = line.splitn(3, ':');
+        let _ref = parts.next();
+        let path = parts.next().unwrap_or("");
+        let rest = parts.next().unwrap_or("");
+        let mut line_parts = rest.splitn(2, ':');
+        let line_num: u32 = line_parts.next().and_then(|l| l.parse().ok()).unwrap_or(0);
+        let code_text = line_parts.next().unwrap_or("").trim();
+        let is_def = def_locations.contains(&(path.to_string(), line_num));
+        let kind = if is_def { "def" } else { "ref" };
+        hits.push(json!({
+            "ref": "HEAD",
+            "symbol": symbol_name,
+            "kind": kind,
+            "file": path,
+            "path": path,
+            "line": line_num,
+            "text": code_text,
+            "on_head": true,
+            "is_def": is_def,
+        }));
+    }
+    Some(hits)
+}
+
 /// Execute `whereis` tool: identify where a symbol lives (definitions and references).
 pub fn call_whereis(
     ingest: &IngestResult,
@@ -559,9 +598,34 @@ pub fn call_whereis(
     with_history: bool,
 ) -> Value {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let mut hits = collect_head_defs(ingest, interner, root, symbol_name);
-    let mut refs = collect_head_refs(ingest, interner, root, symbol_name);
-    hits.append(&mut refs);
+    let mut def_locations = std::collections::HashSet::new();
+    for sym in &ingest.symbols {
+        if interner.resolve(&sym.name) == symbol_name
+            && let Some(fi) = ingest.files.get(sym.file_id as usize)
+        {
+            def_locations.insert((interner.resolve(&fi.path).to_string(), sym.line));
+        }
+    }
+
+    let mut hits = match collect_blob_whereis_hits(root, symbol_name, &def_locations) {
+        Some(mut blob_hits) => {
+            blob_hits.sort_by(|a, b| {
+                let a_def = a["is_def"].as_bool().unwrap_or(false);
+                let b_def = b["is_def"].as_bool().unwrap_or(false);
+                b_def
+                    .cmp(&a_def)
+                    .then_with(|| a["path"].as_str().cmp(&b["path"].as_str()))
+                    .then_with(|| a["line"].as_u64().cmp(&b["line"].as_u64()))
+            });
+            blob_hits
+        }
+        None => {
+            let mut h = collect_head_defs(ingest, interner, root, symbol_name);
+            let mut refs = collect_head_refs(ingest, interner, root, symbol_name);
+            h.append(&mut refs);
+            h
+        }
+    };
 
     let on_head = !hits.is_empty();
     let blobs = ingest.files.len();
@@ -818,7 +882,7 @@ mod tests {
         ingest.symbols.push(sym);
 
         let whereis_res = call_whereis(&ingest, &interner, ".", "main", false);
-        assert_eq!(whereis_res["count"], 1);
+        assert!(whereis_res["count"].as_u64().unwrap_or(0) >= 1);
         let whereis_hist = call_whereis(&ingest, &interner, ".", "nonexistent_sym", true);
         assert!(whereis_hist.get("history").is_some());
         let stray_res = call_stray_content(".");

@@ -371,7 +371,7 @@ fn test_top_retrieval_and_workspace_queries() {
             &ingest,
             &interner,
             false,
-            &mut out
+            &mut out,
         )
         .is_ok()
     );
@@ -382,7 +382,7 @@ fn test_top_retrieval_and_workspace_queries() {
             &ingest,
             &interner,
             false,
-            &mut out
+            &mut out,
         )
         .is_ok()
     );
@@ -393,7 +393,7 @@ fn test_top_retrieval_and_workspace_queries() {
             &ingest,
             &interner,
             false,
-            &mut out
+            &mut out,
         )
         .is_err()
     );
@@ -536,6 +536,33 @@ fn test_top_safety_queries() {
         )
         .is_ok()
     );
+
+    let dmm_arg = TopSafetyArgs {
+        dmm: Some(None),
+        ..Default::default()
+    };
+    assert!(execute_safety_dispatch(&dmm_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
+
+    let lanes_arg = TopSafetyArgs {
+        plan_lanes: Some(Some(2)),
+        task: Some("refactor".into()),
+        ..Default::default()
+    };
+    assert!(execute_safety_dispatch(&lanes_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
+
+    let skills_arg = TopSafetyArgs {
+        scan_skills: Some(Some("skills".into())),
+        ..Default::default()
+    };
+    assert!(
+        execute_safety_dispatch(&skills_arg, ".", &ingest, &graph, &interner, &mut out).is_ok()
+    );
+
+    let edit_arg = TopSafetyArgs {
+        edit_plan: Some("replace:fn".into()),
+        ..Default::default()
+    };
+    assert!(execute_safety_dispatch(&edit_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
 }
 #[test]
 fn test_top_architecture_queries() {
@@ -571,10 +598,42 @@ fn test_top_architecture_queries() {
         "callers:run_cli\ncallees:run_cli\nimpact:run_cli\nuses:run_cli\ngrep:fn\nfor:run\n";
     assert!(execute_batch_content(".", batch, &ingest, &graph, &pr, &interner, &mut out).is_ok());
 
-    let _a = TopArchitectureArgs {
-        dead_code: true,
-        ..Default::default()
-    };
+    for a in [
+        TopArchitectureArgs {
+            metrics: true,
+            ..Default::default()
+        },
+        TopArchitectureArgs {
+            quality_panel: Some(None),
+            ..Default::default()
+        },
+        TopArchitectureArgs {
+            layout: Some("run_cli".into()),
+            ..Default::default()
+        },
+        TopArchitectureArgs {
+            field_affinity: Some(None),
+            ..Default::default()
+        },
+        TopArchitectureArgs {
+            context_ratio: true,
+            ..Default::default()
+        },
+        TopArchitectureArgs {
+            ensemble: true,
+            ..Default::default()
+        },
+        TopArchitectureArgs {
+            comment_coherence: true,
+            ..Default::default()
+        },
+    ] {
+        let cli = Cli {
+            arch: a,
+            ..Default::default()
+        };
+        let _ = ripwire_rs::cli::dispatch_top_arch(&cli, ".");
+    }
 }
 #[test]
 fn test_all_new_feature_coverage() {
@@ -615,7 +674,6 @@ fn test_all_new_feature_coverage() {
     ws.replace_symbol_body = Some("run:test".into());
     let _ =
         ripwire_rs::cli::execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
-
     let mut cli = ripwire_rs::cli::Cli::default();
     cli.arch.communities = true;
     let _ = ripwire_rs::cli::dispatch_top_arch(&cli, ".");

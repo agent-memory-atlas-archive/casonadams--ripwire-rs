@@ -172,10 +172,10 @@ for entry in "${COMMANDS[@]}"; do
 
     if $test_passed; then
         printf "  \033[32m[PASS]\033[0m %-30s - %s\n" "$cmd_label" "$desc"
-        ((PASSED++))
+        PASSED=$((PASSED + 1))
     else
         printf "  \033[31m[FAIL]\033[0m %-30s - %s (%s)\n" "$cmd_label" "$desc" "$fail_reason"
-        ((FAILED++))
+        FAILED=$((FAILED + 1))
     fi
 done
 

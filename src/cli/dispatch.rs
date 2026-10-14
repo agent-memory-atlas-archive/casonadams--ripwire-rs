@@ -217,7 +217,9 @@ pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     }
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-        let mut stdout = io::stdout().lock();
+        let mut stdout_lock = io::stdout().lock();
+        let mut stdout =
+            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
         execute_retrieval_dispatch(
             &cli.retrieval,
             root,
@@ -226,7 +228,8 @@ pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             &pr,
             &interner,
             &mut stdout,
-        )
+        )?;
+        stdout.flush()
     })())
 }
 
@@ -236,28 +239,11 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         return None;
     }
     Some((|| {
-        let mut stdout = io::stdout().lock();
+        let mut stdout_lock = io::stdout().lock();
+        let mut stdout =
+            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
         if ws.owners {
-            let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 12);
-            let commits =
-                crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
-            let at_stamp = crate::git::history::compute_git_at_stamp(root);
-            let (ingest, _graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-            let known_files: std::collections::HashSet<String> = ingest
-                .files
-                .iter()
-                .map(|f| interner.resolve(&f.path).to_string())
-                .collect();
-            let mut val = crate::mcp::doc_tools::call_owners(
-                commits.as_deref(),
-                None,
-                at_stamp.as_deref(),
-                Some(&known_files),
-            );
-            if cli.retrieval.detail.is_some_and(|d| d > 0) {
-                val["detail"] = serde_json::Value::Bool(true);
-            }
-            crate::serialize::serialize_owners_xml(&val, &mut stdout)?;
+            execute_workspace_owners(cli, root, &mut stdout)?;
         } else if ws.stray_content {
             let val = crate::mcp::doc_tools::call_stray_content(root);
             crate::serialize::serialize_stray_content_xml(&val, &mut stdout)?;
@@ -272,8 +258,30 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
                 &mut stdout,
             )?;
         }
-        Ok(())
+        stdout.flush()
     })())
+}
+
+fn execute_workspace_owners<W: Write>(cli: &Cli, root: &str, out: &mut W) -> io::Result<()> {
+    let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 12);
+    let commits = crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
+    let at_stamp = crate::git::history::compute_git_at_stamp(root);
+    let (ingest, _graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+    let known_files: std::collections::HashSet<String> = ingest
+        .files
+        .iter()
+        .map(|f| interner.resolve(&f.path).to_string())
+        .collect();
+    let mut val = crate::mcp::doc_tools::call_owners(
+        commits.as_deref(),
+        None,
+        at_stamp.as_deref(),
+        Some(&known_files),
+    );
+    if cli.retrieval.detail.is_some_and(|d| d > 0) {
+        val["detail"] = serde_json::Value::Bool(true);
+    }
+    crate::serialize::serialize_owners_xml(&val, out)
 }
 
 pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
@@ -292,7 +300,9 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-        let mut stdout = io::stdout().lock();
+        let mut stdout_lock = io::stdout().lock();
+        let mut stdout =
+            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
 
         if let Some(syms) = detail.expand.as_deref().or(detail.outline.as_deref()) {
             execute_expand_query(root, syms, &ingest, &interner, &mut stdout)?;
@@ -316,6 +326,7 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         } else if detail.lint_catalog {
             crate::metrics::lint::serialize_lint_catalog(&mut stdout)?;
         }
+        stdout.flush()?;
         Ok(())
     })())
 }
@@ -339,10 +350,12 @@ pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     }
     Some((|| {
         let (ingest, graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-        let mut stdout = io::stdout().lock();
-        if let Some(code) =
-            execute_safety_dispatch(s, root, &ingest, &graph, &interner, &mut stdout)?
-        {
+        let mut stdout_lock = io::stdout().lock();
+        let mut stdout =
+            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+        let res = execute_safety_dispatch(s, root, &ingest, &graph, &interner, &mut stdout);
+        stdout.flush()?;
+        if let Some(code) = res? {
             std::process::exit(code);
         }
         Ok(())
@@ -374,12 +387,22 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-        let mut stdout = io::stdout().lock();
+        let mut stdout_lock = io::stdout().lock();
+
+        if a.mermaid {
+            return crate::graph::generate_mermaid_diagram(
+                &ingest,
+                &graph,
+                &interner,
+                &mut stdout_lock,
+            );
+        }
+
+        let mut stdout =
+            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
 
         if let Some(rules_file) = a.arch.as_deref() {
             execute_arch_rules_query(rules_file, root, &ingest, &graph, &interner, &mut stdout)?;
-        } else if a.mermaid {
-            crate::graph::generate_mermaid_diagram(&ingest, &graph, &interner, &mut stdout)?;
         } else if a.zoom.is_some() {
             writeln!(stdout, "<zoom schema=\"ripwire.zoom/v1\" root=\"{root}\">")?;
             execute_communities_query(root, None, &ingest, &graph, &interner, &mut stdout)?;
@@ -399,8 +422,10 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         } else if a.deps {
             execute_deps_query(root, &ingest, &graph, &interner, &mut stdout)?;
         } else if dispatch_lens_queries(a, root, &ingest, &graph, &pr, &interner, &mut stdout)? {
+            stdout.flush()?;
             return Ok(());
         }
+        stdout.flush()?;
         Ok(())
     })())
 }
@@ -489,7 +514,8 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io::Result<()> {
     let emit_legend = !cli.legend.eq_ignore_ascii_case("none");
     let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-    let mut stdout = io::stdout().lock();
+    let mut stdout_lock = io::stdout().lock();
+    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
     let args = RankedStreamArgs {
         root,
         rank_by: &cli.rank_by,
@@ -498,9 +524,9 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
         emit_legend,
         map_diff: cli.safety.map_diff,
     };
-    execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)
+    execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)?;
+    stdout.flush()
 }
-
 pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
     match command {
         Commands::Mcp(mcp_args) => run_mcp_stdio(mcp_args.path.as_deref().unwrap_or(".")),

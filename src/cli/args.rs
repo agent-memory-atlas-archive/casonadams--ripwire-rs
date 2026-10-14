@@ -363,6 +363,14 @@ pub struct TopModifierArgs {
     /// Run daemon listener
     #[arg(long = "listen")]
     pub listen: bool,
+    /// Pretty-print indented XML (default is minified token-optimized XML)
+    #[arg(long = "pretty")]
+    pub pretty: bool,
+}
+impl TopModifierArgs {
+    pub fn is_pretty(&self) -> bool {
+        self.pretty || self.format.as_deref() == Some("pretty")
+    }
 }
 
 /// Top-level retrieval & architecture flags.

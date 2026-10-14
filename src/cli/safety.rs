@@ -65,8 +65,11 @@ pub fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<i
         state.commits =
             crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
     }
-    let mut stdout = io::stdout().lock();
-    execute_gate_action(args, &state, &mut stdout)
+    let mut stdout_lock = io::stdout().lock();
+    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+    let res = execute_gate_action(args, &state, &mut stdout);
+    let _ = stdout.flush();
+    res
 }
 
 pub fn execute_with_git_state<F>(root: &str, cutoff: Option<i64>, runner: F) -> io::Result<()>
@@ -74,7 +77,7 @@ where
     F: FnOnce(
         &[crate::git::history::CommitInfo],
         &crate::mcp::McpState,
-        &mut io::StdoutLock<'_>,
+        &mut crate::serialize::XmlWriter<'_, io::StdoutLock<'_>>,
     ) -> io::Result<()>,
 {
     let path = Path::new(root);
@@ -91,8 +94,10 @@ where
         pr,
         commits: None,
     };
-    let mut stdout = io::stdout().lock();
-    runner(commits, &state, &mut stdout)
+    let mut stdout_lock = io::stdout().lock();
+    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+    runner(commits, &state, &mut stdout)?;
+    stdout.flush()
 }
 
 pub fn dispatch_git_metrics_command(
@@ -546,7 +551,9 @@ pub fn execute_cochange_with<W: Write>(
     );
     let opts = crate::git::cochange::CochangeOptions::default();
 
-    if let Some(file) = probed_file {
+    let target_file =
+        probed_file.filter(|f| !f.is_empty() && *f != "." && !std::path::Path::new(f).is_dir());
+    if let Some(file) = target_file {
         let partners = crate::git::cochange::mine_cochange_for_file(
             file,
             filtered,

@@ -29,6 +29,9 @@ pub fn execute_clones_command(root: &str, min_tokens: usize) -> io::Result<()> {
         Some(std::path::Path::new(root)),
     );
     let xml = render_clones_xml(&clones, &ingest, &interner);
-    print!("{xml}");
-    Ok(())
+    let mut stdout_lock = io::stdout().lock();
+    let mut out = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+    use std::io::Write;
+    out.write_all(xml.as_bytes())?;
+    out.flush()
 }

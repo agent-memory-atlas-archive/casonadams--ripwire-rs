@@ -472,4 +472,17 @@ mod tests {
         assert_eq!(res["count"], 1);
         assert_eq!(res["detail"], 1);
     }
+
+    #[test]
+    fn test_compute_adaptive_cut() {
+        assert_eq!(compute_adaptive_cut(&[10.0, 5.0], 5, 10), (2, 2, 0.0));
+        let scores = [10.0, 9.0, 8.0, 2.0, 1.0];
+        let (k, shown, gap) = compute_adaptive_cut(&scores, 1, 5);
+        assert_eq!(k, 3);
+        assert_eq!(shown, 3);
+        assert!(gap >= 0.25);
+        let no_drop = [10.0, 9.9, 9.8, 9.7];
+        let (k_all, _, _) = compute_adaptive_cut(&no_drop, 1, 4);
+        assert_eq!(k_all, 4);
+    }
 }

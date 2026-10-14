@@ -1,7 +1,10 @@
 pub mod escape;
 pub mod html;
 pub mod query_xml;
+pub mod writer;
 pub mod xml;
+
+pub use writer::{MinifyingWriter, XmlWriter};
 
 pub use query_xml::{
     CommunityModule, TreeFileSymbols, serialize_around_xml, serialize_communities_xml,
