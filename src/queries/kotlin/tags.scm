@@ -89,3 +89,7 @@
 (import_header
   (identifier
     (simple_identifier) @name .)) @reference.import
+
+(delegation_specifier
+  (user_type
+    (type_identifier) @name)) @reference.implementation

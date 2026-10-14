@@ -181,3 +181,6 @@
 (jsx_opening_element
   name: (member_expression
     property: (property_identifier) @name)) @reference.call
+
+(class_heritage
+  (identifier) @name) @reference.extends

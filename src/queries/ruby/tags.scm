@@ -79,3 +79,6 @@
 ; raises in a class and in a module) and defines nothing.
 (call
   method: (identifier) @name) @reference.call
+
+(superclass
+  (constant) @name) @reference.extends

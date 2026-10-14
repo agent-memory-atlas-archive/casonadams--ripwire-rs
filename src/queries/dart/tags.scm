@@ -76,6 +76,19 @@
 (new_expression
   (type_identifier) @name) @reference.class
 
+(superclass
+  (type_identifier) @name) @reference.extends
+
+(interfaces
+  (type_identifier) @name) @reference.implementation
+
+(mixins
+  (type_identifier) @name) @reference.implementation
+
+(import_specification
+  (uri
+    (string_literal) @name)) @reference.import
+
 ; ── stated floors ─────────────────────────────────────────────────────────────────────
 ; * Named constructors and factories index under the CLASS name, not `Class.name`: `C()`,
 ;   `C.seeded()` and `factory C.fromA()` are three overloads of `C`. Call sites spelled

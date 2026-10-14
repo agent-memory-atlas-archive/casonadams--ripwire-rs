@@ -1,3 +1,6 @@
-fn main() -> std::io::Result<()> {
-    ripwire_rs::run_cli()
+fn main() {
+    if let Err(err) = ripwire_rs::run_cli() {
+        eprintln!("{err}");
+        std::process::exit(1);
+    }
 }

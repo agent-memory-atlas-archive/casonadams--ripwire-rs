@@ -4,29 +4,76 @@ use serde_json::{Value, json};
 use std::fs;
 
 /// Score a symbol against a set of search terms.
+fn score_single_term(lower_name: &str, lower_scope: Option<&str>, term: &str) -> f64 {
+    let t = term.to_ascii_lowercase();
+    if lower_name == t {
+        30.0
+    } else if lower_name.contains(&t) {
+        10.0
+    } else if lower_scope.is_some_and(|sc| sc.contains(&t)) {
+        5.0
+    } else {
+        0.0
+    }
+}
+
+/// Score a symbol against a set of search terms.
 fn score_symbol_match(name: &str, scope: Option<&str>, terms: &[&str], rank: f64) -> f64 {
     let lower_name = name.to_ascii_lowercase();
     let lower_scope = scope.map(|s| s.to_ascii_lowercase());
-
-    let mut term_score = 0.0;
-    for term in terms {
-        if lower_name.contains(term) {
-            term_score += 10.0;
-            if lower_name == *term {
-                term_score += 20.0;
-            }
-        } else if let Some(ref sc) = lower_scope
-            && sc.contains(term)
-        {
-            term_score += 5.0;
-        }
-    }
+    let term_score: f64 = terms
+        .iter()
+        .map(|term| score_single_term(&lower_name, lower_scope.as_deref(), term))
+        .sum();
 
     if term_score > 0.0 {
         term_score * (1.0 + rank * 10.0)
     } else {
         0.0
     }
+}
+
+fn extract_normalized_sig(
+    sym: &crate::domain::Symbol,
+    bytes: &[u8],
+    fallback_name: &str,
+) -> String {
+    let start = (sym.sig_start_byte as usize).min(bytes.len());
+    let end = (sym.sig_end_byte as usize).min(bytes.len());
+    if start >= end {
+        return fallback_name.to_string();
+    }
+    let raw = String::from_utf8_lossy(&bytes[start..end]);
+    let trimmed = raw.trim().trim_end_matches('{').trim();
+    let collapsed = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() {
+        fallback_name.to_string()
+    } else {
+        collapsed
+    }
+}
+
+fn read_file_cached<'a>(
+    root: &str,
+    rel_path: &str,
+    file_id: u32,
+    cache: &'a mut std::collections::HashMap<u32, Vec<u8>>,
+) -> &'a [u8] {
+    cache.entry(file_id).or_insert_with(|| {
+        let candidate = std::path::Path::new(root).join(rel_path);
+        fs::read(&candidate)
+            .or_else(|_| fs::read(rel_path))
+            .unwrap_or_default()
+    })
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct ForTaskOptions<'a> {
+    pub root: &'a str,
+    pub graph: Option<&'a Graph>,
+    pub budget_tokens: Option<usize>,
+    pub detail: Option<usize>,
+    pub adaptive: bool,
 }
 
 /// Execute `for` task-lens ranking tool.
@@ -64,6 +111,66 @@ pub fn call_for_task(
     detail: Option<usize>,
     adaptive: bool,
 ) -> Value {
+    call_for_task_with_options(
+        ingest,
+        interner,
+        ranks,
+        task,
+        ForTaskOptions {
+            root: ".",
+            graph: None,
+            budget_tokens,
+            detail,
+            adaptive,
+        },
+    )
+}
+
+fn build_for_symbol_entry(
+    idx: usize,
+    score: f64,
+    sym: &crate::domain::Symbol,
+    path: &str,
+    name: &str,
+    opts: ForTaskOptions<'_>,
+    file_cache: &mut std::collections::HashMap<u32, Vec<u8>>,
+) -> Value {
+    let detail_count = opts.detail.unwrap_or(0);
+    let bytes = read_file_cached(opts.root, path, sym.file_id, file_cache);
+    let sig = extract_normalized_sig(sym, bytes, name);
+    let in_deg = opts.graph.map_or(0, |g| g.in_degree(sym.id));
+    let end_line = sym.line.saturating_add(sym.loc.saturating_sub(1));
+    let mut obj = json!({
+        "name": name,
+        "kind": sym.kind.tag(),
+        "path": path,
+        "line": sym.line,
+        "end_line": end_line,
+        "sig": sig,
+        "cx": sym.cx,
+        "ccx": sym.ccx,
+        "in": in_deg,
+        "amp": in_deg.max(1),
+        "score": (score * 100.0).round() / 100.0
+    });
+    if idx < detail_count && !bytes.is_empty() {
+        let start = (sym.sig_start_byte as usize).min(bytes.len());
+        let end = (sym.end_byte as usize).min(bytes.len());
+        if start < end {
+            let body = String::from_utf8_lossy(&bytes[start..end]).to_string();
+            obj["body"] = Value::String(body);
+        }
+    }
+    obj
+}
+
+pub fn call_for_task_with_options(
+    ingest: &IngestResult,
+    interner: &Interner,
+    ranks: &[f64],
+    task: &str,
+    opts: ForTaskOptions<'_>,
+) -> Value {
     let raw_terms: Vec<&str> = task
         .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
@@ -82,15 +189,16 @@ pub fn call_for_task(
     }
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    let mut limit = budget_tokens.unwrap_or(25).min(scored.len());
+    let mut limit = opts.budget_tokens.unwrap_or(25).min(scored.len());
     let mut adaptive_info = None;
-    if adaptive && scored.len() > 5 {
+    if opts.adaptive && scored.len() > 5 {
         let scores: Vec<f64> = scored.iter().map(|s| s.0).collect();
         let (kept, _cliff, gap) = compute_adaptive_cut(&scores, 5, limit);
         adaptive_info = Some((kept, scored.len(), gap));
         limit = kept;
     }
-    let detail_count = detail.unwrap_or(0).min(limit);
+    let detail_count = opts.detail.unwrap_or(0).min(limit);
+    let mut file_cache = std::collections::HashMap::new();
     let symbols_json: Vec<Value> = scored[..limit]
         .iter()
         .enumerate()
@@ -99,24 +207,8 @@ pub fn call_for_task(
             let path = ingest
                 .files
                 .get(sym.file_id as usize)
-                .map(|f| interner.resolve(&f.path))
-                .unwrap_or("");
-            let mut obj = json!({
-                "name": name,
-                "kind": sym.kind.tag(),
-                "path": path,
-                "line": sym.line,
-                "score": (score * 100.0).round() / 100.0
-            });
-            if idx < detail_count
-                && let Ok(bytes) = fs::read(path)
-            {
-                let start = (sym.sig_start_byte as usize).min(bytes.len());
-                let end = (sym.end_byte as usize).min(bytes.len());
-                let body = String::from_utf8_lossy(&bytes[start..end]).to_string();
-                obj["body"] = Value::String(body);
-            }
-            obj
+                .map_or("", |f| interner.resolve(&f.path));
+            build_for_symbol_entry(idx, *score, sym, path, name, opts, &mut file_cache)
         })
         .collect();
 
@@ -295,6 +387,26 @@ pub fn call_exemplar(
 }
 
 /// Execute `lego` tool: interface contract and its implementors.
+fn resolve_implementor_symbol<'a>(
+    ingest: &'a IngestResult,
+    r: &crate::domain::Reference,
+) -> Option<&'a crate::domain::Symbol> {
+    if let Some(src_sym) = ingest.symbols.get(r.from_symbol as usize)
+        && (src_sym.kind == SymKind::Class
+            || src_sym.kind == SymKind::Struct
+            || src_sym.kind == SymKind::Interface)
+    {
+        return Some(src_sym);
+    }
+    let q_spur = r.qualifier?;
+    ingest.symbols.iter().find(|s| {
+        s.name == q_spur
+            && (s.kind == SymKind::Class
+                || s.kind == SymKind::Struct
+                || s.kind == SymKind::Interface)
+    })
+}
+
 pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &str) -> Value {
     let iface_sym = ingest.symbols.iter().find(|s| {
         interner.resolve(&s.name) == interface_name
@@ -304,10 +416,12 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
     });
 
     let mut implementors = Vec::new();
+    let mut seen_impls = std::collections::HashSet::new();
     for r in &ingest.references {
         if r.role == RefRole::Extends
             && interner.resolve(&r.callee_name) == interface_name
-            && let Some(src_sym) = ingest.symbols.get(r.from_symbol as usize)
+            && let Some(src_sym) = resolve_implementor_symbol(ingest, r)
+            && seen_impls.insert(src_sym.id)
         {
             let name = interner.resolve(&src_sym.name);
             let path = ingest
@@ -429,6 +543,166 @@ pub fn call_grep(
     })
 }
 
+fn line_matches_tokens(line: &str, tokens: &[&str]) -> bool {
+    let Some((&first, rest)) = tokens.split_first() else {
+        return false;
+    };
+    let Some(mut pos) = line.find(first) else {
+        return false;
+    };
+    pos += first.len();
+    for &tok in rest {
+        let Some(rel) = line[pos..].find(tok) else {
+            return false;
+        };
+        pos += rel + tok.len();
+    }
+    true
+}
+
+fn match_pattern_on_text(text: &str, tokens: &[&str]) -> Vec<(u32, String)> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| line_matches_tokens(line, tokens))
+        .map(|(idx, line)| (idx as u32 + 1, line.trim().to_string()))
+        .collect()
+}
+
+/// Execute `pattern` structural code-shaped search with `$NAME` / `$$$` wildcards.
+pub fn call_pattern_search(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    pattern: &str,
+    path_filter: Option<&str>,
+) -> Value {
+    let tokens: Vec<&str> = pattern
+        .split_whitespace()
+        .filter(|t| !t.starts_with('$'))
+        .collect();
+    let mut hits = Vec::new();
+    let root_path = std::path::Path::new(root);
+
+    for file in &ingest.files {
+        let path = interner.resolve(&file.path);
+        if path_filter.is_some_and(|pf| !path.contains(pf)) {
+            continue;
+        }
+        let Ok(bytes) = fs::read(root_path.join(path)).or_else(|_| fs::read(path)) else {
+            continue;
+        };
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            continue;
+        };
+        for (line_num, snippet) in match_pattern_on_text(text, &tokens) {
+            let enclosing = ingest
+                .symbols
+                .iter()
+                .filter(|s| s.file_id == file.id && s.line <= line_num)
+                .max_by_key(|s| s.line)
+                .map(|s| interner.resolve(&s.name));
+            hits.push(json!({
+                "path": path,
+                "line": line_num,
+                "text": snippet,
+                "enclosing": enclosing
+            }));
+        }
+    }
+    json!({
+        "pattern": pattern,
+        "hits": hits,
+        "count": hits.len()
+    })
+}
+
+fn collect_query_file_hits(
+    file: &crate::domain::FileInfo,
+    bytes: &[u8],
+    query_str: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> Option<Vec<Value>> {
+    use streaming_iterator::StreamingIterator;
+    let reg = crate::ingest::LanguageRegistry::new().ok()?;
+    let (ts_lang, _) = reg.get(file.lang)?;
+    let path = interner.resolve(&file.path);
+    let q = tree_sitter::Query::new(ts_lang, query_str).ok()?;
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(ts_lang).ok()?;
+    let tree = parser.parse(bytes, None)?;
+    let mut cursor = tree_sitter::QueryCursor::new();
+    let mut matches = cursor.matches(&q, tree.root_node(), bytes);
+    let mut hits = Vec::new();
+    while let Some(m) = matches.next() {
+        let Some(cap) = m.captures.first() else {
+            continue;
+        };
+        let node = cap.node;
+        let line_num = node.start_position().row as u32 + 1;
+        let text = node
+            .utf8_text(bytes)
+            .unwrap_or("")
+            .lines()
+            .next()
+            .unwrap_or("")
+            .trim();
+        let enclosing = ingest
+            .symbols
+            .iter()
+            .filter(|s| s.file_id == file.id && s.line <= line_num)
+            .max_by_key(|s| s.line)
+            .map(|s| interner.resolve(&s.name));
+        hits.push(json!({
+            "path": path,
+            "line": line_num,
+            "text": text,
+            "enclosing": enclosing
+        }));
+    }
+    Some(hits)
+}
+
+pub fn call_ast_match(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    query_str: &str,
+) -> Result<Value, String> {
+    let Ok(reg) = crate::ingest::LanguageRegistry::new() else {
+        return Err("failed to initialize language registry".to_string());
+    };
+    let root_path = std::path::Path::new(root);
+    let mut hits = Vec::new();
+    let mut compiled_any = false;
+
+    for file in &ingest.files {
+        if let Some((ts_lang, _)) = reg.get(file.lang)
+            && tree_sitter::Query::new(ts_lang, query_str).is_ok()
+        {
+            compiled_any = true;
+        }
+        let path = interner.resolve(&file.path);
+        let Ok(bytes) = fs::read(root_path.join(path)).or_else(|_| fs::read(path)) else {
+            continue;
+        };
+        if let Some(file_hits) = collect_query_file_hits(file, &bytes, query_str, ingest, interner)
+        {
+            hits.extend(file_hits);
+        }
+    }
+    if !compiled_any && !ingest.files.is_empty() {
+        return Err(format!(
+            "ripwire: --match: invalid S-expression query '{query_str}'"
+        ));
+    }
+    Ok(json!({
+        "pattern": query_str,
+        "hits": hits,
+        "count": hits.len()
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -484,5 +758,34 @@ mod tests {
         let no_drop = [10.0, 9.9, 9.8, 9.7];
         let (k_all, _, _) = compute_adaptive_cut(&no_drop, 1, 4);
         assert_eq!(k_all, 4);
+    }
+
+    #[test]
+    fn test_pattern_and_ast_match() {
+        let matches = match_pattern_on_text(
+            "pub class Foo { bar(); }\nfn other() {}",
+            &["class", "{", "}"],
+        );
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].0, 1);
+
+        let reg = crate::ingest::LanguageRegistry::new().unwrap();
+        let interner = Interner::new();
+        let code = b"pub struct Widget {}\npub fn build() {}";
+        let ingest = crate::ingest::ingest_in_memory_files(
+            &[("src/lib.rs", crate::domain::Lang::Rust, code)],
+            &reg,
+            &interner,
+        );
+        let hits = collect_query_file_hits(
+            &ingest.files[0],
+            code,
+            "(struct_item name: (type_identifier) @name)",
+            &ingest,
+            &interner,
+        )
+        .unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0]["text"], "Widget");
     }
 }

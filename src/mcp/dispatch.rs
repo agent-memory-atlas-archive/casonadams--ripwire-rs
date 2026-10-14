@@ -352,14 +352,18 @@ pub fn dispatch_read_tools(
             let budget = args["budget_tokens"].as_u64().map(|b| b as usize);
             let detail = args["detail"].as_u64().map(|d| d as usize);
             let adaptive = args["adaptive"].as_bool().unwrap_or(false);
-            Ok(retrieval::call_for_task(
+            Ok(retrieval::call_for_task_with_options(
                 &state.ingest,
                 &state.interner,
                 &state.ranks,
                 task,
-                budget,
-                detail,
-                adaptive,
+                retrieval::ForTaskOptions {
+                    root: &state.root,
+                    graph: Some(&state.graph),
+                    budget_tokens: budget,
+                    detail,
+                    adaptive,
+                },
             ))
         }
         "fetch_body" => {

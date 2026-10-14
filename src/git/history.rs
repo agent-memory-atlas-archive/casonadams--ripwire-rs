@@ -408,7 +408,45 @@ fn parse_git_log_stream(output: &[u8]) -> Option<Vec<CommitInfo>> {
     Some(commits)
 }
 
+fn resolve_git_subdir_prefix(repo_path: &Path) -> Option<String> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .args(["rev-parse", "--show-prefix"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let prefix = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .replace('\\', "/");
+    if prefix.is_empty() {
+        None
+    } else if prefix.ends_with('/') {
+        Some(prefix)
+    } else {
+        Some(format!("{prefix}/"))
+    }
+}
+
+fn strip_subdir_prefix(mut commits: Vec<CommitInfo>, prefix: Option<&str>) -> Vec<CommitInfo> {
+    let Some(pref) = prefix else {
+        return commits;
+    };
+    for c in &mut commits {
+        c.changed_files = c
+            .changed_files
+            .drain(..)
+            .filter_map(|f| f.strip_prefix(pref).map(String::from))
+            .collect();
+    }
+    commits.retain(|c| !c.changed_files.is_empty());
+    commits
+}
+
 fn try_git_log_cli(repo_path: &Path, cutoff_timestamp: Option<i64>) -> Option<Vec<CommitInfo>> {
+    let prefix = resolve_git_subdir_prefix(repo_path);
     let mut cmd = std::process::Command::new("git");
     cmd.arg("-C").arg(repo_path).arg("log");
     if let Some(cutoff) = cutoff_timestamp {
@@ -419,12 +457,15 @@ fn try_git_log_cli(repo_path: &Path, cutoff_timestamp: Option<i64>) -> Option<Ve
         "--no-renames",
         "--format=commit %H %ct %ae",
         "--name-only",
+        "--",
+        ".",
     ]);
     let output = cmd.output().ok()?;
     if !output.status.success() {
         return None;
     }
-    parse_git_log_stream(&output.stdout)
+    let commits = parse_git_log_stream(&output.stdout)?;
+    Some(strip_subdir_prefix(commits, prefix.as_deref()))
 }
 
 pub fn walk_repository_history(repo_path: &Path) -> Result<Vec<CommitInfo>, GitHistoryError> {
@@ -441,7 +482,8 @@ pub fn walk_repository_history_scoped(
     {
         return Ok(commits);
     }
-    let repo = gix::open(repo_path).map_err(|e| GitHistoryError::Open(e.to_string()))?;
+    let prefix = resolve_git_subdir_prefix(repo_path);
+    let repo = gix::discover(repo_path).map_err(|e| GitHistoryError::Open(e.to_string()))?;
     let head = repo
         .head_commit()
         .map_err(|e| GitHistoryError::Head(e.to_string()))?;
@@ -450,14 +492,15 @@ pub fn walk_repository_history_scoped(
         .all()
         .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
     let metas = collect_commit_metas(rev_walk, cutoff_timestamp)?;
-    process_commits_parallel(&repo, metas)
+    let commits = process_commits_parallel(&repo, metas)?;
+    Ok(strip_subdir_prefix(commits, prefix.as_deref()))
 }
 
 /// Compute the canonical git stamp `sha[+dirty]` for a repository root.
 #[must_use]
 pub fn compute_git_at_stamp(root: &str) -> Option<String> {
     let path = Path::new(root);
-    if let Ok(repo) = gix::open(path)
+    if let Ok(repo) = gix::discover(path)
         && let Ok(head) = repo.head_commit()
     {
         let full_id = head.id().to_string();

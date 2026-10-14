@@ -71,46 +71,36 @@ fn build_walker(root: &Path, options: &CrawlerOptions) -> ignore::Walk {
         .build()
 }
 
+fn resolve_path_lang(path: &Path) -> Lang {
+    let file_name = path.file_name().and_then(|e| e.to_str()).unwrap_or("");
+    if file_name.eq_ignore_ascii_case("dockerfile")
+        || file_name.eq_ignore_ascii_case("containerfile")
+    {
+        Lang::Dockerfile
+    } else {
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        Lang::from_extension(ext)
+    }
+}
+
 fn process_crawl_entry(
     entry: &ignore::DirEntry,
     root: &Path,
     options: &CrawlerOptions,
 ) -> Option<CrawledFile> {
     let path = entry.path();
-    if path.is_dir() || is_path_denylisted(path, &options.custom_excludes) {
+    if path.is_dir() {
         return None;
     }
-
-    let file_name = path.file_name().and_then(|e| e.to_str()).unwrap_or("");
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang = if file_name.eq_ignore_ascii_case("dockerfile")
-        || file_name.eq_ignore_ascii_case("containerfile")
-    {
-        Lang::Dockerfile
-    } else {
-        Lang::from_extension(ext)
-    };
-    if lang == Lang::Unknown {
-        return None;
-    }
-
     let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-    if size == 0 || size > options.max_file_size {
-        return None;
-    }
-
     let rel_path = path
         .strip_prefix(root)
         .unwrap_or(path)
         .to_string_lossy()
         .replace('\\', "/");
-
-    Some(CrawledFile {
-        path: path.to_path_buf(),
-        rel_path,
-        lang,
-        byte_size: size,
-    })
+    let mut file = evaluate_candidate(&rel_path, size, false, options)?;
+    file.path = path.to_path_buf();
+    Some(file)
 }
 
 pub fn crawl_directory(root: &Path, options: &CrawlerOptions) -> Vec<CrawledFile> {
@@ -166,8 +156,7 @@ pub fn evaluate_candidate(
     if is_path_denylisted(path, &options.custom_excludes) {
         return None;
     }
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang = Lang::from_extension(ext);
+    let lang = resolve_path_lang(path);
     if lang == Lang::Unknown || byte_size == 0 || byte_size > options.max_file_size || is_binary {
         return None;
     }
@@ -193,6 +182,7 @@ mod tests {
             ("src/unknown.xyz", 10, false),
             ("binary.rs", 10, true),
             ("empty.rs", 0, false),
+            ("Dockerfile", 20, false),
         ];
 
         let opts = CrawlerOptions::default();
@@ -205,10 +195,12 @@ mod tests {
 
         files.sort_by(|a, b| a.rel_path.as_bytes().cmp(b.rel_path.as_bytes()));
 
-        assert_eq!(files.len(), 2);
-        assert_eq!(files[0].rel_path, "src/a.rs");
-        assert_eq!(files[1].rel_path, "src/b.rs");
-        assert_eq!(files[0].lang, Lang::Rust);
+        assert_eq!(files.len(), 3);
+        assert_eq!(files[0].rel_path, "Dockerfile");
+        assert_eq!(files[0].lang, Lang::Dockerfile);
+        assert_eq!(files[1].rel_path, "src/a.rs");
+        assert_eq!(files[2].rel_path, "src/b.rs");
+        assert_eq!(files[1].lang, Lang::Rust);
         assert!(is_binary_buffer(b"\0hello"));
         assert!(!is_binary_buffer(b"hello world"));
     }

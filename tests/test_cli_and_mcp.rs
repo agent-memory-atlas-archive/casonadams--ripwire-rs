@@ -444,6 +444,37 @@ fn test_top_retrieval_and_workspace_queries() {
     assert!(
         execute_retrieval_dispatch(&r_tr, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
     );
+    for r_adv in [
+        TopRetrievalArgs {
+            verify: Some("calls(run_cli,helper)".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            pack_task: Some("run".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            graph_query: Some("all".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            pattern: Some("fn $NAME".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            ast_match: Some("(function_item name: (identifier) @name)".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            regex: Some("helper".into()),
+            ..Default::default()
+        },
+    ] {
+        assert!(
+            execute_retrieval_dispatch(&r_adv, ".", &ingest, &graph, &pr, &interner, &mut out)
+                .is_ok()
+        );
+    }
 }
 
 #[test]

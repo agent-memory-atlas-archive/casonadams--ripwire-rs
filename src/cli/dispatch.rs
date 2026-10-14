@@ -75,8 +75,10 @@ pub fn execute_navigate(args: &NavigateArgs) -> io::Result<()> {
         ranks: &pr.ranks,
         interner: &interner,
     };
-    let mut stdout = io::stdout().lock();
-    execute_navigate_with(args, &ctx, &mut stdout)
+    let mut stdout_lock = io::stdout().lock();
+    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+    execute_navigate_with(args, &ctx, &mut stdout)?;
+    stdout.flush()
 }
 
 pub fn execute_html_export(
@@ -109,8 +111,10 @@ pub fn execute_html_export(
 
 pub fn execute_stream_xml(root: &str) -> io::Result<()> {
     let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
-    let mut stdout = io::stdout().lock();
-    execute_stream_xml_with(root, &ingest, &graph, &pr, &interner, &mut stdout)
+    let mut stdout_lock = io::stdout().lock();
+    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+    execute_stream_xml_with(root, &ingest, &graph, &pr, &interner, &mut stdout)?;
+    stdout.flush()
 }
 
 pub fn load_repo_analysis(
@@ -183,7 +187,7 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-        let mut stdout = io::stdout().lock();
+        let mut stdout_lock = io::stdout().lock();
         if cli.modifiers.json {
             let ids = crate::navigate::find_symbols_by_name(sym, &ingest, &interner);
             if let Some(&id) = ids.first() {
@@ -191,18 +195,20 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
                     let impact = crate::navigate::transitive_impact(
                         id, &ingest, &graph, &pr.ranks, &interner, None,
                     );
-                    serde_json::to_writer_pretty(&mut stdout, &impact)?;
-                    writeln!(stdout)?;
+                    serde_json::to_writer_pretty(&mut stdout_lock, &impact)?;
+                    writeln!(stdout_lock)?;
                     return Ok(());
                 } else if let Some(nav) =
                     crate::navigate::navigate_1hop(id, &ingest, &graph, &pr.ranks, &interner)
                 {
-                    serde_json::to_writer_pretty(&mut stdout, &nav)?;
-                    writeln!(stdout)?;
+                    serde_json::to_writer_pretty(&mut stdout_lock, &nav)?;
+                    writeln!(stdout_lock)?;
                     return Ok(());
                 }
             }
         }
+        let mut stdout =
+            crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
         execute_nav_symbol_query(
             sym,
             mode,
@@ -211,7 +217,8 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             &pr.ranks,
             &interner,
             &mut stdout,
-        )
+        )?;
+        stdout.flush()
     })())
 }
 
@@ -519,8 +526,11 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     if let Some(file) = cli.modifiers.batch.as_deref() {
         return Some((|| {
             let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-            let mut stdout = io::stdout().lock();
-            execute_batch_file(root, file, &ingest, &graph, &pr, &interner, &mut stdout)
+            let mut stdout_lock = io::stdout().lock();
+            let mut stdout =
+                crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
+            execute_batch_file(root, file, &ingest, &graph, &pr, &interner, &mut stdout)?;
+            stdout.flush()
         })());
     }
     dispatch_top_nav(cli, root)
@@ -679,7 +689,15 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
         return crate::slice::execute_slice_command(root, Some(target), &cli.slice_flow);
     }
 
-    let budget = compute_effective_budget(cli.pack_budget, cli.token_budget, cli.max_tokens);
+    let budget = if cli.top_k.is_some()
+        && cli.pack_budget.is_none()
+        && cli.token_budget.is_none()
+        && cli.max_tokens.is_none()
+    {
+        None
+    } else {
+        compute_effective_budget(cli.pack_budget, cli.token_budget, cli.max_tokens)
+    };
     match &cli.command {
         Some(cmd) => dispatch_subcommand(cmd),
         None => dispatch_default_run(&cli, root, budget),

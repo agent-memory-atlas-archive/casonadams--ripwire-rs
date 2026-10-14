@@ -203,3 +203,12 @@
 (new_expression
   constructor: (member_expression
     property: (property_identifier) @name)) @reference.call
+
+(extends_clause
+  value: (identifier) @name) @reference.extends
+
+(implements_clause
+  (type_identifier) @name) @reference.implementation
+
+(extends_type_clause
+  type: (type_identifier) @name) @reference.extends

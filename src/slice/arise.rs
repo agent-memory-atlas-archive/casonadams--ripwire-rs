@@ -56,11 +56,22 @@ fn is_param_node(parent: Node<'_>) -> bool {
         || pkind == "parameters"
 }
 
+fn is_decl_kind(pkind: &str) -> bool {
+    pkind.contains("declarator")
+        || pkind.contains("declaration")
+        || pkind == "let_binding"
+        || pkind == "initialized_identifier"
+        || pkind == "initialized_variable_definition"
+        || pkind == "static_final_declaration"
+}
+
 fn is_decl_node(parent: Node<'_>, name_node: Node<'_>) -> bool {
-    let pkind = parent.kind();
-    if pkind.contains("declarator") || pkind.contains("declaration") || pkind == "let_binding" {
+    if is_decl_kind(parent.kind()) {
         if let Some(left) = parent.child_by_field_name("name") {
             return left == name_node;
+        }
+        if let Some(first) = parent.named_child(0) {
+            return first == name_node;
         }
         return true;
     }

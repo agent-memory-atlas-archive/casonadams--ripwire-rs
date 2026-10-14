@@ -35,7 +35,13 @@ mod tests {
     #[test]
     fn test_classify_captures() {
         assert!(matches!(classify_capture("name"), Some(Capture::Name)));
+        assert!(matches!(
+            classify_capture("import.path"),
+            Some(Capture::ImportPath)
+        ));
         assert!(classify_capture("other").is_none());
+        assert!(classify_capture("definition.unknown_tag").is_none());
+        assert!(classify_capture("reference.unknown_tag").is_none());
         for tail in [
             "function",
             "cjsexport",
@@ -43,18 +49,21 @@ mod tests {
             "protomethod",
             "class",
             "object",
+            "specialization",
             "struct",
             "interface",
+            "type",
             "var",
             "constant",
             "attribute",
             "property",
+            "enummember",
             "macro",
+            "testmacroblock",
             "module",
             "section",
             "yamlkey",
             "field",
-            "x",
         ] {
             assert!(classify_capture(&format!("definition.{tail}")).is_some());
         }
@@ -65,14 +74,216 @@ mod tests {
             "import",
             "extends",
             "implementation",
+            "class",
             "macro",
             "type",
             "value",
             "through",
             "call",
-            "y",
+            "bare",
+            "operator",
         ] {
             assert!(classify_capture(&format!("reference.{tail}")).is_some());
+        }
+    }
+
+    #[test]
+    fn test_all_scm_capture_vocabulary_and_patterns_valid() {
+        let reg = LanguageRegistry::new().unwrap();
+        let all_langs = [
+            Lang::Rust,
+            Lang::TypeScript,
+            Lang::JavaScript,
+            Lang::Python,
+            Lang::Go,
+            Lang::C,
+            Lang::Cpp,
+            Lang::Cuda,
+            Lang::Metal,
+            Lang::Java,
+            Lang::CSharp,
+            Lang::Swift,
+            Lang::Bash,
+            Lang::Ruby,
+            Lang::Php,
+            Lang::Lua,
+            Lang::Elixir,
+            Lang::Dart,
+            Lang::Kotlin,
+            Lang::GDScript,
+            Lang::Json,
+            Lang::Toml,
+            Lang::Yaml,
+            Lang::Markdown,
+            Lang::Zig,
+            Lang::Solidity,
+            Lang::Hcl,
+            Lang::Scala,
+            Lang::Erlang,
+            Lang::Html,
+            Lang::Css,
+            Lang::Sql,
+            Lang::Proto,
+            Lang::Graphql,
+            Lang::Dockerfile,
+            Lang::ObjC,
+        ];
+        for lang in all_langs {
+            let (_, query) = reg.get(lang).expect("registered language");
+            for cap_name in query.capture_names() {
+                if *cap_name == "elixir.context" {
+                    continue;
+                }
+                assert!(
+                    classify_capture(cap_name).is_some(),
+                    "Lang {:?} tags.scm contains unrecognized capture '@{}'",
+                    lang,
+                    cap_name
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_oop_inheritance_lego_and_uses_contract() {
+        let reg = LanguageRegistry::new().unwrap();
+        let oop_fixtures: &[(&str, Lang, &str, &str, &str)] = &[
+            (
+                "shapes.dart",
+                Lang::Dart,
+                "abstract class Shape {}\nfinal class Circle extends Shape {}\nclass Square implements Shape {}\nclass Polygon extends Base with Shape {}",
+                "Shape",
+                "Circle",
+            ),
+            (
+                "service.ts",
+                Lang::TypeScript,
+                "export interface Service {}\nexport class Worker implements Service {}\nexport class Child extends Worker {}",
+                "Service",
+                "Worker",
+            ),
+            (
+                "app.js",
+                Lang::JavaScript,
+                "class Base {}\nclass Derived extends Base {}",
+                "Base",
+                "Derived",
+            ),
+            (
+                "model.py",
+                Lang::Python,
+                "class BaseModel:\n    pass\nclass User(BaseModel):\n    pass",
+                "BaseModel",
+                "User",
+            ),
+            (
+                "Worker.java",
+                Lang::Java,
+                "public interface Service {}\npublic class Worker implements Service {}",
+                "Service",
+                "Worker",
+            ),
+            (
+                "Handler.kt",
+                Lang::Kotlin,
+                "interface Handler\nclass HttpHandler : Handler {}",
+                "Handler",
+                "HttpHandler",
+            ),
+            (
+                "Repo.cs",
+                Lang::CSharp,
+                "public interface IRepo {}\npublic class SqlRepo : IRepo {}",
+                "IRepo",
+                "SqlRepo",
+            ),
+            (
+                "Greeter.swift",
+                Lang::Swift,
+                "protocol Greeter {}\nstruct ConsoleGreeter: Greeter {}",
+                "Greeter",
+                "ConsoleGreeter",
+            ),
+            (
+                "lib.rs",
+                Lang::Rust,
+                "pub trait Runner {}\npub struct FastRunner;\nimpl Runner for FastRunner {}",
+                "Runner",
+                "FastRunner",
+            ),
+            (
+                "engine.cpp",
+                Lang::Cpp,
+                "class Base {};\nclass Derived : public Base {};",
+                "Base",
+                "Derived",
+            ),
+            (
+                "Service.php",
+                Lang::Php,
+                "<?php\ninterface Contract {}\nclass Concrete implements Contract {}",
+                "Contract",
+                "Concrete",
+            ),
+            (
+                "job.rb",
+                Lang::Ruby,
+                "class BaseJob\nend\nclass MailJob < BaseJob\nend",
+                "BaseJob",
+                "MailJob",
+            ),
+            (
+                "App.scala",
+                Lang::Scala,
+                "trait Runner\nclass TaskRunner extends Runner",
+                "Runner",
+                "TaskRunner",
+            ),
+            (
+                "Token.sol",
+                Lang::Solidity,
+                "interface IERC20 {}\ncontract MyToken is IERC20 {}",
+                "IERC20",
+                "MyToken",
+            ),
+            (
+                "Widget.m",
+                Lang::ObjC,
+                "@interface Base\n@end\n@interface Sub : Base\n@end",
+                "Base",
+                "Sub",
+            ),
+            (
+                "enemy.gd",
+                Lang::GDScript,
+                "class Actor:\n  pass\nclass Boss:\n  extends Actor",
+                "Actor",
+                "Boss",
+            ),
+        ];
+        for &(path, lang, code, base_name, impl_name) in oop_fixtures {
+            let interner = crate::domain::Interner::new();
+            let ingest = ingest_in_memory_files(&[(path, lang, code.as_bytes())], &reg, &interner);
+            let has_extends = ingest.references.iter().any(|r| {
+                r.role == crate::domain::RefRole::Extends
+                    && interner.resolve(&r.callee_name) == base_name
+            });
+            assert!(
+                has_extends,
+                "Lang {:?} ({}) failed to extract RefRole::Extends for '{}'",
+                lang, path, base_name
+            );
+            let lego = crate::mcp::retrieval::call_lego(&ingest, &interner, base_name);
+            let impls = lego["implementors"].as_array().expect("implementors array");
+            assert!(
+                impls.iter().any(|i| i["name"] == impl_name),
+                "Lang {:?} ({}) call_lego('{}') did not find implementor '{}', got {:?}",
+                lang,
+                path,
+                base_name,
+                impl_name,
+                impls
+            );
         }
     }
 
@@ -401,5 +612,203 @@ mod tests {
             .expect("found handle");
         assert_eq!(fn_def.scope.as_deref(), Some("Service"));
         assert_eq!(fn_def.params, 2);
+    }
+    #[test]
+    fn test_dart_end_to_end_parity_contracts() {
+        let reg = LanguageRegistry::new().unwrap();
+        let interner = crate::domain::Interner::new();
+        let shapes_code = br#"
+sealed class TaskOutcome {}
+final class TaskCompleted extends TaskOutcome {}
+final class TaskSkipped extends TaskOutcome {}
+final class TaskMissing extends TaskOutcome {}
+final class TaskAmbiguous extends TaskOutcome {}
+final class TaskConflicted extends TaskOutcome {}
+"#;
+        let ctrl_code = br#"
+class ApiController {
+  void executeAction() {
+    recordAudit();
+  }
+}
+void recordAudit() {}
+"#;
+        let svc_code = br#"
+import 'package:core/core.dart';
+
+String normalizeInput(String raw) {
+  return raw;
+}
+
+void dispatchBatch(String item) {
+  final normalized = normalizeInput(item);
+  sendPayload(normalized);
+}
+
+void sendPayload(String payload) {}
+
+class WorkerService {
+  Future<void> executeAction(String taskId, String mode) async {
+    if (taskId.isEmpty) {
+      return;
+    }
+    dispatchBatch(taskId);
+  }
+}
+"#;
+        let html_code = b"<html><body><div id=\"app\"><span>text</span></div></body></html>";
+        let ingest = ingest_in_memory_files(
+            &[
+                ("src/domain/outcomes.dart", Lang::Dart, shapes_code),
+                ("src/api/controller.dart", Lang::Dart, ctrl_code),
+                ("src/service/worker.dart", Lang::Dart, svc_code),
+                ("src/views/template.html", Lang::Html, html_code),
+            ],
+            &reg,
+            &interner,
+        );
+        let graph = crate::graph::Graph::build(&ingest, &interner);
+        let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
+
+        let lego = crate::mcp::retrieval::call_lego(&ingest, &interner, "TaskOutcome");
+        assert_eq!(lego["count"], 5);
+        let mut lego_xml = Vec::new();
+        crate::serialize::serialize_lego_xml("lib", &lego, &mut lego_xml).unwrap();
+        let lego_str = String::from_utf8(lego_xml).unwrap();
+        assert!(lego_str.contains("implementors=\"5\""));
+        assert!(lego_str.contains("p=\"src/domain/outcomes.dart:"));
+
+        let uses = crate::mcp::graph_tools::call_uses(&ingest, &interner, "TaskOutcome");
+        assert_eq!(uses["count"], 5);
+
+        let path_val = crate::mcp::graph_tools::call_path_between(
+            &ingest,
+            &graph,
+            &interner,
+            "executeAction",
+            "normalizeInput",
+        );
+        assert_eq!(path_val["reachable"], true);
+        assert_eq!(path_val["hops"], 2);
+        assert_eq!(path_val["from_defs"], 2);
+        assert_eq!(path_val["to_defs"], 1);
+
+        let has_div_cls = ingest
+            .symbols
+            .iter()
+            .any(|s| s.kind == crate::domain::SymKind::Class && interner.resolve(&s.name) == "div");
+        assert!(!has_div_cls);
+
+        let slice_xml = crate::slice::execute_slice(
+            &ingest,
+            &reg,
+            &interner,
+            "dispatchBatch:normalized",
+            crate::slice::SliceFlowDir::Fwd,
+            8,
+            Some(svc_code),
+        )
+        .unwrap();
+        assert!(slice_xml.contains("v=\"normalized\""));
+        assert!(!slice_xml.contains("steps=\"0\""));
+
+        let req_sym = ingest
+            .symbols
+            .iter()
+            .find(|s| {
+                interner.resolve(&s.name) == "executeAction"
+                    && s.scope.map(|sc| interner.resolve(&sc)) == Some("WorkerService")
+            })
+            .expect("WorkerService::executeAction");
+        assert!(req_sym.sig_end_byte > req_sym.sig_start_byte);
+        assert!(req_sym.sig_end_byte < req_sym.end_byte);
+        let sig_slice = &svc_code[req_sym.sig_start_byte as usize..req_sym.sig_end_byte as usize];
+        let sig_str = String::from_utf8_lossy(sig_slice);
+        assert!(sig_str.contains("Future<void> executeAction(String taskId, String mode)"));
+
+        let for_val = crate::mcp::retrieval::call_for_task_with_options(
+            &ingest,
+            &interner,
+            &pr.ranks,
+            "Worker executeAction",
+            crate::mcp::retrieval::ForTaskOptions {
+                root: ".",
+                graph: Some(&graph),
+                ..Default::default()
+            },
+        );
+        assert!(for_val["count"].as_u64().unwrap_or(0) > 0);
+
+        let mut conn_buf = Vec::new();
+        crate::cli::execute_connect_query(
+            "executeAction,normalizeInput",
+            &ingest,
+            &graph,
+            &interner,
+            &mut conn_buf,
+        )
+        .unwrap();
+        assert!(
+            String::from_utf8(conn_buf)
+                .unwrap()
+                .contains("<edge from=\"executeAction\" to=\"normalizeInput\"/>")
+        );
+
+        let mut sd_buf = Vec::new();
+        crate::cli::execute_safe_delete_query(
+            ".",
+            "normalizeInput",
+            &ingest,
+            &graph,
+            &interner,
+            &mut sd_buf,
+        )
+        .unwrap();
+        assert!(
+            String::from_utf8(sd_buf)
+                .unwrap()
+                .contains("p=\"src/service/worker.dart:")
+        );
+
+        let mut around_buf = Vec::new();
+        crate::cli::execute_around_query(
+            ".",
+            "dispatchBatch",
+            crate::cli::AroundConfig {
+                depth: 1,
+                fanout: 32,
+            },
+            &ingest,
+            &graph,
+            &interner,
+            &mut around_buf,
+        )
+        .unwrap();
+        let around_str = String::from_utf8(around_buf).unwrap();
+        assert!(around_str.contains("n=\"executeAction\""));
+        assert!(around_str.contains("n=\"normalizeInput\""));
+
+        let sub_sym = ingest
+            .symbols
+            .iter()
+            .find(|s| interner.resolve(&s.name) == "dispatchBatch")
+            .unwrap();
+        let head_contract = crate::gate::contract::SignatureContract {
+            name: "dispatchBatch".to_string(),
+            params: sub_sym.params,
+            is_public: crate::gate::contract::is_symbol_name_public("dispatchBatch", Lang::Dart),
+        };
+        let ec_rep = crate::gate::edit_check::check_symbol_contract(
+            sub_sym.id,
+            Some(&head_contract),
+            &ingest,
+            &graph,
+            &interner,
+        )
+        .unwrap();
+        assert_eq!(
+            ec_rep.status,
+            crate::gate::contract::ContractStatus::Unchanged
+        );
     }
 }

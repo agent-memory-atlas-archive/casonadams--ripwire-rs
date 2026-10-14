@@ -23,3 +23,7 @@
 (call_expression
     (expression (member_expression
         property: (identifier) @name))) @reference.call
+
+(inheritance_specifier
+    ancestor: (user_defined_type
+        (identifier) @name)) @reference.extends

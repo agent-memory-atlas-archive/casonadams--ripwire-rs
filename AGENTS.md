@@ -56,13 +56,30 @@
 ## Adding and maintaining tree-sitter languages
 
 - **Shared capture vocabulary**: All `queries/<lang>/tags.scm` files MUST
-  strictly use the standardized capture vocabulary:
+  strictly use the standardized capture vocabulary enforced by
+  `test_all_scm_capture_vocabulary_and_patterns_valid`:
   - Definitions: `@name`,
-    `@definition.{function,method,class,struct,interface,type,constant,module,macro,var,field}`.
+    `@definition.{function,method,class,struct,interface,type,constant,module,macro,var,field,section}`.
     Never invent language-prefixed capture tags (e.g.
     `@definition.objc_interface`).
-  - References: `@name`, `@reference.{call,import,implementation,type}`.
-  - Imports: `@import.path` or standardized `@reference.import`.
+  - References: `@name`,
+    `@reference.{call,import,extends,implementation,class,type,read,write,macro}`.
+  - Imports: `@import.path` or `@reference.import`.
+- **Required semantic coverage per grammar**:
+  - **OOP / Trait languages** (languages with classes, structs, interfaces,
+    traits, protocols, or mixins): MUST define `@reference.extends` /
+    `@reference.implementation` patterns on superclass, interface, trait, and
+    mixin clauses, and MUST have a fixture entry in
+    `test_oop_inheritance_lego_and_uses_contract` proving both `call_lego` and
+    `RefRole::Extends` resolution.
+  - **Signature vs. body byte spans**: Ensure `find_def_body_start` and
+    `resolve_def_body_and_end` in `src/ingest/extract.rs` accurately separate
+    the declaration signature (`[sig_start_byte, sig_end_byte)`) from the body
+    block (`[sig_end_byte, end_byte)`), including grammars where the body is a
+    sibling node (e.g., Dart `function_signature` + sibling `function_body`).
+  - **Markup / data languages** (HTML, JSON, TOML, YAML, Markdown): Index
+    high-level sections (`@definition.section`) rather than tagging leaf DOM
+    nodes or data values as `SymKind::Class`.
 - **Selector and multi-segment names**: When a language grammar splits compound
   identifiers or selectors (such as Objective-C selector keywords), anchor `.`
   the pattern on the primary identifier to produce exactly one symbol per

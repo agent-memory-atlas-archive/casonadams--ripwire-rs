@@ -99,3 +99,9 @@
 
 (object_creation_expression
   (qualified_name (name) @name)) @reference.call
+
+(base_clause
+  (name) @name) @reference.extends
+
+(class_interface_clause
+  (name) @name) @reference.implementation

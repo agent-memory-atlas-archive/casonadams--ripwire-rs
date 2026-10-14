@@ -17,6 +17,25 @@ where
 }
 
 /// Serialize `for` task-lens ranking result to Ripwire XML.
+fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) -> io::Result<()> {
+    let raw_name = it["name"].as_str().unwrap_or("");
+    let name = escape_xml_str(raw_name);
+    let path = escape_xml_str(it["path"].as_str().unwrap_or(""));
+    let line = it["line"].as_u64().unwrap_or(0);
+    let end_line = it["end_line"].as_u64().unwrap_or(line);
+    let cx = it["cx"].as_u64().unwrap_or(0);
+    let ccx = it["ccx"].as_u64().unwrap_or(0);
+    let in_deg = it["in"].as_u64().unwrap_or(0);
+    let churn = it["churn"].as_u64().unwrap_or(1);
+    let amp = it["amp"].as_u64().unwrap_or(1);
+    let sig = escape_xml_str(it["sig"].as_str().unwrap_or(raw_name));
+    let r = idx + 1;
+    write!(
+        out,
+        "<d l=\"{line}\" e=\"{end_line}\" n=\"{name}\" p=\"{path}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" churn=\"{churn}\" amp=\"{amp}\" r=\"{r}\" next=\"--for={task} --limit=40\">{sig}</d>"
+    )
+}
+
 pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let task = escape_xml_str(val["task"].as_str().unwrap_or(""));
     let attrs = format!(
@@ -27,22 +46,20 @@ pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
         write!(out, "<sigs>")?;
         if let Some(items) = val["symbols"].as_array() {
             for (idx, it) in items.iter().enumerate() {
-                let name = escape_xml_str(it["name"].as_str().unwrap_or(""));
-                let path = escape_xml_str(it["path"].as_str().unwrap_or(""));
-                let line = it["line"].as_u64().unwrap_or(0);
-                let kind = it["kind"].as_str().unwrap_or("fn");
-                let r = idx + 1;
-                write!(
-                    out,
-                    "<d l=\"{line}\" n=\"{name}\" p=\"{path}\" cx=\"0\" ccx=\"0\" in=\"0\" churn=\"1\" amp=\"1\" r=\"{r}\" next=\"--for={task} --limit=40\">{name}</d>"
-                )?;
+                write_for_sig_row(out, idx, it, &task)?;
+                let raw_name = it["name"].as_str().unwrap_or("");
                 let b_str = it
                     .get("body")
+                    .or_else(|| it.get("sig"))
                     .and_then(Value::as_str)
-                    .unwrap_or(&name)
+                    .unwrap_or(raw_name)
                     .to_string();
                 if bodies_to_show.is_empty() {
-                    bodies_to_show.push((kind.to_string(), line, path, name, b_str));
+                    let kind = it["kind"].as_str().unwrap_or("fn").to_string();
+                    let line = it["line"].as_u64().unwrap_or(0);
+                    let path = escape_xml_str(it["path"].as_str().unwrap_or(""));
+                    let name = escape_xml_str(raw_name);
+                    bodies_to_show.push((kind, line, path, name, b_str));
                 }
             }
         }
@@ -353,8 +370,16 @@ pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result
         if let Some(items) = drift {
             for d in items {
                 let file = escape_xml_str(d["doc"].as_str().unwrap_or(""));
-                let line = d["line"].as_u64().unwrap_or(0);
-                let ref_str = escape_xml_str(d["referenced"].as_str().unwrap_or(""));
+                let line = d["line"]
+                    .as_u64()
+                    .or_else(|| d["doc_line"].as_u64())
+                    .unwrap_or(0);
+                let ref_str = escape_xml_str(
+                    d["referenced"]
+                        .as_str()
+                        .or_else(|| d["target_file"].as_str())
+                        .unwrap_or(""),
+                );
                 writeln!(out, "  <a p=\"{file}\" l=\"{line}\" ref=\"{ref_str}\"/>")?;
             }
         }
@@ -438,7 +463,11 @@ pub fn serialize_connect_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
     let count = symbols.map_or(0, |s| s.len());
     let attrs = format!("schema=\"ripwire.connect/v1\" root=\".\" symbols=\"{count}\"");
     write_xml_envelope(out, "connect", &attrs, |out| {
-        if let Some(edges) = val["edges"].as_array() {
+        if let Some(edges) = val
+            .get("connections")
+            .or_else(|| val.get("edges"))
+            .and_then(Value::as_array)
+        {
             for e in edges {
                 let from = escape_xml_str(e["from"].as_str().unwrap_or(""));
                 let to = escape_xml_str(e["to"].as_str().unwrap_or(""));
@@ -458,12 +487,14 @@ fn write_path_step<W: Write>(step: &Value, out: &mut W) -> io::Result<()> {
 pub fn serialize_path_between_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let from = escape_xml_str(val["from"].as_str().unwrap_or(""));
     let to = escape_xml_str(val["to"].as_str().unwrap_or(""));
+    let from_defs = val["from_defs"].as_u64().unwrap_or(1);
+    let to_defs = val["to_defs"].as_u64().unwrap_or(1);
     let is_reach = val["reachable"].as_bool().unwrap_or(false);
     let reachable = if is_reach { "1" } else { "0" };
     let hops = val["hops"].as_u64().unwrap_or(0);
     write!(
         out,
-        "<path schema=\"ripwire.path/v1\" from=\"{from}\" to=\"{to}\" reachable=\"{reachable}\" hops=\"{hops}\""
+        "<path schema=\"ripwire.path/v1\" from=\"{from}\" to=\"{to}\" from_defs=\"{from_defs}\" to_defs=\"{to_defs}\" reachable=\"{reachable}\" hops=\"{hops}\""
     )?;
     if !is_reach {
         write!(
@@ -617,14 +648,40 @@ pub fn serialize_safe_delete_xml<W: Write>(
     blast_radius: usize,
     out: &mut W,
 ) -> io::Result<()> {
-    let risk = "uses-exist";
+    serialize_safe_delete_at_xml(
+        root,
+        sym_name,
+        "fn",
+        "src/lib.rs:1",
+        callers,
+        blast_radius,
+        out,
+    )
+}
+
+pub fn serialize_safe_delete_at_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    kind_tag: &str,
+    def_loc: &str,
+    callers: &[(&str, &str)],
+    blast_radius: usize,
+    out: &mut W,
+) -> io::Result<()> {
+    let risk = if callers.is_empty() && blast_radius == 0 {
+        "low"
+    } else {
+        "uses-exist"
+    };
     let sym_esc = escape_xml_str(sym_name);
+    let loc_esc = escape_xml_str(def_loc);
     let c_len = callers.len();
     let shown = c_len.min(40);
     let capped = usize::from(shown < c_len);
+    let dead_cand = usize::from(c_len == 0 && blast_radius == 0);
     writeln!(
         out,
-        "<!-- ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=. -->\n<safe-delete schema=\"ripwire.safe-delete/v1\" sym=\"{sym_esc}\" t=\"fn\" p=\"src/lib.rs:1\" defs=\"1\" callers=\"{c_len}\" ambiguous_callers=\"0\" impact_reaches=\"{blast_radius}\" uses=\"1\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{blast_radius}\" dead_code_candidate=\"0\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\">",
+        "<!-- ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=. -->\n<safe-delete schema=\"ripwire.safe-delete/v1\" sym=\"{sym_esc}\" t=\"{kind_tag}\" p=\"{loc_esc}\" defs=\"1\" callers=\"{c_len}\" ambiguous_callers=\"0\" impact_reaches=\"{blast_radius}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{blast_radius}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\">",
     )?;
     for (p, n) in callers.iter().take(shown) {
         let p_esc = escape_xml_str(p);
@@ -809,18 +866,33 @@ pub fn serialize_around_xml<W: Write>(
     symbols: &[(&str, &'static str, &str, u32)],
     out: &mut W,
 ) -> io::Result<()> {
-    let first_path = symbols.first().map_or("src/lib.rs", |s| s.2);
-    let p_esc = escape_xml_str(first_path);
     let t_esc = escape_xml_str(target);
-    writeln!(
+    write!(
         out,
-        "<!-- ripwire around schema=ripwire.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop. -->\n<r schema=\"ripwire.around/v1\" root=\"{root}\" of=\"{t_esc}\" depth=\"{depth}\" fanout=\"{fanout}\" depth_truncated=\"1\" est_tokens=\"400\"><f p=\"{p_esc}\">",
+        "<!-- ripwire around schema=ripwire.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop. -->\n<r schema=\"ripwire.around/v1\" root=\"{root}\" of=\"{t_esc}\" depth=\"{depth}\" fanout=\"{fanout}\" depth_truncated=\"1\" est_tokens=\"400\">",
     )?;
-    for (name, kind, _path, _line) in symbols {
-        let n_esc = escape_xml_str(name);
-        writeln!(out, "  <s t=\"{kind}\" n=\"{n_esc}\" k=\"1.0000\"/>")?;
+    let mut grouped: Vec<(&str, Vec<(&str, &'static str)>)> = Vec::new();
+    for &(name, kind, path, _line) in symbols {
+        if let Some((_, list)) = grouped.iter_mut().find(|(p, _)| *p == path) {
+            list.push((name, kind));
+        } else {
+            grouped.push((path, vec![(name, kind)]));
+        }
     }
-    writeln!(out, "</f></r>")
+    if grouped.is_empty() {
+        write!(out, "<f p=\"src/lib.rs\"></f>")?;
+    } else {
+        for (path, list) in grouped {
+            let p_esc = escape_xml_str(path);
+            write!(out, "<f p=\"{p_esc}\">")?;
+            for (name, kind) in list {
+                let n_esc = escape_xml_str(name);
+                write!(out, "<s t=\"{kind}\" n=\"{n_esc}\" k=\"1.0000\"/>")?;
+            }
+            write!(out, "</f>")?;
+        }
+    }
+    writeln!(out, "</r>")
 }
 
 /// Serialize `--external-surface` to Ripwire XML.
@@ -963,13 +1035,18 @@ pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io:
     let empty = Vec::new();
     let impls = val["implementors"].as_array().unwrap_or(&empty);
     let mut buf = format!(
-        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego><iface n=\"{iface}\" implementors=\"{}\">\n",
+        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego><iface n=\"{iface}\" defs=\"1\" implementors=\"{}\">\n",
         impls.len()
     );
     for it in impls {
         let n = it["name"].as_str().unwrap_or("");
         let p = it["path"].as_str().unwrap_or("");
-        buf.push_str(&format!("  <impl n=\"{n}\" p=\"{p}\"/>\n"));
+        let l = it["line"].as_u64().unwrap_or(0);
+        if l > 0 {
+            buf.push_str(&format!("  <impl n=\"{n}\" p=\"{p}:{l}\"/>\n"));
+        } else {
+            buf.push_str(&format!("  <impl n=\"{n}\" p=\"{p}\"/>\n"));
+        }
     }
     buf.push_str("</iface></lego></ctx>\n");
     out.write_all(buf.as_bytes())

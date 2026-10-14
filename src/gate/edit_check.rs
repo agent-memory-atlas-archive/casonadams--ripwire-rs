@@ -134,10 +134,26 @@ pub fn check_symbol_contract(
         .resolve(&ingest.files[sym.file_id as usize].path)
         .to_string();
 
+    let is_public = match head_baseline {
+        Some(base)
+            if matches!(
+                sym.lang,
+                crate::domain::Lang::Rust
+                    | crate::domain::Lang::Java
+                    | crate::domain::Lang::CSharp
+                    | crate::domain::Lang::Php
+                    | crate::domain::Lang::Kotlin
+                    | crate::domain::Lang::Swift
+            ) =>
+        {
+            base.is_public
+        }
+        _ => crate::gate::contract::is_symbol_name_public(&sym_name, sym.lang),
+    };
     let now_contract = SignatureContract {
         name: sym_name.clone(),
         params: sym.params,
-        is_public: true,
+        is_public,
     };
     let status = compare_contracts(&now_contract, head_baseline);
 

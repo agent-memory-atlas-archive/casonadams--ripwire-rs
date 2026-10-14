@@ -89,3 +89,14 @@
 (import_declaration
   (scoped_identifier
     name: (identifier) @name)) @reference.import
+
+(superclass
+  (type_identifier) @name) @reference.extends
+
+(super_interfaces
+  (type_list
+    (type_identifier) @name)) @reference.implementation
+
+(extends_interfaces
+  (type_list
+    (type_identifier) @name)) @reference.extends

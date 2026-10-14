@@ -109,3 +109,6 @@
 (object_creation_expression
   type: (qualified_name
     name: (identifier) @name)) @reference.call
+
+(base_list
+  (identifier) @name) @reference.extends

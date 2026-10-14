@@ -41,6 +41,7 @@ pub struct FileParseResult {
 
 pub enum Capture {
     Name,
+    ImportPath,
     Def(SymKind, Option<&'static str>),
     Ref(RefRole),
 }
@@ -48,6 +49,9 @@ pub enum Capture {
 pub fn classify_capture(name: &str) -> Option<Capture> {
     if name == "name" {
         return Some(Capture::Name);
+    }
+    if name == "import.path" {
+        return Some(Capture::ImportPath);
     }
     if let Some(tail) = name.strip_prefix("definition.") {
         let (kind, sub) = match tail {
@@ -58,16 +62,18 @@ pub fn classify_capture(name: &str) -> Option<Capture> {
             "class" | "object" | "specialization" => (SymKind::Class, None),
             "struct" => (SymKind::Struct, None),
             "interface" => (SymKind::Interface, None),
-            "var" | "constant" | "attribute" | "property" | "enummember" => (SymKind::Var, None),
+            "type" | "var" | "constant" | "attribute" | "property" | "enummember" => {
+                (SymKind::Var, None)
+            }
             "macro" | "testmacroblock" => (SymKind::Macro, None),
             "module" | "section" | "yamlkey" => (SymKind::Section, None),
             "field" => (SymKind::Field, None),
-            _ => (SymKind::Other, None),
+            _ => return None,
         };
         return Some(Capture::Def(kind, sub));
     }
-    name.strip_prefix("reference.").map(|tail| {
-        Capture::Ref(match tail {
+    name.strip_prefix("reference.").and_then(|tail| {
+        Some(Capture::Ref(match tail {
             "read" | "attribute" => RefRole::Read,
             "write" => RefRole::Write,
             "import" => RefRole::Import,
@@ -76,9 +82,9 @@ pub fn classify_capture(name: &str) -> Option<Capture> {
             "type" => RefRole::Type,
             "value" => RefRole::Value,
             "through" => RefRole::Through,
-            "bare" => RefRole::Call,
-            _ => RefRole::Call,
-        })
+            "call" | "bare" | "operator" => RefRole::Call,
+            _ => return None,
+        }))
     })
 }
 
@@ -290,6 +296,40 @@ struct MatchExtract<'a> {
     r#ref: Option<(RefRole, usize, u32)>,
 }
 
+fn apply_capture<'a>(
+    ext: &mut MatchExtract<'a>,
+    cap_name: &str,
+    node: tree_sitter::Node<'a>,
+    source_bytes: &[u8],
+) {
+    match classify_capture(cap_name) {
+        Some(Capture::Name) => {
+            if let Ok(text) = node.utf8_text(source_bytes) {
+                ext.name = Some(text.to_string());
+                ext.name_node = Some(node);
+            }
+        }
+        Some(Capture::ImportPath) => {
+            let line = node.start_position().row as u32 + 1;
+            ext.r#ref = Some((RefRole::Import, node.start_byte(), line));
+            if let Ok(text) = node.utf8_text(source_bytes) {
+                ext.name = Some(text.to_string());
+                ext.name_node = Some(node);
+            }
+        }
+        Some(Capture::Def(k, sub)) => {
+            let line = node.start_position().row as u32 + 1;
+            ext.def = Some((k, sub, node.start_byte(), node.end_byte(), line));
+            ext.def_node = Some(node);
+        }
+        Some(Capture::Ref(r)) => {
+            let line = node.start_position().row as u32 + 1;
+            ext.r#ref = Some((r, node.start_byte(), line));
+        }
+        None => {}
+    }
+}
+
 fn extract_match_captures<'a>(
     m: &tree_sitter::QueryMatch<'a, '_>,
     query: &Query,
@@ -304,25 +344,7 @@ fn extract_match_captures<'a>(
     };
     for capture in m.captures {
         let cap_name = query.capture_names()[capture.index as usize];
-        let node = capture.node;
-        match classify_capture(cap_name) {
-            Some(Capture::Name) => {
-                if let Ok(text) = node.utf8_text(source_bytes) {
-                    ext.name = Some(text.to_string());
-                    ext.name_node = Some(node);
-                }
-            }
-            Some(Capture::Def(k, sub)) => {
-                let line = node.start_position().row as u32 + 1;
-                ext.def = Some((k, sub, node.start_byte(), node.end_byte(), line));
-                ext.def_node = Some(node);
-            }
-            Some(Capture::Ref(r)) => {
-                let line = node.start_position().row as u32 + 1;
-                ext.r#ref = Some((r, node.start_byte(), line));
-            }
-            None => {}
-        }
+        apply_capture(&mut ext, cap_name, capture.node, source_bytes);
     }
     ext
 }
@@ -440,6 +462,19 @@ fn resolve_def_params_and_name(
 }
 
 fn find_def_body_start(node: tree_sitter::Node<'_>) -> usize {
+    if matches!(
+        node.kind(),
+        "compound_statement"
+            | "function_body"
+            | "block"
+            | "statement_block"
+            | "declaration_list"
+            | "field_declaration_list"
+            | "class_body"
+            | "enum_class_body"
+    ) {
+        return node.start_byte();
+    }
     if let Some(b) = node.child_by_field_name("body") {
         return b.start_byte();
     }
@@ -511,9 +546,13 @@ fn record_ref_item(ext: &MatchExtract<'_>, source_bytes: &[u8], refs: &mut Vec<R
         return;
     };
 
-    let qualifier = ext
-        .name_node
-        .and_then(|n| find_call_qualifier(n, source_bytes));
+    let qualifier = ext.name_node.and_then(|n| {
+        if role == RefRole::Extends {
+            find_enclosing_scope(n, source_bytes)
+        } else {
+            find_call_qualifier(n, source_bytes)
+        }
+    });
     let (arg_count, arg_count_known) = ext
         .name_node
         .map(count_call_arguments)

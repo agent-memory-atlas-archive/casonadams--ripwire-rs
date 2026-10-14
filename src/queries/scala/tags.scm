@@ -13,3 +13,6 @@
 
 (call_expression
   function: (identifier) @name) @reference.call
+
+(extends_clause
+  type: (type_identifier) @name) @reference.extends

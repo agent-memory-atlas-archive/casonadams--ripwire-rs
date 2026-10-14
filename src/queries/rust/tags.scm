@@ -101,3 +101,6 @@
 
 (macro_invocation
     macro: (identifier) @name) @reference.call
+
+(impl_item
+    trait: (type_identifier) @name) @reference.implementation

@@ -92,3 +92,7 @@
 
 (attribute_call
   (identifier) @name) @reference.call
+
+(extends_statement
+  (type
+    (identifier) @name)) @reference.extends

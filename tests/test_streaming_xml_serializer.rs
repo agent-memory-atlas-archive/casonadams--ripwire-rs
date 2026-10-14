@@ -458,7 +458,7 @@ fn test_query_xml_graph_paths() {
     serialize_path_between_xml(&val_path_reach, &mut buf).unwrap();
     let s = String::from_utf8_lossy(&buf);
     assert!(s.contains(
-        "<path schema=\"ripwire.path/v1\" from=\"a\" to=\"b\" reachable=\"1\" hops=\"1\">"
+        "<path schema=\"ripwire.path/v1\" from=\"a\" to=\"b\" from_defs=\"1\" to_defs=\"1\" reachable=\"1\" hops=\"1\">"
     ));
     buf.clear();
 
@@ -471,7 +471,7 @@ fn test_query_xml_graph_paths() {
     serialize_path_between_xml(&val_path_unreach, &mut buf).unwrap();
     let s_unreach = String::from_utf8_lossy(&buf);
     assert!(s_unreach.contains(
-        "<path schema=\"ripwire.path/v1\" from=\"x\" to=\"y\" reachable=\"0\" hops=\"0\""
+        "<path schema=\"ripwire.path/v1\" from=\"x\" to=\"y\" from_defs=\"1\" to_defs=\"1\" reachable=\"0\" hops=\"0\""
     ));
     assert!(s_unreach.contains("hint="));
 }

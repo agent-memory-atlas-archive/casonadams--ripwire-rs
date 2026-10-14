@@ -3,17 +3,23 @@ use crate::graph::Graph;
 use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
 
-fn find_symbol_by_name(ingest: &IngestResult, interner: &Interner, name: &str) -> Option<NodeId> {
+fn find_symbols_matching(ingest: &IngestResult, interner: &Interner, name: &str) -> Vec<NodeId> {
+    let ids = crate::navigate::find_symbols_by_name(name, ingest, interner);
+    if !ids.is_empty() {
+        return ids;
+    }
     ingest
         .symbols
         .iter()
-        .position(|s| {
+        .enumerate()
+        .filter(|(_, s)| {
             let n = interner.resolve(&s.name);
             n == name
                 || interner.resolve(&s.canonical_id) == name
                 || interner.resolve(&s.canonical_id).ends_with(name)
         })
-        .map(|idx| idx as NodeId)
+        .map(|(idx, _)| idx as NodeId)
+        .collect()
 }
 
 fn bfs_directed_path(graph: &Graph, from: NodeId, to: NodeId) -> Option<Vec<NodeId>> {
@@ -53,6 +59,27 @@ fn bfs_directed_path(graph: &Graph, from: NodeId, to: NodeId) -> Option<Vec<Node
     Some(path)
 }
 
+fn find_shortest_path_between_sets(
+    graph: &Graph,
+    from_ids: &[NodeId],
+    to_ids: &[NodeId],
+) -> Option<Vec<NodeId>> {
+    let mut best: Option<Vec<NodeId>> = None;
+    for &f in from_ids {
+        for &t in to_ids {
+            if f == t && (from_ids.len() > 1 || to_ids.len() > 1) {
+                continue;
+            }
+            if let Some(p) = bfs_directed_path(graph, f, t)
+                && best.as_ref().is_none_or(|b| p.len() < b.len())
+            {
+                best = Some(p);
+            }
+        }
+    }
+    best
+}
+
 /// Execute `path_between` tool: shortest directed call path between two symbols.
 pub fn call_path_between(
     ingest: &IngestResult,
@@ -61,32 +88,38 @@ pub fn call_path_between(
     from_name: &str,
     to_name: &str,
 ) -> Value {
-    let from_id = find_symbol_by_name(ingest, interner, from_name);
-    let to_id = find_symbol_by_name(ingest, interner, to_name);
+    let from_ids = find_symbols_matching(ingest, interner, from_name);
+    let to_ids = find_symbols_matching(ingest, interner, to_name);
 
-    let (Some(from), Some(to)) = (from_id, to_id) else {
+    if from_ids.is_empty() || to_ids.is_empty() {
         return json!({
             "from": from_name,
             "to": to_name,
+            "from_defs": from_ids.len(),
+            "to_defs": to_ids.len(),
             "reachable": false,
             "hops": 0,
             "error": "one or both symbols not found"
         });
-    };
-    if from == to {
+    }
+    if from_ids.len() == 1 && to_ids.len() == 1 && from_ids[0] == to_ids[0] {
         return json!({
             "from": from_name,
             "to": to_name,
+            "from_defs": 1,
+            "to_defs": 1,
             "reachable": true,
             "hops": 0,
             "path": [from_name]
         });
     }
 
-    let Some(path_ids) = bfs_directed_path(graph, from, to) else {
+    let Some(path_ids) = find_shortest_path_between_sets(graph, &from_ids, &to_ids) else {
         return json!({
             "from": from_name,
             "to": to_name,
+            "from_defs": from_ids.len(),
+            "to_defs": to_ids.len(),
             "reachable": false,
             "hops": 0,
             "path": []
@@ -102,6 +135,8 @@ pub fn call_path_between(
     json!({
         "from": from_name,
         "to": to_name,
+        "from_defs": from_ids.len(),
+        "to_defs": to_ids.len(),
         "reachable": true,
         "hops": path.len().saturating_sub(1),
         "path": path
@@ -153,11 +188,11 @@ pub fn call_connect(
 ) -> Value {
     let mut resolved_ids = Vec::new();
     for name in symbol_names {
-        if let Some(id) = find_symbol_by_name(ingest, interner, name) {
+        let ids = find_symbols_matching(ingest, interner, name);
+        if let Some(&id) = ids.first() {
             resolved_ids.push((name.as_str(), id));
         }
     }
-
     let mut edges = Vec::new();
     for (i, &(name_a, _)) in resolved_ids.iter().enumerate() {
         for &(name_b, _) in &resolved_ids[i + 1..] {

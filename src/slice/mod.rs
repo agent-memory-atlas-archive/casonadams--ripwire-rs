@@ -21,24 +21,61 @@ pub fn parse_slice_target(target: &str) -> (&str, Option<&str>) {
     (target, None)
 }
 
-fn find_node_at_span<'a>(root: Node<'a>, start_byte: usize, end_byte: usize) -> Node<'a> {
-    let mut curr = root;
-    loop {
-        let mut found_child = None;
-        for i in 0..curr.child_count() {
-            if let Some(child) = curr.child(i)
-                && child.start_byte() <= start_byte
-                && child.end_byte() >= end_byte
-            {
-                found_child = Some(child);
-                break;
-            }
-        }
-        match found_child {
-            Some(c) => curr = c,
-            None => break curr,
+fn collect_nodes_in_span<'a>(
+    node: Node<'a>,
+    start_byte: usize,
+    end_byte: usize,
+    out: &mut Vec<Node<'a>>,
+) {
+    if node.end_byte() <= start_byte || node.start_byte() >= end_byte {
+        return;
+    }
+    if node.start_byte() >= start_byte && node.end_byte() <= end_byte {
+        out.push(node);
+        return;
+    }
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            collect_nodes_in_span(child, start_byte, end_byte, out);
         }
     }
+}
+
+fn collect_span_variables(
+    root: Node<'_>,
+    start_byte: usize,
+    end_byte: usize,
+    source_bytes: &[u8],
+) -> Vec<VariableOcc> {
+    let mut nodes = Vec::new();
+    collect_nodes_in_span(root, start_byte, end_byte, &mut nodes);
+    let mut occs = Vec::new();
+    for n in nodes {
+        occs.extend(collect_symbol_variables(n, source_bytes, None));
+    }
+    occs.sort_by_key(|o| o.start_byte);
+    occs.dedup_by_key(|o| o.start_byte);
+    occs
+}
+
+fn list_span_locals(
+    root: Node<'_>,
+    start_byte: usize,
+    end_byte: usize,
+    source_bytes: &[u8],
+) -> Vec<(String, u32, OccRole)> {
+    if start_byte == 0 && end_byte >= source_bytes.len() {
+        return list_sliceable_locals(root, source_bytes);
+    }
+    let occs = collect_span_variables(root, start_byte, end_byte, source_bytes);
+    let mut seen = std::collections::HashSet::new();
+    let mut locals = Vec::new();
+    for occ in occs {
+        if occ.role.is_def() && seen.insert(occ.var_name.clone()) {
+            locals.push((occ.var_name, occ.line, occ.role));
+        }
+    }
+    locals
 }
 
 /// Render XML for sliceable locals inventory when no variable was given.
@@ -79,22 +116,16 @@ fn render_flow_xml(
         steps.len()
     );
     for s in steps {
+        let role_str = OccRole::as_str(s.role);
         if s.from_line > 0 {
             out.push_str(&format!(
-                "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\" from=\"{}\" />\n",
-                s.line,
-                s.role.as_str(),
-                s.var_name,
-                s.depth,
-                s.from_line
+                "  <s l=\"{}\" k=\"{role_str}\" v=\"{}\" d=\"{}\" from=\"{}\" />\n",
+                s.line, s.var_name, s.depth, s.from_line
             ));
         } else {
             out.push_str(&format!(
-                "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\" />\n",
-                s.line,
-                s.role.as_str(),
-                s.var_name,
-                s.depth
+                "  <s l=\"{}\" k=\"{role_str}\" v=\"{}\" d=\"{}\" />\n",
+                s.line, s.var_name, s.depth
             ));
         }
     }
@@ -135,9 +166,19 @@ pub fn execute_slice(
             | crate::domain::Lang::Yaml
             | crate::domain::Lang::Toml
             | crate::domain::Lang::Json
+            | crate::domain::Lang::Html
+            | crate::domain::Lang::Css
+            | crate::domain::Lang::Sql
+            | crate::domain::Lang::Proto
+            | crate::domain::Lang::Graphql
+            | crate::domain::Lang::Dockerfile
+            | crate::domain::Lang::Hcl
     ) || symbol.kind == crate::domain::SymKind::Section
     {
-        return Err("slice does not support this symbol kind".to_string());
+        return Err(format!(
+            "--slice: slice not served for {} yet — the def-use classification requires a verified per-grammar local variable AST",
+            symbol.lang.tag()
+        ));
     }
     let file_info = ingest
         .files
@@ -165,18 +206,14 @@ pub fn execute_slice(
         .parse(&source_bytes, None)
         .ok_or_else(|| "failed to parse source file".to_string())?;
 
-    let def_node = find_node_at_span(
-        tree.root_node(),
-        symbol.sig_start_byte as usize,
-        symbol.end_byte as usize,
-    );
-
+    let start_b = symbol.sig_start_byte as usize;
+    let end_b = symbol.end_byte as usize;
     let sym_name = interner.resolve(&symbol.name);
     let path_line = format!("{file_path}:{}", symbol.line);
 
     match var_opt {
         None => {
-            let locals = list_sliceable_locals(def_node, &source_bytes);
+            let locals = list_span_locals(tree.root_node(), start_b, end_b, &source_bytes);
             Ok(render_locals_xml(
                 sym_name,
                 &path_line,
@@ -186,7 +223,7 @@ pub fn execute_slice(
             ))
         }
         Some(var_name) => {
-            let all_occs = collect_symbol_variables(def_node, &source_bytes, None);
+            let all_occs = collect_span_variables(tree.root_node(), start_b, end_b, &source_bytes);
             let steps = compute_dataflow_slice(&all_occs, var_name, flow_dir, max_depth);
             Ok(render_flow_xml(
                 sym_name, var_name, &path_line, flow_dir, max_depth, &steps,
@@ -239,8 +276,11 @@ pub fn execute_slice_command(
         custom_bytes.as_deref(),
     ) {
         Ok(out) => {
-            print!("{out}");
-            Ok(())
+            use std::io::Write;
+            let mut stdout_lock = std::io::stdout().lock();
+            let mut writer = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+            writer.write_all(out.as_bytes())?;
+            writer.flush()
         }
         Err(e) => {
             eprintln!("ripwire: {e}");

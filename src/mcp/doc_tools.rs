@@ -37,7 +37,8 @@ fn check_word_drift(
     doc_line: usize,
     file_map: &HashMap<&str, u32>,
 ) -> Option<Value> {
-    let (target_file, line_str) = word.split_once(':')?;
+    let clean = word.trim_matches(|c: char| matches!(c, '`' | '(' | ')' | '[' | ']' | ',' | ';'));
+    let (target_file, line_str) = clean.split_once(':')?;
     let target_line = line_str
         .trim_matches(|c: char| !c.is_ascii_digit())
         .parse::<u32>()
@@ -46,7 +47,9 @@ fn check_word_drift(
     if target_line > total_lines {
         Some(json!({
             "doc": doc_path,
+            "line": doc_line,
             "doc_line": doc_line,
+            "referenced": format!("{target_file}:{target_line}"),
             "target_file": target_file,
             "claimed_line": target_line,
             "actual_lines": total_lines,
@@ -57,31 +60,114 @@ fn check_word_drift(
     }
 }
 
+fn is_candidate_symbol_anchor(span: &str) -> Option<&str> {
+    let sym = span.strip_suffix("()").unwrap_or(span);
+    if sym.len() < 4
+        || sym.contains('/')
+        || sym.contains('.')
+        || sym.contains('-')
+        || sym.contains(' ')
+        || sym.contains('=')
+        || sym.contains(':')
+        || sym.starts_with('@')
+        || !sym.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return None;
+    }
+    let has_lower = sym.chars().any(|c| c.is_ascii_lowercase());
+    let has_upper_or_under = sym.chars().any(|c| c.is_ascii_uppercase() || c == '_');
+    if span.ends_with("()") || (has_lower && has_upper_or_under) {
+        Some(sym)
+    } else {
+        None
+    }
+}
+
+fn check_backtick_anchors(
+    line: &str,
+    doc_path: &str,
+    doc_line: usize,
+    sym_set: &std::collections::HashSet<&str>,
+    drift_items: &mut Vec<Value>,
+) {
+    if sym_set.is_empty() {
+        return;
+    }
+    let mut rest = line;
+    while let Some(start) = rest.find('`') {
+        let after_open = &rest[start + 1..];
+        let Some(end) = after_open.find('`') else {
+            break;
+        };
+        let span = &after_open[..end];
+        if let Some(sym) = is_candidate_symbol_anchor(span)
+            && !sym_set.contains(sym)
+        {
+            drift_items.push(json!({
+                "doc": doc_path,
+                "line": doc_line,
+                "doc_line": doc_line,
+                "referenced": sym,
+                "why": "missing-symbol"
+            }));
+        }
+        rest = &after_open[end + 1..];
+    }
+}
+
 /// Execute `doc_drift` tool: verify checkable doc references.
 pub fn call_doc_drift(ingest: &IngestResult, interner: &Interner) -> Value {
-    let mut drift_items = Vec::new();
+    call_doc_drift_in_root(".", ingest, interner)
+}
 
+fn scan_doc_text_for_drift(
+    text: &str,
+    doc_path: &str,
+    file_map: &HashMap<&str, u32>,
+    sym_set: &std::collections::HashSet<&str>,
+    drift_items: &mut Vec<Value>,
+) {
+    let mut in_code_fence = false;
+    for (line_idx, line) in text.lines().enumerate() {
+        if line.trim_start().starts_with("```") {
+            in_code_fence = !in_code_fence;
+            continue;
+        }
+        if in_code_fence {
+            continue;
+        }
+        let doc_line = line_idx + 1;
+        for word in line.split_whitespace() {
+            if let Some(item) = check_word_drift(word, doc_path, doc_line, file_map) {
+                drift_items.push(item);
+            }
+        }
+        check_backtick_anchors(line, doc_path, doc_line, sym_set, drift_items);
+    }
+}
+
+pub fn call_doc_drift_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
+    let mut drift_items = Vec::new();
     let file_map: HashMap<&str, u32> = ingest
         .files
         .iter()
         .map(|f| (interner.resolve(&f.path), f.line_count))
         .collect();
+    let sym_set: std::collections::HashSet<&str> = ingest
+        .symbols
+        .iter()
+        .filter(|s| s.kind != crate::domain::SymKind::Section)
+        .map(|s| interner.resolve(&s.name))
+        .collect();
+    let root_path = std::path::Path::new(root);
 
     for file in &ingest.files {
         let doc_path = interner.resolve(&file.path);
-        if !doc_path.ends_with(".md") {
-            continue;
-        }
-
-        let Ok(text) = fs::read_to_string(doc_path) else {
-            continue;
-        };
-        for (line_idx, line) in text.lines().enumerate() {
-            for word in line.split_whitespace() {
-                if let Some(item) = check_word_drift(word, doc_path, line_idx + 1, &file_map) {
-                    drift_items.push(item);
-                }
-            }
+        if doc_path.ends_with(".md")
+            && let Ok(text) = fs::read_to_string(root_path.join(doc_path))
+                .or_else(|_| fs::read_to_string(doc_path))
+        {
+            scan_doc_text_for_drift(&text, doc_path, &file_map, &sym_set, &mut drift_items);
         }
     }
 
@@ -1029,5 +1115,25 @@ mod tests {
         assert_eq!(val["kind"], "def");
         assert_eq!(val["line"], 42);
         assert_eq!(val["file"], "src/lib.rs");
+    }
+
+    #[test]
+    fn test_doc_drift_backtick_and_line_anchors() {
+        let mut file_map = HashMap::new();
+        file_map.insert("src/lib.rs", 20);
+        let mut sym_set = std::collections::HashSet::new();
+        sym_set.insert("existingFn");
+
+        let mut drift = Vec::new();
+        scan_doc_text_for_drift(
+            "See `existingFn` and `deletedFunction` at src/lib.rs:50\n```rust\n`ignoredInFence`\n```",
+            "README.md",
+            &file_map,
+            &sym_set,
+            &mut drift,
+        );
+        assert_eq!(drift.len(), 2);
+        assert!(drift.iter().any(|d| d["referenced"] == "src/lib.rs:50"));
+        assert!(drift.iter().any(|d| d["referenced"] == "deletedFunction"));
     }
 }

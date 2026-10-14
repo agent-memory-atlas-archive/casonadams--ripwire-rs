@@ -31,6 +31,21 @@ impl McpState {
     }
 
     #[must_use]
+    pub fn load_uncached(root: &str) -> Option<Self> {
+        let (ingest, graph, pr, interner) =
+            crate::cli::dispatch::load_repo_analysis_cached(root, None, true).ok()?;
+        let ranks = pr.ranks.clone();
+        Some(Self {
+            root: root.to_string(),
+            ingest,
+            graph,
+            ranks,
+            interner,
+            pr,
+            commits: None,
+        })
+    }
+    #[must_use]
     pub fn from_ingest(root: &str, ingest: IngestResult, interner: Interner) -> Self {
         let graph = Graph::build(&ingest, &interner);
         let pr = graph.page_rank(&PageRankConfig::default());

@@ -353,6 +353,9 @@
   (qualified_identifier
     name: (_) @name)) @reference.import
 
+(base_class_clause
+  (type_identifier) @name) @reference.extends
+
 ; EXPLICIT-TEMPLATE-ARGUMENT CALLS: `tmplFn<int>( a )` parses as
 ; call_expression function: (template_function name: (identifier) arguments: (template_argument_list)) —
 ; a distinct node kind none of the patterns above match, so these were dropped by the same silent mechanism

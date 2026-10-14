@@ -64,3 +64,7 @@
       (attribute
         attribute: (identifier) @name)
   ]) @reference.call
+
+(class_definition
+  superclasses: (argument_list
+    (identifier) @name)) @reference.extends

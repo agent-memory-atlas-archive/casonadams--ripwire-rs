@@ -23,6 +23,14 @@
 ; C-style field/struct-pointer calls ops->init(...) / val.init(...)
 (call_expression function: (field_expression field: (field_identifier) @name)) @reference.call
 
+(class_interface
+  superclass: (identifier) @name) @reference.extends
+
+(parameterized_arguments
+  (type_name
+    (type_specifier
+      (type_identifier) @name))) @reference.implementation
+
 ; ---- import capture ----
 (preproc_include
   path: (_) @import.path)

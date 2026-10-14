@@ -46,25 +46,38 @@ pub fn run_quality_delta_gate<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     match execute_quality_delta_with(state, out) {
-        Ok(has_failures) if has_failures => std::process::exit(2),
+        Ok(has_failures) if has_failures => {
+            let _ = out.flush();
+            std::process::exit(2);
+        }
         Ok(_) => Ok(()),
         Err(e) => Err(e),
     }
+}
+
+fn load_gate_state(root: &str, is_delta: bool) -> io::Result<crate::mcp::McpState> {
+    let state_opt = if is_delta {
+        crate::mcp::McpState::load_uncached(root)
+    } else {
+        crate::mcp::McpState::load(root)
+    };
+    let mut state = state_opt.ok_or_else(|| io::Error::other("failed to load repository"))?;
+    if is_delta && !get_working_tree_changed_files(root).is_empty() {
+        let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 1);
+        state.commits =
+            crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
+    }
+    Ok(state)
 }
 
 pub fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<io::Result<()>> {
     if !args.is_active() {
         return None;
     }
-    let mut state = match crate::mcp::McpState::load(root) {
-        Some(s) => s,
-        None => return Some(Err(io::Error::other("failed to load repository"))),
+    let state = match load_gate_state(root, args.quality_delta) {
+        Ok(s) => s,
+        Err(e) => return Some(Err(e)),
     };
-    if args.quality_delta && !get_working_tree_changed_files(root).is_empty() {
-        let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 1);
-        state.commits =
-            crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
-    }
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
     let res = execute_gate_action(args, &state, &mut stdout);
@@ -239,6 +252,9 @@ pub fn execute_safe_delete_query<W: Write>(
         )));
     }
     let sym_id = ids[0];
+    let sym = &ingest.symbols[sym_id as usize];
+    let sym_path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+    let def_loc = format!("{sym_path}:{}", sym.line);
     let callers: Vec<(&str, &str)> = graph
         .callers(sym_id)
         .filter_map(|(cid, _)| {
@@ -251,7 +267,15 @@ pub fn execute_safe_delete_query<W: Write>(
     let ranks = vec![0.0; ingest.symbols.len()];
     let blast_radius =
         crate::navigate::transitive_impact(sym_id, ingest, graph, &ranks, interner, Some(32)).len();
-    crate::serialize::serialize_safe_delete_xml(root, sym_name, &callers, blast_radius, out)
+    crate::serialize::query_xml::serialize_safe_delete_at_xml(
+        root,
+        sym_name,
+        sym.kind.tag(),
+        &def_loc,
+        &callers,
+        blast_radius,
+        out,
+    )
 }
 
 pub fn execute_exercises_query<W: Write>(

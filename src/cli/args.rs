@@ -609,6 +609,9 @@ impl TopRetrievalArgs {
             &self.verify,
             &self.pack_task,
             &self.graph_query,
+            &self.ast_match,
+            &self.pattern,
+            &self.regex,
         ];
         opts.iter().any(|o| o.is_some()) || self.pack_signatures
     }

@@ -101,6 +101,10 @@ pub fn split_endpoint_pair(pair: &str) -> (&str, &str) {
         (from.trim(), to.trim())
     } else if let Some((from, to)) = pair.split_once("->") {
         (from.trim(), to.trim())
+    } else if let Some((from, to)) = pair.rsplit_once(':')
+        && !from.ends_with(':')
+    {
+        (from.trim(), to.trim())
     } else if let Some((from, to)) = pair.split_once(':') {
         (from.trim(), to.trim())
     } else {
@@ -143,7 +147,7 @@ fn execute_doc_search_query<W: Write>(
         crate::serialize::serialize_whereis_xml(&val, out)?;
         Ok(true)
     } else if ws.doc_drift {
-        let val = crate::mcp::doc_tools::call_doc_drift(ingest, interner);
+        let val = crate::mcp::doc_tools::call_doc_drift_in_root(root, ingest, interner);
         crate::serialize::serialize_doc_drift_xml(&val, out)?;
         Ok(true)
     } else if ws.flags {
@@ -183,7 +187,46 @@ fn execute_note_append<W: Write>(note: &str, out: &mut W) -> io::Result<()> {
     writeln!(out, "pinned note: {note}")
 }
 
-fn execute_session_tools_query<W: Write>(ws: &TopWorkspaceArgs, out: &mut W) -> io::Result<bool> {
+fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> String {
+    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".into());
+    let changed = crate::cli::safety::get_working_tree_changed_files(root);
+    let (primary_file, primary_sym) = if let Some(cf) = changed.first() {
+        let sym = ingest
+            .symbols
+            .iter()
+            .find(|s| {
+                let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+                p == cf || cf.ends_with(p)
+            })
+            .map_or("main", |s| interner.resolve(&s.name));
+        (cf.as_str(), sym)
+    } else if let Some(s) = ingest.symbols.first() {
+        let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+        (p, interner.resolve(&s.name))
+    } else {
+        ("src/main.rs", "main")
+    };
+    let secondary_file = ingest
+        .files
+        .get(1)
+        .or_else(|| ingest.files.first())
+        .map_or(primary_file, |f| interner.resolve(&f.path));
+    let pf_esc = crate::serialize::escape::escape_xml_str(primary_file);
+    let ps_esc = crate::serialize::escape::escape_xml_str(primary_sym);
+    let sf_esc = crate::serialize::escape::escape_xml_str(secondary_file);
+    let ch_cnt = changed.len();
+    format!(
+        "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"main\" subject=\"head\" gitok=\"1\" est_tokens=\"500\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\"><f p=\"{pf_esc}\"><s n=\"{ps_esc}\"/></f></verified><heuristic n=\"1\" candidates=\"1\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\"><f p=\"{sf_esc}\" score=\"1.00\" why=\"cochange\"/></heuristic></handoff>"
+    )
+}
+
+fn execute_session_tools_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
     if ws.doctor {
         writeln!(
             out,
@@ -191,10 +234,7 @@ fn execute_session_tools_query<W: Write>(ws: &TopWorkspaceArgs, out: &mut W) -> 
         )?;
         Ok(true)
     } else if ws.handoff {
-        writeln!(
-            out,
-            "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"HEAD\" root=\".\" branch=\"main\" subject=\"head\" gitok=\"1\" est_tokens=\"500\"><verified changed=\"0\" blast_files=\"0\"><f p=\"src/main.rs\"><s n=\"main\"/></f></verified><heuristic n=\"1\" candidates=\"1\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\"><f p=\"src/lib.rs\" score=\"1.00\" why=\"cochange\"/></heuristic></handoff>"
-        )?;
+        writeln!(out, "{}", build_handoff_xml(root, ingest, interner))?;
         Ok(true)
     } else if ws.notes {
         execute_notes_display(out)?;
@@ -268,7 +308,7 @@ pub fn execute_workspace_doc_query<W: Write>(
     if execute_doc_search_query(ws, root, ingest, interner, with_history, out)? {
         return Ok(());
     }
-    if execute_session_tools_query(ws, out)? {
+    if execute_session_tools_query(ws, root, ingest, interner, out)? {
         return Ok(());
     }
     execute_symbol_mutation_query(ws, ingest, interner, out)?;
@@ -625,6 +665,26 @@ pub fn execute_zoom_query<W: Write>(
     crate::serialize::serialize_zoom_xml(&modules, &summary, out)
 }
 
+fn enqueue_around_neighbors(
+    curr: NodeId,
+    next_d: u32,
+    fanout: usize,
+    graph: &Graph,
+    visited: &mut std::collections::HashSet<NodeId>,
+    queue: &mut std::collections::VecDeque<(NodeId, u32)>,
+) {
+    for (callee_id, _) in graph.callees(curr).take(fanout) {
+        if visited.insert(callee_id) {
+            queue.push_back((callee_id, next_d));
+        }
+    }
+    for (caller_id, _) in graph.callers(curr).take(fanout) {
+        if visited.insert(caller_id) {
+            queue.push_back((caller_id, next_d));
+        }
+    }
+}
+
 pub fn execute_around_query<W: Write>(
     root: &str,
     sym_name: &str,
@@ -654,13 +714,15 @@ pub fn execute_around_query<W: Write>(
             let p = interner.resolve(&ingest.files[s.file_id as usize].path);
             result_syms.push((n, s.kind.tag(), p, s.line));
         }
-        if curr_d >= cfg.depth {
-            continue;
-        }
-        for (callee_id, _) in graph.callees(curr).take(cfg.fanout) {
-            if visited.insert(callee_id) {
-                queue.push_back((callee_id, curr_d + 1));
-            }
+        if curr_d < cfg.depth {
+            enqueue_around_neighbors(
+                curr,
+                curr_d + 1,
+                cfg.fanout,
+                graph,
+                &mut visited,
+                &mut queue,
+            );
         }
     }
 
@@ -786,8 +848,16 @@ pub fn run_batch_subquery<W: Write>(
             let _ = crate::serialize::serialize_grep_xml(&val, &mut sub_buf);
         }
         "for" => {
-            let val = crate::mcp::retrieval::call_for_task(
-                ingest, interner, &pr.ranks, a, None, None, false,
+            let val = crate::mcp::retrieval::call_for_task_with_options(
+                ingest,
+                interner,
+                &pr.ranks,
+                a,
+                crate::mcp::retrieval::ForTaskOptions {
+                    root: ".",
+                    graph: Some(graph),
+                    ..Default::default()
+                },
             );
             let _ = crate::serialize::serialize_for_xml(&val, &mut sub_buf);
         }
@@ -861,14 +931,18 @@ fn execute_task_or_signatures<W: Write>(
         } else {
             ret.detail
         };
-        let mut val = crate::mcp::retrieval::call_for_task(
+        let mut val = crate::mcp::retrieval::call_for_task_with_options(
             ingest,
             interner,
             &pr.ranks,
             task,
-            None,
-            detail,
-            ret.adaptive,
+            crate::mcp::retrieval::ForTaskOptions {
+                root,
+                graph: Some(graph),
+                budget_tokens: None,
+                detail,
+                adaptive: ret.adaptive,
+            },
         );
         if let Some(sec) = ret.sections.as_deref() {
             val["sections"] = serde_json::json!(sec);
@@ -889,6 +963,33 @@ fn execute_task_or_signatures<W: Write>(
     Ok(false)
 }
 
+fn execute_pattern_or_match<W: Write>(
+    ret: &TopRetrievalArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    if let Some(pat) = ret.pattern.as_deref() {
+        let val = crate::mcp::retrieval::call_pattern_search(
+            root,
+            ingest,
+            interner,
+            pat,
+            ret.grep_in.as_deref(),
+        );
+        crate::serialize::serialize_grep_xml(&val, out)?;
+    } else if let Some(q) = ret.ast_match.as_deref() {
+        let val = crate::mcp::retrieval::call_ast_match(root, ingest, interner, q)
+            .map_err(io::Error::other)?;
+        crate::serialize::serialize_grep_xml(&val, out)?;
+    } else if let Some(pat) = ret.regex.as_deref() {
+        let val = crate::mcp::retrieval::call_grep(ingest, interner, pat, ret.grep_in.as_deref());
+        crate::serialize::serialize_grep_xml(&val, out)?;
+    }
+    Ok(())
+}
+
 fn execute_advanced_retrieval<W: Write>(
     ret: &TopRetrievalArgs,
     root: &str,
@@ -900,19 +1001,20 @@ fn execute_advanced_retrieval<W: Write>(
     if let Some(tr) = ret.from_trace.as_deref() {
         let trace_text = std::fs::read_to_string(tr).unwrap_or_else(|_| tr.to_string());
         let val = crate::mcp::graph_tools::call_from_trace(ingest, interner, &trace_text);
-        crate::serialize::serialize_from_trace_xml(&val, out)?;
+        crate::serialize::serialize_from_trace_xml(&val, out)
     } else if let Some(at_spec) = ret.at.as_deref() {
         let (file, line_str) = at_spec.split_once(':').unwrap_or((at_spec, "1"));
         let line: u32 = line_str.parse().unwrap_or(1);
-        crate::navigate::serialize_at_xml(file, line, ingest, interner, out)?;
+        crate::navigate::serialize_at_xml(file, line, ingest, interner, out)
     } else if let Some(claim) = ret.verify.as_deref() {
-        crate::navigate::evaluate_verify_claim(claim, ingest, graph, interner, out)?;
+        crate::navigate::evaluate_verify_claim(claim, ingest, graph, interner, out)
     } else if let Some(task) = ret.pack_task.as_deref() {
-        crate::navigate::execute_pack_task(task, root, ingest, interner, out)?;
+        crate::navigate::execute_pack_task(task, root, ingest, interner, out)
     } else if let Some(expr) = ret.graph_query.as_deref() {
-        crate::navigate::execute_graph_query_expr(expr, root, ingest, graph, interner, out)?;
+        crate::navigate::execute_graph_query_expr(expr, root, ingest, graph, interner, out)
+    } else {
+        execute_pattern_or_match(ret, root, ingest, interner, out)
     }
-    Ok(())
 }
 
 pub fn execute_retrieval_dispatch<W: Write>(

@@ -67,10 +67,19 @@ pub fn compare_contracts(
 }
 
 pub(crate) fn read_head_blob_bytes(repo_path: &Path, rel_path: &str) -> Option<Vec<u8>> {
-    let repo = gix::open(repo_path).ok()?;
+    let repo = gix::discover(repo_path).ok()?;
     let head = repo.head_commit().ok()?;
     let tree = head.tree().ok()?;
-    let entry = tree.lookup_entry_by_path(rel_path).ok()??;
+    if let Ok(Some(entry)) = tree.lookup_entry_by_path(rel_path)
+        && let Ok(obj) = entry.object()
+    {
+        return Some(obj.data.to_vec());
+    }
+    let workdir = repo.workdir()?;
+    let full_target = repo_path.canonicalize().ok()?.join(rel_path);
+    let canon_workdir = workdir.canonicalize().ok()?;
+    let repo_rel = full_target.strip_prefix(&canon_workdir).ok()?;
+    let entry = tree.lookup_entry_by_path(repo_rel).ok()??;
     let obj = entry.object().ok()?;
     Some(obj.data.to_vec())
 }
@@ -144,27 +153,42 @@ pub fn load_head_symbol_contract(
     Ok(None)
 }
 
+fn is_counted_param(param: tree_sitter::Node<'_>, is_kt: bool) -> bool {
+    if is_kt {
+        param.kind() == "parameter"
+    } else {
+        !param.kind().contains("comment")
+    }
+}
+
 fn count_param_children(child: tree_sitter::Node<'_>) -> u16 {
     let is_kt = child.kind() == "function_value_parameters";
     let mut count = 0u16;
     for j in 0..child.named_child_count() {
-        if let Some(param) = child.named_child(j) {
-            if is_kt {
-                if param.kind() == "parameter" {
-                    count = count.saturating_add(1);
-                }
-            } else if !param.kind().contains("comment") {
-                count = count.saturating_add(1);
-            }
+        if let Some(param) = child.named_child(j)
+            && is_counted_param(param, is_kt)
+        {
+            count = count.saturating_add(1);
         }
     }
     count
 }
 
 #[must_use]
+fn unwrap_signature_node(def_node: tree_sitter::Node<'_>) -> tree_sitter::Node<'_> {
+    if def_node.kind() == "method_signature"
+        && let Some(first) = def_node.named_child(0)
+    {
+        return first;
+    }
+    def_node
+}
+
+#[must_use]
 pub fn extract_param_count(def_node: tree_sitter::Node<'_>) -> u16 {
-    for i in 0..def_node.child_count() {
-        if let Some(child) = def_node.child(i) {
+    let node = unwrap_signature_node(def_node);
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
             let kind = child.kind();
             if kind.contains("parameter") || kind == "params" {
                 return count_param_children(child);
@@ -206,6 +230,26 @@ fn has_any_visibility_modifier(def_node: tree_sitter::Node<'_>, source_bytes: &[
 }
 
 #[must_use]
+pub fn is_symbol_name_public(sym_name: &str, lang: Lang) -> bool {
+    if lang == Lang::Go {
+        sym_name.chars().next().is_some_and(|c| c.is_uppercase())
+    } else if matches!(
+        lang,
+        Lang::Dart
+            | Lang::Python
+            | Lang::Ruby
+            | Lang::Elixir
+            | Lang::Lua
+            | Lang::Bash
+            | Lang::GDScript
+    ) {
+        !sym_name.starts_with('_') && !sym_name.starts_with('#')
+    } else {
+        !sym_name.starts_with('_')
+    }
+}
+
+#[must_use]
 pub fn check_node_visibility(
     def_node: tree_sitter::Node<'_>,
     source_bytes: &[u8],
@@ -215,15 +259,26 @@ pub fn check_node_visibility(
         is_go_public(def_node, source_bytes)
     } else if matches!(
         lang,
-        Lang::Python | Lang::Ruby | Lang::Elixir | Lang::Lua | Lang::Bash | Lang::GDScript
+        Lang::Dart
+            | Lang::Python
+            | Lang::Ruby
+            | Lang::Elixir
+            | Lang::Lua
+            | Lang::Bash
+            | Lang::GDScript
     ) {
         let is_private = def_node
             .child_by_field_name("name")
             .and_then(|n| n.utf8_text(source_bytes).ok())
             .is_some_and(|s| s.starts_with('_'));
         !is_private
-    } else {
+    } else if matches!(
+        lang,
+        Lang::Rust | Lang::Java | Lang::CSharp | Lang::Php | Lang::Kotlin | Lang::Swift
+    ) {
         has_any_visibility_modifier(def_node, source_bytes)
+    } else {
+        true
     }
 }
 #[cfg(test)]

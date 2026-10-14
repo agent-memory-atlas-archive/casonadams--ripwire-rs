@@ -26,7 +26,7 @@ pub fn execute_stream_xml_with<W: Write>(
     let args = RankedStreamArgs {
         root,
         rank_by: "pagerank",
-        pack_budget: None,
+        pack_budget: Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES),
         top_k: None,
         emit_legend: true,
         legend_full: false,
@@ -42,9 +42,7 @@ pub fn execute_stream_xml_ranked<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let budget_bytes = args
-        .pack_budget
-        .or(Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES));
+    let budget_bytes = args.pack_budget;
     let rank_mode = args.rank_by.to_ascii_lowercase();
 
     let map_diff_at = if args.map_diff {
