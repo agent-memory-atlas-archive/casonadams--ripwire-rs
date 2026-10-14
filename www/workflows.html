@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
-  <title>Workflows · ripwire Code Intelligence</title>
-  <meta name="description" content="Real-world development workflows for ripwire: codebase orientation, blast radius navigation, pre-commit PR safety gates, code health audits, and agent context routing.">
+  <title>Workflows · ripwire-rs Code Intelligence</title>
+  <meta name="description" content="Real-world development workflows for ripwire-rs: codebase orientation, blast radius navigation, pre-commit PR safety gates, code health audits, and agent context routing.">
 
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="stylesheet" href="css/style.css?v=2">
@@ -21,7 +21,7 @@
   <!-- Navigation -->
   <nav class="navbar">
     <div class="container navbar-inner">
-      <a href="./" class="brand" aria-label="ripwire home">
+      <a href="./" class="brand" aria-label="ripwire-rs home">
         <svg class="brand-icon" viewBox="0 0 100 100" fill="none">
           <rect width="100" height="100" rx="22" fill="#090d16"/>
           <path d="M25 75L50 25L75 75" stroke="#38bdf8" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
@@ -31,7 +31,7 @@
           <path d="M35 55H65" stroke="#f43f5e" stroke-width="6" stroke-linecap="round"/>
           <circle cx="50" cy="55" r="5" fill="#f43f5e"/>
         </svg>
-        <span>ripwire</span>
+        <span>ripwire-rs</span>
       </a>
 
       <div class="nav-actions">
@@ -53,9 +53,9 @@
   <header class="docs-header">
     <div class="container">
       <div class="badge"><span>PRACTICAL GUIDE · 6 PRIMARY WORKFLOWS</span></div>
-      <h1 style="font-size: 2.5rem; font-weight: 800; margin-top: 12px; margin-bottom: 12px;">When, Where, &amp; Why to Use ripwire</h1>
+      <h1 style="font-size: 2.5rem; font-weight: 800; margin-top: 12px; margin-bottom: 12px;">When, Where, &amp; Why to Use ripwire-rs</h1>
       <p style="color: var(--text-secondary); max-width: 780px; font-size: 1.1rem;">
-        <code>ripwire</code> is engineered around high-impact workflows: from landing cold in a foreign codebase to surgical test execution and automated CI/CD PR verification.
+        <code>ripwire-rs</code> is engineered around high-impact workflows: from landing cold in a foreign codebase to surgical test execution and automated CI/CD PR verification.
       </p>
     </div>
   </header>
@@ -621,14 +621,14 @@
               </div>
               <button class="btn-copy" data-copy-target="ghActionsYaml">Copy YAML</button>
             </div>
-            <pre class="recipe-code"><code id="ghActionsYaml">name: Ripwire PR Safety Gates
+            <pre class="recipe-code"><code id="ghActionsYaml">name: ripwire-rs PR Safety Gates
 on:
   pull_request:
     branches: [main, master]
 
 jobs:
   ripwire-gate:
-    name: Ripwire PR Gate
+    name: ripwire-rs PR Gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -663,7 +663,7 @@ jobs:
   <footer class="footer">
     <div class="container footer-inner">
       <div>
-        <strong>ripwire</strong> · Apache-2.0 License · Ported with gratitude from <a href="https://github.com/redhat-et/ripwire" target="_blank" rel="noopener">redhat-et/ripwire</a>.
+        <strong>ripwire-rs</strong> · Apache-2.0 License · Ported with gratitude from <a href="https://github.com/redhat-et/ripwire" target="_blank" rel="noopener">redhat-et/ripwire</a>.
       </div>
       <div class="footer-links">
         <a href="./">Home</a>
