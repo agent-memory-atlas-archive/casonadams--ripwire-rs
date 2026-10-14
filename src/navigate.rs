@@ -359,20 +359,33 @@ fn symbol_spans_line(sym: &crate::domain::Symbol, line_num: u32) -> bool {
     sym.line <= line_num && (sym.line + sym.loc) >= line_num
 }
 
+pub fn resolve_symbol_chain_at<'a>(
+    file_spec: &str,
+    line_num: u32,
+    ingest: &'a IngestResult,
+    interner: &Interner,
+) -> Vec<&'a crate::domain::Symbol> {
+    let mut chain: Vec<&'a crate::domain::Symbol> = ingest
+        .symbols
+        .iter()
+        .filter(|sym| {
+            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+            (p == file_spec || p.ends_with(file_spec)) && symbol_spans_line(sym, line_num)
+        })
+        .collect();
+    chain.sort_by_key(|s| (s.line, std::cmp::Reverse(s.loc)));
+    chain
+}
+
 pub fn resolve_symbol_at<'a>(
     file_spec: &str,
     line_num: u32,
     ingest: &'a IngestResult,
     interner: &Interner,
 ) -> Option<&'a crate::domain::Symbol> {
-    let mut candidate = None;
-    for sym in &ingest.symbols {
-        let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
-        if (p == file_spec || p.ends_with(file_spec)) && symbol_spans_line(sym, line_num) {
-            candidate = Some(sym);
-        }
-    }
-    candidate
+    resolve_symbol_chain_at(file_spec, line_num, ingest, interner)
+        .into_iter()
+        .last()
 }
 
 pub fn serialize_at_xml<W: Write>(
@@ -405,19 +418,29 @@ pub fn serialize_at_xml<W: Write>(
             "ripwire: the at flag's seed '{file_spec}:{line_num}' named no location (ambiguous)"
         )));
     }
-    let Some(sym) = resolve_symbol_at(file_spec, line_num, ingest, interner) else {
+    let chain = resolve_symbol_chain_at(file_spec, line_num, ingest, interner);
+    let Some(&innermost) = chain.last() else {
         return Err(io::Error::other(format!(
             "ripwire: the at flag's seed '{file_spec}:{line_num}' named no location (no indexed symbol spans line {line_num})"
         )));
     };
-    let name = interner.resolve(&sym.name);
-    let kind = sym.kind.tag();
-    let end_l = sym.line.saturating_add(sym.loc.saturating_sub(1));
-    writeln!(
+    let name = interner.resolve(&innermost.name);
+    let chain_len = chain.len();
+    write!(
         out,
-        "<!-- ripwire at schema=ripwire.at/v1: enclosing-definition chain at p=:l=. -->\n<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"{name}\" chain=\"{name}\" root=\".\"><s n=\"{name}\" t=\"{kind}\" l=\"{}\" el=\"{end_l}\"/></at>",
-        sym.line
-    )
+        "<!-- ripwire at schema=ripwire.at/v1: enclosing-definition chain at p=:l=. -->\n<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"{name}\" chain=\"{chain_len}\" root=\".\">",
+    )?;
+    for sym in chain {
+        let sn = interner.resolve(&sym.name);
+        let kind = sym.kind.tag();
+        let end_l = sym.line.saturating_add(sym.loc.saturating_sub(1));
+        write!(
+            out,
+            "<s n=\"{sn}\" t=\"{kind}\" l=\"{}\" el=\"{end_l}\"/>",
+            sym.line
+        )?;
+    }
+    writeln!(out, "</at>")
 }
 
 fn check_call_relationship(
@@ -480,6 +503,79 @@ pub fn evaluate_verify_claim<W: Write>(
     )
 }
 
+struct PackTaskBody {
+    kind: String,
+    line: u64,
+    path_esc: String,
+    name_esc: String,
+    body: String,
+}
+
+fn write_pack_task_sigs_and_collect<'a, W: Write>(
+    syms: &'a [serde_json::Value],
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+    out: &mut W,
+) -> io::Result<(Vec<PackTaskBody>, Vec<&'a str>)> {
+    let mut bodies = Vec::new();
+    let mut changed_paths = Vec::new();
+    for (idx, it) in syms.iter().enumerate() {
+        let raw_name = it["name"].as_str().unwrap_or("");
+        let raw_path = it["path"].as_str().unwrap_or("");
+        let n_esc = crate::serialize::escape::escape_xml_str(raw_name).into_owned();
+        let p_esc = crate::serialize::escape::escape_xml_str(raw_path).into_owned();
+        let l = it["line"].as_u64().unwrap_or(1);
+        let cx = it["cx"].as_u64().unwrap_or(1);
+        let ccx = it["ccx"].as_u64().unwrap_or(1);
+        let in_deg = it["in"].as_u64().unwrap_or(0);
+        let sig = crate::serialize::escape::escape_xml_str(it["sig"].as_str().unwrap_or(raw_name));
+        let r = idx + 1;
+        write!(
+            out,
+            "<d l=\"{l}\" n=\"{n_esc}\" p=\"{p_esc}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" r=\"{r}\" next=\"--expand={p_esc}:{n_esc}\">{sig}</d>"
+        )?;
+        if !raw_path.is_empty() {
+            changed_paths.push(raw_path);
+        }
+        if let Some(b) = it
+            .get("body")
+            .or_else(|| it.get("sig"))
+            .and_then(serde_json::Value::as_str)
+            && bodies.len() < 3
+        {
+            bodies.push(PackTaskBody {
+                kind: it["kind"].as_str().unwrap_or("fn").to_string(),
+                line: l,
+                path_esc: p_esc,
+                name_esc: n_esc,
+                body: b.to_string(),
+            });
+        }
+    }
+    if syms.is_empty()
+        && let Some(first_sym) = ingest.symbols.first()
+    {
+        let n_raw = interner.resolve(&first_sym.name);
+        let n_esc = crate::serialize::escape::escape_xml_str(n_raw).into_owned();
+        let p_raw = interner.resolve(&ingest.files[first_sym.file_id as usize].path);
+        let p_esc = crate::serialize::escape::escape_xml_str(p_raw).into_owned();
+        let l = first_sym.line;
+        write!(
+            out,
+            "<d l=\"{l}\" n=\"{n_esc}\" p=\"{p_esc}\" cx=\"1\" ccx=\"1\" in=\"0\" r=\"1\" next=\"--expand={p_esc}:{n_esc}\">{n_esc}</d>"
+        )?;
+        changed_paths.push(p_raw);
+        bodies.push(PackTaskBody {
+            kind: first_sym.kind.tag().to_string(),
+            line: u64::from(l),
+            path_esc: p_esc,
+            name_esc: n_esc.clone(),
+            body: n_esc,
+        });
+    }
+    Ok((bodies, changed_paths))
+}
+
 pub fn execute_pack_task<W: Write>(
     task: &str,
     root: &str,
@@ -487,22 +583,78 @@ pub fn execute_pack_task<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let (sym_name, sym_path, sym_line) = ingest
-        .symbols
-        .first()
-        .map(|s| {
-            let n = interner.resolve(&s.name);
-            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
-            (n, p, s.line)
-        })
-        .unwrap_or(("main", "src/main.rs", 1));
+    let graph = Graph::build(ingest, interner);
+    let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
+    let for_val = crate::mcp::retrieval::call_for_task_with_options(
+        ingest,
+        interner,
+        &pr.ranks,
+        task,
+        crate::mcp::retrieval::ForTaskOptions {
+            root,
+            graph: Some(&graph),
+            budget_tokens: Some(10),
+            detail: Some(3),
+            adaptive: false,
+        },
+    );
+    let empty = Vec::new();
+    let syms = for_val["symbols"].as_array().unwrap_or(&empty);
     let t_esc = crate::serialize::escape::escape_xml_str(task);
-    let n_esc = crate::serialize::escape::escape_xml_str(sym_name);
-    let p_esc = crate::serialize::escape::escape_xml_str(sym_path);
-    writeln!(
+    write!(
         out,
-        "<!-- ripwire pack-task schema=ripwire.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire.pack-task/v1\" task=\"{t_esc}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"3800\" budget_tokens=\"6000\"><sigs><d l=\"{sym_line}\" n=\"{n_esc}\" p=\"{p_esc}\" cx=\"1\" ccx=\"1\" in=\"1\" r=\"1\" next=\"--expand={p_esc}:{n_esc}\">{n_esc}</d></sigs><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"fn\" l=\"{sym_line}\" p=\"{p_esc}\" n=\"{n_esc}\"><![CDATA[{n_esc}]]></b></bodies><callers of_top=\"1\" shown=\"1\" total=\"1\" capped=\"0\"><s t=\"fn\" n=\"{n_esc}\" p=\"{p_esc}:{sym_line}\"/></callers><tests shown=\"1\" total=\"1\" capped=\"0\"><t p=\"tests/test_cli_and_mcp.rs\" hops=\"1\"/></tests></ctx>"
-    )
+        "<!-- ripwire pack-task schema=ripwire.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire.pack-task/v1\" task=\"{t_esc}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"3800\" budget_tokens=\"6000\"><sigs>",
+    )?;
+    let (bodies, changed_paths) = write_pack_task_sigs_and_collect(syms, ingest, interner, out)?;
+    write!(
+        out,
+        "</sigs><bodies shown=\"{}\" total=\"{}\" capped=\"0\">",
+        bodies.len(),
+        bodies.len()
+    )?;
+    for b in &bodies {
+        write!(
+            out,
+            "<b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\"><![CDATA[{}]]></b>",
+            b.kind, b.line, b.path_esc, b.name_esc, b.body
+        )?;
+    }
+    write!(out, "</bodies>")?;
+    let top_caller_nodes = syms
+        .first()
+        .and_then(|it| it["name"].as_str())
+        .and_then(|n| find_symbols_by_name(n, ingest, interner).into_iter().next())
+        .and_then(|id| navigate_1hop(id, ingest, &graph, &pr.ranks, interner))
+        .map(|nav| nav.callers)
+        .unwrap_or_default();
+    write!(
+        out,
+        "<callers of_top=\"1\" shown=\"{}\" total=\"{}\" capped=\"0\">",
+        top_caller_nodes.len(),
+        top_caller_nodes.len()
+    )?;
+    for c in &top_caller_nodes {
+        let cn = crate::serialize::escape::escape_xml_str(&c.name);
+        let cp = crate::serialize::escape::escape_xml_str(&c.path);
+        write!(
+            out,
+            "<s t=\"{}\" n=\"{cn}\" p=\"{cp}:{}\"/>",
+            c.kind, c.line
+        )?;
+    }
+    write!(out, "</callers>")?;
+    let aff = crate::gate::affected::find_affected_tests(&changed_paths, ingest, &graph, interner);
+    write!(
+        out,
+        "<tests shown=\"{}\" total=\"{}\" capped=\"0\">",
+        aff.tests.len(),
+        aff.tests.len()
+    )?;
+    for t in &aff.tests {
+        let tp = crate::serialize::escape::escape_xml_str(&t.path);
+        write!(out, "<t p=\"{tp}\" hops=\"{}\"/>", t.hops)?;
+    }
+    writeln!(out, "</tests></ctx>")
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

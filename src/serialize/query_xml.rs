@@ -1060,14 +1060,22 @@ pub fn serialize_recall_xml<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let empty = Vec::new();
-    let matches = val["matches"].as_array().unwrap_or(&empty);
+    let matches = val
+        .get("docs")
+        .or_else(|| val.get("matches"))
+        .and_then(Value::as_array)
+        .unwrap_or(&empty);
     let mut buf = format!(
         "<recall schema=\"ripwire.recall/v1\" root=\"{root}\" query=\"{query}\" docs=\"{}\">\n",
         matches.len()
     );
     for d in matches {
         let p = d["path"].as_str().unwrap_or("");
-        let text = d["snippet"].as_str().unwrap_or("");
+        let text = d
+            .get("content")
+            .or_else(|| d.get("snippet"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
         buf.push_str(&format!("  <doc p=\"{p}\"><![CDATA[{text}]]></doc>\n"));
     }
     buf.push_str("</recall>\n");
@@ -1084,7 +1092,11 @@ pub fn serialize_from_trace_xml<W: Write>(val: &Value, out: &mut W) -> io::Resul
     );
     for s in suspects {
         let n = s["name"].as_str().unwrap_or("");
-        let p = s["path"].as_str().unwrap_or("");
+        let p = s
+            .get("path")
+            .or_else(|| s.get("file"))
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let l = s["line"].as_u64().unwrap_or(0);
         buf.push_str(&format!("  <suspect n=\"{n}\" p=\"{p}\" l=\"{l}\"/>\n"));
     }

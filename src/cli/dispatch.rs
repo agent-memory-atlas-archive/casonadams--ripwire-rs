@@ -315,8 +315,10 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         let mut stdout =
             crate::serialize::XmlWriter::new(&mut stdout_lock, cli.modifiers.is_pretty());
 
-        if let Some(syms) = detail.expand.as_deref().or(detail.outline.as_deref()) {
-            execute_expand_query(root, syms, &ingest, &interner, &mut stdout)?;
+        if let Some(syms) = detail.expand.as_deref() {
+            execute_expand_or_outline_query(root, syms, false, &ingest, &interner, &mut stdout)?;
+        } else if let Some(syms) = detail.outline.as_deref() {
+            execute_expand_or_outline_query(root, syms, true, &ingest, &interner, &mut stdout)?;
         } else if let Some(n) = detail.pack_top_n {
             execute_pack_top_n_query(root, n, &ingest, &pr, &interner, &mut stdout)?;
         } else if detail.tree {

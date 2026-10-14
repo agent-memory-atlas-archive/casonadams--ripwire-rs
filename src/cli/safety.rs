@@ -409,12 +409,15 @@ fn execute_tool_safety_queries<W: Write>(
         return Ok(Some(0));
     }
     if let Some(dir_opt) = &s.scan_skills {
-        let path_str = if dir_opt.as_deref().unwrap_or("").is_empty() {
-            "skills"
+        let raw = dir_opt.as_deref().unwrap_or("");
+        let scan_dir = if !raw.is_empty() {
+            crate::skills::resolve_skills_dir(Some(raw))
+        } else if std::path::Path::new("skills").is_dir() {
+            std::path::PathBuf::from("skills")
         } else {
-            dir_opt.as_deref().unwrap()
+            crate::skills::default_skills_dir()
         };
-        let rep = crate::skills::scan_skills_directory(std::path::Path::new(path_str))?;
+        let rep = crate::skills::scan_skills_directory(&scan_dir)?;
         crate::skills::serialize_skill_scan_xml(&rep, out)?;
         let code = match rep.verdict {
             "critical" => 2,

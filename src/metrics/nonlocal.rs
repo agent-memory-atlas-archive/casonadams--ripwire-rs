@@ -70,26 +70,6 @@ pub fn find_nonlocal_state(
             });
         }
     }
-    if out.is_empty()
-        && let Some(sym) = ingest.symbols.first()
-    {
-        let p = interner
-            .resolve(&ingest.files[sym.file_id as usize].path)
-            .to_string();
-        out.push(NonlocalFunction {
-            sym_name: interner.resolve(&sym.name).to_string(),
-            path: p.clone(),
-            line: sym.line,
-            writes: 0,
-            reads: 1,
-            cells: vec![StateCellAccess {
-                cell_name: "STATE".to_string(),
-                path: p,
-                line: 1,
-                is_write: false,
-            }],
-        });
-    }
     out
 }
 
@@ -100,9 +80,10 @@ pub fn serialize_nonlocal_state_xml<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let count = funcs.len();
+    let cells_count: usize = funcs.iter().map(|f| f.cells.len()).sum();
     writeln!(
         out,
-        "<!-- ripwire nonlocal-state schema=ripwire.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches. -->\n<nonlocal_state schema=\"ripwire.nonlocal-state/v1\" cells=\"27\" functions=\"{count}\" shown=\"{count}\" capped=\"0\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" unanalyzed_langs=\"rust,javascript,bash\" unanalyzed_files=\"94\" root=\"{root}\">",
+        "<!-- ripwire nonlocal-state schema=ripwire.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches. -->\n<nonlocal_state schema=\"ripwire.nonlocal-state/v1\" cells=\"{cells_count}\" functions=\"{count}\" shown=\"{count}\" capped=\"0\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" unanalyzed_langs=\"\" unanalyzed_files=\"0\" root=\"{root}\">",
     )?;
     for f in funcs {
         let p_raw = format!("{}:{}", f.path, f.line);

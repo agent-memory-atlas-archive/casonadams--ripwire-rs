@@ -5,13 +5,24 @@ use std::fs;
 
 /// Execute `mentions` tool: find documentation naming a symbol in backticks.
 pub fn call_mentions(ingest: &IngestResult, interner: &Interner, symbol_name: &str) -> Value {
+    call_mentions_in_root(".", ingest, interner, symbol_name)
+}
+
+pub fn call_mentions_in_root(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    symbol_name: &str,
+) -> Value {
     let mut matching_docs = Vec::new();
     let backtick_target = format!("`{symbol_name}`");
+    let root_path = std::path::Path::new(root);
 
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
         if (path.ends_with(".md") || path.contains("doc"))
-            && let Ok(content) = fs::read_to_string(path)
+            && let Ok(content) =
+                fs::read_to_string(root_path.join(path)).or_else(|_| fs::read_to_string(path))
         {
             let occurrences = content.matches(&backtick_target).count();
             if occurrences > 0 {

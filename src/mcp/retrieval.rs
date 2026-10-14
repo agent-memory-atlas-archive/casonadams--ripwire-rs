@@ -230,6 +230,26 @@ pub fn call_fetch_body(
     start_line: Option<usize>,
     end_line: Option<usize>,
 ) -> Value {
+    call_fetch_body_in_root(
+        ".",
+        ingest,
+        interner,
+        symbol_name,
+        path_hint,
+        start_line,
+        end_line,
+    )
+}
+
+pub fn call_fetch_body_in_root(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    symbol_name: &str,
+    path_hint: Option<&str>,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+) -> Value {
     let sym = ingest.symbols.iter().find(|s| {
         let n = interner.resolve(&s.name);
         if n == symbol_name {
@@ -252,7 +272,8 @@ pub fn call_fetch_body(
     };
 
     let file_path = interner.resolve(&file_info.path);
-    let bytes = match fs::read(file_path) {
+    let joined = std::path::Path::new(root).join(file_path);
+    let bytes = match fs::read(&joined).or_else(|_| fs::read(file_path)) {
         Ok(b) => b,
         Err(e) => return json!({ "error": format!("cannot read file '{file_path}': {e}") }),
     };
@@ -347,6 +368,17 @@ pub fn call_exemplar(
     role: &str,
     graph: Option<&Graph>,
 ) -> Value {
+    call_exemplar_in_root(".", ingest, interner, ranks, role, graph)
+}
+
+pub fn call_exemplar_in_root(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    ranks: &[f64],
+    role: &str,
+    graph: Option<&Graph>,
+) -> Value {
     let target_kind = target_kind_from_role(role);
     let Some((sym, in_deg, cand_cnt, rank)) =
         select_best_exemplar(ingest, interner, ranks, graph, target_kind)
@@ -360,15 +392,19 @@ pub fn call_exemplar(
         .map(|f| interner.resolve(&f.path))
         .unwrap_or("");
 
-    let body = fs::read(file_path).ok().and_then(|bytes| {
-        let start = (sym.sig_start_byte as usize).min(bytes.len());
-        let end = (sym.end_byte as usize).min(bytes.len());
-        if start < end {
-            Some(String::from_utf8_lossy(&bytes[start..end]).to_string())
-        } else {
-            None
-        }
-    });
+    let joined = std::path::Path::new(root).join(file_path);
+    let body = fs::read(&joined)
+        .or_else(|_| fs::read(file_path))
+        .ok()
+        .and_then(|bytes| {
+            let start = (sym.sig_start_byte as usize).min(bytes.len());
+            let end = (sym.end_byte as usize).min(bytes.len());
+            if start < end {
+                Some(String::from_utf8_lossy(&bytes[start..end]).to_string())
+            } else {
+                None
+            }
+        });
 
     json!({
         "role": role,
@@ -453,16 +489,28 @@ pub fn call_memory_recall(
     task: &str,
     top_k: Option<usize>,
 ) -> Value {
+    call_memory_recall_in_root(".", ingest, interner, task, top_k)
+}
+
+pub fn call_memory_recall_in_root(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    task: &str,
+    top_k: Option<usize>,
+) -> Value {
     let terms: Vec<String> = task
         .split_whitespace()
         .map(|s| s.to_ascii_lowercase())
         .collect();
+    let root_path = std::path::Path::new(root);
 
     let mut matched_docs = Vec::new();
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
         if (path.ends_with(".md") || path.contains("doc") || path.contains("notes"))
-            && let Ok(content) = fs::read_to_string(path)
+            && let Ok(content) =
+                fs::read_to_string(root_path.join(path)).or_else(|_| fs::read_to_string(path))
         {
             let lower = content.to_ascii_lowercase();
             let score = terms.iter().filter(|&t| lower.contains(t)).count();
@@ -501,7 +549,18 @@ pub fn call_grep(
     pattern: &str,
     path_filter: Option<&str>,
 ) -> Value {
+    call_grep_in_root(".", ingest, interner, pattern, path_filter)
+}
+
+pub fn call_grep_in_root(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    pattern: &str,
+    path_filter: Option<&str>,
+) -> Value {
     let mut hits = Vec::new();
+    let root_path = std::path::Path::new(root);
 
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
@@ -511,7 +570,9 @@ pub fn call_grep(
             continue;
         }
 
-        let Ok(bytes) = fs::read(path) else { continue };
+        let Ok(bytes) = fs::read(root_path.join(path)).or_else(|_| fs::read(path)) else {
+            continue;
+        };
         let Ok(text) = std::str::from_utf8(&bytes) else {
             continue;
         };

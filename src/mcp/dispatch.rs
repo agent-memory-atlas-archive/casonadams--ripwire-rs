@@ -317,7 +317,8 @@ pub fn call_edit_tool(
     };
     let path_hint = args["path"].as_str().or_else(|| args["file"].as_str());
 
-    Ok(edit::perform_atomic_edit(
+    Ok(edit::perform_atomic_edit_in_root(
+        &state.root,
         &state.ingest,
         &state.interner,
         op,
@@ -374,7 +375,8 @@ pub fn dispatch_read_tools(
             let path_hint = args["path"].as_str().or_else(|| args["file"].as_str());
             let sl = args["start_line"].as_u64().map(|l| l as usize);
             let el = args["end_line"].as_u64().map(|l| l as usize);
-            Ok(retrieval::call_fetch_body(
+            Ok(retrieval::call_fetch_body_in_root(
+                &state.root,
                 &state.ingest,
                 &state.interner,
                 sym,
@@ -388,7 +390,8 @@ pub fn dispatch_read_tools(
                 .as_str()
                 .or_else(|| args["kind"].as_str())
                 .unwrap_or("fn");
-            Ok(retrieval::call_exemplar(
+            Ok(retrieval::call_exemplar_in_root(
+                &state.root,
                 &state.ingest,
                 &state.interner,
                 &state.ranks,
@@ -406,7 +409,8 @@ pub fn dispatch_read_tools(
         "memory_recall" => {
             let task = args["task"].as_str().unwrap_or("");
             let top_k = args["top_k"].as_u64().map(|k| k as usize);
-            Ok(retrieval::call_memory_recall(
+            Ok(retrieval::call_memory_recall_in_root(
+                &state.root,
                 &state.ingest,
                 &state.interner,
                 task,
@@ -416,7 +420,8 @@ pub fn dispatch_read_tools(
         "grep" => {
             let pattern = args["pattern"].as_str().unwrap_or("");
             let path_filter = args["path"].as_str();
-            Ok(retrieval::call_grep(
+            Ok(retrieval::call_grep_in_root(
+                &state.root,
                 &state.ingest,
                 &state.interner,
                 pattern,
@@ -515,13 +520,18 @@ pub fn dispatch_graph_and_doc_tools(
         }
         "mentions" => {
             let sym = args["symbol"].as_str().unwrap_or("");
-            Ok(doc_tools::call_mentions(
+            Ok(doc_tools::call_mentions_in_root(
+                &state.root,
                 &state.ingest,
                 &state.interner,
                 sym,
             ))
         }
-        "doc_drift" => Ok(doc_tools::call_doc_drift(&state.ingest, &state.interner)),
+        "doc_drift" => Ok(doc_tools::call_doc_drift_in_root(
+            &state.root,
+            &state.ingest,
+            &state.interner,
+        )),
         "flags" => Ok(doc_tools::call_flags(&state.ingest, &state.interner)),
         "owners" => {
             let path = args["path"].as_str().or_else(|| args["file"].as_str());

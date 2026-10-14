@@ -147,6 +147,20 @@ fn validate_payload(payload: &str) -> Result<(), Value> {
     }
 }
 
+fn resolve_and_read_target_path(
+    root: &str,
+    file_rel_path: &str,
+) -> Result<(std::path::PathBuf, Vec<u8>), Value> {
+    let joined = Path::new(root).join(file_rel_path);
+    let target_path = if joined.exists() {
+        joined
+    } else {
+        std::path::PathBuf::from(file_rel_path)
+    };
+    let bytes = validate_and_read_target(&target_path)?;
+    Ok((target_path, bytes))
+}
+
 fn validate_and_read_target(target_path: &Path) -> Result<Vec<u8>, Value> {
     check_symlink(target_path)?;
     fs::read(target_path).map_err(|e| {
@@ -155,6 +169,48 @@ fn validate_and_read_target(target_path: &Path) -> Result<Vec<u8>, Value> {
             "error": format!("cannot read file '{}': {e}", target_path.display())
         })
     })
+}
+
+struct EditTargetRequest<'a> {
+    root: &'a str,
+    op: EditOp,
+    symbol_name: &'a str,
+    path_hint: Option<&'a str>,
+    payload: &'a str,
+}
+
+fn try_atomic_edit_in_root(
+    ingest: &IngestResult,
+    interner: &crate::domain::Interner,
+    req: EditTargetRequest<'_>,
+) -> Result<Value, Value> {
+    validate_payload(req.payload)?;
+    let (symbol, file_rel_path) =
+        resolve_edit_target(ingest, interner, req.symbol_name, req.path_hint)?;
+    let (target_path, original_bytes) = resolve_and_read_target_path(req.root, file_rel_path)?;
+    let sig_start = symbol.sig_start_byte as usize;
+    let end_byte = symbol.end_byte as usize;
+    let (new_bytes, new_start, new_end) = splice_file_bytes(
+        &original_bytes,
+        req.op,
+        sig_start,
+        end_byte,
+        req.payload.as_bytes(),
+    )?;
+    write_atomic_temp_file(&target_path, &new_bytes).map_err(|e| {
+        json!({
+            "applied": false,
+            "error": format!("failed to atomically write file '{}': {e}", target_path.display())
+        })
+    })?;
+    Ok(json!({
+        "applied": true,
+        "file": file_rel_path,
+        "symbol": req.symbol_name,
+        "old_span": [sig_start, end_byte],
+        "new_span": [new_start, new_end],
+        "bytes_written": req.payload.len()
+    }))
 }
 
 /// Perform an atomic symbol edit (replace, insert_before, or insert_after).
@@ -166,45 +222,28 @@ pub fn perform_atomic_edit(
     path_hint: Option<&str>,
     payload: &str,
 ) -> Value {
-    if let Err(err) = validate_payload(payload) {
-        return err;
-    }
+    perform_atomic_edit_in_root(".", ingest, interner, op, symbol_name, path_hint, payload)
+}
 
-    let (symbol, file_rel_path) =
-        match resolve_edit_target(ingest, interner, symbol_name, path_hint) {
-            Ok(t) => t,
-            Err(err) => return err,
-        };
-
-    let target_path = Path::new(file_rel_path);
-    let original_bytes = match validate_and_read_target(target_path) {
-        Ok(b) => b,
-        Err(err) => return err,
+pub fn perform_atomic_edit_in_root(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &crate::domain::Interner,
+    op: EditOp,
+    symbol_name: &str,
+    path_hint: Option<&str>,
+    payload: &str,
+) -> Value {
+    let req = EditTargetRequest {
+        root,
+        op,
+        symbol_name,
+        path_hint,
+        payload,
     };
-
-    let sig_start = symbol.sig_start_byte as usize;
-    let end_byte = symbol.end_byte as usize;
-
-    let (new_bytes, new_start, new_end) =
-        match splice_file_bytes(&original_bytes, op, sig_start, end_byte, payload.as_bytes()) {
-            Ok(res) => res,
-            Err(err) => return err,
-        };
-    if let Err(e) = write_atomic_temp_file(target_path, &new_bytes) {
-        return json!({
-            "applied": false,
-            "error": format!("failed to atomically write file '{}': {e}", target_path.display())
-        });
+    match try_atomic_edit_in_root(ingest, interner, req) {
+        Ok(v) | Err(v) => v,
     }
-
-    json!({
-        "applied": true,
-        "file": file_rel_path,
-        "symbol": symbol_name,
-        "old_span": [sig_start, end_byte],
-        "new_span": [new_start, new_end],
-        "bytes_written": payload.len()
-    })
 }
 
 #[cfg(test)]

@@ -220,6 +220,7 @@ ack short-horizon-churn 0000000000000004 15 now=14 was=0 facet=self p=tests/test
 ack short-horizon-churn 0000000000000005 5 now=3 was=0 facet=self p=src/mcp/graph_tools.rs:84 fix(dart): resolve DIRT.md Dart analysis gaps and multi-def path traversal
 ack short-horizon-churn 0000000000000006 5 now=2 was=0 facet=self p=src/slice/arise.rs:68 fix(dart): resolve DIRT.md Dart analysis gaps and slice local declarations
 ack short-horizon-churn 0000000000000007 10 now=8 was=0 facet=self p=src/crawler.rs:86 refactor(crawler): unify process_crawl_entry with evaluate_candidate
+ack short-horizon-churn 0000000000000008 5 now=2 was=0 facet=self p=src/mcp/edit.rs:161 fix(edit): resolve relative paths against root in perform_atomic_edit_in_root
 ack short-horizon-churn 01b0c14cba52874e 10 cid=7ed5453d6ab51213 now=10 was=0 facet=self p=src/clones/detector.rs:206 1:1 parity and resource superiority
 ack short-horizon-churn 03c6194c8faebf0d 6 cid=3426b08b1f588c6b now=6 was=0 facet=self p=src/git/history.rs:508 fix(owners): compute recency-weighted author ownership and bus factor
 ack short-horizon-churn 03d7310183bb1ed7 9 cid=56a25a41135b7993 now=9 was=0 facet=ambient p=src/domain.rs:214 feat(metrics): compute complexity, readability, and hotspots

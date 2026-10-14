@@ -160,7 +160,7 @@ fn execute_doc_search_query<W: Write>(
                 "ripwire: --mentions symbol not found: {sym}"
             )));
         }
-        let val = crate::mcp::doc_tools::call_mentions(ingest, interner, sym);
+        let val = crate::mcp::doc_tools::call_mentions_in_root(root, ingest, interner, sym);
         crate::serialize::serialize_mentions_xml(&val, out)?;
         Ok(true)
     } else {
@@ -248,6 +248,7 @@ fn execute_session_tools_query<W: Write>(
 }
 
 fn execute_edit_op<W: Write>(
+    root: &str,
     ingest: &IngestResult,
     interner: &Interner,
     spec: &str,
@@ -255,18 +256,22 @@ fn execute_edit_op<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let (sym, payload) = spec.split_once(':').unwrap_or((spec, ""));
-    let res = crate::mcp::edit::perform_atomic_edit(ingest, interner, op, sym, None, payload);
+    let res = crate::mcp::edit::perform_atomic_edit_in_root(
+        root, ingest, interner, op, sym, None, payload,
+    );
     writeln!(out, "{res}")
 }
 
 fn execute_symbol_mutation_query<W: Write>(
     ws: &TopWorkspaceArgs,
+    root: &str,
     ingest: &IngestResult,
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<bool> {
     if let Some(spec) = ws.replace_symbol_body.as_deref() {
         execute_edit_op(
+            root,
             ingest,
             interner,
             spec,
@@ -276,6 +281,7 @@ fn execute_symbol_mutation_query<W: Write>(
         Ok(true)
     } else if let Some(spec) = ws.insert_before_symbol.as_deref() {
         execute_edit_op(
+            root,
             ingest,
             interner,
             spec,
@@ -285,6 +291,7 @@ fn execute_symbol_mutation_query<W: Write>(
         Ok(true)
     } else if let Some(spec) = ws.insert_after_symbol.as_deref() {
         execute_edit_op(
+            root,
             ingest,
             interner,
             spec,
@@ -311,7 +318,7 @@ pub fn execute_workspace_doc_query<W: Write>(
     if execute_session_tools_query(ws, root, ingest, interner, out)? {
         return Ok(());
     }
-    execute_symbol_mutation_query(ws, ingest, interner, out)?;
+    execute_symbol_mutation_query(ws, root, ingest, interner, out)?;
     Ok(())
 }
 
@@ -334,9 +341,50 @@ pub fn extract_symbol_body<'a>(
     }
 }
 
-pub fn execute_expand_query<W: Write>(
+fn skeletonize_body(body: &str) -> String {
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut elided = false;
+    for line in body.lines() {
+        let opens = line.chars().filter(|&c| c == '{').count() as i32;
+        let closes = line.chars().filter(|&c| c == '}').count() as i32;
+        if depth <= 1 {
+            out.push(line.to_string());
+            elided = false;
+        } else if !elided {
+            out.push("    ...".to_string());
+            elided = true;
+        }
+        depth += opens - closes;
+        if depth <= 1 && closes > 0 && elided {
+            out.push(line.to_string());
+            elided = false;
+        }
+    }
+    out.join("\n")
+}
+
+fn collect_expanded_symbol<'a>(
+    id: NodeId,
+    is_outline: bool,
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+    root_path: &Path,
+) -> Option<(&'a crate::domain::Symbol, &'a str, &'a str, String)> {
+    let (sym, name, rel_path, body) =
+        extract_symbol_body(&ingest.symbols[id as usize], ingest, interner, root_path)?;
+    let final_body = if is_outline {
+        skeletonize_body(&body)
+    } else {
+        body
+    };
+    Some((sym, name, rel_path, final_body))
+}
+
+pub fn execute_expand_or_outline_query<W: Write>(
     root: &str,
     syms_spec: &str,
+    is_outline: bool,
     ingest: &IngestResult,
     interner: &Interner,
     out: &mut W,
@@ -352,13 +400,13 @@ pub fn execute_expand_query<W: Write>(
     for sym_name in sym_names {
         let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
         if ids.is_empty() {
+            let flag = if is_outline { "--outline" } else { "--expand" };
             return Err(io::Error::other(format!(
-                "ripwire: --expand symbol not found: {sym_name}"
+                "ripwire: {flag} symbol not found: {sym_name}"
             )));
         }
         for &id in &ids {
-            if let Some(item) =
-                extract_symbol_body(&ingest.symbols[id as usize], ingest, interner, root_path)
+            if let Some(item) = collect_expanded_symbol(id, is_outline, ingest, interner, root_path)
             {
                 expanded_items.push(item);
             }
@@ -371,6 +419,16 @@ pub fn execute_expand_query<W: Write>(
         .collect();
 
     crate::serialize::serialize_expand_xml(root, &items_slice, out)
+}
+
+pub fn execute_expand_query<W: Write>(
+    root: &str,
+    syms_spec: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    execute_expand_or_outline_query(root, syms_spec, false, ingest, interner, out)
 }
 
 pub fn execute_pack_top_n_query<W: Write>(
@@ -984,7 +1042,13 @@ fn execute_pattern_or_match<W: Write>(
             .map_err(io::Error::other)?;
         crate::serialize::serialize_grep_xml(&val, out)?;
     } else if let Some(pat) = ret.regex.as_deref() {
-        let val = crate::mcp::retrieval::call_grep(ingest, interner, pat, ret.grep_in.as_deref());
+        let val = crate::mcp::retrieval::call_grep_in_root(
+            root,
+            ingest,
+            interner,
+            pat,
+            ret.grep_in.as_deref(),
+        );
         crate::serialize::serialize_grep_xml(&val, out)?;
     }
     Ok(())
@@ -999,7 +1063,13 @@ fn execute_advanced_retrieval<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     if let Some(tr) = ret.from_trace.as_deref() {
-        let trace_text = std::fs::read_to_string(tr).unwrap_or_else(|_| tr.to_string());
+        let trace_text = if tr == "-" {
+            let mut buf = String::new();
+            let _ = io::Read::read_to_string(&mut io::stdin(), &mut buf);
+            buf
+        } else {
+            std::fs::read_to_string(tr).unwrap_or_else(|_| tr.to_string())
+        };
         let val = crate::mcp::graph_tools::call_from_trace(ingest, interner, &trace_text);
         crate::serialize::serialize_from_trace_xml(&val, out)
     } else if let Some(at_spec) = ret.at.as_deref() {
@@ -1030,15 +1100,27 @@ pub fn execute_retrieval_dispatch<W: Write>(
         return Ok(());
     }
     if let Some(pat) = ret.grep.as_deref() {
-        let val = crate::mcp::retrieval::call_grep(ingest, interner, pat, None);
+        let val = crate::mcp::retrieval::call_grep_in_root(
+            root,
+            ingest,
+            interner,
+            pat,
+            ret.grep_in.as_deref(),
+        );
         crate::serialize::serialize_grep_xml(&val, out)
     } else if let Some(syms) = ret.connect.as_deref() {
         execute_connect_query(syms, ingest, graph, interner, out)
     } else if let Some(pair) = ret.path_between.as_deref() {
         execute_path_query(pair, ingest, graph, interner, out)
     } else if let Some(ex) = ret.exemplar.as_deref() {
-        let val =
-            crate::mcp::retrieval::call_exemplar(ingest, interner, &pr.ranks, ex, Some(graph));
+        let val = crate::mcp::retrieval::call_exemplar_in_root(
+            root,
+            ingest,
+            interner,
+            &pr.ranks,
+            ex,
+            Some(graph),
+        );
         if val.get("error").is_some() {
             return Err(io::Error::other("ripwire: --exemplar: no candidate found"));
         }
@@ -1052,7 +1134,8 @@ pub fn execute_retrieval_dispatch<W: Write>(
         let val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
         crate::serialize::serialize_lego_xml(root, &val, out)
     } else if let Some(rec) = ret.recall.as_deref() {
-        let val = crate::mcp::retrieval::call_memory_recall(ingest, interner, rec, None);
+        let val =
+            crate::mcp::retrieval::call_memory_recall_in_root(root, ingest, interner, rec, None);
         crate::serialize::serialize_recall_xml(root, rec, &val, out)
     } else {
         execute_advanced_retrieval(ret, root, ingest, graph, interner, out)
@@ -1075,5 +1158,21 @@ mod tests {
         assert!(!sig_has_static_token(b"static void foo()", 10, 5));
         assert!(!sig_has_static_token(b"", 0, 0));
         assert!(sig_has_static_token(b"static", 0, 100));
+    }
+
+    #[test]
+    fn test_skeletonize_body() {
+        let body = "fn run() {\n    if x {\n        let a = 1;\n        let b = 2;\n    }\n}";
+        let skel = skeletonize_body(body);
+        assert!(skel.contains("..."));
+        assert!(!skel.contains("let a = 1"));
+        let interner = Interner::new();
+        let ingest = IngestResult::new();
+        let mut buf = Vec::new();
+        assert!(execute_expand_query(".", "missing", &ingest, &interner, &mut buf).is_err());
+        assert!(
+            execute_expand_or_outline_query(".", "missing", true, &ingest, &interner, &mut buf)
+                .is_err()
+        );
     }
 }
