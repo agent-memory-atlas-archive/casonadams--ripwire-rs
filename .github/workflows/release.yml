@@ -136,7 +136,11 @@ jobs:
         run: |
           version="${TAG##*v}"
           name="ripwire-rs-${version}-${{ matrix.target }}"
-          tar czf "$name.tar.gz" -C "target/${{ matrix.target }}/release" ripwire-rs
+          package_dir="$(mktemp -d)"
+          trap 'rm -rf "$package_dir"' EXIT
+          install -m 755 "target/${{ matrix.target }}/release/ripwire-rs" "$package_dir/ripwire-rs"
+          install -m 644 man/man1/ripwire-rs.1 "$package_dir/ripwire-rs.1"
+          tar czf "$name.tar.gz" -C "$package_dir" ripwire-rs ripwire-rs.1
           gh release upload "$TAG" "$name.tar.gz" --clobber
 
       - name: Package and upload (Windows)
