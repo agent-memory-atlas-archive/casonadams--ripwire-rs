@@ -134,7 +134,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          name="ripwire-rs-${TAG#v}-${{ matrix.target }}"
+          version="${TAG##*v}"
+          name="ripwire-rs-${version}-${{ matrix.target }}"
           tar czf "$name.tar.gz" -C "target/${{ matrix.target }}/release" ripwire-rs
           gh release upload "$TAG" "$name.tar.gz" --clobber
 
@@ -144,10 +145,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $name = "ripwire-rs-$($env:TAG.Substring(1))-${{ matrix.target }}"
+          $version = $env:TAG -replace '^.*v', ''
+          $name = "ripwire-rs-$version-${{ matrix.target }}"
           Compress-Archive -Path "target/${{ matrix.target }}/release/ripwire-rs.exe" -DestinationPath "$name.zip"
           gh release upload $env:TAG "$name.zip" --clobber
-
   checksums:
     name: "Generate SHA256SUMS"
     needs: [release-please, build-release]
