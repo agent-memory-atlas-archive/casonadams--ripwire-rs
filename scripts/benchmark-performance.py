@@ -22,7 +22,10 @@ def locate_bench_binaries():
 
 
 def measure_process(cmd):
-    proc = subprocess.run(["/usr/bin/time", "-l"] + cmd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(["/usr/bin/time", "-l"] + cmd, capture_output=True, text=True, timeout=8)
+    except subprocess.TimeoutExpired:
+        return None, 8.0, 8.0, 500.0
     err = proc.stderr
     m_time = re.search(r"([0-9.]+)\s+real\s+([0-9.]+)\s+user\s+([0-9.]+)\s+sys", err)
     if m_time:

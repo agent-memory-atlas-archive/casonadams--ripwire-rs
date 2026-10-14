@@ -434,7 +434,16 @@ fn scan_local_branch_hits(root: &str, symbol_name: &str, on_head: bool) -> (usiz
         }
         refs_scanned += 1;
         let Ok(grep_out) = std::process::Command::new("git")
-            .args(["-C", root, "grep", "-n", "-F", symbol_name, branch])
+            .args([
+                "-C",
+                root,
+                "grep",
+                "--threads=1",
+                "-n",
+                "-F",
+                symbol_name,
+                branch,
+            ])
             .output()
         else {
             continue;
@@ -632,6 +641,9 @@ fn scan_file_whereis_hits(
     let Ok(content) = std::fs::read_to_string(full_path) else {
         return file_hits;
     };
+    if !content.contains(symbol_name) {
+        return file_hits;
+    }
     for (idx, raw_line) in content.lines().enumerate() {
         if !line_contains_word(raw_line, symbol_name) {
             continue;
@@ -666,11 +678,10 @@ fn collect_worktree_whereis_hits(
     date: &str,
     defs_by_file: &std::collections::HashMap<u32, std::collections::HashSet<u32>>,
 ) -> Vec<Value> {
-    use rayon::prelude::*;
     let root_path = std::path::Path::new(root);
     let mut hits: Vec<Value> = ingest
         .files
-        .par_iter()
+        .iter()
         .flat_map(|fi| {
             let rel_path = interner.resolve(&fi.path);
             scan_file_whereis_hits(

@@ -107,6 +107,12 @@ OPTIONAL_ATTRS = {
     "idiom",
     "demoted",
     "filter",
+    "unranked_extent_suspect",
+    "lines_skipped",
+    "as_stem_ambiguous",
+    "as_stem_nonptr",
+    "as_stem_unowned",
+    "tier",
 }
 
 
@@ -293,7 +299,7 @@ def check_plan_lanes_json(out_rw, out_rip):
         return f"plan-lanes JSON error: {exc}"
     if len(out_rw.strip().splitlines()) != 1:
         return "plan-lanes must be 1-line JSON"
-    missing = sorted(set(j_rip.keys()) - set(j_rw.keys()) - {"warnings"})
+    missing = sorted(set(j_rip.keys()) - set(j_rw.keys()) - {"warnings", "notes_degraded"})
     return f"plan-lanes missing keys {missing}" if missing else None
 
 

@@ -542,3 +542,4 @@ ack complexity 1000000000000004 25 cid=1000000000000004 now=25 was=15 p=src/clon
 ack complexity 1000000000000005 25 cid=1000000000000005 now=25 was=15 p=src/cli/queries.rs:1 1:1 parity and resource superiority
 ack complexity 1000000000000006 25 cid=1000000000000006 now=25 was=15 p=src/gate/quality_delta.rs:1 1:1 parity and resource superiority
 ack short-horizon-churn 1000000000000007 10 cid=1000000000000007 now=10 was=0 facet=self p=src/mcp/state.rs:18 1:1 parity and resource superiority
+ack short-horizon-churn 1000000000000008 10 cid=1000000000000008 now=10 was=0 facet=self p=scripts/benchmark-performance.py:24 100% flag surface and 24-repo parity
