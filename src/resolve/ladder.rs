@@ -138,11 +138,16 @@ pub fn select_precedence_tier(
         return Some((same_dir, 0.5));
     }
 
-    if cands.len() == 1 {
-        Some((cands.to_vec(), 0.2))
-    } else {
-        None
+    if let Some(&first) = cands.first() {
+        let first_file = symbols[first as usize].file_id;
+        if cands
+            .iter()
+            .all(|&id| symbols[id as usize].file_id == first_file)
+        {
+            return Some((cands.to_vec(), 0.2));
+        }
     }
+    None
 }
 
 /// Resolve a single reference according to the precedence ladder.

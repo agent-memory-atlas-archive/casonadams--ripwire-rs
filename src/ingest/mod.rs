@@ -830,7 +830,6 @@ CREATE TABLE audit_events (
 class AccountRepository {
   AccountRepository(this.a, {required this.b});
   Future<void> createRecord(dynamic db) async {
-    AccountRepository(1, b: 2);
     await db.query("INSERT INTO mobile.user_records (id, status) VALUES ($1, $2)");
   }
   Future<void> loadActive(dynamic db) async {
@@ -845,10 +844,18 @@ class AccountRepository {
   }
 }
 "#;
+        let caller_service = br#"
+class MobileSwapService {
+  void executeSwap() {
+    AccountRepository(1, b: 2);
+  }
+}
+"#;
         let ingest = ingest_in_memory_files(
             &[
                 ("migrations/001_init.sql", Lang::Sql, sql_migration),
-                ("lib/account_repo.dart", Lang::Dart, dart_repo),
+                ("lib/db/account_repo.dart", Lang::Dart, dart_repo),
+                ("lib/mobile/swap_service.dart", Lang::Dart, caller_service),
             ],
             &reg,
             &interner,
@@ -907,6 +914,6 @@ class AccountRepository {
             &mut callers_buf,
         )
         .unwrap();
-        assert!(String::from_utf8_lossy(&callers_buf).contains("n=\"createRecord\""));
+        assert!(String::from_utf8_lossy(&callers_buf).contains("n=\"executeSwap\""));
     }
 }

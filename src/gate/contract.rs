@@ -111,7 +111,7 @@ fn parse_head_signature_match(
     query: &tree_sitter::Query,
     bytes: &[u8],
     lang: Lang,
-) -> (Option<String>, u16, bool) {
+) -> Option<(String, u16, bool)> {
     let mut name = None;
     let mut params = 0u16;
     let mut def_node = None;
@@ -128,8 +128,10 @@ fn parse_head_signature_match(
             def_node = Some(node);
         }
     }
-    let is_pub = resolve_head_visibility(name.as_deref(), def_node, bytes, lang);
-    (name, params, is_pub)
+    let dn = def_node?;
+    let n = name?;
+    let is_pub = resolve_head_visibility(Some(&n), Some(dn), bytes, lang);
+    Some((n, params, is_pub))
 }
 
 /// Load a symbol's contract from the git HEAD commit.
@@ -161,8 +163,7 @@ pub fn load_head_symbol_contract(
     let mut matches = cursor.matches(query, tree.root_node(), bytes.as_slice());
 
     while let Some(m) = matches.next() {
-        let (name, params, is_public) = parse_head_signature_match(m, query, &bytes, lang);
-        if let Some(n) = name
+        if let Some((n, params, is_public)) = parse_head_signature_match(m, query, &bytes, lang)
             && n == sym_name
         {
             return Ok(Some(SignatureContract {
@@ -395,6 +396,9 @@ mod tests {
         let dart_code = br#"
 class SwapRecord {
   SwapRecord(this.a, this.b, {required this.c, this.d, this.e});
+  Future<void> run() async {
+    await _prepare("first", y: 2);
+  }
   Future<void> _prepare(String x, {int y = 1, bool z = false}) async {}
 }
 void makeSwap() {
@@ -412,13 +416,16 @@ void makeSwap() {
         let mut found_prepare = false;
         let mut found_ctor = false;
         while let Some(m) = matches.next() {
-            let (name, params, is_pub) =
-                parse_head_signature_match(m, query, dart_code, Lang::Dart);
-            if name.as_deref() == Some("_prepare") {
+            let Some((name, params, is_pub)) =
+                parse_head_signature_match(m, query, dart_code, Lang::Dart)
+            else {
+                continue;
+            };
+            if name == "_prepare" {
                 found_prepare = true;
                 assert!(!is_pub, "private Dart method _prepare must not be public");
                 assert_eq!(params, 3, "1 positional + 2 named parameters");
-            } else if name.as_deref() == Some("SwapRecord") && params > 0 {
+            } else if name == "SwapRecord" && params > 0 {
                 found_ctor = true;
                 assert!(is_pub);
                 assert_eq!(params, 5, "2 positional + 3 named parameters");
