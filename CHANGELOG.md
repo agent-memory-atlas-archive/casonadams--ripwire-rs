@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/casonadams/ripwire-rs/compare/ripwire-v0.4.1...ripwire-v0.4.2) (2026-10-14)
+
+
+### Bug Fixes
+
+* **build:** normalize embedded skill paths to forward slashes for windows msvc ([5eba075](https://github.com/casonadams/ripwire-rs/commit/5eba075534d8009b86b201f8574ac1c0a9ad82e4))
+
 ## [0.4.1](https://github.com/casonadams/ripwire-rs/compare/ripwire-v0.4.0...ripwire-v0.4.1) (2026-10-14)
 
 
