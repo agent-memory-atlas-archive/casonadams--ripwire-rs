@@ -367,6 +367,40 @@ fn get_line_snippet(path: &str, line: u32, fallback: &str) -> String {
     fallback.to_string()
 }
 
+fn classify_code_line(code: &str) -> &'static str {
+    const DEF_PREFIXES: [&str; 5] = ["fn ", "pub fn ", "def ", "class ", "struct "];
+    if DEF_PREFIXES.iter().any(|&p| code.starts_with(p)) {
+        "def"
+    } else {
+        "ref"
+    }
+}
+
+fn parse_branch_grep_line(line: &str, branch: &str, symbol_name: &str) -> Option<Value> {
+    let mut parts = line.splitn(3, ':');
+    let _ref_prefix = parts.next()?;
+    let path = parts.next().unwrap_or("");
+    let rest = parts.next().unwrap_or("");
+    let mut line_parts = rest.splitn(2, ':');
+    let line_num: u64 = line_parts.next().and_then(|l| l.parse().ok()).unwrap_or(0);
+    let code_text = line_parts.next().unwrap_or("").trim();
+    let kind = classify_code_line(code_text);
+    Some(json!({
+        "ref": branch,
+        "symbol": symbol_name,
+        "kind": kind,
+        "file": path,
+        "path": path,
+        "line": line_num,
+        "text": code_text,
+        "on_head": false
+    }))
+}
+
+fn should_scan_branch(branch: &str, on_head: bool) -> bool {
+    !branch.is_empty() && branch != "HEAD" && !(branch == "main" && on_head)
+}
+
 fn scan_local_branch_hits(root: &str, symbol_name: &str, on_head: bool) -> (usize, Vec<Value>) {
     let mut hits = Vec::new();
     let mut refs_scanned = 0usize;
@@ -386,9 +420,9 @@ fn scan_local_branch_hits(root: &str, symbol_name: &str, on_head: bool) -> (usiz
         return (0, hits);
     }
     let branch_output = String::from_utf8_lossy(&out.stdout);
-    for branch in branch_output.lines() {
-        let branch = branch.trim();
-        if branch.is_empty() || branch == "HEAD" || (branch == "main" && on_head) {
+    for raw_branch in branch_output.lines() {
+        let branch = raw_branch.trim();
+        if !should_scan_branch(branch, on_head) {
             continue;
         }
         refs_scanned += 1;
@@ -403,33 +437,9 @@ fn scan_local_branch_hits(root: &str, symbol_name: &str, on_head: bool) -> (usiz
         }
         let text = String::from_utf8_lossy(&grep_out.stdout);
         for line in text.lines().take(60) {
-            let mut parts = line.splitn(3, ':');
-            let _ref_prefix = parts.next();
-            let path = parts.next().unwrap_or("");
-            let rest = parts.next().unwrap_or("");
-            let mut line_parts = rest.splitn(2, ':');
-            let line_num: u64 = line_parts.next().and_then(|l| l.parse().ok()).unwrap_or(0);
-            let code_text = line_parts.next().unwrap_or("").trim();
-            let kind = if code_text.starts_with("fn ")
-                || code_text.starts_with("pub fn ")
-                || code_text.starts_with("def ")
-                || code_text.starts_with("class ")
-                || code_text.starts_with("struct ")
-            {
-                "def"
-            } else {
-                "ref"
-            };
-            hits.push(json!({
-                "ref": branch,
-                "symbol": symbol_name,
-                "kind": kind,
-                "file": path,
-                "path": path,
-                "line": line_num,
-                "text": code_text,
-                "on_head": false
-            }));
+            if let Some(hit) = parse_branch_grep_line(line, branch, symbol_name) {
+                hits.push(hit);
+            }
         }
     }
     (refs_scanned, hits)
@@ -887,5 +897,28 @@ mod tests {
         assert!(whereis_hist.get("history").is_some());
         let stray_res = call_stray_content(".");
         assert!(stray_res.get("head").is_some());
+    }
+
+    #[test]
+    fn test_branch_grep_parsing() {
+        assert_eq!(classify_code_line("fn foo()"), "def");
+        assert_eq!(classify_code_line("pub fn bar()"), "def");
+        assert_eq!(classify_code_line("let x = foo();"), "ref");
+        assert!(should_scan_branch("feature-1", true));
+        assert!(!should_scan_branch("HEAD", true));
+        assert!(!should_scan_branch("", true));
+        assert!(!should_scan_branch("main", true));
+        assert!(should_scan_branch("main", false));
+
+        let hit = parse_branch_grep_line(
+            "origin/main:src/lib.rs:42:fn hello()",
+            "origin/main",
+            "hello",
+        );
+        assert!(hit.is_some());
+        let val = hit.unwrap();
+        assert_eq!(val["kind"], "def");
+        assert_eq!(val["line"], 42);
+        assert_eq!(val["file"], "src/lib.rs");
     }
 }

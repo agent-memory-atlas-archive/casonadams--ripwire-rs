@@ -434,6 +434,3 @@ ack verbosity ef626e7fbdac48cf 83 cid=c560a4919f395ede now=83 was=0 p=src/gate/a
 ack verbosity f204e7a809fcdfd7 65 cid=86b988f86ce55f24 now=65 was=62 p=src/git/cochange.rs:461 fix(owners): compute recency-weighted author ownership and bus factor
 ack verbosity f775e95e22c7869c 120 cid=93205d01d462096d now=120 was=108 p=src/mcp/dispatch.rs:426 align DIRT.md git-derived verbs and missing flags | prior: fix(git): align DIRT.md git-derived verbs and xml escaping
 ack verbosity ffe8cd20e751aac3 155 cid=a76a4515e108eff9 now=155 was=66 p=src/navigate.rs:1023 fix(parity): implement exemplar selection and graph-query DSL
-ack short-horizon-churn dispatch_top_workspace 25 p=src/cli/dispatch.rs:236 output minification and xml writer
-ack short-horizon-churn call_whereis 15 p=src/mcp/doc_tools.rs:593 git tree blob scanning and output minification
-ack short-horizon-churn test_top_architecture_queries 25 p=tests/test_cli_and_mcp.rs:568 test coverage for missing flags
