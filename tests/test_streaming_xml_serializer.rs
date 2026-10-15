@@ -398,6 +398,40 @@ fn test_query_xml_architecture_family() {
 
     serialize_deps_xml(".", &[("src/lib.rs", 2, 1)], &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.deps/v1\""));
+    buf.clear();
+
+    let deps_rep = ripwire_rs::serialize::DepsReport {
+        corpus_files: 2,
+        dep_files: 2,
+        ccd: 4,
+        acd: 2.0,
+        nccd: 1.1,
+        rows: vec![
+            ripwire_rs::serialize::DepsFileRow {
+                path: "src/a.rs",
+                includes: 1,
+                efferent: 1,
+                afferent: 1,
+                transitive: 2,
+                inc_targets: vec!["./b.rs"],
+            },
+            ripwire_rs::serialize::DepsFileRow {
+                path: "src/b.rs",
+                includes: 1,
+                efferent: 1,
+                afferent: 1,
+                transitive: 2,
+                inc_targets: Vec::new(),
+            },
+        ],
+        cycles: vec![vec!["src/a.rs", "src/b.rs"]],
+        violations: vec![("src/a.rs", "src/b.rs", 0.25)],
+    };
+    ripwire_rs::serialize::serialize_deps_report_xml(".", &deps_rep, &mut buf).unwrap();
+    let deps_xml = String::from_utf8_lossy(&buf);
+    assert!(deps_xml.contains("<cycles>"));
+    assert!(deps_xml.contains("<cycle size=\"2\" cost=\"4\""));
+    assert!(deps_xml.contains("<inc t=\"./b.rs\"/>"));
 }
 #[test]
 fn test_query_xml_task_retrieval_family() {

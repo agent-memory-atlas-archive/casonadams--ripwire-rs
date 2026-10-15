@@ -5,10 +5,10 @@ pub mod pipeline;
 pub mod registry;
 pub mod yaml_guard;
 
+pub use crate::languages::*;
 pub use extract::*;
 pub use pipeline::*;
 pub use registry::*;
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,7 +158,7 @@ mod tests {
             (
                 "service.ts",
                 Lang::TypeScript,
-                "export interface Service {}\nexport class Worker implements Service {}\nexport class Child extends Worker {}",
+                "export interface Service<T = unknown> {}\nexport class Worker implements Service<string> {}\nexport class Child extends Worker {}",
                 "Service",
                 "Worker",
             ),
@@ -573,7 +573,7 @@ mod tests {
             !astro_res.refs.is_empty(),
             "Astro should extract frontmatter refs"
         );
-        assert_eq!(astro_res.refs[0].callee_name, "run");
+        assert!(astro_res.refs.iter().any(|r| r.callee_name == "run"));
 
         // Dart sibling function_body span extension
         let dart_code =

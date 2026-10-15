@@ -22,14 +22,19 @@ pub struct NavContext<'a> {
 }
 
 pub fn serialize_1hop_mode<W: Write>(
+    root: &str,
     sym: &str,
     mode: NavMode,
     nav: &crate::navigate::NavNeighborhood,
     out: &mut W,
 ) -> io::Result<()> {
     match mode {
-        NavMode::Callers => crate::navigate::serialize_callers_xml(sym, &nav.callers, out),
-        NavMode::Callees => crate::navigate::serialize_callees_xml(sym, &nav.callees, out),
+        NavMode::Callers => {
+            crate::navigate::serialize_callers_in_root_xml(root, sym, &nav.callers, out)
+        }
+        NavMode::Callees => {
+            crate::navigate::serialize_callees_in_root_xml(root, sym, &nav.callees, out)
+        }
         NavMode::FindSymbol => crate::navigate::serialize_find_symbol_xml(nav, out),
         _ => Ok(()),
     }
@@ -44,7 +49,23 @@ pub fn execute_nav_symbol_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let ids = crate::navigate::find_symbols_by_name(sym, ingest, interner);
+    let ctx = NavContext {
+        ingest,
+        graph,
+        ranks,
+        interner,
+    };
+    execute_nav_symbol_query_in_root(".", sym, mode, &ctx, out)
+}
+
+pub fn execute_nav_symbol_query_in_root<W: Write>(
+    root: &str,
+    sym: &str,
+    mode: NavMode,
+    ctx: &NavContext<'_>,
+    out: &mut W,
+) -> io::Result<()> {
+    let ids = crate::navigate::find_symbols_by_name(sym, ctx.ingest, ctx.interner);
     if ids.is_empty() {
         let flag = match mode {
             NavMode::Callers => "--callers",
@@ -58,18 +79,29 @@ pub fn execute_nav_symbol_query<W: Write>(
         )));
     }
     match mode {
-        NavMode::Uses => crate::navigate::serialize_uses_xml(sym, ingest, interner, out),
+        NavMode::Uses => {
+            crate::navigate::serialize_uses_in_root_xml(root, sym, ctx.ingest, ctx.interner, out)
+        }
         NavMode::Impact => {
             let impact = crate::navigate::transitive_impact_multi(
-                &ids, ingest, graph, ranks, interner, None,
+                &ids,
+                ctx.ingest,
+                ctx.graph,
+                ctx.ranks,
+                ctx.interner,
+                None,
             );
-            crate::navigate::serialize_impact_xml(sym, &impact, out)
+            crate::navigate::serialize_impact_in_root_xml(root, sym, &impact, out)
         }
         NavMode::Callers | NavMode::Callees | NavMode::FindSymbol => {
-            if let Some(nav) =
-                crate::navigate::navigate_1hop_multi(&ids, ingest, graph, ranks, interner)
-            {
-                serialize_1hop_mode(sym, mode, &nav, out)?;
+            if let Some(nav) = crate::navigate::navigate_1hop_multi(
+                &ids,
+                ctx.ingest,
+                ctx.graph,
+                ctx.ranks,
+                ctx.interner,
+            ) {
+                serialize_1hop_mode(root, sym, mode, &nav, out)?;
             }
             Ok(())
         }
@@ -77,6 +109,17 @@ pub fn execute_nav_symbol_query<W: Write>(
 }
 
 pub fn execute_connect_query<W: Write>(
+    syms: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    execute_connect_query_in_root(".", syms, ingest, graph, interner, out)
+}
+
+pub fn execute_connect_query_in_root<W: Write>(
+    root: &str,
     syms: &str,
     ingest: &IngestResult,
     graph: &Graph,
@@ -95,7 +138,8 @@ pub fn execute_connect_query<W: Write>(
             )));
         }
     }
-    let val = crate::mcp::graph_tools::call_connect(ingest, graph, interner, &sym_list);
+    let mut val = crate::mcp::graph_tools::call_connect(ingest, graph, interner, &sym_list);
+    val["root"] = serde_json::Value::String(root.to_string());
     crate::serialize::serialize_connect_xml(&val, out)
 }
 
@@ -235,6 +279,63 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
     )
 }
 
+fn execute_skipped_census_query<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    out: &mut W,
+) -> io::Result<()> {
+    let root_esc = crate::serialize::escape::escape_xml_str(root);
+    let opts = crate::crawler::CrawlerOptions::default();
+    let census = crate::crawler::scan_skipped_census(Path::new(root), &opts);
+    let oversize_cnt = census.oversize.len();
+    let excluded_cnt = census.excluded.len();
+    let unsupported_cnt = census.unsupported.len();
+    let total_skipped = oversize_cnt + excluded_cnt + unsupported_cnt;
+    writeln!(
+        out,
+        "<ctx schema=\"ripwire.skipped/v1\" root=\"{root_esc}\"><skipped schema=\"ripwire.skipped/v1\" root=\"{root_esc}\" indexed=\"{}\" oversize=\"{oversize_cnt}\" excluded=\"{excluded_cnt}\" unsupported_ext=\"{unsupported_cnt}\" max_file_size=\"{}\" count=\"{total_skipped}\">",
+        ingest.files.len(),
+        opts.max_file_size
+    )?;
+    for (p, bytes, ext) in census.oversize.iter().take(40) {
+        writeln!(
+            out,
+            "  <f p=\"{}\" why=\"oversize\" bytes=\"{bytes}\" ext=\"{}\"/>",
+            crate::serialize::escape::escape_xml_str(p),
+            crate::serialize::escape::escape_xml_str(ext)
+        )?;
+    }
+    for (p, bytes, ext) in census.unsupported.iter().take(40) {
+        writeln!(
+            out,
+            "  <f p=\"{}\" why=\"unsupported-ext\" bytes=\"{bytes}\" ext=\"{}\"/>",
+            crate::serialize::escape::escape_xml_str(p),
+            crate::serialize::escape::escape_xml_str(ext)
+        )?;
+    }
+    for (ext, files) in census.unindexed_exts.iter().take(30) {
+        writeln!(
+            out,
+            "  <e x=\"{}\" files=\"{files}\"/>",
+            crate::serialize::escape::escape_xml_str(ext)
+        )?;
+    }
+    let mut lang_files: std::collections::BTreeMap<&'static str, (usize, usize)> =
+        std::collections::BTreeMap::new();
+    for f in &ingest.files {
+        lang_files.entry(f.lang.tag()).or_default().0 += 1;
+    }
+    for s in &ingest.symbols {
+        lang_files.entry(s.lang.tag()).or_default().1 += 1;
+    }
+    for (tag, (f_cnt, s_cnt)) in lang_files {
+        writeln!(
+            out,
+            "  <lang n=\"{tag}\" files=\"{f_cnt}\" symbols=\"{s_cnt}\"/>"
+        )?;
+    }
+    writeln!(out, "</skipped></ctx>")
+}
 fn execute_flip_or_plan_query<W: Write>(
     ws: &TopWorkspaceArgs,
     root: &str,
@@ -279,12 +380,7 @@ fn execute_flip_or_plan_query<W: Write>(
         )?;
         Ok(true)
     } else if ws.skipped {
-        let root_esc = crate::serialize::escape::escape_xml_str(root);
-        writeln!(
-            out,
-            "<skipped schema=\"ripwire.skipped/v1\" root=\"{root_esc}\" max_file_size=\"{}\" count=\"0\"/>",
-            crate::crawler::DEFAULT_MAX_FILE_SIZE
-        )?;
+        execute_skipped_census_query(root, ingest, out)?;
         Ok(true)
     } else {
         Ok(false)
@@ -936,6 +1032,248 @@ pub fn execute_external_surface_query<W: Write>(
     crate::serialize::serialize_external_surface_xml(root, &items, out)
 }
 
+fn record_import_edges<'a>(
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+    file_index: &std::collections::HashMap<&str, u32>,
+    adj_sets: &mut [std::collections::BTreeSet<usize>],
+    inc_targets: &mut [Vec<&'a str>],
+) {
+    let f_len = ingest.files.len();
+    for r in &ingest.references {
+        let uf = r.file_id as usize;
+        if r.role != crate::domain::RefRole::Import || uf >= f_len {
+            continue;
+        }
+        let raw = interner.resolve(&r.callee_name);
+        let clean = crate::ingest::strip_import_quotes(raw);
+        if !clean.is_empty() && !inc_targets[uf].contains(&clean) {
+            inc_targets[uf].push(clean);
+        }
+        let f_path = interner.resolve(&ingest.files[uf].path);
+        if let Some(vf) = ingest.files[uf]
+            .lang
+            .semantics()
+            .resolve_import_target(f_path, raw, file_index)
+            && (vf as usize) != uf
+            && (vf as usize) < f_len
+        {
+            adj_sets[uf].insert(vf as usize);
+        }
+    }
+}
+
+fn collect_import_and_call_adj<'a>(
+    ingest: &'a IngestResult,
+    graph: &Graph,
+    interner: &'a Interner,
+) -> (Vec<Vec<usize>>, Vec<Vec<&'a str>>) {
+    let f_len = ingest.files.len();
+    let file_index: std::collections::HashMap<&str, u32> = ingest
+        .files
+        .iter()
+        .map(|f| (interner.resolve(&f.path), f.id))
+        .collect();
+    let mut adj_sets = vec![std::collections::BTreeSet::new(); f_len];
+    let mut inc_targets = vec![Vec::new(); f_len];
+    record_import_edges(
+        ingest,
+        interner,
+        &file_index,
+        &mut adj_sets,
+        &mut inc_targets,
+    );
+
+    for u in 0..graph.node_count() as NodeId {
+        let uf = ingest.symbols[u as usize].file_id as usize;
+        for (v, _, is_split) in graph.callees_with_prov(u) {
+            let vf = ingest.symbols[v as usize].file_id as usize;
+            if !is_split && uf != vf && uf < f_len && vf < f_len {
+                adj_sets[uf].insert(vf);
+            }
+        }
+    }
+
+    let adj = adj_sets
+        .into_iter()
+        .map(|s| s.into_iter().collect())
+        .collect();
+    (adj, inc_targets)
+}
+
+struct TarjanState {
+    idx: Vec<i32>,
+    low: Vec<i32>,
+    on_stack: Vec<bool>,
+    stack: Vec<usize>,
+    counter: i32,
+    cycles: Vec<Vec<usize>>,
+}
+
+fn tarjan_dfs(u: usize, adj: &[Vec<usize>], st: &mut TarjanState) {
+    st.idx[u] = st.counter;
+    st.low[u] = st.counter;
+    st.counter += 1;
+    st.stack.push(u);
+    st.on_stack[u] = true;
+
+    for &w in &adj[u] {
+        if st.idx[w] == -1 {
+            tarjan_dfs(w, adj, st);
+            st.low[u] = st.low[u].min(st.low[w]);
+        } else if st.on_stack[w] {
+            st.low[u] = st.low[u].min(st.idx[w]);
+        }
+    }
+
+    if st.low[u] == st.idx[u] {
+        let mut comp = Vec::new();
+        while let Some(w) = st.stack.pop() {
+            st.on_stack[w] = false;
+            comp.push(w);
+            if w == u {
+                break;
+            }
+        }
+        if comp.len() > 1 {
+            comp.reverse();
+            st.cycles.push(comp);
+        }
+    }
+}
+
+pub fn find_scc_cycles(adj: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    let n = adj.len();
+    let mut st = TarjanState {
+        idx: vec![-1; n],
+        low: vec![0; n],
+        on_stack: vec![false; n],
+        stack: Vec::new(),
+        counter: 0,
+        cycles: Vec::new(),
+    };
+    for i in 0..n {
+        if st.idx[i] == -1 {
+            tarjan_dfs(i, adj, &mut st);
+        }
+    }
+    st.cycles
+}
+
+fn compute_transitive_closure_counts(adj: &[Vec<usize>]) -> Vec<usize> {
+    let n = adj.len();
+    let mut counts = vec![1usize; n];
+    let mut seen = vec![0usize; n];
+    let mut stack = Vec::new();
+    for s in 0..n {
+        let epoch = s + 1;
+        seen[s] = epoch;
+        stack.clear();
+        stack.push(s);
+        let mut reached = 0usize;
+        while let Some(u) = stack.pop() {
+            reached += 1;
+            for &v in &adj[u] {
+                if seen[v] != epoch {
+                    seen[v] = epoch;
+                    stack.push(v);
+                }
+            }
+        }
+        counts[s] = reached;
+    }
+    counts
+}
+
+fn collect_stabledeps_violations<'a>(
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+    adj: &[Vec<usize>],
+    afferent: &[usize],
+) -> Vec<(&'a str, &'a str, f64)> {
+    let instab_of = |f: usize| -> f64 {
+        let ce = adj[f].len() as f64;
+        let ca = afferent[f] as f64;
+        if ca + ce > 0.0 { ce / (ca + ce) } else { 0.0 }
+    };
+    let mut violations = Vec::new();
+    for (u, neighbors) in adj.iter().enumerate() {
+        let iu = instab_of(u);
+        let pu = interner.resolve(&ingest.files[u].path);
+        for &v in neighbors {
+            let gap = instab_of(v) - iu;
+            if gap > 0.05 {
+                violations.push((pu, interner.resolve(&ingest.files[v].path), gap));
+            }
+        }
+    }
+    violations.sort_by(|a, b| {
+        b.2.partial_cmp(&a.2)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(b.0))
+    });
+    violations
+}
+
+pub fn compute_deps_report<'a>(
+    ingest: &'a IngestResult,
+    graph: &Graph,
+    interner: &'a Interner,
+) -> crate::serialize::DepsReport<'a> {
+    let f_len = ingest.files.len();
+    let (adj, inc_targets) = collect_import_and_call_adj(ingest, graph, interner);
+    let mut afferent = vec![0usize; f_len];
+    for &v in adj.iter().flatten() {
+        afferent[v] += 1;
+    }
+    let transitive = compute_transitive_closure_counts(&adj);
+    let cycles: Vec<Vec<&'a str>> = find_scc_cycles(&adj)
+        .into_iter()
+        .map(|c| {
+            c.into_iter()
+                .map(|fid| interner.resolve(&ingest.files[fid].path))
+                .collect()
+        })
+        .collect();
+    let violations = collect_stabledeps_violations(ingest, interner, &adj, &afferent);
+
+    let mut rows = Vec::with_capacity(f_len);
+    let mut ccd = 0usize;
+    let mut dep_files = 0usize;
+    for (i, f) in ingest.files.iter().enumerate() {
+        if f.lang.is_dependency_capable() {
+            dep_files += 1;
+            ccd += transitive[i];
+        }
+        rows.push(crate::serialize::DepsFileRow {
+            path: interner.resolve(&f.path),
+            includes: inc_targets[i].len().max(adj[i].len()),
+            efferent: adj[i].len(),
+            afferent: afferent[i],
+            transitive: transitive[i],
+            inc_targets: inc_targets[i].clone(),
+        });
+    }
+    rows.sort_by(|a, b| {
+        (b.transitive + b.afferent)
+            .cmp(&(a.transitive + a.afferent))
+            .then_with(|| a.path.cmp(b.path))
+    });
+    let n = dep_files.max(1) as f64;
+    let acd = ccd as f64 / n;
+    let btree = ((n + 1.0) * (n + 1.0).log2() - n).max(1.0);
+    crate::serialize::DepsReport {
+        corpus_files: f_len,
+        dep_files,
+        ccd,
+        acd,
+        nccd: ccd as f64 / btree,
+        rows,
+        cycles,
+        violations,
+    }
+}
+
 pub fn execute_deps_query<W: Write>(
     root: &str,
     ingest: &IngestResult,
@@ -943,28 +1281,8 @@ pub fn execute_deps_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let mut file_inc = vec![0usize; ingest.files.len()];
-    let mut file_aff = vec![0usize; ingest.files.len()];
-
-    for u in 0..graph.node_count() as NodeId {
-        let uf = ingest.symbols[u as usize].file_id as usize;
-        for (v, _) in graph.callees(u) {
-            let vf = ingest.symbols[v as usize].file_id as usize;
-            if uf != vf && uf < file_inc.len() && vf < file_aff.len() {
-                file_inc[uf] += 1;
-                file_aff[vf] += 1;
-            }
-        }
-    }
-
-    let mut file_deps = Vec::new();
-    for (i, f) in ingest.files.iter().enumerate() {
-        let p = interner.resolve(&f.path);
-        file_deps.push((p, file_inc[i], file_aff[i]));
-    }
-    file_deps.sort_by_key(|a| std::cmp::Reverse(a.1 + a.2));
-
-    crate::serialize::serialize_deps_xml(root, &file_deps, out)
+    let rep = compute_deps_report(ingest, graph, interner);
+    crate::serialize::serialize_deps_report_xml(root, &rep, out)
 }
 
 pub fn deduplicate_batch_legend(raw: &[u8], legend_emitted: &mut bool) -> Vec<u8> {
@@ -1313,7 +1631,7 @@ pub fn execute_retrieval_dispatch<W: Write>(
         );
         crate::serialize::serialize_grep_xml(&val, out)
     } else if let Some(syms) = ret.connect.as_deref() {
-        execute_connect_query(syms, ingest, graph, interner, out)
+        execute_connect_query_in_root(root, syms, ingest, graph, interner, out)
     } else if let Some(pair) = ret.path_between.as_deref() {
         execute_path_query(pair, ingest, graph, interner, out)
     } else if let Some(ex) = ret.exemplar.as_deref() {

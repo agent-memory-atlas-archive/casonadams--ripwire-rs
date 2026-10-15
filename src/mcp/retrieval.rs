@@ -164,6 +164,55 @@ fn build_for_symbol_entry(
     obj
 }
 
+fn compute_for_route_metadata(
+    task: &str,
+    raw_terms: &[&str],
+    scored: &[(f64, &crate::domain::Symbol)],
+    interner: &Interner,
+) -> (String, &'static str, u64, u64) {
+    let exact_hit = raw_terms.len() == 1
+        && scored
+            .first()
+            .is_some_and(|(_, s)| interner.resolve(&s.name).eq_ignore_ascii_case(raw_terms[0]));
+    let route = if exact_hit {
+        format!("name-exact({task})")
+    } else if raw_terms.len() <= 2 && !scored.is_empty() {
+        "subtoken+body:focused".to_string()
+    } else {
+        "subtoken+body:broad".to_string()
+    };
+    let margin_pct = if scored.len() >= 2 && scored[0].0 > 0.0 {
+        (((scored[0].0 - scored[1].0) / scored[0].0) * 100.0).round() as u64
+    } else {
+        u64::from(scored.len() == 1) * 100
+    };
+    let confidence = if exact_hit || margin_pct >= 25 {
+        "high"
+    } else if !scored.is_empty() {
+        "medium"
+    } else {
+        "low"
+    };
+    let matched_terms = raw_terms
+        .iter()
+        .filter(|&&t| {
+            let lower_t = t.to_ascii_lowercase();
+            scored.iter().take(10).any(|(_, s)| {
+                interner
+                    .resolve(&s.name)
+                    .to_ascii_lowercase()
+                    .contains(&lower_t)
+            })
+        })
+        .count();
+    let coverage = if raw_terms.is_empty() {
+        100
+    } else {
+        ((matched_terms * 100) / raw_terms.len()) as u64
+    };
+    (route, confidence, margin_pct, coverage)
+}
+
 pub fn call_for_task_with_options(
     ingest: &IngestResult,
     interner: &Interner,
@@ -212,8 +261,17 @@ pub fn call_for_task_with_options(
         })
         .collect();
 
+    let (route, confidence, margin_pct, coverage) =
+        compute_for_route_metadata(task, &raw_terms, &scored, interner);
+    let est_tokens = (symbols_json.len() * 22 + detail_count * 120 + 180) as u64;
     json!({
         "task": task,
+        "root": opts.root,
+        "route": route,
+        "confidence": confidence,
+        "margin_pct": margin_pct,
+        "coverage": coverage,
+        "est_tokens": est_tokens,
         "symbols": symbols_json,
         "count": symbols_json.len(),
         "detail": detail_count,
@@ -305,28 +363,74 @@ pub fn call_fetch_body_in_root(
 }
 
 /// Execute `exemplar` tool: get top-ranked symbol of a given kind to imitate.
-fn target_kind_from_role(role: &str) -> SymKind {
-    match role {
-        "method" => SymKind::Method,
-        "class" | "cls" => SymKind::Class,
-        "struct" => SymKind::Struct,
-        "interface" | "iface" => SymKind::Interface,
-        "section" | "sec" => SymKind::Section,
-        _ => SymKind::Function,
+fn exact_kind_from_token(role: &str) -> Option<SymKind> {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "fn" | "function" => Some(SymKind::Function),
+        "method" => Some(SymKind::Method),
+        "class" | "cls" => Some(SymKind::Class),
+        "struct" => Some(SymKind::Struct),
+        "interface" | "iface" => Some(SymKind::Interface),
+        "section" | "sec" => Some(SymKind::Section),
+        "var" => Some(SymKind::Var),
+        _ => None,
     }
 }
+
+#[cfg(test)]
+fn target_kind_from_role(role: &str) -> SymKind {
+    exact_kind_from_token(role).unwrap_or(SymKind::Function)
+}
+
+fn filter_exemplar_candidates<'a>(
+    ingest: &'a IngestResult,
+    interner: &Interner,
+    role: &str,
+) -> (Vec<&'a crate::domain::Symbol>, bool) {
+    if let Some(target_kind) = exact_kind_from_token(role) {
+        let cands = ingest
+            .symbols
+            .iter()
+            .filter(|s| s.kind == target_kind && s.end_byte > s.sig_start_byte)
+            .collect();
+        return (cands, false);
+    }
+    let terms: Vec<String> = role
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|w| w.len() >= 2)
+        .map(|w| w.to_ascii_lowercase())
+        .collect();
+    let topical: Vec<&crate::domain::Symbol> = ingest
+        .symbols
+        .iter()
+        .filter(|s| {
+            s.kind != SymKind::Section
+                && s.kind != SymKind::Other
+                && s.end_byte > s.sig_start_byte
+                && {
+                    let name_lower = interner.resolve(&s.name).to_ascii_lowercase();
+                    terms.iter().any(|t| name_lower.contains(t))
+                }
+        })
+        .collect();
+    if !topical.is_empty() {
+        return (topical, false);
+    }
+    let fallback = ingest
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymKind::Function && s.end_byte > s.sig_start_byte)
+        .collect();
+    (fallback, true)
+}
+
 fn select_best_exemplar<'a>(
     ingest: &'a IngestResult,
     interner: &Interner,
     ranks: &[f64],
     graph: Option<&Graph>,
-    target_kind: SymKind,
-) -> Option<(&'a crate::domain::Symbol, usize, usize, f64)> {
-    let valid: Vec<&crate::domain::Symbol> = ingest
-        .symbols
-        .iter()
-        .filter(|s| s.kind == target_kind && s.end_byte > s.sig_start_byte)
-        .collect();
+    role: &str,
+) -> Option<(&'a crate::domain::Symbol, usize, usize, f64, bool)> {
+    let (valid, low_conf) = filter_exemplar_candidates(ingest, interner, role);
     if valid.is_empty() {
         return None;
     }
@@ -357,7 +461,7 @@ fn select_best_exemplar<'a>(
             best = Some((sym, in_deg, r));
         }
     }
-    best.map(|(sym, in_deg, r)| (sym, in_deg, candidate_count, r))
+    best.map(|(sym, in_deg, r)| (sym, in_deg, candidate_count, r, low_conf))
 }
 
 /// Execute `exemplar` tool: get top-ranked symbol of a given kind to imitate.
@@ -379,9 +483,8 @@ pub fn call_exemplar_in_root(
     role: &str,
     graph: Option<&Graph>,
 ) -> Value {
-    let target_kind = target_kind_from_role(role);
-    let Some((sym, in_deg, cand_cnt, rank)) =
-        select_best_exemplar(ingest, interner, ranks, graph, target_kind)
+    let Some((sym, in_deg, cand_cnt, rank, low_conf)) =
+        select_best_exemplar(ingest, interner, ranks, graph, role)
     else {
         return json!({ "error": format!("no exemplar found for role '{role}'") });
     };
@@ -408,7 +511,8 @@ pub fn call_exemplar_in_root(
 
     json!({
         "role": role,
-        "kind": role,
+        "kind": sym.kind.tag(),
+        "low_confidence": usize::from(low_conf),
         "candidates": cand_cnt,
         "name": name,
         "path": file_path,
@@ -416,7 +520,7 @@ pub fn call_exemplar_in_root(
         "in": in_deg,
         "callers": in_deg,
         "ccx": sym.ccx,
-        "tested": if in_deg > 0 { 1 } else { 0 },
+        "tested": usize::from(in_deg > 0),
         "rank": (rank * 10000.0).round() / 10000.0,
         "body": body.unwrap_or_default()
     })

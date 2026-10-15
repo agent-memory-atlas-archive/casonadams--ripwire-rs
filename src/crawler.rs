@@ -168,6 +168,67 @@ pub fn evaluate_candidate(
     })
 }
 
+#[derive(Debug, Default, Clone)]
+pub struct SkippedCensus {
+    pub oversize: Vec<(String, u64, String)>,
+    pub unsupported: Vec<(String, u64, String)>,
+    pub excluded: Vec<(String, u64, String)>,
+    pub unindexed_exts: Vec<(String, usize)>,
+}
+
+fn classify_skipped_entry(
+    entry: &ignore::DirEntry,
+    root: &Path,
+    options: &CrawlerOptions,
+    census: &mut SkippedCensus,
+    ext_counts: &mut std::collections::HashMap<String, usize>,
+) {
+    let path = entry.path();
+    if path.is_dir() {
+        return;
+    }
+    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+    let rel_path = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/");
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if is_path_denylisted(Path::new(&rel_path), &options.custom_excludes) {
+        census.excluded.push((rel_path, size, ext));
+        return;
+    }
+    let lang = resolve_path_lang(path);
+    if lang == Lang::Unknown {
+        if !ext.is_empty() {
+            *ext_counts.entry(ext.clone()).or_default() += 1;
+        }
+        census.unsupported.push((rel_path, size, ext));
+    } else if size > options.max_file_size {
+        census.oversize.push((rel_path, size, ext));
+    }
+}
+
+#[must_use]
+pub fn scan_skipped_census(root: &Path, options: &CrawlerOptions) -> SkippedCensus {
+    let mut census = SkippedCensus::default();
+    let mut ext_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for entry in build_walker(root, options).flatten() {
+        classify_skipped_entry(&entry, root, options, &mut census, &mut ext_counts);
+    }
+    census.oversize.sort_by(|a, b| a.0.cmp(&b.0));
+    census.unsupported.sort_by(|a, b| a.0.cmp(&b.0));
+    census.excluded.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut exts: Vec<(String, usize)> = ext_counts.into_iter().collect();
+    exts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    census.unindexed_exts = exts;
+    census
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

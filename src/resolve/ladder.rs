@@ -139,11 +139,16 @@ pub fn select_precedence_tier(
     }
 
     if let Some(&first) = cands.first() {
-        let first_file = symbols[first as usize].file_id;
-        if cands
-            .iter()
-            .all(|&id| symbols[id as usize].file_id == first_file)
-        {
+        let first_sym = &symbols[first as usize];
+        let first_file = first_sym.file_id;
+        let first_scope = first_sym.scope;
+        if cands.iter().all(|&id| {
+            let sym = &symbols[id as usize];
+            sym.file_id == first_file
+                && (sym.scope == first_scope
+                    || sym.scope == Some(first_sym.name)
+                    || first_scope == Some(sym.name))
+        }) {
             return Some((cands.to_vec(), 0.2));
         }
     }
@@ -153,10 +158,19 @@ pub fn select_precedence_tier(
 /// Resolve a single reference according to the precedence ladder.
 #[must_use]
 fn is_candidate_compatible(sym: &Symbol, r: &Reference) -> bool {
-    if sym.lang == crate::domain::Lang::Sql && matches!(r.role, RefRole::Read | RefRole::Write) {
+    if sym.lang.semantics().is_table_read_write_target()
+        && matches!(r.role, RefRole::Read | RefRole::Write)
+    {
         return true;
     }
-    sym.lang.is_compatible(r.lang) && (!r.arg_count_known || r.arg_count <= sym.params)
+    let arity_ok = !r.arg_count_known
+        || r.arg_count <= sym.params
+        || (sym.params == 0
+            && !matches!(
+                sym.kind,
+                crate::domain::SymKind::Function | crate::domain::SymKind::Method
+            ));
+    sym.lang.is_compatible(r.lang) && arity_ok
 }
 
 pub fn filter_candidates(

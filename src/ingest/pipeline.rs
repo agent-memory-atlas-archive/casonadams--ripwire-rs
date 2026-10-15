@@ -1,6 +1,5 @@
 use super::extract::{FileParseResult, RawDef, RawRef, parse_file_tree};
 use super::registry::LanguageRegistry;
-use super::{astro, markdown, yaml_guard};
 use crate::crawler::CrawledFile;
 use crate::domain::{FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, Reference, Symbol};
 use rayon::prelude::*;
@@ -15,40 +14,12 @@ pub fn parse_file_content(
     lang: Lang,
     rel_path: &str,
 ) -> FileParseResult {
-    if lang == Lang::Markdown {
-        return markdown::extract_markdown(source_bytes, rel_path, language);
+    if let Some(overridden) =
+        lang.semantics()
+            .parse_file_override(source_bytes, rel_path, language, query)
+    {
+        return overridden;
     }
-
-    if lang == Lang::Yaml && yaml_guard::yaml_nests_too_deep(source_bytes) {
-        return FileParseResult::default();
-    }
-
-    if rel_path.ends_with(".astro") {
-        return match astro::extract_astro_frontmatter(source_bytes) {
-            astro::AstroFrontmatter::Ok {
-                start_byte,
-                end_byte,
-                start_row,
-            } => {
-                let sub_bytes = &source_bytes[start_byte..end_byte];
-                let mut res = parse_file_tree(sub_bytes, language, query, Lang::TypeScript);
-                for d in &mut res.defs {
-                    d.line += start_row;
-                    d.start_byte += start_byte;
-                    d.end_byte += start_byte;
-                }
-                for r in &mut res.refs {
-                    r.line += start_row;
-                    r.start_byte += start_byte;
-                }
-                res.line_count = source_bytes.iter().filter(|&&b| b == b'\n').count() as u32 + 1;
-                res.byte_size = source_bytes.len() as u64;
-                res
-            }
-            _ => FileParseResult::default(),
-        };
-    }
-
     parse_file_tree(source_bytes, language, query, lang)
 }
 

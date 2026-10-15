@@ -424,6 +424,187 @@ pub fn serialize_naming_calibration_xml<W: Write>(
     writeln!(out, "</naming-calibration>")
 }
 
+fn extract_module_intents(members: &[(&'static str, &str, &str, u32)]) -> String {
+    const VERBS: &[&str] = &[
+        "create",
+        "make",
+        "get",
+        "parse",
+        "build",
+        "run",
+        "resolve",
+        "serialize",
+        "check",
+        "execute",
+        "compute",
+        "find",
+        "load",
+        "write",
+    ];
+    let mut counts: std::collections::HashMap<&'static str, usize> =
+        std::collections::HashMap::new();
+    for &(_, name, _, _) in members {
+        let lower = name.to_ascii_lowercase();
+        for &v in VERBS {
+            if lower.starts_with(v) {
+                *counts.entry(v).or_default() += 1;
+                break;
+            }
+        }
+    }
+    let mut ranked: Vec<(&'static str, usize)> = counts.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    if ranked.is_empty() {
+        String::new()
+    } else {
+        let tags: Vec<&str> = ranked.into_iter().take(3).map(|(v, _)| v).collect();
+        format!(" `[{}]`", tags.join(", "))
+    }
+}
+
+fn collect_report_bridges<'a>(
+    comms: &[u32],
+    modules: &[crate::serialize::CommunityModule<'a>],
+    ingest: &IngestResult,
+    graph: &Graph,
+) -> Vec<(&'a str, &'a str, usize)> {
+    let label_by_id: std::collections::HashMap<u32, &'a str> =
+        modules.iter().map(|m| (m.id, m.label)).collect();
+    let mut bridge_counts: std::collections::HashMap<(u32, u32), usize> =
+        std::collections::HashMap::new();
+    for u in 0..ingest.symbols.len() {
+        let cu = comms.get(u).copied().unwrap_or(0);
+        for (v, _) in graph.callees(u as u32) {
+            let cv = comms.get(v as usize).copied().unwrap_or(0);
+            if cu != cv {
+                let pair = if cu < cv { (cu, cv) } else { (cv, cu) };
+                *bridge_counts.entry(pair).or_default() += 1;
+            }
+        }
+    }
+    let mut bridges: Vec<((u32, u32), usize)> = bridge_counts.into_iter().collect();
+    bridges.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    bridges
+        .into_iter()
+        .take(8)
+        .map(|((a, b), w)| {
+            (
+                label_by_id.get(&a).copied().unwrap_or("module"),
+                label_by_id.get(&b).copied().unwrap_or("module"),
+                w,
+            )
+        })
+        .collect()
+}
+
+fn write_report_modules_and_bridges<W: Write>(
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let comms = graph.communities();
+    let mut by_comm: std::collections::HashMap<u32, Vec<crate::domain::NodeId>> =
+        std::collections::HashMap::new();
+    for (node, &c) in comms.comm.iter().enumerate() {
+        by_comm.entry(c).or_default().push(node as u32);
+    }
+    let mut comm_ids: Vec<u32> = by_comm
+        .iter()
+        .filter(|(_, nodes)| nodes.len() >= 2)
+        .map(|(&id, _)| id)
+        .collect();
+    comm_ids.sort_by(|a, b| {
+        by_comm[b]
+            .len()
+            .cmp(&by_comm[a].len())
+            .then_with(|| a.cmp(b))
+    });
+    let modules: Vec<crate::serialize::CommunityModule<'_>> = comm_ids
+        .into_iter()
+        .map(|id| crate::cli::build_community_module(id, &by_comm[&id], ingest, interner))
+        .collect();
+    let shown_mods = modules.len().min(12);
+    writeln!(
+        out,
+        "## Modules (call-graph clusters; showing {shown_mods} of {})",
+        modules.len()
+    )?;
+    if modules.is_empty() {
+        writeln!(out, "- (none)\n")?;
+    } else {
+        for m in modules.iter().take(shown_mods) {
+            let intents = extract_module_intents(&m.members);
+            writeln!(
+                out,
+                "- **{}** (`{}`) — {} symbols{intents}",
+                m.label, m.dir, m.size
+            )?;
+        }
+        writeln!(out)?;
+    }
+
+    let bridges = collect_report_bridges(&comms.comm, &modules, ingest, graph);
+    writeln!(
+        out,
+        "## Cross-module bridges (showing {} of {})",
+        bridges.len(),
+        bridges.len()
+    )?;
+    if bridges.is_empty() {
+        writeln!(out, "- (none)\n")?;
+    } else {
+        for (la, lb, w) in bridges {
+            writeln!(out, "- `{la}` ↔ `{lb}` ({w} edges)")?;
+        }
+        writeln!(out)?;
+    }
+    Ok(())
+}
+
+fn write_report_deps_sections<W: Write>(
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let deps = crate::cli::compute_deps_report(ingest, graph, interner);
+    let mut god: Vec<&crate::serialize::DepsFileRow<'_>> =
+        deps.rows.iter().filter(|r| r.afferent > 0).collect();
+    god.sort_by(|a, b| b.afferent.cmp(&a.afferent).then_with(|| a.path.cmp(b.path)));
+    let shown_god = god.len().min(10);
+    writeln!(
+        out,
+        "## God files (most depended-on; showing {shown_god} of {})",
+        god.len()
+    )?;
+    if god.is_empty() {
+        writeln!(out, "- (no include/import edges captured)\n")?;
+    } else {
+        for g in god.iter().take(shown_god) {
+            writeln!(out, "- `{}` — {} dependents", g.path, g.afferent)?;
+        }
+        writeln!(out)?;
+    }
+
+    let shown_cyc = deps.cycles.len().min(6);
+    writeln!(
+        out,
+        "## Dependency cycles (showing {shown_cyc} of {})",
+        deps.cycles.len()
+    )?;
+    if deps.cycles.is_empty() {
+        writeln!(out, "- none (acyclic)\n")?;
+    } else {
+        for cyc in deps.cycles.iter().take(shown_cyc) {
+            let formatted: Vec<String> = cyc.iter().map(|p| format!("`{p}`")).collect();
+            writeln!(out, "- {}", formatted.join(" ↔ "))?;
+        }
+        writeln!(out)?;
+    }
+    Ok(())
+}
+
 pub fn serialize_executive_report_md<W: Write>(
     root: &str,
     ingest: &IngestResult,
@@ -437,6 +618,9 @@ pub fn serialize_executive_report_md<W: Write>(
     writeln!(out, "- **Files Indexed**: {}", ingest.files.len())?;
     writeln!(out, "- **Symbols Extracted**: {}", ingest.symbols.len())?;
     writeln!(out, "- **Call Graph Edges**: {}\n", graph.edge_count())?;
+
+    write_report_modules_and_bridges(ingest, graph, interner, out)?;
+    write_report_deps_sections(ingest, graph, interner, out)?;
 
     let mut order: Vec<usize> = (0..ingest.symbols.len()).collect();
     order.sort_by(|&a, &b| {

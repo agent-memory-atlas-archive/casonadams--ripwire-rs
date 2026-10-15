@@ -262,17 +262,7 @@ fn fnv1a_absorb_token(mut hash: u64, token: &[u8]) -> u64 {
 }
 
 fn uses_hash_comments(lang: Lang) -> bool {
-    matches!(
-        lang,
-        Lang::Python
-            | Lang::Bash
-            | Lang::Ruby
-            | Lang::Toml
-            | Lang::Yaml
-            | Lang::Php
-            | Lang::Elixir
-            | Lang::GDScript
-    )
+    lang.semantics().uses_hash_comments()
 }
 
 /// Zero-allocation scanner returning `(raw_hash, norm_hash, norm_token_ids)`.

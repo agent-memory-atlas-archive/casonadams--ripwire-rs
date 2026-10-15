@@ -136,15 +136,8 @@ pub fn check_symbol_contract(
 
     let is_public = match head_baseline {
         Some(base)
-            if matches!(
-                sym.lang,
-                crate::domain::Lang::Rust
-                    | crate::domain::Lang::Java
-                    | crate::domain::Lang::CSharp
-                    | crate::domain::Lang::Php
-                    | crate::domain::Lang::Kotlin
-                    | crate::domain::Lang::Swift
-            ) =>
+            if sym.lang.semantics().visibility_mode()
+                == crate::languages::VisibilityMode::ExplicitModifier =>
         {
             base.is_public
         }

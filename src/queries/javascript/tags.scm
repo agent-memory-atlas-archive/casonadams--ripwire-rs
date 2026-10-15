@@ -184,3 +184,9 @@
 
 (class_heritage
   (identifier) @name) @reference.extends
+
+(import_statement
+  source: (string) @import.path)
+
+(export_statement
+  source: (string) @import.path)

@@ -7,6 +7,7 @@ pub mod gate;
 pub mod git;
 pub mod graph;
 pub mod ingest;
+pub mod languages;
 pub mod mcp;
 pub mod metrics;
 pub mod navigate;

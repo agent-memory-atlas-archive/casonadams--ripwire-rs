@@ -159,22 +159,7 @@ pub fn execute_slice(
         })
         .or_else(|| ingest.symbols.iter().find(matches_query))
         .ok_or_else(|| format!("symbol not found: {sym_query}"))?;
-    if matches!(
-        symbol.lang,
-        crate::domain::Lang::Bash
-            | crate::domain::Lang::Markdown
-            | crate::domain::Lang::Yaml
-            | crate::domain::Lang::Toml
-            | crate::domain::Lang::Json
-            | crate::domain::Lang::Html
-            | crate::domain::Lang::Css
-            | crate::domain::Lang::Sql
-            | crate::domain::Lang::Proto
-            | crate::domain::Lang::Graphql
-            | crate::domain::Lang::Dockerfile
-            | crate::domain::Lang::Hcl
-    ) || symbol.kind == crate::domain::SymKind::Section
-    {
+    if !symbol.lang.semantics().supports_slice() || symbol.kind == crate::domain::SymKind::Section {
         return Err(format!(
             "--slice: slice not served for {} yet — the def-use classification requires a verified per-grammar local variable AST",
             symbol.lang.tag()

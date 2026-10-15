@@ -550,3 +550,5 @@ ack short-horizon-churn 1000000000000008 10 cid=1000000000000008 now=10 was=0 fa
 ack short-horizon-churn 1000000000000009 5 cid=1000000000000009 now=2 was=0 facet=self p=src/resolve/ladder.rs:150 feat(sql): embedded SQL table reference resolution
 ack short-horizon-churn 1000000000000010 5 cid=1000000000000010 now=2 was=0 facet=self p=src/mcp/server.rs:9 feat(legend): MCP resources and legend posture
 ack short-horizon-churn 1000000000000011 5 cid=1000000000000011 now=2 was=0 facet=self p=src/serialize/writer.rs:232 feat(legend): XmlWriter comment stripping posture
+ack short-horizon-churn 1000000000000012 10 cid=1000000000000012 now=5 was=0 facet=self p=src/gate/affected.rs:180 fix(dirt): resolve all 14 DIRT.md discrepancies and language trait architecture
+ack short-horizon-churn 1000000000000013 10 cid=1000000000000013 now=3 was=0 facet=self p=src/metrics/analysis_lenses.rs:608 fix(dirt): resolve all 14 DIRT.md discrepancies and language trait architecture

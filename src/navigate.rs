@@ -13,8 +13,8 @@ pub struct SymbolNavInfo {
     pub kind: &'static str,
     pub rank: f64,
     pub weight: f32,
+    pub tested: bool,
 }
-
 /// 1-hop neighborhood of a symbol containing both incoming callers and outgoing callees.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct NavNeighborhood {
@@ -101,6 +101,7 @@ pub fn get_symbol_nav_info(
     let path = interner.resolve(&file.path).to_string();
     let rank = ranks.get(id as usize).copied().unwrap_or(0.0);
 
+    let tested = crate::gate::affected::is_test_path(&path);
     Some(SymbolNavInfo {
         id,
         name,
@@ -109,7 +110,61 @@ pub fn get_symbol_nav_info(
         kind: sym.kind.tag(),
         rank,
         weight,
+        tested,
     })
+}
+
+fn seed_tested_nodes(
+    ingest: &IngestResult,
+    interner: &Interner,
+    tested: &mut [bool],
+    queue: &mut VecDeque<NodeId>,
+) {
+    let mut by_name: std::collections::HashMap<lasso::Spur, Vec<NodeId>> =
+        std::collections::HashMap::new();
+    for sym in &ingest.symbols {
+        by_name.entry(sym.name).or_default().push(sym.id);
+        let path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        if crate::gate::affected::is_test_path(path) && !tested[sym.id as usize] {
+            tested[sym.id as usize] = true;
+            queue.push_back(sym.id);
+        }
+    }
+    for r in &ingest.references {
+        let path = interner.resolve(&ingest.files[r.file_id as usize].path);
+        let Some(ids) = by_name
+            .get(&r.callee_name)
+            .filter(|_| crate::gate::affected::is_test_path(path))
+        else {
+            continue;
+        };
+        for &id in ids {
+            if !tested[id as usize] {
+                tested[id as usize] = true;
+                queue.push_back(id);
+            }
+        }
+    }
+}
+
+pub fn compute_tested_node_mask(
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> Vec<bool> {
+    let n = ingest.symbols.len();
+    let mut tested = vec![false; n];
+    let mut queue = VecDeque::new();
+    seed_tested_nodes(ingest, interner, &mut tested, &mut queue);
+    while let Some(curr) = queue.pop_front() {
+        for (callee, _) in graph.callees(curr) {
+            if (callee as usize) < n && !tested[callee as usize] {
+                tested[callee as usize] = true;
+                queue.push_back(callee);
+            }
+        }
+    }
+    tested
 }
 
 /// Compute 1-hop neighborhood (direct callers and callees) for a target symbol.
@@ -121,11 +176,17 @@ pub fn navigate_1hop(
     ranks: &[f64],
     interner: &Interner,
 ) -> Option<NavNeighborhood> {
-    let target = get_symbol_nav_info(sym_id, ingest, ranks, interner, 1.0)?;
+    let tested_mask = compute_tested_node_mask(ingest, graph, interner);
+    let mut target = get_symbol_nav_info(sym_id, ingest, ranks, interner, 1.0)?;
+    target.tested |= tested_mask.get(sym_id as usize).copied().unwrap_or(false);
 
     let mut callers = Vec::new();
     for (caller_id, weight) in graph.callers(sym_id) {
-        if let Some(info) = get_symbol_nav_info(caller_id, ingest, ranks, interner, weight) {
+        if let Some(mut info) = get_symbol_nav_info(caller_id, ingest, ranks, interner, weight) {
+            info.tested |= tested_mask
+                .get(caller_id as usize)
+                .copied()
+                .unwrap_or(false);
             callers.push(info);
         }
     }
@@ -133,7 +194,11 @@ pub fn navigate_1hop(
 
     let mut callees = Vec::new();
     for (callee_id, weight) in graph.callees(sym_id) {
-        if let Some(info) = get_symbol_nav_info(callee_id, ingest, ranks, interner, weight) {
+        if let Some(mut info) = get_symbol_nav_info(callee_id, ingest, ranks, interner, weight) {
+            info.tested |= tested_mask
+                .get(callee_id as usize)
+                .copied()
+                .unwrap_or(false);
             callees.push(info);
         }
     }
@@ -155,8 +220,10 @@ pub fn navigate_1hop_multi(
     ranks: &[f64],
     interner: &Interner,
 ) -> Option<NavNeighborhood> {
+    let tested_mask = compute_tested_node_mask(ingest, graph, interner);
     let &first_id = sym_ids.first()?;
-    let target = get_symbol_nav_info(first_id, ingest, ranks, interner, 1.0)?;
+    let mut target = get_symbol_nav_info(first_id, ingest, ranks, interner, 1.0)?;
+    target.tested |= tested_mask.get(first_id as usize).copied().unwrap_or(false);
     let mut seen_callers = HashSet::new();
     let mut callers = Vec::new();
     let mut seen_callees = HashSet::new();
@@ -165,15 +232,25 @@ pub fn navigate_1hop_multi(
     for &sym_id in sym_ids {
         for (caller_id, weight) in graph.callers(sym_id) {
             if seen_callers.insert(caller_id)
-                && let Some(info) = get_symbol_nav_info(caller_id, ingest, ranks, interner, weight)
+                && let Some(mut info) =
+                    get_symbol_nav_info(caller_id, ingest, ranks, interner, weight)
             {
+                info.tested |= tested_mask
+                    .get(caller_id as usize)
+                    .copied()
+                    .unwrap_or(false);
                 callers.push(info);
             }
         }
         for (callee_id, weight) in graph.callees(sym_id) {
             if seen_callees.insert(callee_id)
-                && let Some(info) = get_symbol_nav_info(callee_id, ingest, ranks, interner, weight)
+                && let Some(mut info) =
+                    get_symbol_nav_info(callee_id, ingest, ranks, interner, weight)
             {
+                info.tested |= tested_mask
+                    .get(callee_id as usize)
+                    .copied()
+                    .unwrap_or(false);
                 callees.push(info);
             }
         }
@@ -269,14 +346,32 @@ pub fn transitive_impact_multi(
     results
 }
 
+fn format_nav_page_attrs(shown: usize, total: usize) -> String {
+    if shown < total {
+        format!(
+            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+        )
+    } else {
+        format!(" shown=\"{shown}\" capped=\"0\"")
+    }
+}
+
 fn write_nav_items<W: Write>(
     tag: &'static str,
+    root: &str,
     of: &str,
     items: &[SymbolNavInfo],
     next_flag: &'static str,
     out: &mut W,
 ) -> io::Result<()> {
     let count = items.len();
+    let shown = count.min(40);
+    let page_attrs = format_nav_page_attrs(shown, count);
+    let hop_tested = items
+        .iter()
+        .filter(|it| it.tested || crate::gate::affected::is_test_path(&it.path))
+        .count();
+    let hop_untested = count.saturating_sub(hop_tested);
     let via_attr = if tag == "callees" {
         " via=\"name\""
     } else {
@@ -284,12 +379,17 @@ fn write_nav_items<W: Write>(
     };
     write!(
         out,
-        "<!-- ripwire {tag} schema=ripwire.{tag}/v1: 1-hop {tag} of of=. -->\n<{tag} schema=\"ripwire.{tag}/v1\" of=\"{of}\" defs=\"1\" count=\"{count}\" root=\".\" hop_tested=\"0\" hop_untested=\"{count}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" next=\"{next_flag}={of}\">",
+        "<!-- ripwire {tag} schema=ripwire.{tag}/v1: 1-hop {tag} of of=. -->\n<{tag} schema=\"ripwire.{tag}/v1\" of=\"{of}\" defs=\"1\" count=\"{count}\" root=\"{root}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{page_attrs} graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" next=\"{next_flag}={of}\">",
     )?;
-    for it in items {
+    for it in items.iter().take(shown) {
+        let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
+            " tested=\"1\""
+        } else {
+            ""
+        };
         write!(
             out,
-            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{via_attr}/>",
+            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{tested_attr}{via_attr}/>",
             it.kind, it.name, it.path, it.line
         )?;
     }
@@ -302,7 +402,16 @@ pub fn serialize_callers_xml<W: Write>(
     callers: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    write_nav_items("callers", sym_name, callers, "--uses", out)
+    serialize_callers_in_root_xml(".", sym_name, callers, out)
+}
+
+pub fn serialize_callers_in_root_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    callers: &[SymbolNavInfo],
+    out: &mut W,
+) -> io::Result<()> {
+    write_nav_items("callers", root, sym_name, callers, "--uses", out)
 }
 
 /// Serialize direct callees to Ripwire-compatible XML.
@@ -311,11 +420,29 @@ pub fn serialize_callees_xml<W: Write>(
     callees: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    write_nav_items("callees", sym_name, callees, "--expand", out)
+    serialize_callees_in_root_xml(".", sym_name, callees, out)
+}
+
+pub fn serialize_callees_in_root_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    callees: &[SymbolNavInfo],
+    out: &mut W,
+) -> io::Result<()> {
+    write_nav_items("callees", root, sym_name, callees, "--expand", out)
 }
 
 /// Serialize transitive impact blast radius to Ripwire-compatible XML.
 pub fn serialize_impact_xml<W: Write>(
+    sym_name: &str,
+    nodes: &[ImpactNode],
+    out: &mut W,
+) -> io::Result<()> {
+    serialize_impact_in_root_xml(".", sym_name, nodes, out)
+}
+
+pub fn serialize_impact_in_root_xml<W: Write>(
+    root: &str,
     sym_name: &str,
     nodes: &[ImpactNode],
     out: &mut W,
@@ -335,7 +462,7 @@ pub fn serialize_impact_xml<W: Write>(
         .join(",");
     write!(
         out,
-        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" by_depth=\"{by_depth}\" importers=\"1\" shown_importers=\"1\" importers_capped=\"0\" radius_tested=\"0\" radius_untested=\"{reaches}\" root=\".\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" pr_iters=\"44\" next=\"--safe-delete={sym_name}\">",
+        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" by_depth=\"{by_depth}\" importers=\"1\" shown_importers=\"1\" importers_capped=\"0\" radius_tested=\"0\" radius_untested=\"{reaches}\" root=\"{root}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" pr_iters=\"44\" next=\"--safe-delete={sym_name}\">",
     )?;
     for n in nodes.iter().take(shown) {
         write!(
@@ -387,6 +514,16 @@ pub fn serialize_uses_xml<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
+    serialize_uses_in_root_xml(".", sym_name, ingest, interner, out)
+}
+
+pub fn serialize_uses_in_root_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
     let mut sites = Vec::new();
     for r in &ingest.references {
         if interner.resolve(&r.callee_name) == sym_name {
@@ -407,12 +544,14 @@ pub fn serialize_uses_xml<W: Write>(
             sites.push((r.role.tag(), file_path, r.line, enclosing));
         }
     }
+    let total = sites.len();
+    let shown = total.min(40);
+    let page_attrs = format_nav_page_attrs(shown, total);
     writeln!(
         out,
-        "<!-- ripwire uses schema=ripwire.uses/v1: resolvable use-sites of of=. -->\n<uses schema=\"ripwire.uses/v1\" of=\"{sym_name}\" defs=\"1\" external=\"0\" count=\"{}\" root=\".\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
-        sites.len()
+        "<!-- ripwire uses schema=ripwire.uses/v1: resolvable use-sites of of=. -->\n<uses schema=\"ripwire.uses/v1\" of=\"{sym_name}\" defs=\"1\" external=\"0\" count=\"{total}\" root=\"{root}\"{page_attrs} graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
     )?;
-    for (role, file, line, enc) in sites {
+    for (role, file, line, enc) in sites.into_iter().take(shown) {
         if enc.is_empty() {
             writeln!(out, "  <u role=\"{}\" p=\"{}:{}\"/>", role, file, line)?;
         } else {

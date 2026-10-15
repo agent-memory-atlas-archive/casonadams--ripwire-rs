@@ -104,3 +104,6 @@
 
 (impl_item
     trait: (type_identifier) @name) @reference.implementation
+
+(use_declaration
+    argument: (_) @import.path)

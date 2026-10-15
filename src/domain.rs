@@ -252,68 +252,12 @@ impl Lang {
     }
     /// True if these two languages are compatible for cross-symbol resolution.
     pub fn is_compatible(self, other: Self) -> bool {
-        if self == other {
-            return true;
-        }
-        let is_c_family = |l| {
-            matches!(
-                l,
-                Self::C | Self::Cpp | Self::Cuda | Self::Metal | Self::ObjC
-            )
-        };
-        if is_c_family(self) && is_c_family(other) {
-            return true;
-        }
-        matches!(
-            (self, other),
-            (Self::TypeScript, Self::JavaScript)
-                | (Self::JavaScript, Self::TypeScript)
-                | (Self::Java, Self::Kotlin)
-                | (Self::Kotlin, Self::Java)
-                | (Self::Java, Self::Scala)
-                | (Self::Scala, Self::Java)
-                | (Self::Elixir, Self::Erlang)
-                | (Self::Erlang, Self::Elixir)
-                | (Self::Html, Self::Css)
-                | (Self::Css, Self::Html)
-        )
+        self == other || self.semantics().dialect_group() == other.semantics().dialect_group()
     }
     /// True if this language has syntax-backed dependency / import capability.
     #[must_use]
     pub fn is_dependency_capable(self) -> bool {
-        matches!(
-            self,
-            Self::Rust
-                | Self::TypeScript
-                | Self::JavaScript
-                | Self::Python
-                | Self::Go
-                | Self::C
-                | Self::Cpp
-                | Self::Cuda
-                | Self::Metal
-                | Self::Java
-                | Self::CSharp
-                | Self::Swift
-                | Self::Bash
-                | Self::Ruby
-                | Self::Php
-                | Self::Lua
-                | Self::Elixir
-                | Self::Dart
-                | Self::Kotlin
-                | Self::Zig
-                | Self::Solidity
-                | Self::Hcl
-                | Self::Scala
-                | Self::Erlang
-                | Self::Html
-                | Self::Css
-                | Self::Sql
-                | Self::Proto
-                | Self::Graphql
-                | Self::ObjC
-        )
+        self.semantics().is_dependency_capable()
     }
     /// True if both languages are dependency capable and share dialect compatibility.
     #[must_use]

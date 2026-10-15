@@ -71,35 +71,113 @@ fn check_word_drift(
     }
 }
 
+fn is_code_shaped_ident(sym: &str) -> bool {
+    let bytes = sym.as_bytes();
+    let has_underscore = bytes.contains(&b'_');
+    let camel_seam = bytes
+        .windows(2)
+        .any(|w| w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase());
+    let k_const = bytes.len() > 1 && bytes[0] == b'k' && bytes[1].is_ascii_uppercase();
+    has_underscore || camel_seam || k_const
+}
+
+fn is_language_builtin_ident(sym: &str) -> bool {
+    matches!(
+        sym,
+        "AbortController"
+            | "AggregateError"
+            | "ArrayBuffer"
+            | "AsyncFunction"
+            | "BigInt64Array"
+            | "BigUint64Array"
+            | "DataView"
+            | "EvalError"
+            | "FinalizationRegistry"
+            | "Float32Array"
+            | "Float64Array"
+            | "Int16Array"
+            | "Int32Array"
+            | "Int8Array"
+            | "RangeError"
+            | "ReferenceError"
+            | "SharedArrayBuffer"
+            | "SyntaxError"
+            | "TextDecoder"
+            | "TextEncoder"
+            | "TypeError"
+            | "URIError"
+            | "URLSearchParams"
+            | "Uint16Array"
+            | "Uint32Array"
+            | "Uint8Array"
+            | "Uint8ClampedArray"
+            | "WeakMap"
+            | "WeakRef"
+            | "WeakSet"
+            | "clearInterval"
+            | "clearTimeout"
+            | "decodeURIComponent"
+            | "encodeURIComponent"
+            | "globalThis"
+            | "queueMicrotask"
+            | "setInterval"
+            | "setTimeout"
+            | "structuredClone"
+            | "ValueError"
+            | "RuntimeError"
+            | "KeyError"
+            | "IndexError"
+            | "OSError"
+            | "AttributeError"
+            | "NotImplementedError"
+            | "FileNotFoundError"
+            | "PermissionError"
+            | "TimeoutError"
+            | "ConnectionError"
+            | "ImportError"
+            | "AssertionError"
+    )
+}
+
 fn is_candidate_symbol_anchor(span: &str) -> Option<&str> {
-    let sym = span.strip_suffix("()").unwrap_or(span);
-    if sym.len() < 4
-        || sym.contains('/')
-        || sym.contains('.')
-        || sym.contains('-')
-        || sym.contains(' ')
-        || sym.contains('=')
-        || sym.contains(':')
-        || sym.starts_with('@')
-        || !sym.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    let trimmed = span.trim();
+    let had_parens = trimmed.ends_with("()");
+    let raw = trimmed.strip_suffix("()").unwrap_or(trimmed);
+    if raw.contains('/')
+        || raw.contains(' ')
+        || raw.contains('=')
+        || raw.contains('-')
+        || raw.starts_with('@')
     {
         return None;
     }
-    let has_lower = sym.chars().any(|c| c.is_ascii_lowercase());
-    let has_upper_or_under = sym.chars().any(|c| c.is_ascii_uppercase() || c == '_');
-    if span.ends_with("()") || (has_lower && has_upper_or_under) {
+    let sym = raw
+        .rsplit("::")
+        .next()
+        .unwrap_or(raw)
+        .rsplit('.')
+        .next()
+        .unwrap_or(raw);
+    let valid_ident = sym.len() >= 4
+        && !is_language_builtin_ident(sym)
+        && sym
+            .bytes()
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && sym.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    if valid_ident && (had_parens || is_code_shaped_ident(sym)) {
         Some(sym)
     } else {
         None
     }
 }
 
-fn check_backtick_anchors(
-    line: &str,
-    doc_path: &str,
+fn collect_line_backtick_candidates<'a>(
+    line: &'a str,
     doc_line: usize,
     sym_set: &std::collections::HashSet<&str>,
-    drift_items: &mut Vec<Value>,
+    resolving_lines: &mut Vec<usize>,
+    pending_missing: &mut Vec<(usize, &'a str, bool)>,
 ) {
     if sym_set.is_empty() {
         return;
@@ -111,16 +189,14 @@ fn check_backtick_anchors(
             break;
         };
         let span = &after_open[..end];
-        if let Some(sym) = is_candidate_symbol_anchor(span)
-            && !sym_set.contains(sym)
-        {
-            drift_items.push(json!({
-                "doc": doc_path,
-                "line": doc_line,
-                "doc_line": doc_line,
-                "referenced": sym,
-                "why": "missing-symbol"
-            }));
+        if let Some(sym) = is_candidate_symbol_anchor(span) {
+            if sym_set.contains(sym) {
+                if resolving_lines.last().copied() != Some(doc_line) {
+                    resolving_lines.push(doc_line);
+                }
+            } else {
+                pending_missing.push((doc_line, sym, span.trim().ends_with("()")));
+            }
         }
         rest = &after_open[end + 1..];
     }
@@ -131,6 +207,26 @@ pub fn call_doc_drift(ingest: &IngestResult, interner: &Interner) -> Value {
     call_doc_drift_in_root(".", ingest, interner)
 }
 
+fn flush_corroborated_missing(
+    doc_path: &str,
+    resolving_lines: &[usize],
+    pending_missing: Vec<(usize, &str, bool)>,
+    drift_items: &mut Vec<Value>,
+) {
+    for (doc_line, sym, had_parens) in pending_missing {
+        if had_parens || resolving_lines.iter().any(|&r| r.abs_diff(doc_line) <= 5) {
+            drift_items.push(json!({
+                "doc": doc_path,
+                "line": doc_line,
+                "doc_line": doc_line,
+                "kind": "symbol",
+                "referenced": sym,
+                "why": "undefined"
+            }));
+        }
+    }
+}
+
 fn scan_doc_text_for_drift(
     text: &str,
     doc_path: &str,
@@ -139,8 +235,11 @@ fn scan_doc_text_for_drift(
     drift_items: &mut Vec<Value>,
 ) {
     let mut in_code_fence = false;
+    let mut resolving_lines = Vec::new();
+    let mut pending_missing = Vec::new();
     for (line_idx, line) in text.lines().enumerate() {
-        if line.trim_start().starts_with("```") {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
             in_code_fence = !in_code_fence;
             continue;
         }
@@ -153,8 +252,15 @@ fn scan_doc_text_for_drift(
                 drift_items.push(item);
             }
         }
-        check_backtick_anchors(line, doc_path, doc_line, sym_set, drift_items);
+        collect_line_backtick_candidates(
+            line,
+            doc_line,
+            sym_set,
+            &mut resolving_lines,
+            &mut pending_missing,
+        );
     }
+    flush_corroborated_missing(doc_path, &resolving_lines, pending_missing, drift_items);
 }
 
 pub fn call_doc_drift_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
@@ -183,6 +289,94 @@ fn enrich_drift_item_history(root: &str, item: &mut Value, head_sha: &str) {
     }
 }
 
+fn build_known_code_ident_set<'a>(
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+) -> std::collections::HashSet<&'a str> {
+    let mut sym_set: std::collections::HashSet<&str> = ingest
+        .symbols
+        .iter()
+        .filter(|s| s.kind != crate::domain::SymKind::Section)
+        .map(|s| interner.resolve(&s.name))
+        .collect();
+    for sc in ingest.symbols.iter().filter_map(|s| s.scope.as_ref()) {
+        sym_set.insert(interner.resolve(sc));
+    }
+    for r in ingest
+        .references
+        .iter()
+        .filter(|r| !r.lang.semantics().is_prose_document())
+    {
+        sym_set.insert(interner.resolve(&r.callee_name));
+        if let Some(q) = &r.qualifier {
+            sym_set.insert(interner.resolve(q));
+        }
+    }
+    sym_set
+}
+
+fn collect_file_wanted_tokens(
+    bytes: &[u8],
+    wants_first: &[bool; 256],
+    wanted: &std::collections::HashSet<String>,
+) -> Vec<String> {
+    let mut found = Vec::new();
+    for tok in bytes.split(|&b| !b.is_ascii_alphanumeric() && b != b'_') {
+        if tok.len() >= 4
+            && wants_first[tok[0] as usize]
+            && let Ok(s) = std::str::from_utf8(tok)
+            && wanted.contains(s)
+        {
+            found.push(s.to_string());
+        }
+    }
+    found
+}
+
+fn filter_present_in_code_drift(
+    root_path: &std::path::Path,
+    ingest: &IngestResult,
+    interner: &Interner,
+    drift_items: &mut Vec<Value>,
+) {
+    use rayon::prelude::*;
+    let wanted: std::collections::HashSet<String> = drift_items
+        .iter()
+        .filter(|d| d["kind"].as_str() == Some("symbol"))
+        .filter_map(|d| d["referenced"].as_str().map(str::to_string))
+        .collect();
+    if wanted.is_empty() {
+        return;
+    }
+    let mut wants_first = [false; 256];
+    for w in &wanted {
+        if let Some(&b) = w.as_bytes().first() {
+            wants_first[b as usize] = true;
+        }
+    }
+    let found_in_code: std::collections::HashSet<String> = ingest
+        .files
+        .par_iter()
+        .filter(|f| !f.lang.semantics().is_prose_document())
+        .flat_map_iter(|f| {
+            let rel = interner.resolve(&f.path);
+            match fs::read(root_path.join(rel)).or_else(|_| fs::read(rel)) {
+                Ok(bytes) => collect_file_wanted_tokens(&bytes, &wants_first, &wanted),
+                Err(_) => Vec::new(),
+            }
+        })
+        .collect();
+    drift_items.retain(|d| {
+        if d["kind"].as_str() == Some("symbol")
+            && let Some(sym) = d["referenced"].as_str()
+        {
+            !found_in_code.contains(sym)
+        } else {
+            true
+        }
+    });
+}
+
 pub fn call_doc_drift_with_history(
     root: &str,
     ingest: &IngestResult,
@@ -195,12 +389,7 @@ pub fn call_doc_drift_with_history(
         .iter()
         .map(|f| (interner.resolve(&f.path), f.line_count))
         .collect();
-    let sym_set: std::collections::HashSet<&str> = ingest
-        .symbols
-        .iter()
-        .filter(|s| s.kind != crate::domain::SymKind::Section)
-        .map(|s| interner.resolve(&s.name))
-        .collect();
+    let sym_set = build_known_code_ident_set(ingest, interner);
     let root_path = std::path::Path::new(root);
 
     for file in &ingest.files {
@@ -212,6 +401,7 @@ pub fn call_doc_drift_with_history(
             scan_doc_text_for_drift(&text, doc_path, &file_map, &sym_set, &mut drift_items);
         }
     }
+    filter_present_in_code_drift(root_path, ingest, interner, &mut drift_items);
     if with_history {
         let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
         for item in &mut drift_items {
@@ -220,6 +410,7 @@ pub fn call_doc_drift_with_history(
     }
 
     json!({
+        "root": root,
         "drift_count": drift_items.len(),
         "drift": drift_items
     })

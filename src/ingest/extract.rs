@@ -142,10 +142,15 @@ fn extract_node_scope(
 ) -> Option<String> {
     match parent.kind() {
         "impl_item" => extract_impl_scope(parent, source_bytes),
-        "mod_item" | "trait_item" | "class_declaration" | "class_definition"
-        | "struct_specifier" | "object_declaration" | "companion_object" => {
-            extract_named_container_scope(parent, name_node, source_bytes)
-        }
+        "mod_item"
+        | "trait_item"
+        | "class_declaration"
+        | "abstract_class_declaration"
+        | "interface_declaration"
+        | "class_definition"
+        | "struct_specifier"
+        | "object_declaration"
+        | "companion_object" => extract_named_container_scope(parent, name_node, source_bytes),
         _ => None,
     }
 }
@@ -215,20 +220,6 @@ fn count_call_arguments(name_node: tree_sitter::Node<'_>) -> (u16, bool) {
     (0, false)
 }
 
-fn dart_following_body(node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
-    let mut sib = node.next_sibling();
-    while let Some(s) = sib {
-        if s.kind() == "function_body" {
-            return Some(s);
-        }
-        if s.is_named() {
-            break;
-        }
-        sib = s.next_sibling();
-    }
-    None
-}
-
 pub fn elixir_arguments<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
     (0..node.named_child_count())
         .filter_map(|i| node.named_child(i))
@@ -270,7 +261,7 @@ fn count_non_comment_args(args: tree_sitter::Node<'_>) -> u16 {
     count
 }
 
-fn elixir_param_count(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> u16 {
+pub fn elixir_param_count(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> u16 {
     let Some(mut head) = elixir_first_arg(def_node) else {
         return 0;
     };
@@ -401,66 +392,6 @@ fn is_gated_def_allowed(
     }
 }
 
-fn find_enclosing_definition_node(node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
-    let mut curr = node;
-    while let Some(parent) = curr.parent() {
-        let p = parent.kind();
-        if matches!(
-            p,
-            "function_definition"
-                | "method_definition"
-                | "constructor_definition"
-                | "destructor_definition"
-        ) {
-            return Some(parent);
-        }
-        curr = parent;
-    }
-    None
-}
-
-fn resolve_def_body_and_end<'a>(
-    def_node: Option<tree_sitter::Node<'a>>,
-    lang: Lang,
-    default_end: usize,
-) -> (Option<tree_sitter::Node<'a>>, usize) {
-    let Some(dn) = def_node else {
-        return (None, default_end);
-    };
-    if lang == Lang::Dart {
-        if let Some(body) = dart_following_body(dn) {
-            return (Some(body), body.end_byte());
-        }
-    } else if let Some(parent) = find_enclosing_definition_node(dn) {
-        return (Some(parent), parent.end_byte());
-    }
-    (Some(dn), default_end)
-}
-
-fn resolve_def_params_and_name(
-    ext: &MatchExtract<'_>,
-    source_bytes: &[u8],
-    lang: Lang,
-    kind: SymKind,
-    orig_name: &str,
-) -> (u16, String) {
-    let params = if lang == Lang::Elixir {
-        ext.def_node
-            .map(|n| elixir_param_count(n, source_bytes))
-            .unwrap_or(0)
-    } else {
-        ext.def_node
-            .map(crate::gate::contract::extract_param_count)
-            .unwrap_or(0)
-    };
-    let name = if lang == Lang::Elixir && kind == SymKind::Function {
-        format!("{orig_name}/{params}")
-    } else {
-        orig_name.to_string()
-    };
-    (params, name)
-}
-
 fn find_def_body_start(node: tree_sitter::Node<'_>) -> usize {
     if matches!(
         node.kind(),
@@ -514,7 +445,7 @@ fn record_def_item(
         .name_node
         .and_then(|n| find_enclosing_scope(n, source_bytes));
 
-    let (body_node, end) = resolve_def_body_and_end(ext.def_node, lang, end);
+    let (body_node, end) = lang.semantics().resolve_def_body_and_end(ext.def_node, end);
     let body_byte = body_node.map_or(0, find_def_body_start);
     let start_row = line.saturating_sub(1);
     let end_row = body_node.map_or(start_row, |n| n.end_position().row as u32);
@@ -526,7 +457,9 @@ fn record_def_item(
     } else {
         crate::metrics::ComplexityMetrics::default()
     };
-    let (params, name) = resolve_def_params_and_name(ext, source_bytes, lang, kind, orig_name);
+    let (params, name) =
+        lang.semantics()
+            .resolve_def_params_and_name(ext.def_node, source_bytes, kind, orig_name);
     defs.push(RawDef {
         name,
         scope,
@@ -541,10 +474,18 @@ fn record_def_item(
     });
 }
 
-fn record_ref_item(ext: &MatchExtract<'_>, source_bytes: &[u8], refs: &mut Vec<RawRef>) {
+fn record_ref_item(
+    ext: &MatchExtract<'_>,
+    source_bytes: &[u8],
+    lang: Lang,
+    refs: &mut Vec<RawRef>,
+) {
     let (Some(name), Some((role, start, line))) = (&ext.name, ext.r#ref) else {
         return;
     };
+    if role == RefRole::Call && lang.semantics().should_ignore_call(ext.name_node, name) {
+        return;
+    }
 
     let qualifier = ext.name_node.and_then(|n| {
         if role == RefRole::Extends {
@@ -579,7 +520,7 @@ fn record_extracted_item(
     if ext.def.is_some() {
         record_def_item(&ext, source_bytes, lang, defs);
     } else if ext.r#ref.is_some() {
-        record_ref_item(&ext, source_bytes, refs);
+        record_ref_item(&ext, source_bytes, lang, refs);
     }
 }
 const SQL_DISALLOWED_TARGETS: &[&str] = &[
@@ -740,7 +681,7 @@ pub fn parse_file_tree(
                 record_extracted_item(ext, source_bytes, lang, &mut defs, &mut refs);
             }
         }
-        if lang != Lang::Sql && lang != Lang::Markdown && lang != Lang::Json && lang != Lang::Yaml {
+        if lang.semantics().supports_embedded_sql() {
             extract_embedded_sql_refs(tree.root_node(), source_bytes, &mut refs);
         }
 

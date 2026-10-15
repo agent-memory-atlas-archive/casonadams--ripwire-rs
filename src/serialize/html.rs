@@ -57,18 +57,7 @@ pub const COMMUNITY_COLORS: &[&str] = &[
 /// Language fill colors.
 #[must_use]
 pub fn lang_color(lang: Lang) -> &'static str {
-    const COLORS: [&str; 25] = [
-        "#dea584", "#3178c6", "#f1e05a", "#3572a5", "#00add8", "#555555", "#f34b7d", "#3a87ad",
-        "#3a87ad", "#b07219", "#178600", "#f05138", "#89e051", "#701516", "#4f5d95", "#000080",
-        "#6e4a7e", "#00b4ab", "#a97bff", "#355570", "#292929", "#9c4221", "#cb171e", "#083fa1",
-        "#888888",
-    ];
-    let idx = lang as usize;
-    if idx < COLORS.len() {
-        COLORS[idx]
-    } else {
-        "#888888"
-    }
+    lang.semantics().display_color()
 }
 
 #[must_use]

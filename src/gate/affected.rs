@@ -135,6 +135,48 @@ fn resolve_spec_seeds(
     }
 }
 
+fn collect_module_scope_test_callers(
+    node_hops: &HashMap<NodeId, u32>,
+    ingest: &IngestResult,
+    interner: &Interner,
+    test_hops: &mut HashMap<String, u32>,
+) {
+    let mut visited_by_name: HashMap<lasso::Spur, (u32, crate::domain::Lang)> = HashMap::new();
+    for (&nid, &hops) in node_hops {
+        if let Some(sym) = ingest.symbols.get(nid as usize) {
+            visited_by_name
+                .entry(sym.name)
+                .and_modify(|e| {
+                    if hops < e.0 {
+                        *e = (hops, sym.lang);
+                    }
+                })
+                .or_insert((hops, sym.lang));
+        }
+    }
+    for r in &ingest.references {
+        if r.from_symbol != crate::domain::NO_NODE {
+            continue;
+        }
+        let Some(&(d, sym_lang)) = visited_by_name.get(&r.callee_name) else {
+            continue;
+        };
+        if !sym_lang.is_compatible(r.lang) {
+            continue;
+        }
+        if let Some(f) = ingest.files.get(r.file_id as usize) {
+            let file_path = interner.resolve(&f.path);
+            if is_test_path(file_path) {
+                let h = d + 1;
+                test_hops
+                    .entry(file_path.to_string())
+                    .and_modify(|cur| *cur = (*cur).min(h))
+                    .or_insert(h);
+            }
+        }
+    }
+}
+
 fn traverse_reverse_callers(
     seed_nodes: &[NodeId],
     graph: &Graph,
@@ -142,17 +184,18 @@ fn traverse_reverse_callers(
     interner: &Interner,
 ) -> (HashSet<NodeId>, HashMap<String, u32>) {
     let mut visited: HashSet<NodeId> = HashSet::new();
+    let mut node_hops: HashMap<NodeId, u32> = HashMap::new();
     let mut queue: VecDeque<(NodeId, u32)> = VecDeque::new();
     let mut test_hops: HashMap<String, u32> = HashMap::new();
 
     for &node in seed_nodes {
         visited.insert(node);
+        node_hops.insert(node, 0);
         queue.push_back((node, 0));
     }
 
     while let Some((curr, hops)) = queue.pop_front() {
-        if (curr as usize) < ingest.symbols.len() {
-            let sym = &ingest.symbols[curr as usize];
+        if let Some(sym) = ingest.symbols.get(curr as usize) {
             let file_path = interner
                 .resolve(&ingest.files[sym.file_id as usize].path)
                 .to_string();
@@ -167,11 +210,13 @@ fn traverse_reverse_callers(
 
         for (caller, _) in graph.callers(curr) {
             if visited.insert(caller) {
+                node_hops.insert(caller, hops + 1);
                 queue.push_back((caller, hops + 1));
             }
         }
     }
 
+    collect_module_scope_test_callers(&node_hops, ingest, interner, &mut test_hops);
     (visited, test_hops)
 }
 

@@ -210,5 +210,28 @@
 (implements_clause
   (type_identifier) @name) @reference.implementation
 
+(implements_clause
+  (generic_type
+    name: (type_identifier) @name)) @reference.implementation
+
+(implements_clause
+  (nested_type_identifier
+    name: (type_identifier) @name)) @reference.implementation
+
+(implements_clause
+  (generic_type
+    name: (nested_type_identifier
+      name: (type_identifier) @name))) @reference.implementation
+
 (extends_type_clause
   type: (type_identifier) @name) @reference.extends
+
+(extends_type_clause
+  type: (generic_type
+    name: (type_identifier) @name)) @reference.extends
+
+(import_statement
+  source: (string) @import.path)
+
+(export_statement
+  source: (string) @import.path)

@@ -90,17 +90,7 @@ fn resolve_head_visibility(
     bytes: &[u8],
     lang: Lang,
 ) -> bool {
-    if matches!(
-        lang,
-        Lang::Dart
-            | Lang::Python
-            | Lang::Ruby
-            | Lang::Elixir
-            | Lang::Lua
-            | Lang::Bash
-            | Lang::GDScript
-            | Lang::Go
-    ) {
+    if lang.semantics().visibility_mode() == crate::languages::VisibilityMode::ByNameConvention {
         return name.is_none_or(|n| is_symbol_name_public(n, lang));
     }
     def_node.is_none_or(|dn| check_node_visibility(dn, bytes, lang))
@@ -181,17 +171,28 @@ fn is_optional_param_decl(kind: &str) -> bool {
     kind.contains("parameter") || kind == "constructor_param"
 }
 
+fn is_variadic_param_kind(kind: &str) -> bool {
+    kind.contains("rest")
+        || kind.contains("variadic")
+        || kind.contains("splat")
+        || kind == "spread_element"
+}
+
 fn count_single_param(param: tree_sitter::Node<'_>, is_kt: bool) -> u16 {
-    if param.kind() == "optional_formal_parameters" {
+    let kind = param.kind();
+    if is_variadic_param_kind(kind) {
+        return 64;
+    }
+    if kind == "optional_formal_parameters" {
         return (0..param.named_child_count())
             .filter_map(|i| param.named_child(i))
             .filter(|p| is_optional_param_decl(p.kind()))
             .count() as u16;
     }
     u16::from(if is_kt {
-        param.kind() == "parameter"
+        kind == "parameter"
     } else {
-        !param.kind().contains("comment")
+        !kind.contains("comment")
     })
 }
 
@@ -203,8 +204,39 @@ fn count_param_children(child: tree_sitter::Node<'_>) -> u16 {
         .sum()
 }
 
+fn find_callable_descendant(
+    node: tree_sitter::Node<'_>,
+    depth: u8,
+) -> Option<tree_sitter::Node<'_>> {
+    if depth == 0 {
+        return None;
+    }
+    for i in 0..node.named_child_count() {
+        let Some(ch) = node.named_child(i) else {
+            continue;
+        };
+        if matches!(
+            ch.kind(),
+            "arrow_function" | "function_expression" | "function_declarator"
+        ) {
+            return Some(ch);
+        }
+        if matches!(
+            ch.kind(),
+            "variable_declarator"
+                | "as_expression"
+                | "satisfies_expression"
+                | "parenthesized_expression"
+        ) && let Some(found) = find_callable_descendant(ch, depth - 1)
+        {
+            return Some(found);
+        }
+    }
+    None
+}
+
 #[must_use]
-fn unwrap_signature_node(def_node: tree_sitter::Node<'_>) -> tree_sitter::Node<'_> {
+pub fn unwrap_signature_node(def_node: tree_sitter::Node<'_>) -> tree_sitter::Node<'_> {
     if matches!(def_node.kind(), "method_signature" | "declaration") {
         for i in 0..def_node.named_child_count() {
             if let Some(ch) = def_node.named_child(i)
@@ -214,72 +246,38 @@ fn unwrap_signature_node(def_node: tree_sitter::Node<'_>) -> tree_sitter::Node<'
             }
         }
     }
+    if let Some(callable) = find_callable_descendant(def_node, 4) {
+        return callable;
+    }
     def_node
+}
+
+fn is_value_parameter_list_kind(kind: &str) -> bool {
+    (kind.contains("parameter")
+        && !kind.contains("type_parameter")
+        && kind != "template_parameter_list")
+        || kind == "params"
 }
 
 #[must_use]
 pub fn extract_param_count(def_node: tree_sitter::Node<'_>) -> u16 {
     let node = unwrap_signature_node(def_node);
     for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            let kind = child.kind();
-            if kind.contains("parameter") || kind == "params" {
-                return count_param_children(child);
-            }
+        if let Some(child) = node.child(i)
+            && is_value_parameter_list_kind(child.kind())
+        {
+            return count_param_children(child);
         }
+    }
+    if node.kind() == "arrow_function" && node.child_by_field_name("parameter").is_some() {
+        return 1;
     }
     0
 }
 
-fn is_go_public(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
-    let Some(name_node) = def_node.child_by_field_name("name") else {
-        return false;
-    };
-    let Ok(text) = name_node.utf8_text(source_bytes) else {
-        return false;
-    };
-    text.chars().next().is_some_and(|c| c.is_uppercase())
-}
-
-fn has_visibility_modifier(child: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
-    let kind = child.kind();
-    if (kind == "visibility_modifier" || kind == "accessibility_modifier")
-        && let Ok(text) = child.utf8_text(source_bytes)
-    {
-        return text.contains("pub") || text.contains("public");
-    }
-    false
-}
-
-fn has_any_visibility_modifier(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
-    for i in 0..def_node.child_count() {
-        if let Some(child) = def_node.child(i)
-            && has_visibility_modifier(child, source_bytes)
-        {
-            return true;
-        }
-    }
-    false
-}
-
 #[must_use]
 pub fn is_symbol_name_public(sym_name: &str, lang: Lang) -> bool {
-    if lang == Lang::Go {
-        sym_name.chars().next().is_some_and(|c| c.is_uppercase())
-    } else if matches!(
-        lang,
-        Lang::Dart
-            | Lang::Python
-            | Lang::Ruby
-            | Lang::Elixir
-            | Lang::Lua
-            | Lang::Bash
-            | Lang::GDScript
-    ) {
-        !sym_name.starts_with('_') && !sym_name.starts_with('#')
-    } else {
-        !sym_name.starts_with('_')
-    }
+    lang.semantics().is_symbol_name_public(sym_name)
 }
 
 #[must_use]
@@ -288,32 +286,8 @@ pub fn check_node_visibility(
     source_bytes: &[u8],
     lang: Lang,
 ) -> bool {
-    if lang == Lang::Go {
-        is_go_public(def_node, source_bytes)
-    } else if matches!(
-        lang,
-        Lang::Dart
-            | Lang::Python
-            | Lang::Ruby
-            | Lang::Elixir
-            | Lang::Lua
-            | Lang::Bash
-            | Lang::GDScript
-    ) {
-        let node = unwrap_signature_node(def_node);
-        let is_private = node
-            .child_by_field_name("name")
-            .and_then(|n| n.utf8_text(source_bytes).ok())
-            .is_some_and(|s| s.starts_with('_'));
-        !is_private
-    } else if matches!(
-        lang,
-        Lang::Rust | Lang::Java | Lang::CSharp | Lang::Php | Lang::Kotlin | Lang::Swift
-    ) {
-        has_any_visibility_modifier(def_node, source_bytes)
-    } else {
-        true
-    }
+    lang.semantics()
+        .check_node_visibility(def_node, source_bytes)
 }
 #[cfg(test)]
 mod tests {
@@ -389,6 +363,18 @@ mod tests {
         let fn_node = tree.root_node().child(0).unwrap();
         assert_eq!(extract_param_count(fn_node), 2);
         assert!(check_node_visibility(fn_node, code, Lang::Rust));
+    }
+
+    #[test]
+    fn test_extract_param_count_ignores_generic_type_parameters() {
+        let code = b"pub fn collect_with_rank_and_limit<E, H>(&self, rank: Option<u32>, limit: Option<usize>, heartbeat: H) {}";
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(code, None).unwrap();
+        let fn_node = tree.root_node().child(0).unwrap();
+        assert_eq!(extract_param_count(fn_node), 4);
     }
 
     #[test]

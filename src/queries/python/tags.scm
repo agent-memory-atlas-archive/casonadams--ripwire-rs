@@ -68,3 +68,6 @@
 (class_definition
   superclasses: (argument_list
     (identifier) @name)) @reference.extends
+
+(import_statement . name: (_) @import.path)
+(import_from_statement module_name: (_) @import.path)

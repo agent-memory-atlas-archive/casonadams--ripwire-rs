@@ -238,15 +238,13 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             cli.modifiers.is_json(),
             cli.legend.eq_ignore_ascii_case("none"),
         );
-        execute_nav_symbol_query(
-            sym,
-            mode,
-            &ingest,
-            &graph,
-            &pr.ranks,
-            &interner,
-            &mut stdout,
-        )?;
+        let nav_ctx = NavContext {
+            ingest: &ingest,
+            graph: &graph,
+            ranks: &pr.ranks,
+            interner: &interner,
+        };
+        execute_nav_symbol_query_in_root(root, sym, mode, &nav_ctx, &mut stdout)?;
         stdout.flush()
     })())
 }
@@ -544,7 +542,7 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             execute_external_surface_query(root, &ingest, &interner, &mut stdout)?;
         } else if a.deps {
             execute_deps_query(root, &ingest, &graph, &interner, &mut stdout)?;
-        } else if dispatch_lens_queries(a, root, &ingest, &graph, &pr, &interner, &mut stdout)? {
+        } else if dispatch_lens_queries(cli, root, &ingest, &graph, &pr, &interner, &mut stdout)? {
             stdout.flush()?;
             return Ok(());
         }
@@ -554,7 +552,7 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 }
 
 fn dispatch_lens_queries<W: Write>(
-    a: &TopArchitectureArgs,
+    cli: &Cli,
     root: &str,
     ingest: &crate::domain::IngestResult,
     graph: &Graph,
@@ -562,9 +560,16 @@ fn dispatch_lens_queries<W: Write>(
     interner: &Interner,
     stdout: &mut W,
 ) -> io::Result<bool> {
+    let a = &cli.arch;
     if a.metrics {
         let opts = crate::serialize::SerializeOptions {
             root: root.to_string(),
+            top_k: cli.top_k,
+            pack_budget_bytes: if cli.top_k.is_some() {
+                None
+            } else {
+                Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES)
+            },
             metrics: true,
             ..Default::default()
         };
@@ -582,16 +587,10 @@ fn dispatch_lens_queries<W: Write>(
         return Ok(true);
     }
     if let Some(sym) = a.layout.as_deref() {
-        let has_c_agg = ingest.symbols.iter().any(|s| {
-            interner.resolve(&s.name) == sym
-                && matches!(
-                    s.lang,
-                    crate::domain::Lang::C
-                        | crate::domain::Lang::Cpp
-                        | crate::domain::Lang::ObjC
-                        | crate::domain::Lang::Cuda
-                )
-        });
+        let has_c_agg = ingest
+            .symbols
+            .iter()
+            .any(|s| interner.resolve(&s.name) == sym && s.lang.semantics().supports_c_layout());
         if !has_c_agg {
             return Err(io::Error::other(format!(
                 "ripwire: --layout: '{sym}' is indexed but has no C-family aggregate body — this verb models C/C++/ObjC byte layout only"

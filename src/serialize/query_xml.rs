@@ -37,9 +37,17 @@ fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) 
 }
 
 pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let task = escape_xml_str(val["task"].as_str().unwrap_or(""));
+    let raw_task = val["task"].as_str().unwrap_or("");
+    let task = escape_xml_str(raw_task);
+    let default_route = format!("name-exact({raw_task})");
+    let route = escape_xml_str(val["route"].as_str().unwrap_or(&default_route));
+    let root = escape_xml_str(val["root"].as_str().unwrap_or("."));
+    let confidence = escape_xml_str(val["confidence"].as_str().unwrap_or("high"));
+    let margin_pct = val["margin_pct"].as_u64().unwrap_or(0);
+    let coverage = val["coverage"].as_u64().unwrap_or(100);
+    let est_tokens = val["est_tokens"].as_u64().unwrap_or(550);
     let attrs = format!(
-        "task=\"{task}\" route=\"name-exact({task})\" root=\".\" confidence=\"high\" margin_pct=\"0\" coverage=\"100\" at=\"HEAD\" schema=\"ripwire.for/v1\" bundle=\"auto\" bodies=\"1\" est_tokens=\"550\""
+        "task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" at=\"HEAD\" schema=\"ripwire.for/v1\" bundle=\"auto\" bodies=\"1\" est_tokens=\"{est_tokens}\""
     );
     write_xml_envelope(out, "ctx", &attrs, |out| {
         let mut bodies_to_show = Vec::new();
@@ -392,42 +400,63 @@ pub fn serialize_flags_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()>
 }
 
 /// Serialize `doc_drift` out-of-date document references to Ripwire XML.
+fn format_doc_drift_extra_attrs(d: &Value) -> String {
+    let mut extra = String::new();
+    for key in ["fate", "commit", "date", "subject"] {
+        if let Some(v) = d[key].as_str() {
+            extra.push_str(&format!(" {key}=\"{}\"", escape_xml_str(v)));
+        }
+    }
+    extra
+}
+
+fn write_doc_drift_anchor<W: Write>(out: &mut W, file: &str, d: &Value) -> io::Result<()> {
+    let line = d["line"]
+        .as_u64()
+        .or_else(|| d["doc_line"].as_u64())
+        .unwrap_or(0);
+    let kind = escape_xml_str(d["kind"].as_str().unwrap_or("symbol"));
+    let why = escape_xml_str(d["why"].as_str().unwrap_or("undefined"));
+    let ref_str = escape_xml_str(
+        d["referenced"]
+            .as_str()
+            .or_else(|| d["target_file"].as_str())
+            .unwrap_or(""),
+    );
+    let extra = format_doc_drift_extra_attrs(d);
+    writeln!(
+        out,
+        "    <a k=\"{kind}\" l=\"{line}\" why=\"{why}\" p=\"{file}\" ref=\"{ref_str}\"{extra}/>"
+    )
+}
+
 pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let drift = val["drift"].as_array();
     let count = drift.map_or(0, |d| d.len());
-    let attrs = format!("schema=\"ripwire.doc-drift/v1\" root=\".\" drift=\"{count}\"");
-    write_xml_envelope(out, "doc-drift", &attrs, |out| {
-        if let Some(items) = drift {
-            for d in items {
-                let file = escape_xml_str(d["doc"].as_str().unwrap_or(""));
-                let line = d["line"]
-                    .as_u64()
-                    .or_else(|| d["doc_line"].as_u64())
-                    .unwrap_or(0);
-                let ref_str = escape_xml_str(
-                    d["referenced"]
-                        .as_str()
-                        .or_else(|| d["target_file"].as_str())
-                        .unwrap_or(""),
-                );
-                let mut extra = String::new();
-                if let Some(fate) = d["fate"].as_str() {
-                    extra.push_str(&format!(" fate=\"{}\"", escape_xml_str(fate)));
-                }
-                if let Some(commit) = d["commit"].as_str() {
-                    extra.push_str(&format!(" commit=\"{}\"", escape_xml_str(commit)));
-                }
-                if let Some(date) = d["date"].as_str() {
-                    extra.push_str(&format!(" date=\"{}\"", escape_xml_str(date)));
-                }
-                if let Some(subj) = d["subject"].as_str() {
-                    extra.push_str(&format!(" subject=\"{}\"", escape_xml_str(subj)));
-                }
-                writeln!(
-                    out,
-                    "  <a p=\"{file}\" l=\"{line}\" ref=\"{ref_str}\"{extra}/>"
-                )?;
+    let root = escape_xml_str(val["root"].as_str().unwrap_or("."));
+    let mut grouped: Vec<(&str, Vec<&Value>)> = Vec::new();
+    if let Some(items) = drift {
+        for d in items {
+            let doc = d["doc"].as_str().unwrap_or("");
+            if let Some((_, list)) = grouped.iter_mut().find(|(p, _)| *p == doc) {
+                list.push(d);
+            } else {
+                grouped.push((doc, vec![d]));
             }
+        }
+    }
+    let docs_cnt = grouped.len();
+    let attrs = format!(
+        "schema=\"ripwire.doc-drift/v1\" root=\"{root}\" docs=\"{docs_cnt}\" drift=\"{count}\""
+    );
+    write_xml_envelope(out, "doc-drift", &attrs, |out| {
+        for (doc, list) in grouped {
+            let file = escape_xml_str(doc);
+            writeln!(out, "  <doc p=\"{file}\" drift=\"{}\">", list.len())?;
+            for d in list {
+                write_doc_drift_anchor(out, &file, d)?;
+            }
+            writeln!(out, "  </doc>")?;
         }
         Ok(())
     })
@@ -504,19 +533,64 @@ pub fn serialize_mentions_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<
 }
 
 /// Serialize `connect` subgraph to Ripwire XML.
+fn write_connect_node_tag<W: Write>(out: &mut W, tag: &str, node: &Value) -> io::Result<()> {
+    let n = escape_xml_str(node["name"].as_str().unwrap_or(""));
+    let t = escape_xml_str(node["kind"].as_str().unwrap_or("fn"));
+    let p = escape_xml_str(node["path"].as_str().unwrap_or(""));
+    let l = node["line"].as_u64().unwrap_or(1);
+    let extra = if let Some(c) = node["connects"].as_u64() {
+        format!(" connects=\"{c}\"")
+    } else if let Some(d) = node["defs"].as_u64().filter(|&d| d > 1) {
+        format!(" defs=\"{d}\"")
+    } else {
+        String::new()
+    };
+    writeln!(out, "  <{tag} n=\"{n}\" t=\"{t}\" p=\"{p}:{l}\"{extra}/>")
+}
+
 pub fn serialize_connect_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let symbols = val["symbols"].as_array();
     let count = symbols.map_or(0, |s| s.len());
-    let attrs = format!("schema=\"ripwire.connect/v1\" root=\".\" symbols=\"{count}\"");
+    let root = escape_xml_str(val["root"].as_str().unwrap_or("."));
+    let terminals = val["terminals"].as_array();
+    let steiner = val["steiner"].as_array();
+    let edges = val
+        .get("edges")
+        .or_else(|| val.get("connections"))
+        .and_then(Value::as_array);
+    let t_cnt = terminals.map_or(count, Vec::len);
+    let s_cnt = steiner.map_or(0, Vec::len);
+    let e_cnt = edges.map_or(0, Vec::len);
+    let nodes = t_cnt + s_cnt;
+    let attrs = format!(
+        "schema=\"ripwire.connect/v1\" root=\"{root}\" symbols=\"{count}\" terminals=\"{t_cnt}\" nodes=\"{nodes}\" edges=\"{e_cnt}\" radius=\"6\""
+    );
     write_xml_envelope(out, "connect", &attrs, |out| {
-        if let Some(edges) = val
+        if let Some(terms) = terminals {
+            for t in terms {
+                write_connect_node_tag(out, "t", t)?;
+            }
+        }
+        if let Some(joins) = steiner {
+            for s in joins {
+                write_connect_node_tag(out, "s", s)?;
+            }
+        }
+        if let Some(edge_list) = edges {
+            for e in edge_list {
+                let from = escape_xml_str(e["from"].as_str().unwrap_or(""));
+                let to = escape_xml_str(e["to"].as_str().unwrap_or(""));
+                writeln!(out, "  <e f=\"{from}\" t=\"{to}\"/>")?;
+            }
+        }
+        if let Some(conn_list) = val
             .get("connections")
             .or_else(|| val.get("edges"))
             .and_then(Value::as_array)
         {
-            for e in edges {
-                let from = escape_xml_str(e["from"].as_str().unwrap_or(""));
-                let to = escape_xml_str(e["to"].as_str().unwrap_or(""));
+            for c in conn_list {
+                let from = escape_xml_str(c["from"].as_str().unwrap_or(""));
+                let to = escape_xml_str(c["to"].as_str().unwrap_or(""));
                 writeln!(out, "  <edge from=\"{from}\" to=\"{to}\"/>")?;
             }
         }
@@ -978,14 +1052,109 @@ pub fn serialize_external_surface_xml<W: Write>(
     writeln!(out, "</external-surface>")
 }
 
-/// Serialize `--deps` to Ripwire XML.
-pub fn serialize_deps_xml<W: Write>(
+#[derive(Debug, Clone)]
+pub struct DepsFileRow<'a> {
+    pub path: &'a str,
+    pub includes: usize,
+    pub efferent: usize,
+    pub afferent: usize,
+    pub transitive: usize,
+    pub inc_targets: Vec<&'a str>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct DepsReport<'a> {
+    pub corpus_files: usize,
+    pub dep_files: usize,
+    pub ccd: usize,
+    pub acd: f64,
+    pub nccd: f64,
+    pub rows: Vec<DepsFileRow<'a>>,
+    pub cycles: Vec<Vec<&'a str>>,
+    pub violations: Vec<(&'a str, &'a str, f64)>,
+}
+
+fn write_deps_godfiles<W: Write>(out: &mut W, active: &[&DepsFileRow<'_>]) -> io::Result<()> {
+    let mut god: Vec<&&DepsFileRow<'_>> = active.iter().filter(|d| d.afferent > 0).collect();
+    god.sort_by(|a, b| b.afferent.cmp(&a.afferent).then_with(|| a.path.cmp(b.path)));
+    let god_total = god.len();
+    let god_shown = god_total.min(12);
+    let god_capped = usize::from(god_shown < god_total);
+    writeln!(
+        out,
+        "  <godfiles total=\"{god_total}\" shown=\"{god_shown}\" capped=\"{god_capped}\">"
+    )?;
+    for g in god.iter().take(god_shown) {
+        let p_esc = escape_xml_str(g.path);
+        writeln!(out, "    <f p=\"{p_esc}\" afferent=\"{}\"/>", g.afferent)?;
+    }
+    writeln!(out, "  </godfiles>")
+}
+
+fn write_deps_cycles<W: Write>(out: &mut W, cycles: &[Vec<&str>]) -> io::Result<()> {
+    if cycles.is_empty() {
+        return Ok(());
+    }
+    writeln!(out, "  <cycles>")?;
+    for cyc in cycles.iter().take(20) {
+        let sz = cyc.len();
+        let cost = sz * sz;
+        let cut_attr = if let (Some(&first), Some(&second)) = (cyc.first(), cyc.get(1)) {
+            format!(
+                " cut=\"{} -&gt; {}\" cutrefs=\"1\"",
+                escape_xml_str(first),
+                escape_xml_str(second)
+            )
+        } else {
+            String::new()
+        };
+        write!(out, "    <cycle size=\"{sz}\" cost=\"{cost}\"{cut_attr}>")?;
+        for &p in cyc.iter().take(12) {
+            write!(out, "<f p=\"{}\"/>", escape_xml_str(p))?;
+        }
+        writeln!(out, "</cycle>")?;
+    }
+    writeln!(out, "  </cycles>")
+}
+
+fn write_deps_file_row<W: Write>(out: &mut W, row: &DepsFileRow<'_>) -> io::Result<()> {
+    let p_esc = escape_xml_str(row.path);
+    let denom = row.efferent + row.afferent;
+    let instab = if denom > 0 {
+        row.efferent as f64 / denom as f64
+    } else {
+        0.0
+    };
+    if row.inc_targets.is_empty() {
+        writeln!(
+            out,
+            "  <f p=\"{p_esc}\" includes=\"{}\" afferent=\"{}\" instab=\"{instab:.2}\" transitive=\"{}\"/>",
+            row.includes, row.afferent, row.transitive
+        )
+    } else {
+        write!(
+            out,
+            "  <f p=\"{p_esc}\" includes=\"{}\" afferent=\"{}\" instab=\"{instab:.2}\" transitive=\"{}\">",
+            row.includes, row.afferent, row.transitive
+        )?;
+        for &t in row.inc_targets.iter().take(40) {
+            write!(out, "<inc t=\"{}\"/>", escape_xml_str(t))?;
+        }
+        writeln!(out, "</f>")
+    }
+}
+
+/// Serialize structured `DepsReport` to Ripwire XML.
+pub fn serialize_deps_report_xml<W: Write>(
     root: &str,
-    file_deps: &[(&str, usize, usize)],
+    rep: &DepsReport<'_>,
     out: &mut W,
 ) -> io::Result<()> {
-    let active: Vec<&(&str, usize, usize)> =
-        file_deps.iter().filter(|d| d.1 > 0 || d.2 > 0).collect();
+    let active: Vec<&DepsFileRow<'_>> = rep
+        .rows
+        .iter()
+        .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
+        .collect();
     let total = active.len();
     let shown = total.min(40);
     let capped = usize::from(shown < total);
@@ -996,57 +1165,89 @@ pub fn serialize_deps_xml<W: Write>(
     } else {
         format!(" shown=\"{shown}\" capped=\"0\"")
     };
-    let corpus_files = file_deps.len();
-    let ccd: usize = active.iter().map(|d| d.1 + 1).sum();
-    let acd = if total > 0 {
-        ccd as f64 / total as f64
+    let shape = if rep.nccd < 1.0 {
+        "horizontal"
+    } else if rep.nccd > 2.0 {
+        "tangled"
+    } else {
+        "vertical"
+    };
+    let root_esc = escape_xml_str(root);
+    writeln!(
+        out,
+        "<!-- ripwire deps schema=ripwire.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>. -->\n<deps schema=\"ripwire.deps/v1\" files=\"{total}\"{page_attrs} root=\"{root_esc}\">",
+    )?;
+    writeln!(
+        out,
+        "  <health files=\"{}\" dep_files=\"{}\" ccd=\"{}\" acd=\"{:.1}\" nccd=\"{:.2}\" shape=\"{shape}\" dep_langs=\"cpp,py,ts,go,rs,swift,objc,js,sh,java,rb,cs,c,php,lua,ex,kt\"/>",
+        rep.corpus_files, rep.dep_files, rep.ccd, rep.acd, rep.nccd
+    )?;
+    write_deps_godfiles(out, &active)?;
+    if !rep.violations.is_empty() {
+        writeln!(
+            out,
+            "  <stabledeps violations=\"{}\">",
+            rep.violations.len()
+        )?;
+        for &(from, to, gap) in rep.violations.iter().take(12) {
+            writeln!(
+                out,
+                "    <v from=\"{}\" to=\"{}\" gap=\"{gap:.2}\"/>",
+                escape_xml_str(from),
+                escape_xml_str(to)
+            )?;
+        }
+        writeln!(out, "  </stabledeps>")?;
+    }
+    write_deps_cycles(out, &rep.cycles)?;
+    for row in active.iter().take(shown) {
+        write_deps_file_row(out, row)?;
+    }
+    writeln!(out, "</deps>")
+}
+
+/// Serialize `--deps` to Ripwire XML.
+pub fn serialize_deps_xml<W: Write>(
+    root: &str,
+    file_deps: &[(&str, usize, usize)],
+    out: &mut W,
+) -> io::Result<()> {
+    let rows: Vec<DepsFileRow<'_>> = file_deps
+        .iter()
+        .map(|&(path, inc, aff)| DepsFileRow {
+            path,
+            includes: inc,
+            efferent: inc,
+            afferent: aff,
+            transitive: inc + 1,
+            inc_targets: Vec::new(),
+        })
+        .collect();
+    let active_cnt = rows
+        .iter()
+        .filter(|r| r.includes > 0 || r.afferent > 0)
+        .count();
+    let ccd: usize = rows
+        .iter()
+        .filter(|r| r.includes > 0 || r.afferent > 0)
+        .map(|r| r.transitive)
+        .sum();
+    let acd = if active_cnt > 0 {
+        ccd as f64 / active_cnt as f64
     } else {
         1.0
     };
-    writeln!(
-        out,
-        "<!-- ripwire deps schema=ripwire.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>. -->\n<deps schema=\"ripwire.deps/v1\" files=\"{total}\"{page_attrs} root=\"{root}\">",
-    )?;
-    writeln!(
-        out,
-        "  <health files=\"{corpus_files}\" dep_files=\"{total}\" ccd=\"{ccd}\" acd=\"{acd:.1}\" nccd=\"0.92\" shape=\"horizontal\" dep_langs=\"cpp,py,ts,go,rs,swift,objc,js,sh,java,rb,cs,c,php,lua,ex,kt\"/>"
-    )?;
-    let mut god: Vec<&(&str, usize, usize)> = active.iter().copied().filter(|d| d.2 > 0).collect();
-    god.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.0.cmp(b.0)));
-    let god_total = god.len();
-    let god_shown = god_total.min(12);
-    let god_capped = usize::from(god_shown < god_total);
-    writeln!(
-        out,
-        "  <godfiles total=\"{god_total}\" shown=\"{god_shown}\" capped=\"{god_capped}\">"
-    )?;
-    for g in god.iter().take(god_shown) {
-        let p_esc = escape_xml_str(g.0);
-        writeln!(out, "    <f p=\"{p_esc}\" afferent=\"{}\"/>", g.2)?;
-    }
-    writeln!(out, "  </godfiles>")?;
-    writeln!(out, "  <stabledeps violations=\"1\">")?;
-    if let (Some(first), Some(second)) = (active.first(), active.get(1)) {
-        let f_esc = escape_xml_str(first.0);
-        let t_esc = escape_xml_str(second.0);
-        writeln!(out, "    <v from=\"{f_esc}\" to=\"{t_esc}\" gap=\"0.10\"/>")?;
-    }
-    writeln!(out, "  </stabledeps>")?;
-    for &&(p, inc, aff) in active.iter().take(shown) {
-        let p_esc = escape_xml_str(p);
-        let denom = inc + aff;
-        let instab = if denom > 0 {
-            inc as f64 / denom as f64
-        } else {
-            0.0
-        };
-        let trans = inc + 1;
-        writeln!(
-            out,
-            "  <f p=\"{p_esc}\" includes=\"{inc}\" afferent=\"{aff}\" instab=\"{instab:.2}\" transitive=\"{trans}\"/>"
-        )?;
-    }
-    writeln!(out, "</deps>")
+    let rep = DepsReport {
+        corpus_files: file_deps.len(),
+        dep_files: active_cnt,
+        ccd,
+        acd,
+        nccd: 0.92,
+        rows,
+        cycles: Vec::new(),
+        violations: Vec::new(),
+    };
+    serialize_deps_report_xml(root, &rep, out)
 }
 /// Serialize `--exemplar` to Ripwire XML.
 pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
