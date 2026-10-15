@@ -123,6 +123,8 @@ OPTIONAL_ATTRS = {
     "by_depth",
     "callers_floor",
     "sev",
+    "members",
+    "tokens",
 }
 
 

@@ -802,12 +802,20 @@ pub fn call_grep_with_context(
         for (line_idx, &line) in all_lines.iter().enumerate() {
             if line.contains(pattern) {
                 let line_num = line_idx as u32 + 1;
-                let enclosing = ingest
+                let enc_sym = ingest
                     .symbols
                     .iter()
                     .filter(|s| s.file_id == file.id && s.line <= line_num)
-                    .max_by_key(|s| s.line)
-                    .map(|s| interner.resolve(&s.name));
+                    .max_by_key(|s| s.line);
+                let enclosing = enc_sym.map(|s| interner.resolve(&s.name));
+                let enc_cx = enc_sym.map_or(1, |s| s.cx.max(1));
+                let enc_callers = enc_sym.map_or(0, |s| {
+                    ingest
+                        .references
+                        .iter()
+                        .filter(|r| r.callee_name == s.name)
+                        .count()
+                });
 
                 let b_start = line_idx.saturating_sub(before_lines);
                 let before: Vec<Value> = (b_start..line_idx)
@@ -823,6 +831,8 @@ pub fn call_grep_with_context(
                     "line": line_num,
                     "text": line.trim(),
                     "enclosing": enclosing,
+                    "enclosing_callers": enc_callers,
+                    "enclosing_cx": enc_cx,
                     "before": before,
                     "after": after
                 }));

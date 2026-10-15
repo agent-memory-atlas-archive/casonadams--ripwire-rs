@@ -20,9 +20,15 @@ pub struct QualityPanelReport {
     pub ranked: usize,
     pub below_cut: usize,
     pub no_family: usize,
+    pub hranked: usize,
     pub cfiles: usize,
     pub cscope: usize,
     pub cranked: usize,
+    pub sfiles: usize,
+    pub sscope: usize,
+    pub cells: usize,
+    pub tested_scope: usize,
+    pub deep_untested: usize,
     pub rows: Vec<QualityPanelRow>,
 }
 pub struct QualityFamilyContext<'a> {
@@ -144,26 +150,33 @@ fn check_symbol_families(
     (fired.len(), fired)
 }
 
-fn collect_nonlocal_state_sym_ids(
+fn collect_nonlocal_state_info(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
-) -> std::collections::HashSet<crate::domain::NodeId> {
+) -> (
+    std::collections::HashSet<crate::domain::NodeId>,
+    usize,
+    usize,
+) {
     let nonlocal = crate::metrics::nonlocal::find_nonlocal_state(ingest, graph, interner);
-    nonlocal
-        .iter()
-        .filter_map(|f| {
-            ingest.symbols.iter().find(|s| {
-                interner.resolve(&s.name) == f.sym_name
-                    && ingest
-                        .files
-                        .get(s.file_id as usize)
-                        .map(|fi| interner.resolve(&fi.path))
-                        == Some(&f.path)
-            })
-        })
-        .map(|s| s.id)
-        .collect()
+    let cells = nonlocal.len();
+    let mut state_files = std::collections::HashSet::new();
+    let mut state_syms = std::collections::HashSet::new();
+    for f in &nonlocal {
+        state_files.insert(f.path.as_str());
+        if let Some(s) = ingest.symbols.iter().find(|s| {
+            interner.resolve(&s.name) == f.sym_name
+                && ingest
+                    .files
+                    .get(s.file_id as usize)
+                    .map(|fi| interner.resolve(&fi.path))
+                    == Some(&f.path)
+        }) {
+            state_syms.insert(s.id);
+        }
+    }
+    (state_syms, state_files.len(), cells)
 }
 
 pub fn compute_quality_panel_report(
@@ -174,7 +187,9 @@ pub fn compute_quality_panel_report(
 ) -> QualityPanelReport {
     let preset = preset_opt.unwrap_or("default");
     let cut = usize::from(preset != "lenient") + 1;
-    let state_syms = collect_nonlocal_state_sym_ids(ingest, graph, interner);
+    let (state_syms, sfiles, cells) = collect_nonlocal_state_info(ingest, graph, interner);
+    let sscope = state_syms.len();
+    let tested_mask = crate::navigate::compute_tested_node_mask(ingest, graph, interner);
     let cfiles = ingest
         .files
         .iter()
@@ -182,6 +197,9 @@ pub fn compute_quality_panel_report(
         .count();
     let mut cscope = 0usize;
     let mut cranked = 0usize;
+    let mut hranked = 0usize;
+    let mut tested_scope = 0usize;
+    let mut deep_untested = 0usize;
     let mut eligible = 0usize;
     let mut below_cut = 0usize;
     let mut no_family = 0usize;
@@ -194,10 +212,14 @@ pub fn compute_quality_panel_report(
             continue;
         }
         eligible += 1;
+        let is_tested = tested_mask.get(sym.id as usize).copied().unwrap_or(false);
+        tested_scope += usize::from(is_tested);
+        deep_untested += usize::from(!is_tested && sym.ccx > 15);
         let is_c = sym.lang.semantics().supports_c_layout();
         cscope += usize::from(is_c);
         let (fam_count, fired) = check_symbol_families(sym, graph, &state_syms);
         cranked += usize::from(fired.contains(&"confusion"));
+        hranked += usize::from(fired.contains(&"historical"));
         if fam_count == 0 {
             no_family += 1;
         } else if fam_count < cut {
@@ -230,9 +252,15 @@ pub fn compute_quality_panel_report(
         ranked,
         below_cut,
         no_family,
+        hranked,
         cfiles,
         cscope,
         cranked,
+        sfiles,
+        sscope,
+        cells,
+        tested_scope,
+        deep_untested,
         rows,
     }
 }
@@ -254,7 +282,7 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         let ccut = if self.cfiles > 0 { 40 } else { 0 };
         write!(
             w,
-            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"0\" sscope=\"0\" cells=\"0\" tested_scope=\"0\" deep_untested=\"0\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
+            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"{}\" sscope=\"{}\" cells=\"{}\" tested_scope=\"{}\" deep_untested=\"{}\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
             self.preset,
             self.cut,
             self.eligible,
@@ -262,10 +290,16 @@ impl crate::serialize::XmlReport for QualityPanelReport {
             self.below_cut,
             self.no_family,
             self.eligible,
+            self.hranked,
             self.cfiles,
             self.cscope,
             self.cranked,
             self.eligible,
+            self.sfiles,
+            self.sscope,
+            self.cells,
+            self.tested_scope,
+            self.deep_untested,
             pw.shown,
             usize::from(pw.capped),
             pw.total,

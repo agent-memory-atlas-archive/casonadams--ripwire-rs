@@ -973,6 +973,7 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
 
 /// Main CLI entry point.
 pub fn run_cli() -> io::Result<()> {
-    let cli = Cli::parse();
+    let args = std::env::args().map(|a| if a == "-v" { "-V".to_string() } else { a });
+    let cli = Cli::parse_from(args);
     run_cli_args(cli)
 }

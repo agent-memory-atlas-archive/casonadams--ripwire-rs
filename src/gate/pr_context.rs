@@ -9,9 +9,12 @@ pub struct PrFileContext {
     pub symbol_count: usize,
     pub changed_symbols: Vec<String>,
     pub dependents_count: usize,
+    pub files_other_count: usize,
     pub tests_count: usize,
     pub commits_count: usize,
+    pub partners_count: usize,
     pub authors_count: usize,
+    pub bus_factor: usize,
 }
 
 /// Comprehensive PR context report.
@@ -20,6 +23,62 @@ pub struct PrContextReport {
     pub base_ref: String,
     pub files_count: usize,
     pub files: Vec<PrFileContext>,
+}
+
+fn build_single_pr_file_context(
+    f: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    coupling: &crate::git::cochange::StaticCouplingMap,
+    commits: &[crate::git::history::CommitInfo],
+) -> PrFileContext {
+    let mut symbols = Vec::new();
+    let mut dependents = 0usize;
+    let mut caller_files = std::collections::HashSet::new();
+
+    for sym in &ingest.symbols {
+        let path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        if path == f || path.ends_with(f) {
+            symbols.push(interner.resolve(&sym.name).to_string());
+            dependents += graph.in_degree(sym.id);
+            for (caller_id, _) in graph.callers(sym.id) {
+                if let Some(cs) = ingest.symbols.get(caller_id as usize)
+                    && cs.file_id != sym.file_id
+                {
+                    caller_files.insert(cs.file_id);
+                }
+            }
+        }
+    }
+
+    let specs = [f];
+    let affected = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
+    let partners_count = coupling.partners_of(f).len();
+    let mut file_commits = 0usize;
+    let mut authors = std::collections::HashSet::new();
+    for c in commits {
+        if c.changed_files.iter().any(|cf| cf == f || cf.ends_with(f)) {
+            file_commits += 1;
+            authors.insert(c.author.as_str());
+        }
+    }
+    let commits_count = file_commits.max(1);
+    let authors_count = authors.len().max(1);
+    let bus_factor = authors_count.min(2);
+
+    PrFileContext {
+        path: f.to_string(),
+        symbol_count: symbols.len(),
+        changed_symbols: symbols,
+        dependents_count: dependents,
+        files_other_count: caller_files.len(),
+        tests_count: affected.tests.len(),
+        commits_count,
+        partners_count,
+        authors_count,
+        bus_factor,
+    }
 }
 
 /// Compute PR context for changed files against baseline.
@@ -31,33 +90,13 @@ pub fn compute_pr_context(
     interner: &Interner,
     base_ref: &str,
 ) -> PrContextReport {
-    let mut files = Vec::new();
-
-    for f in changed_files {
-        let mut symbols = Vec::new();
-        let mut dependents = 0usize;
-
-        for sym in &ingest.symbols {
-            let path = interner.resolve(&ingest.files[sym.file_id as usize].path);
-            if path == f || path.ends_with(f) {
-                symbols.push(interner.resolve(&sym.name).to_string());
-                dependents += graph.in_degree(sym.id);
-            }
-        }
-
-        let specs = [f.as_str()];
-        let affected = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
-
-        files.push(PrFileContext {
-            path: f.clone(),
-            symbol_count: symbols.len(),
-            changed_symbols: symbols,
-            dependents_count: dependents,
-            tests_count: affected.tests.len(),
-            commits_count: 5,
-            authors_count: 1,
-        });
-    }
+    let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, Some(graph));
+    let commits =
+        crate::git::history::walk_repository_history(std::path::Path::new(".")).unwrap_or_default();
+    let files: Vec<PrFileContext> = changed_files
+        .iter()
+        .map(|f| build_single_pr_file_context(f, ingest, graph, interner, &coupling, &commits))
+        .collect();
 
     PrContextReport {
         base_ref: base_ref.to_string(),
@@ -85,19 +124,19 @@ fn write_pr_file_context<W: Write>(f: &PrFileContext, out: &mut W) -> io::Result
     writeln!(out, "    </changed-symbols>")?;
     writeln!(
         out,
-        "    <impact dependents=\"{}\" files_other=\"0\"/>",
-        f.dependents_count
+        "    <impact dependents=\"{}\" files_other=\"{}\"/>",
+        f.dependents_count, f.files_other_count
     )?;
     writeln!(out, "    <tests count=\"{}\"/>", f.tests_count)?;
     writeln!(
         out,
-        "    <cochange commits=\"{}\" partners=\"0\"/>",
-        f.commits_count
+        "    <cochange commits=\"{}\" partners=\"{}\"/>",
+        f.commits_count, f.partners_count
     )?;
     writeln!(
         out,
-        "    <owners authors=\"{}\" bf=\"1\"/>",
-        f.authors_count
+        "    <owners authors=\"{}\" bf=\"{}\"/>",
+        f.authors_count, f.bus_factor
     )?;
     writeln!(out, "  </file>")
 }
@@ -115,9 +154,10 @@ impl crate::serialize::XmlReport for PrContextReport {
         )
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let est_tokens = 180 + self.files.len() * 140;
         write!(
             w,
-            " base=\"{}\" direction=\"worktree-since-head\" files=\"{}\" skipped_mode_only=\"0\" budget_tokens=\"8000\" est_tokens=\"580\" trim_level=\"0\" truncated=\"none\" budget_default=\"1\" at=\"HEAD\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+            " base=\"{}\" direction=\"worktree-since-head\" files=\"{}\" skipped_mode_only=\"0\" budget_tokens=\"8000\" est_tokens=\"{est_tokens}\" trim_level=\"0\" truncated=\"none\" budget_default=\"1\" at=\"HEAD\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
             self.base_ref, self.files_count
         )
     }
@@ -155,12 +195,14 @@ mod tests {
                 symbol_count: 5,
                 changed_symbols: vec!["run_cli".to_string(), "init".to_string()],
                 dependents_count: 3,
+                files_other_count: 0,
                 tests_count: 2,
                 commits_count: 4,
+                partners_count: 0,
                 authors_count: 1,
+                bus_factor: 1,
             }],
         };
-
         let mut out = Vec::new();
         serialize_pr_context_xml(&report, &mut out).expect("serialize should succeed");
         let xml = String::from_utf8(out).expect("valid utf-8");

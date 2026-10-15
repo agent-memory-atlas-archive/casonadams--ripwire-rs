@@ -33,6 +33,7 @@ pub struct ImpactNode {
     pub kind: &'static str,
     pub rank: f64,
     pub hops: u32,
+    pub tested: bool,
 }
 
 fn matches_symbol_selector(
@@ -288,6 +289,7 @@ fn create_impact_node(
         kind: sym.kind.tag(),
         rank,
         hops: depth,
+        tested: false,
     })
 }
 
@@ -324,10 +326,13 @@ pub fn transitive_impact_multi(
         }
     }
 
+    let tested_mask = compute_tested_node_mask(ingest, graph, interner);
     while let Some((curr, depth)) = queue.pop_front() {
         if !seeds.contains(&curr)
-            && let Some(node) = create_impact_node(curr, depth, ingest, ranks, interner)
+            && let Some(mut node) = create_impact_node(curr, depth, ingest, ranks, interner)
         {
+            node.tested = tested_mask.get(curr as usize).copied().unwrap_or(false)
+                || crate::gate::affected::is_test_path(&node.path);
             results.push(node);
         }
 
@@ -444,19 +449,31 @@ pub fn serialize_impact_in_root_xml<W: Write>(
     let reaches = nodes.len();
     let shown = reaches.min(40);
     let capped = usize::from(shown < reaches);
+    let radius_tested = nodes
+        .iter()
+        .filter(|n| n.tested || crate::gate::affected::is_test_path(&n.path))
+        .count();
+    let radius_untested = reaches.saturating_sub(radius_tested);
     let mut depth_counts: std::collections::BTreeMap<u32, usize> =
         std::collections::BTreeMap::new();
+    let mut importer_paths: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
     for n in nodes {
         *depth_counts.entry(n.hops).or_insert(0) += 1;
+        if !n.path.is_empty() {
+            importer_paths.insert(&n.path);
+        }
     }
     let by_depth = depth_counts
         .iter()
         .map(|(d, c)| format!("{d}:{c}"))
         .collect::<Vec<_>>()
         .join(",");
+    let imp_total = importer_paths.len().max(1);
+    let imp_shown = imp_total.min(10);
+    let imp_capped = usize::from(imp_shown < imp_total);
     write!(
         out,
-        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" by_depth=\"{by_depth}\" importers=\"1\" shown_importers=\"1\" importers_capped=\"0\" radius_tested=\"0\" radius_untested=\"{reaches}\" root=\"{root}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" pr_iters=\"44\" next=\"--safe-delete={sym_name}\">",
+        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" by_depth=\"{by_depth}\" importers=\"{imp_total}\" shown_importers=\"{imp_shown}\" importers_capped=\"{imp_capped}\" radius_tested=\"{radius_tested}\" radius_untested=\"{radius_untested}\" root=\"{root}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" pr_iters=\"44\" next=\"--safe-delete={sym_name}\">",
     )?;
     for n in nodes.iter().take(shown) {
         write!(
@@ -465,7 +482,14 @@ pub fn serialize_impact_in_root_xml<W: Write>(
             n.kind, n.name, n.path, n.line, n.hops, n.hops
         )?;
     }
-    write!(out, "<f via=\"import\" p=\"src/cli/mod.rs\" lazy=\"0\"/>")?;
+    if importer_paths.is_empty() {
+        write!(out, "<f via=\"import\" p=\"src/lib.rs\" lazy=\"0\"/>")?;
+    } else {
+        for p in importer_paths.into_iter().take(imp_shown) {
+            let p_esc = crate::serialize::escape::escape_xml_str(p);
+            write!(out, "<f via=\"import\" p=\"{p_esc}\" lazy=\"0\"/>")?;
+        }
+    }
     writeln!(out, "</impact>")
 }
 
@@ -767,7 +791,9 @@ fn write_pack_task_sigs_and_collect<'a, W: Write>(
         let l = first_sym.line;
         write!(
             out,
-            "<d l=\"{l}\" n=\"{n_esc}\" p=\"{p_esc}\" cx=\"1\" ccx=\"1\" in=\"0\" r=\"1\" next=\"--expand={p_esc}:{n_esc}\">{n_esc}</d>"
+            "<d l=\"{l}\" n=\"{n_esc}\" p=\"{p_esc}\" cx=\"{}\" ccx=\"{}\" in=\"0\" r=\"1\" next=\"--expand={p_esc}:{n_esc}\">{n_esc}</d>",
+            first_sym.cx.max(1),
+            first_sym.ccx
         )?;
         changed_paths.push(p_raw);
         bodies.push(PackTaskBody {
@@ -806,11 +832,16 @@ pub fn execute_pack_task<W: Write>(
     let empty = Vec::new();
     let syms = for_val["symbols"].as_array().unwrap_or(&empty);
     let t_esc = crate::serialize::escape::escape_xml_str(task);
+    let mut sigs_buf = Vec::new();
+    let (bodies, changed_paths) =
+        write_pack_task_sigs_and_collect(syms, ingest, interner, &mut sigs_buf)?;
+    let body_bytes: usize = bodies.iter().map(|b| b.body.len() + 64).sum();
+    let est_tokens = ((sigs_buf.len() + body_bytes + 400) / 4).max(120);
     write!(
         out,
-        "<!-- ripwire pack-task schema=ripwire.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire.pack-task/v1\" task=\"{t_esc}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"3800\" budget_tokens=\"6000\"><sigs>",
+        "<!-- ripwire pack-task schema=ripwire.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire.pack-task/v1\" task=\"{t_esc}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"{est_tokens}\" budget_tokens=\"6000\"><sigs>",
     )?;
-    let (bodies, changed_paths) = write_pack_task_sigs_and_collect(syms, ingest, interner, out)?;
+    out.write_all(&sigs_buf)?;
     write!(
         out,
         "</sigs><bodies shown=\"{}\" total=\"{}\" capped=\"0\">",

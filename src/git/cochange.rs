@@ -96,8 +96,20 @@ impl StaticCouplingMap {
         {
             return true;
         }
-
         self.reaches(id_a, id_b) || self.reaches(id_b, id_a)
+    }
+
+    /// Return all statically coupled partner file paths for `path`.
+    #[must_use]
+    pub fn partners_of(&self, path: &str) -> Vec<(String, f64)> {
+        let mut partners: Vec<(String, f64)> = self
+            .file_to_id
+            .keys()
+            .filter(|&other| other != path && self.is_coupled(path, other))
+            .map(|other| (other.clone(), 1.0))
+            .collect();
+        partners.sort_by(|a, b| a.0.cmp(&b.0));
+        partners
     }
 
     fn reaches(&self, src: u32, dst: u32) -> bool {

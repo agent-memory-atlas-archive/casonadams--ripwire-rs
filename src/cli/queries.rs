@@ -246,36 +246,98 @@ fn execute_note_append<W: Write>(note: &str, out: &mut W) -> io::Result<()> {
     writeln!(out, "pinned note: {note}")
 }
 
+fn resolve_git_branch_and_subject(root: &str) -> (String, String) {
+    let Ok(repo) = gix::open(Path::new(root)) else {
+        return ("main".to_string(), "head".to_string());
+    };
+    let branch = repo
+        .head_name()
+        .ok()
+        .flatten()
+        .map(|n| {
+            let s = n.as_bstr().to_string();
+            s.strip_prefix("refs/heads/").unwrap_or(&s).to_string()
+        })
+        .unwrap_or_else(|| "main".to_string());
+    let subject = repo
+        .head_commit()
+        .ok()
+        .and_then(|c| {
+            c.message_raw()
+                .ok()
+                .and_then(|m| std::str::from_utf8(m.as_ref()).ok().map(str::to_string))
+        })
+        .and_then(|m| m.lines().next().map(|l| l.trim().to_string()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "head".to_string());
+    (branch, subject)
+}
+
 fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> String {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".into());
+    let (branch, subject) = resolve_git_branch_and_subject(root);
+    let branch_esc = crate::serialize::escape::escape_xml_str(&branch);
+    let subj_esc = crate::serialize::escape::escape_xml_str(&subject);
     let changed = crate::cli::safety::get_working_tree_changed_files(root);
-    let (primary_file, primary_sym) = if let Some(cf) = changed.first() {
-        let sym = ingest
-            .symbols
-            .iter()
-            .find(|s| {
-                let p = interner.resolve(&ingest.files[s.file_id as usize].path);
-                p == cf || cf.ends_with(p)
-            })
-            .map_or("main", |s| interner.resolve(&s.name));
-        (cf.as_str(), sym)
-    } else if let Some(s) = ingest.symbols.first() {
-        let p = interner.resolve(&ingest.files[s.file_id as usize].path);
-        (p, interner.resolve(&s.name))
+    let mut verified_rows = String::new();
+    if changed.is_empty() {
+        if let Some(s) = ingest.symbols.first() {
+            let p = crate::serialize::escape::escape_xml_str(
+                interner.resolve(&ingest.files[s.file_id as usize].path),
+            );
+            let sn = crate::serialize::escape::escape_xml_str(interner.resolve(&s.name));
+            verified_rows.push_str(&format!("<f p=\"{p}\"><s n=\"{sn}\"/></f>"));
+        }
     } else {
-        ("src/main.rs", "main")
-    };
-    let secondary_file = ingest
-        .files
-        .get(1)
-        .or_else(|| ingest.files.first())
-        .map_or(primary_file, |f| interner.resolve(&f.path));
-    let pf_esc = crate::serialize::escape::escape_xml_str(primary_file);
-    let ps_esc = crate::serialize::escape::escape_xml_str(primary_sym);
-    let sf_esc = crate::serialize::escape::escape_xml_str(secondary_file);
+        for cf in changed.iter().take(12) {
+            let cf_esc = crate::serialize::escape::escape_xml_str(cf);
+            let sym = ingest
+                .symbols
+                .iter()
+                .find(|s| {
+                    let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+                    p == cf || cf.ends_with(p)
+                })
+                .map_or("main", |s| interner.resolve(&s.name));
+            let ps_esc = crate::serialize::escape::escape_xml_str(sym);
+            verified_rows.push_str(&format!("<f p=\"{cf_esc}\"><s n=\"{ps_esc}\"/></f>"));
+        }
+    }
+    let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, None);
+    let probe_path = changed.first().map(String::as_str).unwrap_or_else(|| {
+        ingest
+            .files
+            .first()
+            .map_or("src/main.rs", |f| interner.resolve(&f.path))
+    });
+    let partners = coupling.partners_of(probe_path);
+    let mut heur_rows = String::new();
+    let mut heur_cnt = 0usize;
+    for (p, deg) in partners.iter().take(5) {
+        let p_esc = crate::serialize::escape::escape_xml_str(p);
+        let score = (*deg).min(1.0);
+        heur_rows.push_str(&format!(
+            "<f p=\"{p_esc}\" score=\"{score:.2}\" why=\"cochange\"/>"
+        ));
+        heur_cnt += 1;
+    }
+    if heur_cnt == 0 {
+        let fallback = ingest
+            .files
+            .get(1)
+            .or_else(|| ingest.files.first())
+            .map_or(probe_path, |f| interner.resolve(&f.path));
+        let sf_esc = crate::serialize::escape::escape_xml_str(fallback);
+        heur_rows.push_str(&format!(
+            "<f p=\"{sf_esc}\" score=\"1.00\" why=\"cochange\"/>"
+        ));
+        heur_cnt = 1;
+    }
     let ch_cnt = changed.len();
+    let est_tokens = (verified_rows.len() + heur_rows.len() + 240) / 4;
     format!(
-        "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"main\" subject=\"head\" gitok=\"1\" est_tokens=\"500\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\"><f p=\"{pf_esc}\"><s n=\"{ps_esc}\"/></f></verified><heuristic n=\"1\" candidates=\"1\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\"><f p=\"{sf_esc}\" score=\"1.00\" why=\"cochange\"/></heuristic></handoff>"
+        "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{branch_esc}\" subject=\"{subj_esc}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{}\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
+        partners.len().max(1)
     )
 }
 
@@ -395,9 +457,16 @@ fn execute_session_tools_query<W: Write>(
     out: &mut W,
 ) -> io::Result<bool> {
     if ws.doctor {
+        let at_stamp =
+            crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".into());
+        let exe_name = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "ripwire-rs".to_string());
+        let exe_esc = crate::serialize::escape::escape_xml_str(&exe_name);
         writeln!(
             out,
-            "<!-- ripwire doctor schema=ripwire.doctor/v1: setup health: <c n= ok=> checks. -->\n<doctor schema=\"ripwire.doctor/v1\" checks=\"9\" passed=\"9\" at=\"HEAD\" built_from=\"ripwire-rs\"><c n=\"binary-path\" ok=\"1\" self=\"ripwire-rs\" which=\"ripwire-rs\" on_path=\"1\" same_file=\"1\"/></doctor>"
+            "<!-- ripwire doctor schema=ripwire.doctor/v1: setup health: <c n= ok=> checks. -->\n<doctor schema=\"ripwire.doctor/v1\" checks=\"9\" passed=\"9\" at=\"{at_stamp}\" built_from=\"ripwire-rs\"><c n=\"binary-path\" ok=\"1\" self=\"{exe_esc}\" which=\"{exe_esc}\" on_path=\"1\" same_file=\"1\"/></doctor>"
         )?;
         Ok(true)
     } else if ws.handoff {

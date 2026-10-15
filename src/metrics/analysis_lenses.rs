@@ -12,6 +12,11 @@ pub struct ContextRatioRow {
     pub ents: usize,
     pub ents_out: usize,
     pub ent_ratio: f64,
+    pub files: usize,
+    pub files_out: usize,
+    pub rtok: usize,
+    pub rtok_out: usize,
+    pub read_ratio: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,6 +24,66 @@ pub struct ContextRatioReport {
     pub units: usize,
     pub file_units: usize,
     pub rows: Vec<ContextRatioRow>,
+}
+
+fn estimate_symbol_bytes(sym: &crate::domain::Symbol) -> usize {
+    (sym.end_byte.saturating_sub(sym.sig_start_byte) as usize)
+        .max((sym.loc as usize).saturating_mul(38))
+        .max(4)
+}
+
+fn build_context_ratio_row(
+    sym: &crate::domain::Symbol,
+    callees: &[(crate::domain::NodeId, f32, bool)],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> ContextRatioRow {
+    let sites = callees.len();
+    let mut ents_out = 0usize;
+    let mut touched_files = std::collections::HashSet::new();
+    touched_files.insert(sym.file_id);
+    let mut ext_files = std::collections::HashSet::new();
+    let mut total_bytes = estimate_symbol_bytes(sym);
+    let mut out_bytes = 0usize;
+
+    for &(callee_id, _, _) in callees {
+        let callee = &ingest.symbols[callee_id as usize];
+        let c_bytes = estimate_symbol_bytes(callee);
+        total_bytes += c_bytes;
+        touched_files.insert(callee.file_id);
+        if callee.file_id != sym.file_id {
+            ents_out += 1;
+            ext_files.insert(callee.file_id);
+            out_bytes += c_bytes;
+        }
+    }
+
+    let ent_ratio = (ents_out as f64) / (sites as f64);
+    let rtok = ((total_bytes as f64) / 3.8).round().max(1.0) as usize;
+    let rtok_out = ((out_bytes as f64) / 3.8).round() as usize;
+    let read_ratio = (rtok_out as f64) / (rtok as f64);
+    let file_path = ingest
+        .files
+        .get(sym.file_id as usize)
+        .map(|f| interner.resolve(&f.path))
+        .unwrap_or("");
+    let name = interner.resolve(&sym.name);
+
+    ContextRatioRow {
+        path: file_path.to_string(),
+        line: sym.line,
+        name: name.to_string(),
+        kind: sym.kind.tag(),
+        sites,
+        ents: sites,
+        ents_out,
+        ent_ratio,
+        files: touched_files.len(),
+        files_out: ext_files.len(),
+        rtok,
+        rtok_out,
+        read_ratio,
+    }
 }
 
 pub fn compute_context_ratio(
@@ -36,39 +101,10 @@ pub fn compute_context_ratio(
         }
         units += 1;
         files_set.insert(sym.file_id);
-
         let callees: Vec<_> = graph.callees_with_prov(sym.id).collect();
-        let sites = callees.len();
-        if sites == 0 {
-            continue;
+        if !callees.is_empty() {
+            rows.push(build_context_ratio_row(sym, &callees, ingest, interner));
         }
-
-        let mut ents_out = 0usize;
-        for &(callee_id, _, _) in &callees {
-            let callee_file = ingest.symbols[callee_id as usize].file_id;
-            if callee_file != sym.file_id {
-                ents_out += 1;
-            }
-        }
-
-        let ent_ratio = (ents_out as f64) / (sites as f64);
-        let file_path = ingest
-            .files
-            .get(sym.file_id as usize)
-            .map(|f| interner.resolve(&f.path))
-            .unwrap_or("");
-        let name = interner.resolve(&sym.name);
-
-        rows.push(ContextRatioRow {
-            path: file_path.to_string(),
-            line: sym.line,
-            name: name.to_string(),
-            kind: sym.kind.tag(),
-            sites,
-            ents: sites,
-            ents_out,
-            ent_ratio,
-        });
     }
 
     rows.sort_by(|a, b| {
@@ -118,16 +154,34 @@ impl crate::serialize::XmlReport for ContextRatioReport {
             let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
             writeln!(
                 w,
-                "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"2\" files_out=\"1\" rtok=\"100\" rtok_out=\"50\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
-                r.line, r.kind, r.sites, r.ents, r.ents_out, r.ent_ratio, r.ent_ratio
+                "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+                r.line,
+                r.kind,
+                r.sites,
+                r.ents,
+                r.ents_out,
+                r.ent_ratio,
+                r.files,
+                r.files_out,
+                r.rtok,
+                r.rtok_out,
+                r.read_ratio
             )?;
         }
         for r in self.rows.iter().take(shown) {
             let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
             writeln!(
                 w,
-                "  <f p=\"{p_esc}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"2\" files_out=\"1\" rtok=\"100\" rtok_out=\"50\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
-                r.sites, r.ents, r.ents_out, r.ent_ratio, r.ent_ratio
+                "  <f p=\"{p_esc}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+                r.sites,
+                r.ents,
+                r.ents_out,
+                r.ent_ratio,
+                r.files,
+                r.files_out,
+                r.rtok,
+                r.rtok_out,
+                r.read_ratio
             )?;
         }
         Ok(())
@@ -163,6 +217,9 @@ pub struct EnsembleReport {
     pub eligible: usize,
     pub ranked: usize,
     pub no_family: usize,
+    pub cfiles: usize,
+    pub cscope: usize,
+    pub hranked: usize,
     pub rows: Vec<EnsembleRow>,
 }
 
@@ -183,6 +240,13 @@ pub fn compute_ensemble(
     graph: &Graph,
     interner: &Interner,
 ) -> EnsembleReport {
+    let cfiles = ingest
+        .files
+        .iter()
+        .filter(|f| f.lang.semantics().supports_c_layout())
+        .count();
+    let mut cscope = 0usize;
+    let mut hranked = 0usize;
     let mut rows = Vec::new();
     let mut eligible = 0usize;
     let mut no_family = 0usize;
@@ -192,8 +256,9 @@ pub fn compute_ensemble(
             continue;
         }
         eligible += 1;
-
+        cscope += usize::from(sym.lang.semantics().supports_c_layout());
         let fired = evaluate_symbol_ensemble(sym, graph);
+        hranked += usize::from(fired.contains(&"historical"));
         if fired.is_empty() {
             no_family += 1;
         } else {
@@ -220,6 +285,9 @@ pub fn compute_ensemble(
         eligible,
         ranked,
         no_family,
+        cfiles,
+        cscope,
+        hranked,
         rows,
     }
 }
@@ -241,11 +309,14 @@ impl crate::serialize::XmlReport for EnsembleReport {
         let f_shown = self.rows.len().min(20);
         write!(
             w,
-            " families=\"4\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"0\" cscope=\"0\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
+            " families=\"4\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
             self.eligible,
             self.ranked,
             self.no_family,
             self.eligible,
+            self.hranked,
+            self.cfiles,
+            self.cscope,
             self.eligible,
             pw.shown,
             usize::from(pw.capped),
@@ -300,6 +371,11 @@ pub struct CommentCoherenceRow {
     pub path: String,
     pub line: u32,
     pub name: String,
+    pub words: usize,
+    pub restate: usize,
+    pub c_terms: usize,
+    pub i_terms: usize,
+    pub shared: usize,
     pub c_coeff: f64,
     pub cic: f64,
 }
@@ -311,6 +387,120 @@ pub struct CommentCoherenceReport {
     pub rows: Vec<CommentCoherenceRow>,
 }
 
+fn split_identifier_subtokens(ident: &str) -> std::collections::BTreeSet<String> {
+    let mut tokens = std::collections::BTreeSet::new();
+    let mut cur = String::new();
+    for ch in ident.chars() {
+        let is_camel_boundary = ch.is_ascii_uppercase()
+            && !cur.is_empty()
+            && cur.chars().last().is_some_and(|p| p.is_ascii_lowercase());
+        if !ch.is_ascii_alphanumeric() || is_camel_boundary {
+            if cur.len() >= 2 {
+                tokens.insert(cur.to_ascii_lowercase());
+            }
+            cur.clear();
+            if ch.is_ascii_alphanumeric() {
+                cur.push(ch);
+            }
+        } else {
+            cur.push(ch);
+        }
+    }
+    if cur.len() >= 2 {
+        tokens.insert(cur.to_ascii_lowercase());
+    }
+    if tokens.is_empty() && !ident.is_empty() {
+        tokens.insert(ident.to_ascii_lowercase());
+    }
+    tokens
+}
+
+fn is_comment_line(trimmed: &str) -> bool {
+    trimmed.starts_with("//")
+        || trimmed.starts_with("/*")
+        || trimmed.starts_with('*')
+        || trimmed.starts_with('#')
+}
+
+fn extract_preceding_doc_words(bytes: &[u8], sig_start: u32) -> Vec<String> {
+    let end = (sig_start as usize).min(bytes.len());
+    let Ok(prefix) = std::str::from_utf8(&bytes[..end]) else {
+        return Vec::new();
+    };
+    let mut doc_lines = Vec::new();
+    for line in prefix.lines().rev() {
+        let trimmed = line.trim();
+        let is_attr = trimmed.is_empty() || trimmed.starts_with("#[") || trimmed.starts_with('@');
+        if is_attr && doc_lines.is_empty() {
+            continue;
+        }
+        if is_comment_line(trimmed) {
+            doc_lines.push(trimmed);
+        } else {
+            break;
+        }
+    }
+    doc_lines.reverse();
+    doc_lines
+        .into_iter()
+        .flat_map(|l| l.split(|c: char| !c.is_ascii_alphanumeric()))
+        .filter(|w| w.len() >= 2)
+        .map(str::to_ascii_lowercase)
+        .collect()
+}
+
+fn measure_comment_coherence_row(
+    sym: &crate::domain::Symbol,
+    file_path: &str,
+    name: &str,
+    file_bytes: Option<&[u8]>,
+) -> Option<CommentCoherenceRow> {
+    let ident_terms = split_identifier_subtokens(name);
+    let comment_words = match file_bytes {
+        Some(bytes) => extract_preceding_doc_words(bytes, sym.sig_start_byte),
+        None if sym.loc > 5 => ident_terms.iter().cloned().collect(),
+        None => Vec::new(),
+    };
+    if comment_words.is_empty() {
+        return None;
+    }
+    let words = comment_words.len();
+    let restate = comment_words
+        .iter()
+        .filter(|w| {
+            ident_terms
+                .iter()
+                .any(|it| w.contains(it) || it.contains(*w))
+        })
+        .count();
+    let c_set: std::collections::BTreeSet<String> = comment_words.into_iter().collect();
+    let c_terms = c_set.len();
+    let i_terms = ident_terms.len();
+    let shared = c_set
+        .iter()
+        .filter(|w| {
+            ident_terms
+                .iter()
+                .any(|it| w.contains(it) || it.contains(*w))
+        })
+        .count();
+    let union = (c_terms + i_terms).saturating_sub(shared).max(1);
+    let c_coeff = (restate as f64) / (words.max(1) as f64);
+    let cic = (shared as f64) / (union as f64);
+    Some(CommentCoherenceRow {
+        path: file_path.to_string(),
+        line: sym.line,
+        name: name.to_string(),
+        words,
+        restate,
+        c_terms,
+        i_terms,
+        shared,
+        c_coeff,
+        cic,
+    })
+}
+
 pub fn compute_comment_coherence(
     ingest: &IngestResult,
     interner: &Interner,
@@ -318,6 +508,8 @@ pub fn compute_comment_coherence(
     let mut rows = Vec::new();
     let mut documented = 0usize;
     let mut no_comment = 0usize;
+    let mut file_cache: std::collections::HashMap<u32, Option<Vec<u8>>> =
+        std::collections::HashMap::new();
 
     for sym in &ingest.symbols {
         if sym.kind != SymKind::Function && sym.kind != SymKind::Method {
@@ -329,16 +521,14 @@ pub fn compute_comment_coherence(
             .map(|f| interner.resolve(&f.path))
             .unwrap_or("");
         let name = interner.resolve(&sym.name);
+        let file_bytes = file_cache
+            .entry(sym.file_id)
+            .or_insert_with(|| std::fs::read(file_path).ok())
+            .as_deref();
 
-        if sym.loc > 5 {
+        if let Some(row) = measure_comment_coherence_row(sym, file_path, name, file_bytes) {
             documented += 1;
-            rows.push(CommentCoherenceRow {
-                path: file_path.to_string(),
-                line: sym.line,
-                name: name.to_string(),
-                c_coeff: 0.50,
-                cic: 0.65,
-            });
+            rows.push(row);
         } else {
             no_comment += 1;
         }
@@ -348,6 +538,7 @@ pub fn compute_comment_coherence(
         b.c_coeff
             .partial_cmp(&a.c_coeff)
             .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.path.cmp(&b.path))
     });
 
     CommentCoherenceReport {
@@ -390,14 +581,13 @@ impl crate::serialize::XmlReport for CommentCoherenceReport {
             let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
             writeln!(
                 w,
-                "  <fn p=\"{p_esc}:{}\" n=\"{n_esc}\" c_coeff=\"{:.3}\" words=\"8\" restate=\"4\" cic=\"{:.3}\" c_terms=\"4\" i_terms=\"3\" shared=\"2\"/>",
-                r.line, r.c_coeff, r.cic
+                "  <fn p=\"{p_esc}:{}\" n=\"{n_esc}\" c_coeff=\"{:.3}\" words=\"{}\" restate=\"{}\" cic=\"{:.3}\" c_terms=\"{}\" i_terms=\"{}\" shared=\"{}\"/>",
+                r.line, r.c_coeff, r.words, r.restate, r.cic, r.c_terms, r.i_terms, r.shared
             )?;
         }
         Ok(())
     }
 }
-
 impl crate::serialize::ToXmlString for CommentCoherenceReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         serialize_comment_coherence_xml(self, ".", out)

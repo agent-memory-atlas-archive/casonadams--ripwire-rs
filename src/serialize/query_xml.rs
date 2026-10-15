@@ -88,18 +88,20 @@ pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
 }
 
 /// Serialize `grep` search result to Ripwire XML.
+type GrepEncMap = std::collections::BTreeMap<String, (u64, u64)>;
+
 fn collect_grep_summary(
     hits: Option<&Vec<Value>>,
 ) -> (
     std::collections::BTreeSet<String>,
-    std::collections::BTreeSet<String>,
+    GrepEncMap,
     (String, u64),
 ) {
     let mut files_set = std::collections::BTreeSet::new();
-    let mut enc_set = std::collections::BTreeSet::new();
+    let mut enc_map = std::collections::BTreeMap::new();
     let mut first_loc = ("src/lib.rs".to_string(), 1u64);
     let Some(items) = hits else {
-        return (files_set, enc_set, first_loc);
+        return (files_set, enc_map, first_loc);
     };
     for (idx, h) in items.iter().enumerate() {
         let f = h["file"]
@@ -112,10 +114,12 @@ fn collect_grep_summary(
         }
         files_set.insert(f.to_string());
         if let Some(e) = h["enclosing"].as_str().filter(|s| !s.is_empty()) {
-            enc_set.insert(e.to_string());
+            let callers = h["enclosing_callers"].as_u64().unwrap_or(0);
+            let cx = h["enclosing_cx"].as_u64().unwrap_or(1);
+            enc_map.entry(e.to_string()).or_insert((callers, cx));
         }
     }
-    (files_set, enc_set, first_loc)
+    (files_set, enc_map, first_loc)
 }
 
 fn write_grep_context_lines<W: Write>(
@@ -155,14 +159,17 @@ fn write_grep_hit_row<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
 
 fn write_grep_enc_rows<W: Write>(
     out: &mut W,
-    enc_set: &std::collections::BTreeSet<String>,
+    enc_map: &std::collections::BTreeMap<String, (u64, u64)>,
 ) -> io::Result<()> {
-    if enc_set.is_empty() {
+    if enc_map.is_empty() {
         return writeln!(out, "  <enc n=\"main\" callers=\"0\" cx=\"1\"/>");
     }
-    for e in enc_set {
+    for (e, &(callers, cx)) in enc_map {
         let e_esc = escape_xml_str(e);
-        writeln!(out, "  <enc n=\"{e_esc}\" callers=\"0\" cx=\"1\"/>")?;
+        writeln!(
+            out,
+            "  <enc n=\"{e_esc}\" callers=\"{callers}\" cx=\"{cx}\"/>"
+        )?;
     }
     Ok(())
 }
