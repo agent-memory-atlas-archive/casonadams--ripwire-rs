@@ -699,7 +699,7 @@ fn dispatch_lens_queries<W: Write>(
             interner,
             preset_opt.as_deref(),
         );
-        crate::metrics::serialize_quality_panel_xml(&rep, stdout)?;
+        crate::serialize::XmlReport::write_xml_report(&rep, root, stdout)?;
         return Ok(true);
     }
     if let Some(sym) = a.layout.as_deref() {
@@ -736,7 +736,9 @@ fn dispatch_lens_queries<W: Write>(
         return Ok(true);
     }
     if a.comment_coherence {
-        let rep = crate::metrics::compute_comment_coherence(ingest, interner);
+        let rep = crate::metrics::analysis_lenses::compute_comment_coherence_in_root(
+            root, ingest, interner,
+        );
         crate::metrics::serialize_comment_coherence_xml(&rep, root, stdout)?;
         return Ok(true);
     }

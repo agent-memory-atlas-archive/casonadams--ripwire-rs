@@ -505,6 +505,15 @@ pub fn compute_comment_coherence(
     ingest: &IngestResult,
     interner: &Interner,
 ) -> CommentCoherenceReport {
+    compute_comment_coherence_in_root(".", ingest, interner)
+}
+
+pub fn compute_comment_coherence_in_root(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> CommentCoherenceReport {
+    let root_path = std::path::Path::new(root);
     let mut rows = Vec::new();
     let mut documented = 0usize;
     let mut no_comment = 0usize;
@@ -523,7 +532,11 @@ pub fn compute_comment_coherence(
         let name = interner.resolve(&sym.name);
         let file_bytes = file_cache
             .entry(sym.file_id)
-            .or_insert_with(|| std::fs::read(file_path).ok())
+            .or_insert_with(|| {
+                std::fs::read(root_path.join(file_path))
+                    .or_else(|_| std::fs::read(file_path))
+                    .ok()
+            })
             .as_deref();
 
         if let Some(row) = measure_comment_coherence_row(sym, file_path, name, file_bytes) {
