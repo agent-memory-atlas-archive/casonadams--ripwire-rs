@@ -90,9 +90,21 @@ pub fn compute_pr_context(
     interner: &Interner,
     base_ref: &str,
 ) -> PrContextReport {
+    compute_pr_context_in_root(".", changed_files, ingest, graph, interner, base_ref)
+}
+
+#[must_use]
+pub fn compute_pr_context_in_root(
+    root: &str,
+    changed_files: &[String],
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    base_ref: &str,
+) -> PrContextReport {
     let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, Some(graph));
-    let commits =
-        crate::git::history::walk_repository_history(std::path::Path::new(".")).unwrap_or_default();
+    let commits = crate::git::history::walk_repository_history(std::path::Path::new(root))
+        .unwrap_or_default();
     let files: Vec<PrFileContext> = changed_files
         .iter()
         .map(|f| build_single_pr_file_context(f, ingest, graph, interner, &coupling, &commits))
@@ -171,14 +183,15 @@ impl crate::serialize::XmlReport for PrContextReport {
 
 impl crate::serialize::ToXmlString for PrContextReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        serialize_pr_context_xml(self, out)
+        use crate::serialize::XmlReport;
+        self.render_envelope(out)
     }
 }
 
 /// Serialize PR context to canonical XML format.
 pub fn serialize_pr_context_xml<W: Write>(rep: &PrContextReport, out: &mut W) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    rep.render_envelope(out)
+    use crate::serialize::ToXmlString;
+    rep.write_xml(out)
 }
 
 #[cfg(test)]

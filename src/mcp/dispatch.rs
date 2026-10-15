@@ -293,6 +293,20 @@ pub fn call_slice(state: &McpState, args: &Value) -> Result<Value, String> {
         .unwrap_or(crate::slice::SliceFlowDir::Fwd);
 
     let registry = LanguageRegistry::new().map_err(|e| e.to_string())?;
+    let sym_query = target.split(':').next().unwrap_or(target);
+    let custom_bytes = state
+        .ingest
+        .symbols
+        .iter()
+        .find(|s| {
+            state.interner.resolve(&s.name) == sym_query
+                || state.interner.resolve(&s.canonical_id).ends_with(sym_query)
+        })
+        .and_then(|s| state.ingest.files.get(s.file_id as usize))
+        .and_then(|fi| {
+            let rel = state.interner.resolve(&fi.path);
+            std::fs::read(Path::new(&state.root).join(rel)).ok()
+        });
     let xml = crate::slice::execute_slice(
         &state.ingest,
         &registry,
@@ -300,7 +314,7 @@ pub fn call_slice(state: &McpState, args: &Value) -> Result<Value, String> {
         target,
         flow_dir,
         8,
-        None,
+        custom_bytes.as_deref(),
     )?;
     Ok(json!({ "slice": xml }))
 }

@@ -423,8 +423,9 @@ fn execute_pr_context_dispatch<W: Write>(
 ) -> io::Result<()> {
     let base_ref = ref_opt.filter(|s| !s.is_empty()).unwrap_or("working-tree");
     let changed = get_working_tree_changed_files(root);
-    let rep =
-        crate::gate::pr_context::compute_pr_context(&changed, ingest, graph, interner, base_ref);
+    let rep = crate::gate::pr_context::compute_pr_context_in_root(
+        root, &changed, ingest, graph, interner, base_ref,
+    );
     crate::gate::pr_context::serialize_pr_context_xml(&rep, out)
 }
 

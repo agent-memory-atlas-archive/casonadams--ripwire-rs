@@ -227,8 +227,8 @@ fn execute_doc_search_query<W: Write>(
     }
 }
 
-fn execute_notes_display<W: Write>(out: &mut W) -> io::Result<()> {
-    let notes_path = Path::new(".").join(".ripwire_notes");
+fn execute_notes_display<W: Write>(root: &str, out: &mut W) -> io::Result<()> {
+    let notes_path = Path::new(root).join(".ripwire_notes");
     let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
     write!(out, "<ctx schema=\"ripwire.notes/v1\"><notes>")?;
     for line in content.lines().filter(|l| !l.trim().is_empty()) {
@@ -237,11 +237,12 @@ fn execute_notes_display<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(out, "</notes></ctx>")
 }
 
-fn execute_note_append<W: Write>(note: &str, out: &mut W) -> io::Result<()> {
+fn execute_note_append<W: Write>(root: &str, note: &str, out: &mut W) -> io::Result<()> {
+    let notes_path = Path::new(root).join(".ripwire_notes");
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(".ripwire_notes")?;
+        .open(&notes_path)?;
     writeln!(file, "{note}")?;
     writeln!(out, "pinned note: {note}")
 }
@@ -473,10 +474,10 @@ fn execute_session_tools_query<W: Write>(
         writeln!(out, "{}", build_handoff_xml(root, ingest, interner))?;
         Ok(true)
     } else if ws.notes {
-        execute_notes_display(out)?;
+        execute_notes_display(root, out)?;
         Ok(true)
     } else if let Some(note) = ws.note_add.as_deref() {
-        execute_note_append(note, out)?;
+        execute_note_append(root, note, out)?;
         Ok(true)
     } else {
         execute_flip_or_plan_query(ws, root, ingest, interner, out)
