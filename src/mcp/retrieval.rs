@@ -771,6 +771,27 @@ pub fn call_grep_in_root(
     call_grep_with_context(root, ingest, interner, pattern, path_filter, 0, 0)
 }
 
+fn build_grep_lookups(
+    ingest: &IngestResult,
+) -> (
+    std::collections::HashMap<u32, Vec<&crate::domain::Symbol>>,
+    std::collections::HashMap<lasso::Spur, usize>,
+) {
+    let mut syms_by_file: std::collections::HashMap<u32, Vec<&crate::domain::Symbol>> =
+        std::collections::HashMap::new();
+    for s in &ingest.symbols {
+        if s.kind != SymKind::Section {
+            syms_by_file.entry(s.file_id).or_default().push(s);
+        }
+    }
+    let mut callers_by_name: std::collections::HashMap<lasso::Spur, usize> =
+        std::collections::HashMap::new();
+    for r in &ingest.references {
+        *callers_by_name.entry(r.callee_name).or_default() += 1;
+    }
+    (syms_by_file, callers_by_name)
+}
+
 pub fn call_grep_with_context(
     root: &str,
     ingest: &IngestResult,
@@ -782,6 +803,7 @@ pub fn call_grep_with_context(
 ) -> Value {
     let mut hits = Vec::new();
     let root_path = std::path::Path::new(root);
+    let (syms_by_file, callers_by_name) = build_grep_lookups(ingest);
 
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
@@ -798,24 +820,23 @@ pub fn call_grep_with_context(
             continue;
         };
 
+        let file_syms = syms_by_file.get(&file.id);
         let all_lines: Vec<&str> = text.lines().collect();
         for (line_idx, &line) in all_lines.iter().enumerate() {
             if line.contains(pattern) {
                 let line_num = line_idx as u32 + 1;
-                let enc_sym = ingest
-                    .symbols
-                    .iter()
-                    .filter(|s| s.file_id == file.id && s.line <= line_num)
-                    .max_by_key(|s| s.line);
+                let enc_sym = file_syms
+                    .and_then(|syms| {
+                        syms.iter()
+                            .filter(|s| s.line <= line_num)
+                            .max_by_key(|s| s.line)
+                    })
+                    .copied();
                 let enclosing = enc_sym.map(|s| interner.resolve(&s.name));
                 let enc_cx = enc_sym.map_or(1, |s| s.cx.max(1));
-                let enc_callers = enc_sym.map_or(0, |s| {
-                    ingest
-                        .references
-                        .iter()
-                        .filter(|r| r.callee_name == s.name)
-                        .count()
-                });
+                let enc_callers = enc_sym
+                    .and_then(|s| callers_by_name.get(&s.name).copied())
+                    .unwrap_or(0);
 
                 let b_start = line_idx.saturating_sub(before_lines);
                 let before: Vec<Value> = (b_start..line_idx)
@@ -839,7 +860,6 @@ pub fn call_grep_with_context(
             }
         }
     }
-
     json!({
         "pattern": pattern,
         "hits": hits,
