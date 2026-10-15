@@ -511,13 +511,15 @@ fn extract_cmake_option(line: &str, path: &str) -> Option<String> {
 }
 
 fn scan_file_flags(
+    root_path: &std::path::Path,
     path: &str,
     flags: &mut Vec<Value>,
     compile_count: &mut usize,
     cmake_count: &mut usize,
     env_count: &mut usize,
 ) {
-    let Ok(text) = fs::read_to_string(path) else {
+    let Ok(text) = fs::read_to_string(root_path.join(path)).or_else(|_| fs::read_to_string(path))
+    else {
         return;
     };
     for (idx, line) in text.lines().enumerate() {
@@ -557,20 +559,21 @@ fn scan_file_flags(
 
 /// Execute `flags` tool: detect build flags and runtime configuration gates.
 pub fn call_flags(ingest: &IngestResult, interner: &Interner) -> Value {
+    call_flags_in_root(".", ingest, interner)
+}
+
+pub fn call_flags_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
+    let root_path = std::path::Path::new(root);
     let mut flags = Vec::new();
     let mut compile_count = 0usize;
     let mut cmake_count = 0usize;
     let mut env_count = 0usize;
 
     for file in &ingest.files {
-        let path = interner.resolve(&file.path);
-        if path.ends_with(".c")
-            || path.ends_with(".h")
-            || path.ends_with(".cpp")
-            || path.ends_with(".hpp")
-            || path.ends_with("CMakeLists.txt")
-        {
+        if !file.lang.semantics().is_prose_document() {
+            let path = interner.resolve(&file.path);
             scan_file_flags(
+                root_path,
                 path,
                 &mut flags,
                 &mut compile_count,
@@ -582,6 +585,7 @@ pub fn call_flags(ingest: &IngestResult, interner: &Interner) -> Value {
 
     let dark_gates = compile_count + cmake_count;
     json!({
+        "root": root,
         "files": ingest.files.len(),
         "flags_count": flags.len(),
         "compile_count": compile_count,

@@ -129,10 +129,18 @@ pub fn call_explore(state: &McpState, args: &Value) -> Result<Value, String> {
     Ok(Value::String(xml))
 }
 
+fn resolve_state_commits(state: &McpState, months: u32) -> Vec<crate::git::history::CommitInfo> {
+    if let Some(commits) = &state.commits {
+        return commits.clone();
+    }
+    let cutoff = crate::git::history::resolve_cutoff_timestamp(None, months);
+    crate::git::history::walk_repository_history_scoped(Path::new(&state.root), cutoff)
+        .unwrap_or_default()
+}
+
 pub fn call_cochange(state: &McpState, args: &Value) -> Result<Value, String> {
     let path = require_str_arg(args, "path")?;
-    let commits_empty = Vec::new();
-    let commits_slice = state.commits.as_deref().unwrap_or(&commits_empty);
+    let commits = resolve_state_commits(state, 18);
     let coupling = crate::git::cochange::StaticCouplingMap::build(
         &state.ingest,
         &state.interner,
@@ -141,7 +149,7 @@ pub fn call_cochange(state: &McpState, args: &Value) -> Result<Value, String> {
     let opts = crate::git::cochange::CochangeOptions::default();
     let partners = crate::git::cochange::mine_cochange_for_file(
         path,
-        commits_slice,
+        &commits,
         Some(&coupling),
         Some(&state.ingest),
         Some(&state.interner),
@@ -502,12 +510,13 @@ pub fn dispatch_graph_and_doc_tools(
                         .collect()
                 })
                 .unwrap_or_default();
+            let commits = resolve_state_commits(state, 18);
             Ok(graph_tools::call_situational_awareness(
                 &state.ingest,
                 &state.graph,
                 &state.interner,
                 &changed,
-                state.commits.as_deref(),
+                Some(&commits),
             ))
         }
         "from_trace" => {
@@ -536,15 +545,15 @@ pub fn dispatch_graph_and_doc_tools(
                 with_hist,
             ))
         }
-        "flags" => Ok(doc_tools::call_flags(&state.ingest, &state.interner)),
+        "flags" => Ok(doc_tools::call_flags_in_root(
+            &state.root,
+            &state.ingest,
+            &state.interner,
+        )),
         "owners" => {
             let path = args["path"].as_str().or_else(|| args["file"].as_str());
-            Ok(doc_tools::call_owners(
-                state.commits.as_deref(),
-                path,
-                None,
-                None,
-            ))
+            let commits = resolve_state_commits(state, 12);
+            Ok(doc_tools::call_owners(Some(&commits), path, None, None))
         }
         "whereis" => {
             let sym = args["symbol"].as_str().unwrap_or("");

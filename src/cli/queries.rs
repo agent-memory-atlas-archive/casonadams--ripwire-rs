@@ -210,7 +210,7 @@ fn execute_doc_search_query<W: Write>(
         crate::serialize::serialize_doc_drift_xml(&val, out)?;
         Ok(true)
     } else if ws.flags {
-        let val = crate::mcp::doc_tools::call_flags(ingest, interner);
+        let val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
         crate::serialize::serialize_flags_xml(&val, out)?;
         Ok(true)
     } else if let Some(sym) = ws.mentions.as_deref() {
@@ -406,7 +406,7 @@ fn execute_flip_or_plan_query<W: Write>(
     out: &mut W,
 ) -> io::Result<bool> {
     if let Some(gate) = ws.flip.as_deref() {
-        let val = crate::mcp::doc_tools::call_flags(ingest, interner);
+        let val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
         let gate_esc = crate::serialize::escape::escape_xml_str(gate);
         let root_esc = crate::serialize::escape::escape_xml_str(root);
         writeln!(

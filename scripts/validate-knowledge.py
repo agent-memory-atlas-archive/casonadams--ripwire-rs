@@ -91,6 +91,7 @@ def evaluate_repo(rw_bin, rip_bin, repo):
         ("connect", [f"--connect={sym1},{sym2}"]),
         ("impact", [f"--impact={sym1}"]),
         ("grep", [f"--grep={sym1}"]),
+        ("flags", ["--flags"]),
     ]
     for name, args in checks:
         out_rs, ms_rs, rss_rs, _ = run_cmd(rw_bin, repo, args)
