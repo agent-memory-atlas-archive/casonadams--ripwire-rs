@@ -119,6 +119,27 @@ pub struct QualityDeltaReport {
     pub api_new_surface: usize,
 }
 
+fn write_regression_row<W: Write>(r: &QualityRegression, out: &mut W) -> io::Result<()> {
+    let origin_attr = if r.is_new_symbol {
+        " origin=\"new-symbol\""
+    } else {
+        ""
+    };
+    let gating_val = usize::from(r.is_gating);
+    let bar_val = match r.kind.as_str() {
+        "complexity" => 15,
+        "verbosity" => 60,
+        "nesting" => 4,
+        "params" => 5,
+        _ => 0,
+    };
+    writeln!(
+        out,
+        "  <r kind=\"{}\" sym=\"{}\" p=\"{}:{}\" was=\"{}\" now=\"{}\" gating=\"{}\" bar=\"{bar_val}\"{}/>",
+        r.kind, r.sym_name, r.file_path, r.line, r.was_val, r.now_val, gating_val, origin_attr
+    )
+}
+
 impl crate::serialize::ToXmlString for QualityDeltaReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let hb_attr = match self.head_basis {
@@ -140,31 +161,7 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
             self.at_stamp
         )?;
         for r in &self.regressions {
-            let origin_attr = if r.is_new_symbol {
-                " origin=\"new-symbol\""
-            } else {
-                ""
-            };
-            let gating_val = usize::from(r.is_gating);
-            let bar_val = match r.kind.as_str() {
-                "complexity" => 15,
-                "verbosity" => 60,
-                "nesting" => 4,
-                "params" => 5,
-                _ => 0,
-            };
-            writeln!(
-                out,
-                "  <r kind=\"{}\" sym=\"{}\" p=\"{}:{}\" was=\"{}\" now=\"{}\" gating=\"{}\" bar=\"{bar_val}\"{}/>",
-                r.kind,
-                r.sym_name,
-                r.file_path,
-                r.line,
-                r.was_val,
-                r.now_val,
-                gating_val,
-                origin_attr
-            )?;
+            write_regression_row(r, out)?;
         }
         for sa in &self.stale_acks {
             writeln!(

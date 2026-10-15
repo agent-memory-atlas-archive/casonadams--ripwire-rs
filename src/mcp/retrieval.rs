@@ -42,10 +42,44 @@ fn score_single_term(
     name_hit + scope_hit + path_hit
 }
 
+fn build_body_term_masks(
+    ingest: &IngestResult,
+    interner: &Interner,
+    raw_terms: &[&str],
+) -> Vec<u32> {
+    let mut masks = vec![0u32; ingest.symbols.len()];
+    if raw_terms.is_empty() {
+        return masks;
+    }
+    let stems: Vec<(String, String)> = raw_terms
+        .iter()
+        .take(16)
+        .map(|&t| {
+            let low = t.to_ascii_lowercase();
+            let st = stem_query_term(&low);
+            (low, st)
+        })
+        .collect();
+    for r in &ingest.references {
+        let sym_idx = r.from_symbol as usize;
+        if sym_idx >= masks.len() {
+            continue;
+        }
+        let callee = interner.resolve(&r.callee_name).to_ascii_lowercase();
+        for (i, (low, st)) in stems.iter().enumerate() {
+            if callee.contains(low) || callee.contains(st) {
+                masks[sym_idx] |= 1u32 << i;
+            }
+        }
+    }
+    masks
+}
+
 fn score_symbol_match_in_file(
     name: &str,
     scope: Option<&str>,
     file_path: &str,
+    body_mask: u32,
     terms: &[&str],
     rank: f64,
 ) -> f64 {
@@ -54,10 +88,19 @@ fn score_symbol_match_in_file(
     let lower_path = file_path.to_ascii_lowercase();
     let scores: Vec<f64> = terms
         .iter()
-        .map(|&t| score_single_term(&lower_name, lower_scope.as_deref(), &lower_path, t))
+        .enumerate()
+        .map(|(i, &t)| {
+            let base = score_single_term(&lower_name, lower_scope.as_deref(), &lower_path, t);
+            let body = if (body_mask & (1u32 << i.min(31))) != 0 {
+                6.0
+            } else {
+                0.0
+            };
+            base + body
+        })
         .filter(|&s| s > 0.0)
         .collect();
-    if !scores.iter().any(|&s| s > 4.0) {
+    if !scores.iter().any(|&s| s > 6.0) {
         return 0.0;
     }
     let term_score: f64 = scores.iter().sum();
@@ -75,6 +118,7 @@ fn score_candidate_symbol(
     ingest: &IngestResult,
     interner: &Interner,
     ranks: &[f64],
+    body_masks: &[u32],
     raw_terms: &[&str],
 ) -> f64 {
     if sym.kind == SymKind::Section {
@@ -87,12 +131,13 @@ fn score_candidate_symbol(
         .get(sym.file_id as usize)
         .map_or("", |f| interner.resolve(&f.path));
     let rank = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
+    let body_mask = body_masks.get(sym.id as usize).copied().unwrap_or(0);
     let kind_factor = if matches!(sym.kind, SymKind::Var | SymKind::Field) {
         0.2
     } else {
         1.0
     };
-    score_symbol_match_in_file(name, scope, file_path, raw_terms, rank) * kind_factor
+    score_symbol_match_in_file(name, scope, file_path, body_mask, raw_terms, rank) * kind_factor
 }
 
 fn extract_normalized_sig(
@@ -288,9 +333,10 @@ pub fn call_for_task_with_options(
         .filter(|w| w.len() >= 2)
         .collect();
 
+    let body_masks = build_body_term_masks(ingest, interner, &raw_terms);
     let mut scored = Vec::new();
     for sym in &ingest.symbols {
-        let score = score_candidate_symbol(sym, ingest, interner, ranks, &raw_terms);
+        let score = score_candidate_symbol(sym, ingest, interner, ranks, &body_masks, &raw_terms);
         if score > 0.0 {
             scored.push((score, sym));
         }
@@ -958,7 +1004,8 @@ mod tests {
     #[test]
     fn test_score_symbol_match() {
         let terms = ["search", "engine"];
-        let score = score_symbol_match_in_file("search_engine", None, "src/search.rs", &terms, 0.5);
+        let score =
+            score_symbol_match_in_file("search_engine", None, "src/search.rs", 0b10, &terms, 0.5);
         assert!(score > 0.0);
     }
 

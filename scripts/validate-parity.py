@@ -122,6 +122,7 @@ OPTIONAL_ATTRS = {
     "worktree",
     "by_depth",
     "callers_floor",
+    "sev",
 }
 
 

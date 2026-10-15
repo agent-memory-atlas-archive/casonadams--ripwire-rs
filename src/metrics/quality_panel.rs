@@ -20,9 +20,11 @@ pub struct QualityPanelReport {
     pub ranked: usize,
     pub below_cut: usize,
     pub no_family: usize,
+    pub cfiles: usize,
+    pub cscope: usize,
+    pub cranked: usize,
     pub rows: Vec<QualityPanelRow>,
 }
-
 pub struct QualityFamilyContext<'a> {
     pub graph: &'a Graph,
     pub state_syms: Option<&'a std::collections::HashSet<crate::domain::NodeId>>,
@@ -88,11 +90,23 @@ impl QualityEvidenceFamily for LexicalFamily {
     }
 }
 
+struct ConfusionFamily;
+impl QualityEvidenceFamily for ConfusionFamily {
+    fn name(&self) -> &'static str {
+        "confusion"
+    }
+    fn fires(&self, sym: &crate::domain::Symbol, _ctx: &QualityFamilyContext<'_>) -> bool {
+        sym.lang.semantics().supports_c_layout()
+            && (sym.humps > 2 || (sym.max_nest >= 4 && sym.cx >= 12) || sym.ccx > 20)
+    }
+}
+
 pub static PANEL_FAMILIES: &[&dyn QualityEvidenceFamily] = &[
     &StructuralFamily { check_params: true },
     &StateFamily,
     &ColocationFamily { min_out_degree: 10 },
     &HistoricalFamily,
+    &ConfusionFamily,
 ];
 
 pub static ENSEMBLE_FAMILIES: &[&dyn QualityEvidenceFamily] = &[
@@ -102,8 +116,8 @@ pub static ENSEMBLE_FAMILIES: &[&dyn QualityEvidenceFamily] = &[
     &ColocationFamily { min_out_degree: 8 },
     &HistoricalFamily,
     &LexicalFamily,
+    &ConfusionFamily,
 ];
-
 #[must_use]
 pub fn evaluate_quality_families(
     sym: &crate::domain::Symbol,
@@ -130,20 +144,13 @@ fn check_symbol_families(
     (fired.len(), fired)
 }
 
-pub fn compute_quality_panel_report(
+fn collect_nonlocal_state_sym_ids(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
-    preset_opt: Option<&str>,
-) -> QualityPanelReport {
-    let preset = preset_opt.unwrap_or("default");
-    let cut = match preset {
-        "lenient" => 1,
-        _ => 2,
-    };
-
+) -> std::collections::HashSet<crate::domain::NodeId> {
     let nonlocal = crate::metrics::nonlocal::find_nonlocal_state(ingest, graph, interner);
-    let state_syms: std::collections::HashSet<crate::domain::NodeId> = nonlocal
+    nonlocal
         .iter()
         .filter_map(|f| {
             ingest.symbols.iter().find(|s| {
@@ -156,8 +163,25 @@ pub fn compute_quality_panel_report(
             })
         })
         .map(|s| s.id)
-        .collect();
+        .collect()
+}
 
+pub fn compute_quality_panel_report(
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    preset_opt: Option<&str>,
+) -> QualityPanelReport {
+    let preset = preset_opt.unwrap_or("default");
+    let cut = usize::from(preset != "lenient") + 1;
+    let state_syms = collect_nonlocal_state_sym_ids(ingest, graph, interner);
+    let cfiles = ingest
+        .files
+        .iter()
+        .filter(|f| f.lang.semantics().supports_c_layout())
+        .count();
+    let mut cscope = 0usize;
+    let mut cranked = 0usize;
     let mut eligible = 0usize;
     let mut below_cut = 0usize;
     let mut no_family = 0usize;
@@ -170,7 +194,10 @@ pub fn compute_quality_panel_report(
             continue;
         }
         eligible += 1;
+        let is_c = sym.lang.semantics().supports_c_layout();
+        cscope += usize::from(is_c);
         let (fam_count, fired) = check_symbol_families(sym, graph, &state_syms);
+        cranked += usize::from(fired.contains(&"confusion"));
         if fam_count == 0 {
             no_family += 1;
         } else if fam_count < cut {
@@ -187,7 +214,7 @@ pub fn compute_quality_panel_report(
                 line: sym.line,
                 name: name.to_string(),
                 fam: fam_count,
-                of: 5,
+                of: 5 + usize::from(is_c),
                 fired: fired.join(","),
             });
         }
@@ -203,6 +230,9 @@ pub fn compute_quality_panel_report(
         ranked,
         below_cut,
         no_family,
+        cfiles,
+        cscope,
+        cranked,
         rows,
     }
 }
@@ -221,9 +251,10 @@ impl crate::serialize::XmlReport for QualityPanelReport {
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
+        let ccut = if self.cfiles > 0 { 40 } else { 0 };
         write!(
             w,
-            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"0\" cscope=\"0\" cranked=\"0\" ccut=\"0\" lscope=\"{}\" sfiles=\"0\" sscope=\"0\" cells=\"0\" tested_scope=\"0\" deep_untested=\"0\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
+            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"0\" sscope=\"0\" cells=\"0\" tested_scope=\"0\" deep_untested=\"0\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
             self.preset,
             self.cut,
             self.eligible,
@@ -231,6 +262,9 @@ impl crate::serialize::XmlReport for QualityPanelReport {
             self.below_cut,
             self.no_family,
             self.eligible,
+            self.cfiles,
+            self.cscope,
+            self.cranked,
             self.eligible,
             pw.shown,
             usize::from(pw.capped),
