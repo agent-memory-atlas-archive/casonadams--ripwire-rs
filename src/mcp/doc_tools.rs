@@ -1374,6 +1374,27 @@ mod tests {
         assert_eq!(drift.len(), 2);
         assert!(drift.iter().any(|d| d["referenced"] == "src/lib.rs:50"));
         assert!(drift.iter().any(|d| d["referenced"] == "deletedFunction"));
+        let mut ingest = IngestResult::new();
+        let interner = Interner::new();
+        ingest.files.push(crate::domain::FileInfo {
+            id: 0,
+            path: interner.intern("src/lib.rs"),
+            lang: crate::domain::Lang::Rust,
+            line_count: 20,
+            byte_size: 100,
+        });
+        filter_present_in_code_drift(std::path::Path::new("."), &ingest, &interner, &mut drift);
+        assert_eq!(drift.len(), 2);
+        let mut wanted = std::collections::HashSet::new();
+        wanted.insert("deletedFunction".to_string());
+        let mut wants_first = [false; 256];
+        wants_first[b'd' as usize] = true;
+        let found = collect_file_wanted_tokens(
+            b"fn helper() { deletedFunction(); }",
+            &wants_first,
+            &wanted,
+        );
+        assert_eq!(found, vec!["deletedFunction".to_string()]);
         enrich_drift_item_history(".", &mut drift[1], "HEAD");
         assert!(drift[1].get("fate").is_some());
         let mut xml_buf = Vec::new();

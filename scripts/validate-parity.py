@@ -113,6 +113,15 @@ OPTIONAL_ATTRS = {
     "as_stem_nonptr",
     "as_stem_unowned",
     "tier",
+    "data_sections_cut",
+    "run_first",
+    "doc_links",
+    "head_date",
+    "listing",
+    "ref_labels",
+    "worktree",
+    "by_depth",
+    "callers_floor",
 }
 
 

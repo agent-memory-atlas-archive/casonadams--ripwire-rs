@@ -25,6 +25,7 @@ pub const DENYLIST_DIRS: &[&str] = &[
     "build_prof",
     "CMakeFiles",
     "captures",
+    ".specs",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -67,12 +67,12 @@ coverage: ## Generate LCOV test coverage trace (uses nextest when available)
 
 .PHONY: crap
 crap: coverage ## Evaluate CRAP metrics and gate on functions exceeding threshold 30 (runs tests via coverage)
-	@$(CARGO) crap --path . --lcov target/lcov.info --threshold 30 --format json 2>/dev/null | jq -e '([.entries[] | select(.crap > 30) | {file, line, function, crap: (.crap * 10 | round / 10), cc: .cyclomatic, cov: (((.coverage // 0) * 10) | round / 10)}]) as $$v | if ($$v | length) > 0 then ($$v | halt_error(1)) else $$v end'
+	@$(CARGO) crap --path . --lcov target/lcov.info --threshold 30 --fail-above >/dev/null
 
 .PHONY: complexity
 complexity: ## Evaluate Cognitive and Cyclomatic complexity with cccc and gate on cognitive <= 15
 	@command -v cccc >/dev/null 2>&1 || { echo "Error: cccc not found. Install with: cargo install cccc-cli"; exit 1; }
-	@cccc --max-cognitive 15 . | jq -e '([.files[]? | .path as $$path | .functions[]? | select(.cognitive > 15) | {file: $$path, line: .line, function: .name, cognitive: .cognitive, cyclomatic: .cyclomatic}]) as $$v | if ($$v | length) > 0 then ($$v | halt_error(1)) else $$v end'
+	@cccc --top-cognitive 15 --max-cognitive 15 --lang rust . >/dev/null
 
 .PHONY: quality
 quality: ## Measure quality regressions against git HEAD with ripwire-rs

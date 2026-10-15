@@ -249,28 +249,130 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     })())
 }
 
+/// Shared execution context bundling CLI options, repository root, and indexed analysis state.
+pub struct ExecutionContext<'a> {
+    pub cli: &'a Cli,
+    pub root: &'a str,
+    pub ingest: &'a crate::domain::IngestResult,
+    pub graph: &'a Graph,
+    pub pr: &'a PageRankResult,
+    pub interner: &'a Interner,
+}
+
+/// Trait for CLI verb groups that execute against an `ExecutionContext`.
+pub trait CliVerb {
+    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()>;
+}
+
+/// Trait for architecture and quality analysis lenses.
+pub trait AnalysisLens {
+    fn execute_lens<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<bool>;
+}
+
+/// Trait for pre-PR verification gates returning an optional process exit code.
+pub trait VerificationGate {
+    fn evaluate_gate<W: Write>(
+        &self,
+        ctx: &ExecutionContext<'_>,
+        out: &mut W,
+    ) -> io::Result<Option<i32>>;
+}
+
+impl CliVerb for TopRetrievalArgs {
+    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+        execute_retrieval_dispatch(
+            self,
+            ctx.root,
+            ctx.ingest,
+            ctx.graph,
+            ctx.pr,
+            ctx.interner,
+            out,
+        )
+    }
+}
+
+impl CliVerb for TopDetailArgs {
+    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+        if let Some(syms) = self.expand.as_deref() {
+            execute_expand_or_outline_query(ctx.root, syms, false, ctx.ingest, ctx.interner, out)
+        } else if let Some(syms) = self.outline.as_deref() {
+            execute_expand_or_outline_query(ctx.root, syms, true, ctx.ingest, ctx.interner, out)
+        } else if let Some(n) = self.pack_top_n {
+            execute_pack_top_n_query(ctx.root, n, ctx.ingest, ctx.pr, ctx.interner, out)
+        } else if self.tree {
+            execute_tree_query(ctx.root, ctx.ingest, ctx.pr, ctx.interner, out)
+        } else if self.biggest_first {
+            crate::metrics::readability::execute_biggest_first_query(
+                ctx.root,
+                ctx.ingest,
+                ctx.interner,
+                out,
+            )
+        } else if self.nonlocal_state {
+            let funcs =
+                crate::metrics::nonlocal::find_nonlocal_state(ctx.ingest, ctx.graph, ctx.interner);
+            crate::metrics::nonlocal::serialize_nonlocal_state_xml(ctx.root, &funcs, out)
+        } else {
+            execute_detail_extended(
+                ctx.cli,
+                ctx.root,
+                ctx.ingest,
+                ctx.graph,
+                ctx.pr,
+                ctx.interner,
+                out,
+            )
+        }
+    }
+}
+
+impl VerificationGate for TopSafetyArgs {
+    fn evaluate_gate<W: Write>(
+        &self,
+        ctx: &ExecutionContext<'_>,
+        out: &mut W,
+    ) -> io::Result<Option<i32>> {
+        execute_safety_dispatch(self, ctx.root, ctx.ingest, ctx.graph, ctx.interner, out)
+    }
+}
+
+impl AnalysisLens for TopArchitectureArgs {
+    fn execute_lens<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<bool> {
+        dispatch_lens_queries(
+            ctx.cli,
+            ctx.root,
+            ctx.ingest,
+            ctx.graph,
+            ctx.pr,
+            ctx.interner,
+            out,
+        )
+    }
+}
+
 pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    if !cli.retrieval.is_active() {
+    if !cli.retrieval.is_group_active() {
         return None;
     }
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+        let ctx = ExecutionContext {
+            cli,
+            root,
+            ingest: &ingest,
+            graph: &graph,
+            pr: &pr,
+            interner: &interner,
+        };
         let mut stdout_lock = io::stdout().lock();
         let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
-            cli.modifiers.is_pretty(),
-            cli.modifiers.is_json(),
-            cli.legend.eq_ignore_ascii_case("none"),
+            cli.is_pretty_out(),
+            cli.is_json_out(),
+            cli.is_legend_none(),
         );
-        execute_retrieval_dispatch(
-            &cli.retrieval,
-            root,
-            &ingest,
-            &graph,
-            &pr,
-            &interner,
-            &mut stdout,
-        )?;
+        cli.retrieval.execute_verb(&ctx, &mut stdout)?;
         stdout.flush()
     })())
 }
@@ -418,41 +520,28 @@ fn execute_detail_extended<W: Write>(
 
 pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let detail = &cli.detail;
-    if !detail.is_active() {
+    if !detail.is_group_active() {
         return None;
     }
 
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+        let ctx = ExecutionContext {
+            cli,
+            root,
+            ingest: &ingest,
+            graph: &graph,
+            pr: &pr,
+            interner: &interner,
+        };
         let mut stdout_lock = io::stdout().lock();
         let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
-            cli.modifiers.is_pretty() || detail.report,
-            cli.modifiers.is_json() && !detail.report,
-            cli.legend.eq_ignore_ascii_case("none") && !detail.report,
+            cli.is_pretty_out() || detail.report,
+            cli.is_json_out() && !detail.report,
+            cli.is_legend_none() && !detail.report,
         );
-
-        if let Some(syms) = detail.expand.as_deref() {
-            execute_expand_or_outline_query(root, syms, false, &ingest, &interner, &mut stdout)?;
-        } else if let Some(syms) = detail.outline.as_deref() {
-            execute_expand_or_outline_query(root, syms, true, &ingest, &interner, &mut stdout)?;
-        } else if let Some(n) = detail.pack_top_n {
-            execute_pack_top_n_query(root, n, &ingest, &pr, &interner, &mut stdout)?;
-        } else if detail.tree {
-            execute_tree_query(root, &ingest, &pr, &interner, &mut stdout)?;
-        } else if detail.biggest_first {
-            crate::metrics::readability::execute_biggest_first_query(
-                root,
-                &ingest,
-                &interner,
-                &mut stdout,
-            )?;
-        } else if detail.nonlocal_state {
-            let funcs = crate::metrics::nonlocal::find_nonlocal_state(&ingest, &graph, &interner);
-            crate::metrics::nonlocal::serialize_nonlocal_state_xml(root, &funcs, &mut stdout)?;
-        } else {
-            execute_detail_extended(cli, root, &ingest, &graph, &pr, &interner, &mut stdout)?;
-        }
+        detail.execute_verb(&ctx, &mut stdout)?;
         stdout.flush()?;
         Ok(())
     })())
@@ -460,19 +549,27 @@ pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
 pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let s = &cli.safety;
-    if !s.is_active() {
+    if !s.is_group_active() {
         return None;
     }
     Some((|| {
-        let (ingest, graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+        let ctx = ExecutionContext {
+            cli,
+            root,
+            ingest: &ingest,
+            graph: &graph,
+            pr: &pr,
+            interner: &interner,
+        };
         let mut stdout_lock = io::stdout().lock();
         let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
-            cli.modifiers.is_pretty(),
-            cli.modifiers.is_json(),
-            cli.legend.eq_ignore_ascii_case("none"),
+            cli.is_pretty_out(),
+            cli.is_json_out(),
+            cli.is_legend_none(),
         );
-        let res = execute_safety_dispatch(s, root, &ingest, &graph, &interner, &mut stdout);
+        let res = s.evaluate_gate(&ctx, &mut stdout);
         stdout.flush()?;
         if let Some(code) = res? {
             std::process::exit(code);
@@ -500,7 +597,7 @@ fn execute_arch_rules_query<W: Write>(
 
 pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let a = &cli.arch;
-    if !a.is_active() {
+    if !a.is_group_active() {
         return None;
     }
 
@@ -519,10 +616,18 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
         let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
-            cli.modifiers.is_pretty(),
-            cli.modifiers.is_json(),
-            cli.legend.eq_ignore_ascii_case("none"),
+            cli.is_pretty_out(),
+            cli.is_json_out(),
+            cli.is_legend_none(),
         );
+        let ctx = ExecutionContext {
+            cli,
+            root,
+            ingest: &ingest,
+            graph: &graph,
+            pr: &pr,
+            interner: &interner,
+        };
 
         if let Some(rules_file) = a.arch.as_deref() {
             execute_arch_rules_query(rules_file, root, &ingest, &graph, &interner, &mut stdout)?;
@@ -542,7 +647,7 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             execute_external_surface_query(root, &ingest, &interner, &mut stdout)?;
         } else if a.deps {
             execute_deps_query(root, &ingest, &graph, &interner, &mut stdout)?;
-        } else if dispatch_lens_queries(cli, root, &ingest, &graph, &pr, &interner, &mut stdout)? {
+        } else if a.execute_lens(&ctx, &mut stdout)? {
             stdout.flush()?;
             return Ok(());
         }

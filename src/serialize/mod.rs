@@ -30,6 +30,70 @@ pub use xml::{
     write_root_open_with_rank_by, write_symbol_row,
 };
 
+/// Computed pagination slice and Ripwire truncation disclosure metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageWindow {
+    pub begin: usize,
+    pub end: usize,
+    pub shown: usize,
+    pub total: usize,
+    pub capped: bool,
+    pub has_more: bool,
+    pub next_offset: usize,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+impl PageWindow {
+    /// Compute a pagination window over `total` items given a `default_cap` and optional `limit` / `offset`.
+    #[must_use]
+    pub fn compute(
+        total: usize,
+        default_cap: usize,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Self {
+        let off = offset.unwrap_or(0);
+        let lim = limit.unwrap_or(0);
+        let eff_cap = if lim > 0 { lim } else { default_cap };
+        let begin = off.min(total);
+        let end = if eff_cap > 0 {
+            (begin + eff_cap).min(total)
+        } else {
+            total
+        };
+        let shown = end.saturating_sub(begin);
+        let has_more = end < total;
+        let capped = shown < total;
+        Self {
+            begin,
+            end,
+            shown,
+            total,
+            capped,
+            has_more,
+            next_offset: end,
+            limit: lim,
+            offset: off,
+        }
+    }
+
+    /// Format Ripwire XML pagination disclosure attributes (`shown=`, `capped=`, `total=`, `has_more=`, `next_offset=`).
+    #[must_use]
+    pub fn xml_attrs(&self) -> String {
+        if self.capped || self.offset > 0 || self.limit > 0 {
+            let hm = usize::from(self.has_more);
+            let cap = usize::from(self.capped);
+            format!(
+                " shown=\"{}\" capped=\"{cap}\" total=\"{}\" has_more=\"{hm}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
+                self.shown, self.total, self.next_offset, self.offset, self.limit
+            )
+        } else {
+            format!(" shown=\"{}\" capped=\"0\"", self.shown)
+        }
+    }
+}
+
 /// Trait for types that can be serialized as XML and converted to a string.
 pub trait ToXmlString {
     fn write_xml<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()>;
@@ -38,5 +102,41 @@ pub trait ToXmlString {
         let mut buf = Vec::new();
         let _ = self.write_xml(&mut buf);
         String::from_utf8(buf).unwrap_or_default()
+    }
+}
+
+/// Unified XML envelope trait for structured Ripwire reports.
+pub trait XmlReport {
+    fn schema_tag(&self) -> &'static str;
+    fn schema_version(&self) -> &'static str;
+    fn root_path(&self) -> &str {
+        "."
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        None
+    }
+    fn page_window(&self) -> Option<PageWindow> {
+        None
+    }
+    fn write_extra_attrs<W: std::io::Write>(&self, _out: &mut W) -> std::io::Result<()> {
+        Ok(())
+    }
+    fn write_body<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()>;
+
+    fn render_envelope<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        let tag = self.schema_tag();
+        let ver = self.schema_version();
+        let root_esc = escape_xml_str(self.root_path());
+        if let Some(comment) = self.legend_comment() {
+            writeln!(out, "<!-- {comment} -->")?;
+        }
+        write!(out, "<{tag} schema=\"{ver}\" root=\"{root_esc}\"")?;
+        if let Some(pw) = self.page_window() {
+            out.write_all(pw.xml_attrs().as_bytes())?;
+        }
+        self.write_extra_attrs(out)?;
+        writeln!(out, ">")?;
+        self.write_body(out)?;
+        writeln!(out, "</{tag}>")
     }
 }

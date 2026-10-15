@@ -898,3 +898,150 @@ pub struct AroundConfig {
     pub depth: u32,
     pub fanout: usize,
 }
+
+/// Capability trait for extracting pagination windows (`--limit`, `--offset`) from CLI modifiers.
+pub trait Paginated {
+    fn limit_opt(&self) -> Option<usize>;
+    fn offset_opt(&self) -> Option<usize>;
+
+    fn page_window(&self, total: usize, default_cap: usize) -> crate::serialize::PageWindow {
+        crate::serialize::PageWindow::compute(
+            total,
+            default_cap,
+            self.limit_opt(),
+            self.offset_opt(),
+        )
+    }
+}
+
+/// Capability trait for extracting token, byte, top-k, and detail budgets from CLI options.
+pub trait Budgeted {
+    fn pack_budget_opt(&self) -> Option<usize>;
+    fn token_budget_opt(&self) -> Option<usize>;
+    fn max_tokens_opt(&self) -> Option<usize>;
+    fn top_k_opt(&self) -> Option<usize>;
+    fn detail_opt(&self) -> Option<usize>;
+}
+
+/// Capability trait for git history scope modifiers (`--with-history`, `--since`).
+pub trait HistoryScoped {
+    fn with_history_flag(&self) -> bool;
+    fn since_scope_opt(&self) -> Option<&str>;
+}
+
+/// Capability trait for output dialect selection (`--json`, `--pretty`, `--legend`).
+pub trait OutputDialect {
+    fn is_json_out(&self) -> bool;
+    fn is_pretty_out(&self) -> bool;
+    fn is_legend_none(&self) -> bool;
+    fn target_root(&self) -> &str;
+}
+
+impl Paginated for TopModifierArgs {
+    fn limit_opt(&self) -> Option<usize> {
+        self.limit
+    }
+    fn offset_opt(&self) -> Option<usize> {
+        self.offset
+    }
+}
+
+impl Paginated for Cli {
+    fn limit_opt(&self) -> Option<usize> {
+        self.modifiers.limit
+    }
+    fn offset_opt(&self) -> Option<usize> {
+        self.modifiers.offset
+    }
+}
+
+impl Budgeted for Cli {
+    fn pack_budget_opt(&self) -> Option<usize> {
+        self.pack_budget
+    }
+    fn token_budget_opt(&self) -> Option<usize> {
+        self.token_budget
+    }
+    fn max_tokens_opt(&self) -> Option<usize> {
+        self.max_tokens
+    }
+    fn top_k_opt(&self) -> Option<usize> {
+        self.top_k
+    }
+    fn detail_opt(&self) -> Option<usize> {
+        self.retrieval.detail
+    }
+}
+
+impl HistoryScoped for Cli {
+    fn with_history_flag(&self) -> bool {
+        self.retrieval.with_history
+    }
+    fn since_scope_opt(&self) -> Option<&str> {
+        self.since.as_deref()
+    }
+}
+
+impl OutputDialect for Cli {
+    fn is_json_out(&self) -> bool {
+        self.modifiers.is_json()
+    }
+    fn is_pretty_out(&self) -> bool {
+        self.modifiers.is_pretty()
+    }
+    fn is_legend_none(&self) -> bool {
+        self.legend.eq_ignore_ascii_case("none")
+    }
+    fn target_root(&self) -> &str {
+        self.path.as_deref().unwrap_or(".")
+    }
+}
+
+/// Trait implemented by each CLI argument group (`TopNavArgs`, `TopRetrievalArgs`, etc.).
+pub trait VerbGroup {
+    fn is_group_active(&self) -> bool;
+}
+
+impl VerbGroup for TopNavArgs {
+    fn is_group_active(&self) -> bool {
+        [
+            &self.callers,
+            &self.callees,
+            &self.impact,
+            &self.uses,
+            &self.find_symbol,
+        ]
+        .iter()
+        .any(|o| o.is_some())
+    }
+}
+
+impl VerbGroup for TopDetailArgs {
+    fn is_group_active(&self) -> bool {
+        self.is_active()
+    }
+}
+
+impl VerbGroup for TopSafetyArgs {
+    fn is_group_active(&self) -> bool {
+        self.is_active()
+    }
+}
+
+impl VerbGroup for TopArchitectureArgs {
+    fn is_group_active(&self) -> bool {
+        self.is_active()
+    }
+}
+
+impl VerbGroup for TopRetrievalArgs {
+    fn is_group_active(&self) -> bool {
+        self.is_active()
+    }
+}
+
+impl VerbGroup for TopWorkspaceArgs {
+    fn is_group_active(&self) -> bool {
+        self.is_active()
+    }
+}

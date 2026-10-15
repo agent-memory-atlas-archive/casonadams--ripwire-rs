@@ -77,4 +77,58 @@ mod tests {
         assert_eq!(split_endpoint_pair("a->b"), ("a", "b"));
         assert_eq!(split_endpoint_pair("single"), ("single", ""));
     }
+
+    #[test]
+    fn test_cli_modifier_and_verb_group_traits() {
+        let cli = Cli::try_parse_from([
+            "rw",
+            "sub/dir",
+            "--limit",
+            "10",
+            "--offset",
+            "5",
+            "--top-k",
+            "50",
+            "--pack-budget",
+            "8192",
+            "--with-history",
+            "--since",
+            "6m",
+            "--json",
+            "--pretty",
+            "--legend",
+            "none",
+            "--callers",
+            "main",
+        ])
+        .unwrap();
+        assert_eq!(cli.limit_opt(), Some(10));
+        assert_eq!(cli.offset_opt(), Some(5));
+        assert_eq!(cli.modifiers.limit_opt(), Some(10));
+        assert_eq!(cli.modifiers.offset_opt(), Some(5));
+        let pw = cli.page_window(100, 40);
+        assert_eq!(pw.begin, 5);
+        assert_eq!(pw.end, 15);
+        assert_eq!(pw.shown, 10);
+        assert!(pw.capped);
+        assert!(pw.has_more);
+
+        assert_eq!(cli.pack_budget_opt(), Some(8192));
+        assert_eq!(cli.token_budget_opt(), None);
+        assert_eq!(cli.max_tokens_opt(), None);
+        assert_eq!(cli.top_k_opt(), Some(50));
+        assert_eq!(cli.detail_opt(), None);
+        assert!(cli.with_history_flag());
+        assert_eq!(cli.since_scope_opt(), Some("6m"));
+        assert!(cli.is_json_out());
+        assert!(cli.is_pretty_out());
+        assert!(cli.is_legend_none());
+        assert_eq!(cli.target_root(), "sub/dir");
+        assert!(cli.nav.is_group_active());
+        assert!(!cli.detail.is_group_active());
+        assert!(!cli.safety.is_group_active());
+        assert!(!cli.arch.is_group_active());
+        assert!(!cli.retrieval.is_group_active());
+        assert!(!cli.workspace.is_group_active());
+    }
 }

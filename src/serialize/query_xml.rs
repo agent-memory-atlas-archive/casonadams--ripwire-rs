@@ -118,6 +118,55 @@ fn collect_grep_summary(
     (files_set, enc_set, first_loc)
 }
 
+fn write_grep_context_lines<W: Write>(
+    out: &mut W,
+    tag: &str,
+    lines_opt: Option<&Vec<Value>>,
+) -> io::Result<()> {
+    if let Some(lines) = lines_opt {
+        for row in lines {
+            let l = row["line"].as_u64().unwrap_or(1);
+            let t = row["text"].as_str().unwrap_or("");
+            write!(out, "<{tag} l=\"{l}\"><![CDATA[{t}]]></{tag}>")?;
+        }
+    }
+    Ok(())
+}
+
+fn write_grep_hit_row<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
+    let file = escape_xml_str(
+        h["file"]
+            .as_str()
+            .or_else(|| h["path"].as_str())
+            .unwrap_or("src/lib.rs"),
+    );
+    let line = h["line"].as_u64().unwrap_or(1);
+    let enc = escape_xml_str(h["enclosing"].as_str().unwrap_or("main"));
+    let text = h["text"].as_str().unwrap_or("");
+    write!(out, "  <f p=\"{file}\">")?;
+    write_grep_context_lines(out, "b", h["before"].as_array())?;
+    write!(
+        out,
+        "<hit l=\"{line}\" in=\"{enc}\"><![CDATA[{text}]]></hit>"
+    )?;
+    write_grep_context_lines(out, "a", h["after"].as_array())?;
+    writeln!(out, "</f>")
+}
+
+fn write_grep_enc_rows<W: Write>(
+    out: &mut W,
+    enc_set: &std::collections::BTreeSet<String>,
+) -> io::Result<()> {
+    if enc_set.is_empty() {
+        return writeln!(out, "  <enc n=\"main\" callers=\"0\" cx=\"1\"/>");
+    }
+    for e in enc_set {
+        let e_esc = escape_xml_str(e);
+        writeln!(out, "  <enc n=\"{e_esc}\" callers=\"0\" cx=\"1\"/>")?;
+    }
+    Ok(())
+}
+
 pub fn serialize_grep_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let pat = escape_xml_str(val["pattern"].as_str().unwrap_or(""));
     let hits = val["hits"].as_array();
@@ -132,46 +181,10 @@ pub fn serialize_grep_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> 
     write_xml_envelope(out, "grep", &attrs, |out| {
         if let Some(items) = hits {
             for h in items {
-                let file = escape_xml_str(
-                    h["file"]
-                        .as_str()
-                        .or_else(|| h["path"].as_str())
-                        .unwrap_or("src/lib.rs"),
-                );
-                let line = h["line"].as_u64().unwrap_or(1);
-                let enc = escape_xml_str(h["enclosing"].as_str().unwrap_or("main"));
-                let text = h["text"].as_str().unwrap_or("");
-                write!(out, "  <f p=\"{file}\">")?;
-                if let Some(bef) = h["before"].as_array() {
-                    for b in bef {
-                        let bl = b["line"].as_u64().unwrap_or(1);
-                        let bt = b["text"].as_str().unwrap_or("");
-                        write!(out, "<b l=\"{bl}\"><![CDATA[{bt}]]></b>")?;
-                    }
-                }
-                write!(
-                    out,
-                    "<hit l=\"{line}\" in=\"{enc}\"><![CDATA[{text}]]></hit>"
-                )?;
-                if let Some(aft) = h["after"].as_array() {
-                    for a in aft {
-                        let al = a["line"].as_u64().unwrap_or(1);
-                        let at = a["text"].as_str().unwrap_or("");
-                        write!(out, "<a l=\"{al}\"><![CDATA[{at}]]></a>")?;
-                    }
-                }
-                writeln!(out, "</f>")?;
+                write_grep_hit_row(out, h)?;
             }
         }
-        if enc_set.is_empty() {
-            writeln!(out, "  <enc n=\"main\" callers=\"0\" cx=\"1\"/>")?;
-        } else {
-            for e in enc_set {
-                let e_esc = escape_xml_str(&e);
-                writeln!(out, "  <enc n=\"{e_esc}\" callers=\"0\" cx=\"1\"/>")?;
-            }
-        }
-        Ok(())
+        write_grep_enc_rows(out, &enc_set)
     })
 }
 
@@ -1028,15 +1041,15 @@ pub fn serialize_external_surface_xml<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let total = externals.len();
-    let cap = 100usize;
-    let shown = total.min(cap);
-    let capped = usize::from(shown < total);
-    let page_attrs = if capped == 1 {
+    let pw = crate::serialize::PageWindow::compute(total, 100, None, None);
+    let shown = pw.shown;
+    let page_attrs = if pw.capped {
         format!(
-            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" next=\"--external-surface --offset={shown}\""
+            "{} next=\"--external-surface --offset={shown}\"",
+            pw.xml_attrs()
         )
     } else {
-        format!(" shown=\"{shown}\" capped=\"0\"")
+        pw.xml_attrs()
     };
     writeln!(
         out,
@@ -1156,15 +1169,9 @@ pub fn serialize_deps_report_xml<W: Write>(
         .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
         .collect();
     let total = active.len();
-    let shown = total.min(40);
-    let capped = usize::from(shown < total);
-    let page_attrs = if capped == 1 {
-        format!(
-            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
-        )
-    } else {
-        format!(" shown=\"{shown}\" capped=\"0\"")
-    };
+    let pw = crate::serialize::PageWindow::compute(total, 40, None, None);
+    let shown = pw.shown;
+    let page_attrs = pw.xml_attrs();
     let shape = if rep.nccd < 1.0 {
         "horizontal"
     } else if rep.nccd > 2.0 {

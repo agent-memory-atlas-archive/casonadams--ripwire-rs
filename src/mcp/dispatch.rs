@@ -562,13 +562,89 @@ pub fn dispatch_graph_and_doc_tools(
     }
 }
 
+/// Trait encapsulating an MCP tool handler.
+pub trait McpToolHandler: Sync {
+    fn matches_name(&self, tool_name: &str) -> bool;
+    fn execute(&self, state: &McpState, tool_name: &str, args: &Value) -> Result<Value, String>;
+}
+
+struct ReadToolRegistry;
+struct GraphAndDocToolRegistry;
+
+static READ_TOOL_REGISTRY: ReadToolRegistry = ReadToolRegistry;
+static GRAPH_DOC_TOOL_REGISTRY: GraphAndDocToolRegistry = GraphAndDocToolRegistry;
+static MCP_TOOL_HANDLERS: [&dyn McpToolHandler; 2] =
+    [&READ_TOOL_REGISTRY, &GRAPH_DOC_TOOL_REGISTRY];
+
+impl McpToolHandler for ReadToolRegistry {
+    fn matches_name(&self, tool_name: &str) -> bool {
+        matches!(
+            tool_name,
+            "find_symbol"
+                | "callers"
+                | "find_referencing_symbols"
+                | "callees"
+                | "impact"
+                | "explore"
+                | "cochange"
+                | "edit_check"
+                | "affected"
+                | "quality_baseline"
+                | "quality_delta"
+                | "slice"
+                | "replace_symbol_body"
+                | "insert_before_symbol"
+                | "insert_after_symbol"
+                | "for"
+                | "fetch_body"
+                | "exemplar"
+                | "lego"
+                | "memory_recall"
+                | "grep"
+        )
+    }
+
+    fn execute(&self, state: &McpState, tool_name: &str, args: &Value) -> Result<Value, String> {
+        dispatch_read_tools(state, tool_name, args)
+    }
+}
+
+impl McpToolHandler for GraphAndDocToolRegistry {
+    fn matches_name(&self, tool_name: &str) -> bool {
+        matches!(
+            tool_name,
+            "connect"
+                | "path_between"
+                | "uses"
+                | "analyze"
+                | "rank_by"
+                | "situational_awareness"
+                | "from_trace"
+                | "mentions"
+                | "doc_drift"
+                | "flags"
+                | "owners"
+                | "whereis"
+                | "stray_content"
+        )
+    }
+
+    fn execute(&self, state: &McpState, tool_name: &str, args: &Value) -> Result<Value, String> {
+        dispatch_graph_and_doc_tools(state, tool_name, args)
+    }
+}
+
 pub fn dispatch_tool_action(
     state: &McpState,
     tool_name: &str,
     args: &Value,
 ) -> Result<Value, String> {
-    dispatch_read_tools(state, tool_name, args)
-        .or_else(|_| dispatch_graph_and_doc_tools(state, tool_name, args))
+    for handler in MCP_TOOL_HANDLERS {
+        if handler.matches_name(tool_name) {
+            return handler.execute(state, tool_name, args);
+        }
+    }
+    Err(format!("unknown tool: {tool_name}"))
 }
 
 fn attach_session_legend_meta(val: &mut Value, state: &McpState, args: &Value) {

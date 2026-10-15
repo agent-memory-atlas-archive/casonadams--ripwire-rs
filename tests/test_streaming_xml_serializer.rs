@@ -509,3 +509,54 @@ fn test_query_xml_graph_paths() {
     ));
     assert!(s_unreach.contains("hint="));
 }
+
+#[test]
+fn test_page_window_and_xml_report_trait() {
+    use ripwire_rs::serialize::{PageWindow, XmlReport};
+
+    struct SampleReport {
+        items: Vec<&'static str>,
+        pw: PageWindow,
+    }
+
+    impl XmlReport for SampleReport {
+        fn schema_tag(&self) -> &'static str {
+            "sample"
+        }
+        fn schema_version(&self) -> &'static str {
+            "ripwire.sample/v1"
+        }
+        fn root_path(&self) -> &str {
+            "pkg/sub"
+        }
+        fn legend_comment(&self) -> Option<&'static str> {
+            Some("ripwire sample schema=ripwire.sample/v1")
+        }
+        fn page_window(&self) -> Option<PageWindow> {
+            Some(self.pw)
+        }
+        fn write_body<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+            for &item in &self.items[self.pw.begin..self.pw.end] {
+                writeln!(out, "  <item n=\"{item}\"/>")?;
+            }
+            Ok(())
+        }
+    }
+
+    let items = vec!["a", "b", "c", "d", "e"];
+    let pw = PageWindow::compute(items.len(), 2, None, None);
+    assert_eq!(pw.shown, 2);
+    assert!(pw.capped);
+    assert!(pw.has_more);
+    assert_eq!(pw.next_offset, 2);
+
+    let rep = SampleReport { items, pw };
+    let mut buf = Vec::new();
+    rep.render_envelope(&mut buf).unwrap();
+    let xml = String::from_utf8(buf).unwrap();
+    assert!(xml.contains("<!-- ripwire sample schema=ripwire.sample/v1 -->"));
+    assert!(xml.contains("<sample schema=\"ripwire.sample/v1\" root=\"pkg/sub\" shown=\"2\" capped=\"1\" total=\"5\" has_more=\"1\" next_offset=\"2\" offset=\"0\" limit=\"0\">"));
+    assert!(xml.contains("<item n=\"a\"/>"));
+    assert!(xml.contains("<item n=\"b\"/>"));
+    assert!(!xml.contains("<item n=\"c\"/>"));
+}

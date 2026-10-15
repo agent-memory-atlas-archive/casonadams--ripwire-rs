@@ -346,14 +346,8 @@ pub fn transitive_impact_multi(
     results
 }
 
-fn format_nav_page_attrs(shown: usize, total: usize) -> String {
-    if shown < total {
-        format!(
-            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
-        )
-    } else {
-        format!(" shown=\"{shown}\" capped=\"0\"")
-    }
+fn format_nav_page_attrs(_shown: usize, total: usize) -> String {
+    crate::serialize::PageWindow::compute(total, 40, None, None).xml_attrs()
 }
 
 fn write_nav_items<W: Write>(
