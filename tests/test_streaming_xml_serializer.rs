@@ -559,4 +559,27 @@ fn test_page_window_and_xml_report_trait() {
     assert!(xml.contains("<item n=\"a\"/>"));
     assert!(xml.contains("<item n=\"b\"/>"));
     assert!(!xml.contains("<item n=\"c\"/>"));
+
+    use ripwire_rs::serialize::ToXmlString;
+    let ingest = ripwire_rs::domain::IngestResult::new();
+    let interner = ripwire_rs::domain::Interner::new();
+    let graph = ripwire_rs::graph::Graph::build(&ingest, &interner);
+    let qp = ripwire_rs::metrics::compute_quality_panel_report(&ingest, &graph, &interner, None);
+    assert!(qp.to_xml_string().contains("ripwire.quality-panel/v1"));
+    let cr = ripwire_rs::metrics::compute_context_ratio(&ingest, &graph, &interner);
+    assert!(cr.to_xml_string().contains("ripwire.context-ratio/v1"));
+    let ens = ripwire_rs::metrics::compute_ensemble(&ingest, &graph, &interner);
+    assert!(ens.to_xml_string().contains("ripwire.ensemble/v1"));
+    let cc = ripwire_rs::metrics::compute_comment_coherence(&ingest, &interner);
+    assert!(cc.to_xml_string().contains("ripwire.comment-coherence/v1"));
+    let seams = ripwire_rs::gate::seams::find_integration_seams(&ingest, &graph, &interner);
+    assert!(seams.to_xml_string().contains("ripwire.seams/v1"));
+    let scout = ripwire_rs::gate::merge_scout::evaluate_merge_scout("main", &ingest, &interner);
+    assert!(scout.to_xml_string().contains("ripwire.merge-scout/v1"));
+    let pr_ctx =
+        ripwire_rs::gate::pr_context::compute_pr_context(&[], &ingest, &graph, &interner, "HEAD");
+    assert!(pr_ctx.to_xml_string().contains("ripwire.pr-context/v1"));
+    let snap = ripwire_rs::gate::QualitySnapshot::default();
+    let dmm = ripwire_rs::metrics::compute_dmm_report(&snap, &snap, "worktree", "HEAD");
+    assert!(dmm.to_xml_string().contains("ripwire.dmm/v1"));
 }

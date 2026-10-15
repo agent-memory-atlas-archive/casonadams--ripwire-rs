@@ -85,39 +85,68 @@ pub fn compute_context_ratio(
     }
 }
 
+impl crate::serialize::XmlReport for ContextRatioReport {
+    fn schema_tag(&self) -> &'static str {
+        "contextratio"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.context-ratio/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some("ripwire context-ratio schema=ripwire.context-ratio/v1: LOCAL-REASONING lens.")
+    }
+    fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
+        write!(
+            w,
+            " units=\"{}\" file_units=\"{}\" defs_per_name_cap=\"8\" body_bytes_per_token=\"3.80\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" defs_capped=\"1\" counts_floor=\"1\"",
+            self.units,
+            self.file_units,
+            pw.shown,
+            usize::from(pw.capped),
+            pw.shown,
+            usize::from(pw.capped),
+            pw.total,
+            usize::from(pw.has_more),
+            pw.next_offset
+        )
+    }
+    fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let shown = self.rows.len().min(40);
+        for r in self.rows.iter().take(shown) {
+            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
+            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
+            writeln!(
+                w,
+                "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"2\" files_out=\"1\" rtok=\"100\" rtok_out=\"50\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+                r.line, r.kind, r.sites, r.ents, r.ents_out, r.ent_ratio, r.ent_ratio
+            )?;
+        }
+        for r in self.rows.iter().take(shown) {
+            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
+            writeln!(
+                w,
+                "  <f p=\"{p_esc}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"2\" files_out=\"1\" rtok=\"100\" rtok_out=\"50\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+                r.sites, r.ents, r.ents_out, r.ent_ratio, r.ent_ratio
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl crate::serialize::ToXmlString for ContextRatioReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        serialize_context_ratio_xml(self, ".", out)
+    }
+}
+
 pub fn serialize_context_ratio_xml<W: Write>(
     rep: &ContextRatioReport,
     root: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let total = rep.rows.len();
-    let shown = total.min(40);
-    let capped = usize::from(shown < total);
-    writeln!(
-        out,
-        "<!-- ripwire context-ratio schema=ripwire.context-ratio/v1: LOCAL-REASONING lens. -->\n<contextratio schema=\"ripwire.context-ratio/v1\" units=\"{}\" file_units=\"{}\" defs_per_name_cap=\"8\" body_bytes_per_token=\"3.80\" shown_syms=\"{shown}\" syms_capped=\"{capped}\" shown_files=\"{shown}\" files_capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" defs_capped=\"1\" counts_floor=\"1\" root=\"{root}\">",
-        rep.units, rep.file_units
-    )?;
-
-    for r in rep.rows.iter().take(shown) {
-        let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-        let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
-        writeln!(
-            out,
-            "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"2\" files_out=\"1\" rtok=\"100\" rtok_out=\"50\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
-            r.line, r.kind, r.sites, r.ents, r.ents_out, r.ent_ratio, r.ent_ratio
-        )?;
-    }
-    for r in rep.rows.iter().take(shown) {
-        let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-        writeln!(
-            out,
-            "  <f p=\"{p_esc}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"2\" files_out=\"1\" rtok=\"100\" rtok_out=\"50\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
-            r.sites, r.ents, r.ents_out, r.ent_ratio, r.ent_ratio
-        )?;
-    }
-
-    writeln!(out, "</contextratio>")
+    use crate::serialize::XmlReport;
+    rep.write_xml_report(root, out)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,20 +167,15 @@ pub struct EnsembleReport {
 }
 
 fn evaluate_symbol_ensemble(sym: &crate::domain::Symbol, graph: &Graph) -> Vec<&'static str> {
-    let mut fired = Vec::new();
-    if sym.ccx > 15 || sym.loc > 60 || sym.max_nest > 4 {
-        fired.push("structural");
-    }
-    if graph.out_degree(sym.id) >= 8 {
-        fired.push("colocation");
-    }
-    if sym.cx > 10 && sym.loc > 40 {
-        fired.push("historical");
-    }
-    if sym.params > 4 {
-        fired.push("lexical");
-    }
-    fired
+    let ctx = crate::metrics::quality_panel::QualityFamilyContext {
+        graph,
+        state_syms: None,
+    };
+    crate::metrics::quality_panel::evaluate_quality_families(
+        sym,
+        &ctx,
+        crate::metrics::quality_panel::ENSEMBLE_FAMILIES,
+    )
 }
 
 pub fn compute_ensemble(
@@ -200,41 +224,75 @@ pub fn compute_ensemble(
     }
 }
 
+impl crate::serialize::XmlReport for EnsembleReport {
+    fn schema_tag(&self) -> &'static str {
+        "ensemble"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.ensemble/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire ensemble schema=ripwire.ensemble/v1: four orthogonal evidence families joined.",
+        )
+    }
+    fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
+        let f_shown = self.rows.len().min(20);
+        write!(
+            w,
+            " families=\"4\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"0\" cscope=\"0\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
+            self.eligible,
+            self.ranked,
+            self.no_family,
+            self.eligible,
+            self.eligible,
+            pw.shown,
+            usize::from(pw.capped),
+            usize::from(pw.capped),
+            pw.total,
+            usize::from(pw.has_more),
+            pw.next_offset
+        )
+    }
+    fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let shown = self.rows.len().min(40);
+        let f_shown = self.rows.len().min(20);
+        for r in self.rows.iter().take(shown) {
+            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
+            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
+            writeln!(
+                w,
+                "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"3\" fired=\"{}\" unavail=\"confusion\"/>",
+                r.line, r.fam, r.fired
+            )?;
+        }
+        for r in self.rows.iter().take(f_shown) {
+            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
+            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
+            writeln!(
+                w,
+                "  <f p=\"{p_esc}\" top=\"{n_esc}\" top_l=\"{}\" top_fam=\"{}\" union_fam=\"{}\" union=\"{}\" syms=\"1\"/>",
+                r.line, r.fam, r.fam, r.fired
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl crate::serialize::ToXmlString for EnsembleReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        serialize_ensemble_xml(self, ".", out)
+    }
+}
+
 pub fn serialize_ensemble_xml<W: Write>(
     rep: &EnsembleReport,
     root: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let total = rep.rows.len();
-    let shown = total.min(40);
-    let f_shown = total.min(20);
-    let capped = usize::from(shown < total);
-    writeln!(
-        out,
-        "<!-- ripwire ensemble schema=ripwire.ensemble/v1: four orthogonal evidence families joined. -->\n<ensemble schema=\"ripwire.ensemble/v1\" families=\"4\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"0\" cscope=\"0\" lscope=\"{}\" shown_syms=\"{shown}\" syms_capped=\"{capped}\" shown_files=\"{f_shown}\" files_capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" root=\"{root}\" at=\"HEAD\">",
-        rep.eligible, rep.ranked, rep.no_family, rep.eligible, rep.eligible
-    )?;
-
-    for r in rep.rows.iter().take(shown) {
-        let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-        let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
-        writeln!(
-            out,
-            "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"3\" fired=\"{}\" unavail=\"confusion\"/>",
-            r.line, r.fam, r.fired
-        )?;
-    }
-    for r in rep.rows.iter().take(f_shown) {
-        let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-        let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
-        writeln!(
-            out,
-            "  <f p=\"{p_esc}\" top=\"{n_esc}\" top_l=\"{}\" top_fam=\"{}\" union_fam=\"{}\" union=\"{}\" syms=\"1\"/>",
-            r.line, r.fam, r.fam, r.fired
-        )?;
-    }
-
-    writeln!(out, "</ensemble>")
+    use crate::serialize::XmlReport;
+    rep.write_xml_report(root, out)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -299,38 +357,60 @@ pub fn compute_comment_coherence(
     }
 }
 
+impl crate::serialize::XmlReport for CommentCoherenceReport {
+    fn schema_tag(&self) -> &'static str {
+        "comment_coherence"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.comment-coherence/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire comment-coherence schema=ripwire.comment-coherence/v1: two comment/name content measures per documented function.",
+        )
+    }
+    fn page_window(&self) -> Option<crate::serialize::PageWindow> {
+        Some(crate::serialize::PageWindow::compute(
+            self.rows.len(),
+            40,
+            None,
+            None,
+        ))
+    }
+    fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        write!(
+            w,
+            " documented=\"{}\" no_comment=\"{}\"",
+            self.documented, self.no_comment
+        )
+    }
+    fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        for r in self.rows.iter().take(40) {
+            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
+            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
+            writeln!(
+                w,
+                "  <fn p=\"{p_esc}:{}\" n=\"{n_esc}\" c_coeff=\"{:.3}\" words=\"8\" restate=\"4\" cic=\"{:.3}\" c_terms=\"4\" i_terms=\"3\" shared=\"2\"/>",
+                r.line, r.c_coeff, r.cic
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl crate::serialize::ToXmlString for CommentCoherenceReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        serialize_comment_coherence_xml(self, ".", out)
+    }
+}
+
 pub fn serialize_comment_coherence_xml<W: Write>(
     rep: &CommentCoherenceReport,
     root: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let total = rep.rows.len();
-    let shown = total.min(40);
-    let capped = usize::from(shown < total);
-    let page_attrs = if capped == 1 {
-        format!(
-            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
-        )
-    } else {
-        format!(" shown=\"{shown}\" capped=\"0\"")
-    };
-    writeln!(
-        out,
-        "<!-- ripwire comment-coherence schema=ripwire.comment-coherence/v1: two comment/name content measures per documented function. -->\n<comment_coherence schema=\"ripwire.comment-coherence/v1\" documented=\"{}\" no_comment=\"{}\"{page_attrs} root=\"{root}\">",
-        rep.documented, rep.no_comment
-    )?;
-
-    for r in rep.rows.iter().take(shown) {
-        let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-        let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
-        writeln!(
-            out,
-            "  <fn p=\"{p_esc}:{}\" n=\"{n_esc}\" c_coeff=\"{:.3}\" words=\"8\" restate=\"4\" cic=\"{:.3}\" c_terms=\"4\" i_terms=\"3\" shared=\"2\"/>",
-            r.line, r.c_coeff, r.cic
-        )?;
-    }
-
-    writeln!(out, "</comment_coherence>")
+    use crate::serialize::XmlReport;
+    rep.write_xml_report(root, out)
 }
 
 pub fn classify_identifier_casing(name: &str) -> &'static str {

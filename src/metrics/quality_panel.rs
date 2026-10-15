@@ -23,33 +23,110 @@ pub struct QualityPanelReport {
     pub rows: Vec<QualityPanelRow>,
 }
 
+pub struct QualityFamilyContext<'a> {
+    pub graph: &'a Graph,
+    pub state_syms: Option<&'a std::collections::HashSet<crate::domain::NodeId>>,
+}
+
+/// Trait encapsulating an orthogonal symbol quality evidence family.
+pub trait QualityEvidenceFamily: Sync {
+    fn name(&self) -> &'static str;
+    fn fires(&self, sym: &crate::domain::Symbol, ctx: &QualityFamilyContext<'_>) -> bool;
+}
+
+struct StructuralFamily {
+    check_params: bool,
+}
+impl QualityEvidenceFamily for StructuralFamily {
+    fn name(&self) -> &'static str {
+        "structural"
+    }
+    fn fires(&self, sym: &crate::domain::Symbol, _ctx: &QualityFamilyContext<'_>) -> bool {
+        sym.ccx > 15 || sym.loc > 60 || sym.max_nest > 4 || (self.check_params && sym.params > 5)
+    }
+}
+
+struct StateFamily;
+impl QualityEvidenceFamily for StateFamily {
+    fn name(&self) -> &'static str {
+        "state"
+    }
+    fn fires(&self, sym: &crate::domain::Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
+        ctx.state_syms.is_some_and(|s| s.contains(&sym.id))
+    }
+}
+
+struct ColocationFamily {
+    min_out_degree: usize,
+}
+impl QualityEvidenceFamily for ColocationFamily {
+    fn name(&self) -> &'static str {
+        "colocation"
+    }
+    fn fires(&self, sym: &crate::domain::Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
+        ctx.graph.out_degree(sym.id) >= self.min_out_degree
+    }
+}
+
+struct HistoricalFamily;
+impl QualityEvidenceFamily for HistoricalFamily {
+    fn name(&self) -> &'static str {
+        "historical"
+    }
+    fn fires(&self, sym: &crate::domain::Symbol, _ctx: &QualityFamilyContext<'_>) -> bool {
+        sym.cx > 10 && sym.loc > 40
+    }
+}
+
+struct LexicalFamily;
+impl QualityEvidenceFamily for LexicalFamily {
+    fn name(&self) -> &'static str {
+        "lexical"
+    }
+    fn fires(&self, sym: &crate::domain::Symbol, _ctx: &QualityFamilyContext<'_>) -> bool {
+        sym.params > 4
+    }
+}
+
+pub static PANEL_FAMILIES: &[&dyn QualityEvidenceFamily] = &[
+    &StructuralFamily { check_params: true },
+    &StateFamily,
+    &ColocationFamily { min_out_degree: 10 },
+    &HistoricalFamily,
+];
+
+pub static ENSEMBLE_FAMILIES: &[&dyn QualityEvidenceFamily] = &[
+    &StructuralFamily {
+        check_params: false,
+    },
+    &ColocationFamily { min_out_degree: 8 },
+    &HistoricalFamily,
+    &LexicalFamily,
+];
+
+#[must_use]
+pub fn evaluate_quality_families(
+    sym: &crate::domain::Symbol,
+    ctx: &QualityFamilyContext<'_>,
+    families: &[&dyn QualityEvidenceFamily],
+) -> Vec<&'static str> {
+    families
+        .iter()
+        .filter(|fam| fam.fires(sym, ctx))
+        .map(|fam| fam.name())
+        .collect()
+}
+
 fn check_symbol_families(
     sym: &crate::domain::Symbol,
     graph: &Graph,
     state_syms: &std::collections::HashSet<crate::domain::NodeId>,
 ) -> (usize, Vec<&'static str>) {
-    let mut fired = Vec::new();
-
-    // 1. Structural
-    if sym.ccx > 15 || sym.loc > 60 || sym.max_nest > 4 || sym.params > 5 {
-        fired.push("structural");
-    }
-
-    // 2. State
-    if state_syms.contains(&sym.id) {
-        fired.push("state");
-    }
-
-    // 3. Colocation
-    if graph.out_degree(sym.id) >= 10 {
-        fired.push("colocation");
-    }
-
-    // 4. Historical (churn heuristic based on loc/complexity ratio)
-    if sym.cx > 10 && sym.loc > 40 {
-        fired.push("historical");
-    }
-
+    let ctx = QualityFamilyContext {
+        graph,
+        state_syms: Some(state_syms),
+    };
+    let fired = evaluate_quality_families(sym, &ctx, PANEL_FAMILIES);
     (fired.len(), fired)
 }
 
@@ -130,37 +207,64 @@ pub fn compute_quality_panel_report(
     }
 }
 
+impl crate::serialize::XmlReport for QualityPanelReport {
+    fn schema_tag(&self) -> &'static str {
+        "quality_panel"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.quality-panel/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire quality-panel schema=ripwire.quality-panel/v1: every quality family in ONE report.",
+        )
+    }
+    fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
+        write!(
+            w,
+            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"0\" cscope=\"0\" cranked=\"0\" ccut=\"0\" lscope=\"{}\" sfiles=\"0\" sscope=\"0\" cells=\"0\" tested_scope=\"0\" deep_untested=\"0\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
+            self.preset,
+            self.cut,
+            self.eligible,
+            self.ranked,
+            self.below_cut,
+            self.no_family,
+            self.eligible,
+            self.eligible,
+            pw.shown,
+            usize::from(pw.capped),
+            pw.total,
+            usize::from(pw.has_more),
+            pw.next_offset
+        )
+    }
+    fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        for r in self.rows.iter().take(40) {
+            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
+            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
+            writeln!(
+                w,
+                "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"{}\" fired=\"{}\" unavail=\"confusion\"/>",
+                r.line, r.fam, r.of, r.fired
+            )?;
+        }
+        Ok(())
+    }
+}
+
+impl crate::serialize::ToXmlString for QualityPanelReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        serialize_quality_panel_xml(self, out)
+    }
+}
+
 pub fn serialize_quality_panel_xml<W: Write>(
     rep: &QualityPanelReport,
     out: &mut W,
 ) -> io::Result<()> {
-    let total = rep.rows.len();
-    let shown = total.min(40);
-    let capped = usize::from(shown < total);
-    writeln!(
-        out,
-        "<!-- ripwire quality-panel schema=ripwire.quality-panel/v1: every quality family in ONE report. -->\n<quality_panel schema=\"ripwire.quality-panel/v1\" preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"140\" window=\"12mo\" cfiles=\"0\" cscope=\"0\" cranked=\"0\" ccut=\"0\" lscope=\"{}\" sfiles=\"0\" sscope=\"0\" cells=\"0\" tested_scope=\"0\" deep_untested=\"0\" shown=\"{shown}\" capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" root=\".\" at=\"HEAD\">",
-        rep.preset,
-        rep.cut,
-        rep.eligible,
-        rep.ranked,
-        rep.below_cut,
-        rep.no_family,
-        rep.eligible,
-        rep.eligible,
-    )?;
-
-    for r in rep.rows.iter().take(shown) {
-        let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-        let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
-        writeln!(
-            out,
-            "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"{}\" fired=\"{}\" unavail=\"confusion\"/>",
-            r.line, r.fam, r.of, r.fired
-        )?;
-    }
-
-    writeln!(out, "</quality_panel>")
+    use crate::serialize::XmlReport;
+    rep.write_xml_report(".", out)
 }
 
 #[cfg(test)]

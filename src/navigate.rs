@@ -957,16 +957,83 @@ fn tokenize_graph_query(input: &str) -> Vec<Token> {
     tokens
 }
 
+/// Predicate trait for filtering symbol sets in the `--graph-query` functional DSL.
+pub trait GraphFilterPredicate: std::fmt::Debug + Send + Sync {
+    fn matches(
+        &self,
+        sym: &crate::domain::Symbol,
+        ingest: &IngestResult,
+        graph: &Graph,
+        interner: &Interner,
+    ) -> bool;
+}
+
+#[derive(Debug, Clone)]
+struct KindFilter(String);
+impl GraphFilterPredicate for KindFilter {
+    fn matches(
+        &self,
+        sym: &crate::domain::Symbol,
+        _ingest: &IngestResult,
+        _graph: &Graph,
+        _interner: &Interner,
+    ) -> bool {
+        kind_matches_tag(sym.kind, &self.0)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FileFilter(String);
+impl GraphFilterPredicate for FileFilter {
+    fn matches(
+        &self,
+        sym: &crate::domain::Symbol,
+        ingest: &IngestResult,
+        _graph: &Graph,
+        interner: &Interner,
+    ) -> bool {
+        ingest
+            .files
+            .get(sym.file_id as usize)
+            .is_some_and(|f| interner.resolve(&f.path).contains(&self.0))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FaninFilter(usize);
+impl GraphFilterPredicate for FaninFilter {
+    fn matches(
+        &self,
+        sym: &crate::domain::Symbol,
+        _ingest: &IngestResult,
+        graph: &Graph,
+        _interner: &Interner,
+    ) -> bool {
+        graph.in_degree(sym.id) >= self.0
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CxFilter(u32);
+impl GraphFilterPredicate for CxFilter {
+    fn matches(
+        &self,
+        sym: &crate::domain::Symbol,
+        _ingest: &IngestResult,
+        _graph: &Graph,
+        _interner: &Interner,
+    ) -> bool {
+        sym.ccx <= self.0 || sym.cx <= self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 enum GraphExpr {
     All,
     Name(String),
     Callers(Box<GraphExpr>, usize),
     Callees(Box<GraphExpr>, usize),
-    Kind(Box<GraphExpr>, String),
-    File(Box<GraphExpr>, String),
-    Fanin(Box<GraphExpr>, usize),
-    Cx(Box<GraphExpr>, u32),
+    Filter(Box<GraphExpr>, std::sync::Arc<dyn GraphFilterPredicate>),
     And(Vec<GraphExpr>),
     Or(Vec<GraphExpr>),
     Not(Box<GraphExpr>),
@@ -1048,10 +1115,10 @@ impl<'a> GraphQueryParser<'a> {
             }
             "callers" => self.parse_closure_expr(true),
             "callees" => self.parse_closure_expr(false),
-            "kind" => self.parse_filter_kind(),
-            "file" => self.parse_filter_file(),
-            "fanin" => self.parse_filter_fanin(),
-            "cx" => self.parse_filter_cx(),
+            "kind" => self.parse_str_filter("kind", |s| std::sync::Arc::new(KindFilter(s))),
+            "file" => self.parse_str_filter("file", |s| std::sync::Arc::new(FileFilter(s))),
+            "fanin" => self.parse_num_filter("fanin", 1, |n| std::sync::Arc::new(FaninFilter(n))),
+            "cx" => self.parse_num_filter("cx", 15, |n| std::sync::Arc::new(CxFilter(n as u32))),
             "and" => self.parse_composite(true),
             "or" => self.parse_composite(false),
             "not" => self.parse_not(),
@@ -1086,13 +1153,16 @@ impl<'a> GraphQueryParser<'a> {
         }
     }
 
-    fn parse_filter_kind(&mut self) -> Option<GraphExpr> {
+    fn parse_str_filter<F>(&mut self, op_name: &str, build: F) -> Option<GraphExpr>
+    where
+        F: FnOnce(String) -> std::sync::Arc<dyn GraphFilterPredicate>,
+    {
         if self.peek() != Some(&Token::LParen) {
-            return Some(GraphExpr::Name("kind".to_string()));
+            return Some(GraphExpr::Name(op_name.to_string()));
         }
         self.pos += 1;
         let sub = self.parse_expr()?;
-        let kind = if self.peek() == Some(&Token::Comma) {
+        let arg = if self.peek() == Some(&Token::Comma) {
             self.pos += 1;
             self.match_ident().unwrap_or_default()
         } else {
@@ -1101,67 +1171,36 @@ impl<'a> GraphQueryParser<'a> {
         if self.peek() == Some(&Token::RParen) {
             self.pos += 1;
         }
-        Some(GraphExpr::Kind(Box::new(sub), kind))
+        Some(GraphExpr::Filter(Box::new(sub), build(arg)))
     }
 
-    fn parse_filter_file(&mut self) -> Option<GraphExpr> {
+    fn parse_num_filter<F>(
+        &mut self,
+        op_name: &str,
+        default_num: usize,
+        build: F,
+    ) -> Option<GraphExpr>
+    where
+        F: FnOnce(usize) -> std::sync::Arc<dyn GraphFilterPredicate>,
+    {
         if self.peek() != Some(&Token::LParen) {
-            return Some(GraphExpr::Name("file".to_string()));
+            return Some(GraphExpr::Name(op_name.to_string()));
         }
         self.pos += 1;
         let sub = self.parse_expr()?;
-        let path = if self.peek() == Some(&Token::Comma) {
-            self.pos += 1;
-            self.match_ident().unwrap_or_default()
-        } else {
-            String::new()
-        };
-        if self.peek() == Some(&Token::RParen) {
-            self.pos += 1;
-        }
-        Some(GraphExpr::File(Box::new(sub), path))
-    }
-
-    fn parse_filter_fanin(&mut self) -> Option<GraphExpr> {
-        if self.peek() != Some(&Token::LParen) {
-            return Some(GraphExpr::Name("fanin".to_string()));
-        }
-        self.pos += 1;
-        let sub = self.parse_expr()?;
-        let min_in = if self.peek() == Some(&Token::Comma) {
+        let num = if self.peek() == Some(&Token::Comma) {
             self.pos += 1;
             match self.next() {
                 Some(Token::Num(n)) => *n,
-                _ => 1,
+                _ => default_num,
             }
         } else {
-            1
+            default_num
         };
         if self.peek() == Some(&Token::RParen) {
             self.pos += 1;
         }
-        Some(GraphExpr::Fanin(Box::new(sub), min_in))
-    }
-
-    fn parse_filter_cx(&mut self) -> Option<GraphExpr> {
-        if self.peek() != Some(&Token::LParen) {
-            return Some(GraphExpr::Name("cx".to_string()));
-        }
-        self.pos += 1;
-        let sub = self.parse_expr()?;
-        let max_cx = if self.peek() == Some(&Token::Comma) {
-            self.pos += 1;
-            match self.next() {
-                Some(Token::Num(n)) => *n as u32,
-                _ => 15,
-            }
-        } else {
-            15
-        };
-        if self.peek() == Some(&Token::RParen) {
-            self.pos += 1;
-        }
-        Some(GraphExpr::Cx(Box::new(sub), max_cx))
+        Some(GraphExpr::Filter(Box::new(sub), build(num)))
     }
 
     fn parse_composite(&mut self, is_and: bool) -> Option<GraphExpr> {
@@ -1242,35 +1281,19 @@ fn eval_callees_closure(
     current
 }
 
-fn eval_filter_kind(
+fn eval_filter_predicate(
     base: BTreeSet<NodeId>,
-    kind_tag: &str,
+    pred: &dyn GraphFilterPredicate,
     ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
 ) -> BTreeSet<NodeId> {
     base.into_iter()
         .filter(|&id| {
             ingest
                 .symbols
                 .get(id as usize)
-                .is_some_and(|s| kind_matches_tag(s.kind, kind_tag))
-        })
-        .collect()
-}
-
-fn eval_filter_file(
-    base: BTreeSet<NodeId>,
-    pat: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
-) -> BTreeSet<NodeId> {
-    base.into_iter()
-        .filter(|&id| {
-            ingest.symbols.get(id as usize).is_some_and(|s| {
-                ingest
-                    .files
-                    .get(s.file_id as usize)
-                    .is_some_and(|f| interner.resolve(&f.path).contains(pat))
-            })
+                .is_some_and(|sym| pred.matches(sym, ingest, graph, interner))
         })
         .collect()
 }
@@ -1325,27 +1348,10 @@ fn evaluate_graph_expr(
             let base = evaluate_graph_expr(sub, ingest, graph, interner);
             eval_callees_closure(base, *depth, graph)
         }
-        GraphExpr::Kind(sub, kind_tag) => {
+        GraphExpr::Filter(sub, pred) => {
             let base = evaluate_graph_expr(sub, ingest, graph, interner);
-            eval_filter_kind(base, kind_tag, ingest)
+            eval_filter_predicate(base, pred.as_ref(), ingest, graph, interner)
         }
-        GraphExpr::File(sub, pat) => {
-            let base = evaluate_graph_expr(sub, ingest, graph, interner);
-            eval_filter_file(base, pat, ingest, interner)
-        }
-        GraphExpr::Fanin(sub, min_in) => evaluate_graph_expr(sub, ingest, graph, interner)
-            .into_iter()
-            .filter(|&id| graph.in_degree(id) >= *min_in)
-            .collect(),
-        GraphExpr::Cx(sub, max_cx) => evaluate_graph_expr(sub, ingest, graph, interner)
-            .into_iter()
-            .filter(|&id| {
-                ingest
-                    .symbols
-                    .get(id as usize)
-                    .is_some_and(|s| s.ccx <= *max_cx || s.cx <= *max_cx)
-            })
-            .collect(),
         GraphExpr::And(subs) => eval_and_composite(subs, ingest, graph, interner),
         GraphExpr::Or(subs) => eval_or_composite(subs, ingest, graph, interner),
         GraphExpr::Not(sub) => {

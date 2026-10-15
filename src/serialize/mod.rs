@@ -112,6 +112,9 @@ pub trait XmlReport {
     fn root_path(&self) -> &str {
         "."
     }
+    fn include_root_attr(&self) -> bool {
+        true
+    }
     fn legend_comment(&self) -> Option<&'static str> {
         None
     }
@@ -123,14 +126,18 @@ pub trait XmlReport {
     }
     fn write_body<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()>;
 
-    fn render_envelope<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+    fn write_xml_report<W: std::io::Write>(&self, root: &str, out: &mut W) -> std::io::Result<()> {
         let tag = self.schema_tag();
         let ver = self.schema_version();
-        let root_esc = escape_xml_str(self.root_path());
+        let root_esc = escape_xml_str(root);
         if let Some(comment) = self.legend_comment() {
             writeln!(out, "<!-- {comment} -->")?;
         }
-        write!(out, "<{tag} schema=\"{ver}\" root=\"{root_esc}\"")?;
+        if self.include_root_attr() {
+            write!(out, "<{tag} schema=\"{ver}\" root=\"{root_esc}\"")?;
+        } else {
+            write!(out, "<{tag} schema=\"{ver}\"")?;
+        }
         if let Some(pw) = self.page_window() {
             out.write_all(pw.xml_attrs().as_bytes())?;
         }
@@ -138,5 +145,9 @@ pub trait XmlReport {
         writeln!(out, ">")?;
         self.write_body(out)?;
         writeln!(out, "</{tag}>")
+    }
+
+    fn render_envelope<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        self.write_xml_report(self.root_path(), out)
     }
 }

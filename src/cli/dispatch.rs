@@ -377,18 +377,60 @@ pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     })())
 }
 
+impl CliVerb for TopWorkspaceArgs {
+    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+        if let Some((spec, op)) = self
+            .replace_symbol_body
+            .as_deref()
+            .map(|s| (s, crate::mcp::edit::EditOp::ReplaceBody))
+            .or_else(|| {
+                self.insert_before_symbol
+                    .as_deref()
+                    .map(|s| (s, crate::mcp::edit::EditOp::InsertBefore))
+            })
+            .or_else(|| {
+                self.insert_after_symbol
+                    .as_deref()
+                    .map(|s| (s, crate::mcp::edit::EditOp::InsertAfter))
+            })
+        {
+            execute_edit_op_with_options(
+                EditCliOptions {
+                    root: ctx.root,
+                    spec,
+                    op,
+                    payload_override: ctx.cli.safety.edit_payload.as_deref(),
+                    dry_run: ctx.cli.safety.dry_run,
+                },
+                ctx.ingest,
+                ctx.interner,
+                out,
+            )
+        } else {
+            execute_workspace_doc_query(
+                self,
+                ctx.root,
+                ctx.ingest,
+                ctx.interner,
+                ctx.cli.with_history_flag(),
+                out,
+            )
+        }
+    }
+}
+
 pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let ws = &cli.workspace;
-    if !ws.is_active() {
+    if !ws.is_group_active() {
         return None;
     }
     Some((|| {
         let mut stdout_lock = io::stdout().lock();
         let mut stdout = crate::serialize::XmlWriter::with_options(
             &mut stdout_lock,
-            cli.modifiers.is_pretty(),
-            cli.modifiers.is_json(),
-            cli.legend.eq_ignore_ascii_case("none"),
+            cli.is_pretty_out(),
+            cli.is_json_out(),
+            cli.is_legend_none(),
         );
         if ws.owners {
             execute_workspace_owners(cli, root, &mut stdout)?;
@@ -396,44 +438,16 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             let val = crate::mcp::doc_tools::call_stray_content(root);
             crate::serialize::serialize_stray_content_xml(&val, &mut stdout)?;
         } else {
-            let (ingest, _graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-            if let Some((spec, op)) = ws
-                .replace_symbol_body
-                .as_deref()
-                .map(|s| (s, crate::mcp::edit::EditOp::ReplaceBody))
-                .or_else(|| {
-                    ws.insert_before_symbol
-                        .as_deref()
-                        .map(|s| (s, crate::mcp::edit::EditOp::InsertBefore))
-                })
-                .or_else(|| {
-                    ws.insert_after_symbol
-                        .as_deref()
-                        .map(|s| (s, crate::mcp::edit::EditOp::InsertAfter))
-                })
-            {
-                execute_edit_op_with_options(
-                    EditCliOptions {
-                        root,
-                        spec,
-                        op,
-                        payload_override: cli.safety.edit_payload.as_deref(),
-                        dry_run: cli.safety.dry_run,
-                    },
-                    &ingest,
-                    &interner,
-                    &mut stdout,
-                )?;
-            } else {
-                execute_workspace_doc_query(
-                    ws,
-                    root,
-                    &ingest,
-                    &interner,
-                    cli.retrieval.with_history,
-                    &mut stdout,
-                )?;
-            }
+            let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+            let ctx = ExecutionContext {
+                cli,
+                root,
+                ingest: &ingest,
+                graph: &graph,
+                pr: &pr,
+                interner: &interner,
+            };
+            ws.execute_verb(&ctx, &mut stdout)?;
         }
         stdout.flush()
     })())

@@ -84,30 +84,54 @@ pub fn evaluate_merge_scout(
     }
 }
 
+impl crate::serialize::XmlReport for MergeScoutReport {
+    fn schema_tag(&self) -> &'static str {
+        "merge-scout"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.merge-scout/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire merge-scout schema=ripwire.merge-scout/v1: cross-branch overlap of arms= refs.",
+        )
+    }
+    fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        write!(w, " arms=\"{}\" head=\"HEAD\" at=\"HEAD\"", self.arms_count)
+    }
+    fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        for a in &self.arms {
+            writeln!(
+                w,
+                "  <arm ref=\"{}\" base=\"{}\" ok=\"1\" changed=\"{}\" head_conflicts=\"{}\"/>",
+                a.branch, a.base_sha, a.changed_count, a.head_conflicts
+            )?;
+        }
+        for p in &self.pairs {
+            writeln!(
+                w,
+                "  <pair a=\"{}\" b=\"{}\" conflicts=\"{}\" risks=\"0\"/>",
+                p.arm_a, p.arm_b, p.conflicts
+            )?;
+        }
+        let order_str = self.landing_order.join(",");
+        writeln!(w, "  <landing order=\"{order_str}\"/>")
+    }
+}
+
+impl crate::serialize::ToXmlString for MergeScoutReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        serialize_merge_scout_xml(self, out)
+    }
+}
+
 /// Serialize merge scout report to canonical XML format.
 pub fn serialize_merge_scout_xml<W: Write>(rep: &MergeScoutReport, out: &mut W) -> io::Result<()> {
-    writeln!(
-        out,
-        "<!-- ripwire merge-scout schema=ripwire.merge-scout/v1: cross-branch overlap of arms= refs. -->\n<merge-scout schema=\"ripwire.merge-scout/v1\" arms=\"{}\" head=\"HEAD\" at=\"HEAD\">",
-        rep.arms_count
-    )?;
-    for a in &rep.arms {
-        writeln!(
-            out,
-            "  <arm ref=\"{}\" base=\"{}\" ok=\"1\" changed=\"{}\" head_conflicts=\"{}\"/>",
-            a.branch, a.base_sha, a.changed_count, a.head_conflicts
-        )?;
-    }
-    for p in &rep.pairs {
-        writeln!(
-            out,
-            "  <pair a=\"{}\" b=\"{}\" conflicts=\"{}\" risks=\"0\"/>",
-            p.arm_a, p.arm_b, p.conflicts
-        )?;
-    }
-    let order_str = rep.landing_order.join(",");
-    writeln!(out, "  <landing order=\"{order_str}\"/>")?;
-    writeln!(out, "</merge-scout>")
+    use crate::serialize::XmlReport;
+    rep.render_envelope(out)
 }
 
 #[cfg(test)]

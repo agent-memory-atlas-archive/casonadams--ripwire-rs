@@ -191,42 +191,68 @@ pub fn find_integration_seams(
     }
 }
 
+impl crate::serialize::XmlReport for SeamsReport {
+    fn schema_tag(&self) -> &'static str {
+        "seams"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.seams/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some("ripwire seams schema=ripwire.seams/v1: cross-directory call edges NO test reaches.")
+    }
+    fn page_window(&self) -> Option<crate::serialize::PageWindow> {
+        Some(crate::serialize::PageWindow::compute(
+            self.seam_pairs_count,
+            20,
+            None,
+            None,
+        ))
+    }
+    fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        write!(
+            w,
+            " modules=\"{}\" bridges=\"{}\" untested=\"{}\" doc_links=\"0\" test_files=\"{}\" seam_pairs=\"{}\" pr_iters=\"44\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+            self.modules_count,
+            self.bridges_count,
+            self.untested_count,
+            self.test_files_count,
+            self.seam_pairs_count
+        )
+    }
+    fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        for g in self.groups.iter().take(20) {
+            let e_len = g.edges.len();
+            let e_shown = e_len.min(5);
+            let e_cap = usize::from(e_shown < e_len);
+            writeln!(
+                w,
+                "  <seam from=\"{}\" to=\"{}\" untested=\"{e_len}\" shown=\"{e_shown}\" capped=\"{e_cap}\">",
+                g.from_dir, g.to_dir
+            )?;
+            for e in g.edges.iter().take(e_shown) {
+                writeln!(
+                    w,
+                    "    <edge caller=\"{}\" p=\"{}\" callee=\"{}\" cp=\"{}\"/>",
+                    e.caller, e.caller_path, e.callee, e.callee_path
+                )?;
+            }
+            writeln!(w, "  </seam>")?;
+        }
+        Ok(())
+    }
+}
+
+impl crate::serialize::ToXmlString for SeamsReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        serialize_seams_xml(".", self, out)
+    }
+}
+
 /// Serialize seams report to canonical XML format.
 pub fn serialize_seams_xml<W: Write>(root: &str, rep: &SeamsReport, out: &mut W) -> io::Result<()> {
-    let total = rep.seam_pairs_count;
-    let shown = total.min(20);
-    let capped = usize::from(shown < total);
-    let page_attrs = if capped == 1 {
-        format!(
-            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
-        )
-    } else {
-        format!(" shown=\"{shown}\" capped=\"0\"")
-    };
-    writeln!(
-        out,
-        "<!-- ripwire seams schema=ripwire.seams/v1: cross-directory call edges NO test reaches. -->\n<seams schema=\"ripwire.seams/v1\" root=\"{root}\" modules=\"{}\" bridges=\"{}\" untested=\"{}\" doc_links=\"0\" test_files=\"{}\" seam_pairs=\"{total}\"{page_attrs} pr_iters=\"44\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
-        rep.modules_count, rep.bridges_count, rep.untested_count, rep.test_files_count,
-    )?;
-    for g in rep.groups.iter().take(shown) {
-        let e_len = g.edges.len();
-        let e_shown = e_len.min(5);
-        let e_cap = usize::from(e_shown < e_len);
-        writeln!(
-            out,
-            "  <seam from=\"{}\" to=\"{}\" untested=\"{e_len}\" shown=\"{e_shown}\" capped=\"{e_cap}\">",
-            g.from_dir, g.to_dir
-        )?;
-        for e in g.edges.iter().take(e_shown) {
-            writeln!(
-                out,
-                "    <edge caller=\"{}\" p=\"{}\" callee=\"{}\" cp=\"{}\"/>",
-                e.caller, e.caller_path, e.callee, e.callee_path
-            )?;
-        }
-        writeln!(out, "  </seam>")?;
-    }
-    writeln!(out, "</seams>")
+    use crate::serialize::XmlReport;
+    rep.write_xml_report(root, out)
 }
 
 #[cfg(test)]

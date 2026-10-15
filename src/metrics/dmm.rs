@@ -142,51 +142,75 @@ pub fn compute_dmm_report(
     }
 }
 
-pub fn serialize_dmm_xml<W: Write>(rep: &DmmReport, out: &mut W) -> io::Result<()> {
-    let at_attr = if !rep.at_stamp.is_empty() {
-        format!(" at=\"{}\"", rep.at_stamp)
-    } else {
-        String::new()
-    };
-    let avail = usize::from(rep.good + rep.bad > 0);
-    let dmm_str = if avail == 1 {
-        format!("{:.3}", rep.dmm)
-    } else {
-        "UNAVAILABLE".to_string()
-    };
-    let reason_attr = if avail == 0 {
-        " reason=\"no unit's size, complexity or parameter count moved — this change is outside what the model measures\""
-    } else {
-        ""
-    };
-
-    writeln!(
-        out,
-        "<!-- ripwire dmm schema=ripwire.dmm/v1: Delta Maintainability Model. -->\n<dmm schema=\"ripwire.dmm/v1\" base=\"{}\" target=\"{}\"{at_attr} available=\"{avail}\" combine=\"pooled\" size_metric=\"physical-loc\" low_loc=\"15\" low_cx=\"5\" low_params=\"2\" dmm=\"{dmm_str}\" good=\"{}\" bad=\"{}\" base_units=\"{}\" base_volume=\"{}\" target_units=\"{}\" target_volume=\"{}\"{reason_attr}>",
-        rep.base_sha,
-        rep.target,
-        rep.good,
-        rep.bad,
-        rep.base_units,
-        rep.base_volume,
-        rep.target_units,
-        rep.target_volume
-    )?;
-
-    for p in &rep.properties {
-        let p_dmm = if p.good + p.bad > 0 {
-            format!("{:.3}", p.dmm)
+impl crate::serialize::XmlReport for DmmReport {
+    fn schema_tag(&self) -> &'static str {
+        "dmm"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.dmm/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some("ripwire dmm schema=ripwire.dmm/v1: Delta Maintainability Model.")
+    }
+    fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let at_attr = if !self.at_stamp.is_empty() {
+            format!(" at=\"{}\"", self.at_stamp)
+        } else {
+            String::new()
+        };
+        let avail = usize::from(self.good + self.bad > 0);
+        let dmm_str = if avail == 1 {
+            format!("{:.3}", self.dmm)
         } else {
             "UNAVAILABLE".to_string()
         };
-        writeln!(
-            out,
-            "  <p k=\"{}\" dmm=\"{p_dmm}\" good=\"{}\" bad=\"{}\" d_low=\"{}\" d_high=\"{}\"/>",
-            p.key, p.good, p.bad, p.good, p.bad
-        )?;
+        let reason_attr = if avail == 0 {
+            " reason=\"no unit's size, complexity or parameter count moved — this change is outside what the model measures\""
+        } else {
+            ""
+        };
+        write!(
+            w,
+            " base=\"{}\" target=\"{}\"{at_attr} available=\"{avail}\" combine=\"pooled\" size_metric=\"physical-loc\" low_loc=\"15\" low_cx=\"5\" low_params=\"2\" dmm=\"{dmm_str}\" good=\"{}\" bad=\"{}\" base_units=\"{}\" base_volume=\"{}\" target_units=\"{}\" target_volume=\"{}\"{reason_attr}",
+            self.base_sha,
+            self.target,
+            self.good,
+            self.bad,
+            self.base_units,
+            self.base_volume,
+            self.target_units,
+            self.target_volume
+        )
     }
+    fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        for p in &self.properties {
+            let p_dmm = if p.good + p.bad > 0 {
+                format!("{:.3}", p.dmm)
+            } else {
+                "UNAVAILABLE".to_string()
+            };
+            writeln!(
+                w,
+                "  <p k=\"{}\" dmm=\"{p_dmm}\" good=\"{}\" bad=\"{}\" d_low=\"{}\" d_high=\"{}\"/>",
+                p.key, p.good, p.bad, p.good, p.bad
+            )?;
+        }
+        Ok(())
+    }
+}
 
-    writeln!(out, "</dmm>")
+impl crate::serialize::ToXmlString for DmmReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        serialize_dmm_xml(self, out)
+    }
+}
+
+pub fn serialize_dmm_xml<W: Write>(rep: &DmmReport, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    rep.render_envelope(out)
 }
 
 #[cfg(test)]

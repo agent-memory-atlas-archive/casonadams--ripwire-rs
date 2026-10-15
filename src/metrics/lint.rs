@@ -54,6 +54,144 @@ pub const LINT_RULES: &[LintRuleDesc] = &[
     },
 ];
 
+/// Trait encapsulating a single AST symbol lint rule and its catalog metadata.
+pub trait SymbolLintRule: Sync {
+    fn desc(&self) -> LintRuleDesc;
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        graph: &Graph,
+    ) -> Option<LintFinding>;
+}
+
+struct ComplexitySpikeRule;
+impl SymbolLintRule for ComplexitySpikeRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[0].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        _graph: &Graph,
+    ) -> Option<LintFinding> {
+        (sym.ccx > 15).then(|| LintFinding {
+            rule: "complexity-spike".to_string(),
+            message: format!(
+                "Function '{name}' cognitive complexity {} exceeds 15",
+                sym.ccx
+            ),
+            path: file.to_string(),
+            line: sym.line,
+            severity: "major".to_string(),
+        })
+    }
+}
+
+struct DeepNestingRule;
+impl SymbolLintRule for DeepNestingRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[1].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        _graph: &Graph,
+    ) -> Option<LintFinding> {
+        (sym.max_nest > 5).then(|| LintFinding {
+            rule: "deep-nesting".to_string(),
+            message: format!("Function '{name}' max nesting {} exceeds 5", sym.max_nest),
+            path: file.to_string(),
+            line: sym.line,
+            severity: "major".to_string(),
+        })
+    }
+}
+
+struct ParameterSpillRule;
+impl SymbolLintRule for ParameterSpillRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[2].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        _graph: &Graph,
+    ) -> Option<LintFinding> {
+        (sym.params > 5).then(|| LintFinding {
+            rule: "parameter-spill".to_string(),
+            message: format!(
+                "Function '{name}' has {} parameters, exceeding 5",
+                sym.params
+            ),
+            path: file.to_string(),
+            line: sym.line,
+            severity: "minor".to_string(),
+        })
+    }
+}
+
+struct VerbositySpikeRule;
+impl SymbolLintRule for VerbositySpikeRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[3].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        _graph: &Graph,
+    ) -> Option<LintFinding> {
+        (sym.loc > 100).then(|| LintFinding {
+            rule: "verbosity-spike".to_string(),
+            message: format!("Function '{name}' length {} exceeds 100 LOC", sym.loc),
+            path: file.to_string(),
+            line: sym.line,
+            severity: "minor".to_string(),
+        })
+    }
+}
+
+struct DeadFunctionRule;
+impl SymbolLintRule for DeadFunctionRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[4].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        graph: &Graph,
+    ) -> Option<LintFinding> {
+        (graph.in_degree(sym.id) == 0 && !crate::gate::affected::is_test_path(file)).then(|| {
+            LintFinding {
+                rule: "dead-function".to_string(),
+                message: format!("Internal function '{name}' has zero incoming callers"),
+                path: file.to_string(),
+                line: sym.line,
+                severity: "major".to_string(),
+            }
+        })
+    }
+}
+
+pub static SYMBOL_LINT_RULES: &[&dyn SymbolLintRule] = &[
+    &ComplexitySpikeRule,
+    &DeepNestingRule,
+    &ParameterSpillRule,
+    &VerbositySpikeRule,
+    &DeadFunctionRule,
+];
+
 /// Scan the workspace for AST code smells across all symbols.
 #[must_use]
 pub fn run_lint_scan(
@@ -62,53 +200,16 @@ pub fn run_lint_scan(
     interner: &Interner,
 ) -> Vec<LintFinding> {
     let mut findings = Vec::new();
-
     for sym in &ingest.symbols {
         if sym.kind != SymKind::Function && sym.kind != SymKind::Method {
             continue;
         }
-
         let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
         let n = interner.resolve(&sym.name);
-
-        if sym.ccx > 15 {
-            findings.push(LintFinding {
-                rule: "complexity-spike".to_string(),
-                message: format!("Function '{n}' cognitive complexity {} exceeds 15", sym.ccx),
-                path: p.to_string(),
-                line: sym.line,
-                severity: "major".to_string(),
-            });
-        }
-
-        if sym.max_nest > 5 {
-            findings.push(LintFinding {
-                rule: "deep-nesting".to_string(),
-                message: format!("Function '{n}' max nesting {} exceeds 5", sym.max_nest),
-                path: p.to_string(),
-                line: sym.line,
-                severity: "major".to_string(),
-            });
-        }
-
-        if sym.params > 5 {
-            findings.push(LintFinding {
-                rule: "parameter-spill".to_string(),
-                message: format!("Function '{n}' has {} parameters, exceeding 5", sym.params),
-                path: p.to_string(),
-                line: sym.line,
-                severity: "minor".to_string(),
-            });
-        }
-
-        if graph.in_degree(sym.id) == 0 && !crate::gate::affected::is_test_path(p) {
-            findings.push(LintFinding {
-                rule: "dead-function".to_string(),
-                message: format!("Internal function '{n}' has zero incoming callers"),
-                path: p.to_string(),
-                line: sym.line,
-                severity: "major".to_string(),
-            });
+        for rule in SYMBOL_LINT_RULES {
+            if let Some(finding) = rule.check(sym, p, n, graph) {
+                findings.push(finding);
+            }
         }
     }
     findings
@@ -119,9 +220,10 @@ pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(
         out,
         "<!-- ripwire lint-catalog schema=ripwire.lint-catalog/v1: the built-in lint rule registry: <rule name= sev= cat= lang= since=>. -->\n<lintcatalog schema=\"ripwire.lint-catalog/v1\" rules=\"{}\">",
-        LINT_RULES.len()
+        SYMBOL_LINT_RULES.len()
     )?;
-    for r in LINT_RULES {
+    for rule in SYMBOL_LINT_RULES {
+        let r = rule.desc();
         writeln!(
             out,
             "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\" lang=\"all\" since=\"v0.1.0\">{}</rule>",
@@ -131,38 +233,65 @@ pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(out, "</lintcatalog>")
 }
 
+pub struct LintReport<'a> {
+    pub findings: &'a [LintFinding],
+}
+
+impl crate::serialize::XmlReport for LintReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "lint"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.lint/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire lint schema=ripwire.lint/v1: AST-only checks, facts not gates: <rule name= count= shown_rows= rows_capped= count_capped=> of <f rule= p= in=>.",
+        )
+    }
+    fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let pw = crate::serialize::PageWindow::compute(self.findings.len(), 100, None, None);
+        write!(
+            w,
+            " findings=\"{}\" shown=\"{}\" capped=\"{}\" inert_rules=\"24\"",
+            pw.total,
+            pw.shown,
+            usize::from(pw.capped)
+        )
+    }
+    fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let shown = self.findings.len().min(100);
+        for rule in SYMBOL_LINT_RULES {
+            let r = rule.desc();
+            let r_cnt = self.findings.iter().filter(|f| f.rule == r.name).count();
+            let r_shown = r_cnt.min(20);
+            let r_cap = usize::from(r_shown < r_cnt);
+            writeln!(
+                w,
+                "  <rule name=\"{}\" count=\"{r_cnt}\" shown_rows=\"{r_shown}\" rows_capped=\"{r_cap}\" applicable=\"1\"/>",
+                r.name
+            )?;
+        }
+        for f in self.findings.iter().take(shown) {
+            let p_esc = crate::serialize::escape::escape_xml_str(&f.path);
+            writeln!(
+                w,
+                "  <f rule=\"{}\" p=\"{p_esc}:{}\" sev=\"{}\" in=\"main\">{}</f>",
+                f.rule, f.line, f.severity, f.message
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// Serialize lint scan findings to canonical XML format.
 pub fn serialize_lint_xml<W: Write>(
     root: &str,
     findings: &[LintFinding],
     out: &mut W,
 ) -> io::Result<()> {
-    let total = findings.len();
-    let shown = total.min(100);
-    let capped = usize::from(shown < total);
-    writeln!(
-        out,
-        "<!-- ripwire lint schema=ripwire.lint/v1: AST-only checks, facts not gates: <rule name= count= shown_rows= rows_capped= count_capped=> of <f rule= p= in=>. -->\n<lint schema=\"ripwire.lint/v1\" findings=\"{total}\" shown=\"{shown}\" capped=\"{capped}\" inert_rules=\"24\" root=\"{root}\">",
-    )?;
-    for r in LINT_RULES {
-        let r_cnt = findings.iter().filter(|f| f.rule == r.name).count();
-        let r_shown = r_cnt.min(20);
-        let r_cap = usize::from(r_shown < r_cnt);
-        writeln!(
-            out,
-            "  <rule name=\"{}\" count=\"{r_cnt}\" shown_rows=\"{r_shown}\" rows_capped=\"{r_cap}\" applicable=\"1\"/>",
-            r.name
-        )?;
-    }
-    for f in findings.iter().take(shown) {
-        let p_esc = crate::serialize::escape::escape_xml_str(&f.path);
-        writeln!(
-            out,
-            "  <f rule=\"{}\" p=\"{p_esc}:{}\" sev=\"{}\" in=\"main\">{}</f>",
-            f.rule, f.line, f.severity, f.message
-        )?;
-    }
-    writeln!(out, "</lint>")
+    use crate::serialize::XmlReport;
+    LintReport { findings }.write_xml_report(root, out)
 }
 
 /// Serialize lint scan findings to SARIF 2.1.0 JSON format.

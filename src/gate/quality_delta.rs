@@ -185,6 +185,91 @@ impl QualityDeltaReport {
     }
 }
 
+/// Trait encapsulating a numeric quality regression dimension compared between baseline and working snapshots.
+pub trait QualityDeltaDimension: Sync {
+    fn kind(&self) -> &'static str;
+    fn extract(&self, snap: &QualitySnapshot, key: &str) -> u32;
+    fn preexisting_floor(&self) -> u32;
+    fn is_preexisting_gating(&self, now: u32) -> bool;
+    fn new_symbol_floor(&self) -> Option<u32> {
+        None
+    }
+}
+
+struct ComplexityDimension;
+impl QualityDeltaDimension for ComplexityDimension {
+    fn kind(&self) -> &'static str {
+        "complexity"
+    }
+    fn extract(&self, snap: &QualitySnapshot, key: &str) -> u32 {
+        snap.ccx_by_sym.get(key).copied().unwrap_or(0)
+    }
+    fn preexisting_floor(&self) -> u32 {
+        0
+    }
+    fn is_preexisting_gating(&self, now: u32) -> bool {
+        now > 15
+    }
+    fn new_symbol_floor(&self) -> Option<u32> {
+        Some(15)
+    }
+}
+
+struct VerbosityDimension;
+impl QualityDeltaDimension for VerbosityDimension {
+    fn kind(&self) -> &'static str {
+        "verbosity"
+    }
+    fn extract(&self, snap: &QualitySnapshot, key: &str) -> u32 {
+        snap.loc_by_sym.get(key).copied().unwrap_or(0)
+    }
+    fn preexisting_floor(&self) -> u32 {
+        60
+    }
+    fn is_preexisting_gating(&self, _now: u32) -> bool {
+        false
+    }
+}
+
+struct NestingDimension;
+impl QualityDeltaDimension for NestingDimension {
+    fn kind(&self) -> &'static str {
+        "nesting"
+    }
+    fn extract(&self, snap: &QualitySnapshot, key: &str) -> u32 {
+        u32::from(snap.nest_by_sym.get(key).copied().unwrap_or(0))
+    }
+    fn preexisting_floor(&self) -> u32 {
+        4
+    }
+    fn is_preexisting_gating(&self, now: u32) -> bool {
+        now > 6
+    }
+}
+
+struct ParamsDimension;
+impl QualityDeltaDimension for ParamsDimension {
+    fn kind(&self) -> &'static str {
+        "params"
+    }
+    fn extract(&self, snap: &QualitySnapshot, key: &str) -> u32 {
+        u32::from(snap.params_by_sym.get(key).copied().unwrap_or(0))
+    }
+    fn preexisting_floor(&self) -> u32 {
+        3
+    }
+    fn is_preexisting_gating(&self, now: u32) -> bool {
+        now > 5
+    }
+}
+
+pub static DELTA_DIMENSIONS: &[&dyn QualityDeltaDimension] = &[
+    &ComplexityDimension,
+    &VerbosityDimension,
+    &NestingDimension,
+    &ParamsDimension,
+];
+
 fn check_symbol_numeric_regressions(
     key: &str,
     working: &QualitySnapshot,
@@ -196,78 +281,34 @@ fn check_symbol_numeric_regressions(
     let file_path = parts.first().copied().unwrap_or(key).to_string();
     let sym_name = parts.last().copied().unwrap_or(key).to_string();
 
-    let now_ccx = working.ccx_by_sym.get(key).copied().unwrap_or(0);
-    let was_ccx = baseline.ccx_by_sym.get(key).copied().unwrap_or(0);
-
-    if is_preexisting {
-        if now_ccx > was_ccx {
-            let is_gating = now_ccx > 15;
+    for dim in DELTA_DIMENSIONS {
+        let now_val = dim.extract(working, key);
+        if is_preexisting {
+            let was_val = dim.extract(baseline, key);
+            if now_val > was_val && now_val > dim.preexisting_floor() {
+                regressions.push(QualityRegression {
+                    kind: dim.kind().to_string(),
+                    sym_name: sym_name.clone(),
+                    file_path: file_path.clone(),
+                    line: 1,
+                    was_val,
+                    now_val,
+                    is_gating: dim.is_preexisting_gating(now_val),
+                    is_new_symbol: false,
+                });
+            }
+        } else if dim.new_symbol_floor().is_some_and(|floor| now_val > floor) {
             regressions.push(QualityRegression {
-                kind: "complexity".to_string(),
+                kind: dim.kind().to_string(),
                 sym_name: sym_name.clone(),
                 file_path: file_path.clone(),
                 line: 1,
-                was_val: was_ccx,
-                now_val: now_ccx,
-                is_gating,
-                is_new_symbol: false,
-            });
-        }
-        let now_loc = working.loc_by_sym.get(key).copied().unwrap_or(0);
-        let was_loc = baseline.loc_by_sym.get(key).copied().unwrap_or(0);
-        if now_loc > was_loc && now_loc > 60 {
-            regressions.push(QualityRegression {
-                kind: "verbosity".to_string(),
-                sym_name: sym_name.clone(),
-                file_path: file_path.clone(),
-                line: 1,
-                was_val: was_loc,
-                now_val: now_loc,
+                was_val: 0,
+                now_val,
                 is_gating: false,
-                is_new_symbol: false,
+                is_new_symbol: true,
             });
         }
-
-        let now_nest = working.nest_by_sym.get(key).copied().unwrap_or(0) as u32;
-        let was_nest = baseline.nest_by_sym.get(key).copied().unwrap_or(0) as u32;
-        if now_nest > was_nest && now_nest > 4 {
-            regressions.push(QualityRegression {
-                kind: "nesting".to_string(),
-                sym_name: sym_name.clone(),
-                file_path: file_path.clone(),
-                line: 1,
-                was_val: was_nest,
-                now_val: now_nest,
-                is_gating: now_nest > 6,
-                is_new_symbol: false,
-            });
-        }
-
-        let now_params = working.params_by_sym.get(key).copied().unwrap_or(0) as u32;
-        let was_params = baseline.params_by_sym.get(key).copied().unwrap_or(0) as u32;
-        if now_params > was_params && now_params > 3 {
-            regressions.push(QualityRegression {
-                kind: "params".to_string(),
-                sym_name: sym_name.clone(),
-                file_path: file_path.clone(),
-                line: 1,
-                was_val: was_params,
-                now_val: now_params,
-                is_gating: now_params > 5,
-                is_new_symbol: false,
-            });
-        }
-    } else if now_ccx > 15 {
-        regressions.push(QualityRegression {
-            kind: "complexity".to_string(),
-            sym_name,
-            file_path,
-            line: 1,
-            was_val: 0,
-            now_val: now_ccx,
-            is_gating: false,
-            is_new_symbol: true,
-        });
     }
 }
 
