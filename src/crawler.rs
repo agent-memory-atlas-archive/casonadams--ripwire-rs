@@ -26,6 +26,8 @@ pub const DENYLIST_DIRS: &[&str] = &[
     "CMakeFiles",
     "captures",
     ".specs",
+    ".agents",
+    ".skills",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]

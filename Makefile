@@ -106,6 +106,9 @@ parity: build-release ## Validate 1:1 input/output parity with upstream ripwire 
 .PHONY: validate
 validate: parity ## Alias for parity validation on REPO (e.g. make validate REPO=../cccc)
 
+.PHONY: validate-knowledge
+validate-knowledge: build-release ## Run deep knowledge, computed-metric, and resource comparison against upstream ripwire on REPO (default: REPO=.)
+	@python3 ./scripts/validate-knowledge.py $(REPO)
 .PHONY: bench
 bench: build-release ## Run comprehensive speed and memory benchmark against upstream ripwire on REPO (default: REPO=.)
 	@python3 ./scripts/benchmark-performance.py "$(REPO)"

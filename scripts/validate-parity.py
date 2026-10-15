@@ -125,6 +125,8 @@ OPTIONAL_ATTRS = {
     "sev",
     "members",
     "tokens",
+    "churn",
+    "facet",
 }
 
 
@@ -269,6 +271,18 @@ def compare_xml_children(root_rw, root_rip):
     return None
 
 
+def check_computed_metric_invariants(cmd, root_rw):
+    if "--comment-coherence" in cmd:
+        fns = root_rw.findall("fn")
+        if len(fns) > 2 and len({f.attrib.get("words") for f in fns}) == 1:
+            return "comment-coherence <fn> words= appears hardcoded"
+    if "--context-ratio" in cmd:
+        syms = root_rw.findall("s")
+        if len(syms) > 2 and len({s.attrib.get("rtok") for s in syms}) == 1:
+            return "context-ratio <s> rtok= appears hardcoded"
+    return None
+
+
 def check_xml_data_invariants(cmd, root_rw, root_rip):
     if "--dead-code" in cmd:
         c_rw = int(root_rw.attrib.get("count", "0"))
@@ -277,8 +291,7 @@ def check_xml_data_invariants(cmd, root_rw, root_rip):
             return f"dead-code count mismatch: rw={c_rw} vs rip={c_rip}"
     if "--grep=" in cmd and any(not ch.attrib.get("p") for ch in root_rw.findall("f")):
         return "grep <f> has empty p attribute"
-    return None
-
+    return check_computed_metric_invariants(cmd, root_rw)
 
 def check_xml_parity(cmd, out_rw, out_rip):
     root_rw, err_rw = parse_xml_dom(out_rw)
@@ -333,7 +346,7 @@ def check_non_xml_parity(cmd, out_rw, out_rip):
 
 def run_one_check(rw_bin, rip_bin, repo, cmd):
     if cmd == "-v":
-        c_rw, c_rip = [rw_bin, "-V"], [rip_bin, "-v"]
+        c_rw, c_rip = [rw_bin, "-v"], [rip_bin, "-v"]
     elif cmd.startswith("wrap"):
         c_rw, c_rip = [rw_bin] + cmd.split(), [rip_bin] + cmd.split()
     else:
