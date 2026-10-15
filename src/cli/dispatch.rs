@@ -164,10 +164,7 @@ pub fn load_repo_analysis_cached(
     let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
     let graph = Graph::build(&ingest, &interner);
     let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
-    if !no_cache {
-        let _ =
-            crate::cache::save_cached_analysis(root, cache_path, (&ingest, &graph, &pr, &interner));
-    }
+    let _ = crate::cache::save_cached_analysis(root, cache_path, (&ingest, &graph, &pr, &interner));
     Ok((ingest, graph, pr, interner))
 }
 

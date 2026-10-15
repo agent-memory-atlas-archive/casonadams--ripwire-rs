@@ -3,34 +3,96 @@ use crate::graph::Graph;
 use serde_json::{Value, json};
 use std::fs;
 
-/// Score a symbol against a set of search terms.
-fn score_single_term(lower_name: &str, lower_scope: Option<&str>, term: &str) -> f64 {
+fn stem_query_term(term: &str) -> String {
     let t = term.to_ascii_lowercase();
-    if lower_name == t {
-        30.0
-    } else if lower_name.contains(&t) {
-        10.0
-    } else if lower_scope.is_some_and(|sc| sc.contains(&t)) {
-        5.0
+    if t.len() >= 5 && t.ends_with('s') && !t.ends_with("ss") {
+        t[..t.len() - 1].to_string()
     } else {
-        0.0
+        t
     }
 }
 
-/// Score a symbol against a set of search terms.
-fn score_symbol_match(name: &str, scope: Option<&str>, terms: &[&str], rank: f64) -> f64 {
-    let lower_name = name.to_ascii_lowercase();
-    let lower_scope = scope.map(|s| s.to_ascii_lowercase());
-    let term_score: f64 = terms
-        .iter()
-        .map(|term| score_single_term(&lower_name, lower_scope.as_deref(), term))
-        .sum();
-
-    if term_score > 0.0 {
-        term_score * (1.0 + rank * 10.0)
+/// Score a symbol against a single search term across name, scope, and file path.
+fn score_single_term(
+    lower_name: &str,
+    lower_scope: Option<&str>,
+    lower_path: &str,
+    term: &str,
+) -> f64 {
+    let t = term.to_ascii_lowercase();
+    let stem = stem_query_term(&t);
+    let name_hit = if lower_name == t || lower_name == stem {
+        30.0
+    } else if lower_name.contains(&t) || lower_name.contains(&stem) {
+        12.0
     } else {
         0.0
+    };
+    let scope_hit = if lower_scope.is_some_and(|sc| sc.contains(&t) || sc.contains(&stem)) {
+        6.0
+    } else {
+        0.0
+    };
+    let path_hit =
+        if !lower_path.is_empty() && (lower_path.contains(&t) || lower_path.contains(&stem)) {
+            4.0
+        } else {
+            0.0
+        };
+    name_hit + scope_hit + path_hit
+}
+
+fn score_symbol_match_in_file(
+    name: &str,
+    scope: Option<&str>,
+    file_path: &str,
+    terms: &[&str],
+    rank: f64,
+) -> f64 {
+    let lower_name = name.to_ascii_lowercase();
+    let lower_scope = scope.map(|s| s.to_ascii_lowercase());
+    let lower_path = file_path.to_ascii_lowercase();
+    let scores: Vec<f64> = terms
+        .iter()
+        .map(|&t| score_single_term(&lower_name, lower_scope.as_deref(), &lower_path, t))
+        .filter(|&s| s > 0.0)
+        .collect();
+    if !scores.iter().any(|&s| s > 4.0) {
+        return 0.0;
     }
+    let term_score: f64 = scores.iter().sum();
+    let synergy = (scores.len() as f64).powi(2);
+    let non_test = if crate::gate::affected::is_test_path(file_path) {
+        0.25
+    } else {
+        1.0
+    };
+    term_score * synergy * non_test * (1.0 + rank * 10.0)
+}
+
+fn score_candidate_symbol(
+    sym: &crate::domain::Symbol,
+    ingest: &IngestResult,
+    interner: &Interner,
+    ranks: &[f64],
+    raw_terms: &[&str],
+) -> f64 {
+    if sym.kind == SymKind::Section {
+        return 0.0;
+    }
+    let name = interner.resolve(&sym.name);
+    let scope = sym.scope.as_ref().map(|s| interner.resolve(s));
+    let file_path = ingest
+        .files
+        .get(sym.file_id as usize)
+        .map_or("", |f| interner.resolve(&f.path));
+    let rank = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
+    let kind_factor = if matches!(sym.kind, SymKind::Var | SymKind::Field) {
+        0.2
+    } else {
+        1.0
+    };
+    score_symbol_match_in_file(name, scope, file_path, raw_terms, rank) * kind_factor
 }
 
 fn extract_normalized_sig(
@@ -228,10 +290,7 @@ pub fn call_for_task_with_options(
 
     let mut scored = Vec::new();
     for sym in &ingest.symbols {
-        let name = interner.resolve(&sym.name);
-        let scope = sym.scope.as_ref().map(|s| interner.resolve(s));
-        let rank = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
-        let score = score_symbol_match(name, scope, &raw_terms, rank);
+        let score = score_candidate_symbol(sym, ingest, interner, ranks, &raw_terms);
         if score > 0.0 {
             scored.push((score, sym));
         }
@@ -899,7 +958,7 @@ mod tests {
     #[test]
     fn test_score_symbol_match() {
         let terms = ["search", "engine"];
-        let score = score_symbol_match("search_engine", None, &terms, 0.5);
+        let score = score_symbol_match_in_file("search_engine", None, "src/search.rs", &terms, 0.5);
         assert!(score > 0.0);
     }
 

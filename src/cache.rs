@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
-const CACHE_VERSION: u32 = 3;
+const CACHE_VERSION: u32 = 4;
 
 /// Serialized binary cache payload for fast warm repository queries.
 #[derive(Serialize, Deserialize)]
@@ -27,7 +27,7 @@ pub fn compute_cache_key(root: &str) -> String {
     if let Ok(repo) = gix::open(path)
         && let Ok(head) = repo.head_commit()
     {
-        return head.id().to_string();
+        return format!("{}-{}", env!("CARGO_PKG_VERSION"), head.id());
     }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     root.hash(&mut hasher);
