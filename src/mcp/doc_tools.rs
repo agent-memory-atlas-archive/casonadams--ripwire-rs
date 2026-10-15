@@ -333,6 +333,23 @@ fn collect_file_wanted_tokens(
     found
 }
 
+fn extend_from_scm_queries(
+    root_path: &std::path::Path,
+    wants_first: &[bool; 256],
+    wanted: &std::collections::HashSet<String>,
+    found_in_code: &mut std::collections::HashSet<String>,
+) {
+    let Ok(entries) = fs::read_dir(root_path.join("queries")) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let scm_path = entry.path().join("tags.scm");
+        if let Ok(bytes) = fs::read(&scm_path) {
+            found_in_code.extend(collect_file_wanted_tokens(&bytes, wants_first, wanted));
+        }
+    }
+}
+
 fn filter_present_in_code_drift(
     root_path: &std::path::Path,
     ingest: &IngestResult,
@@ -354,7 +371,7 @@ fn filter_present_in_code_drift(
             wants_first[b as usize] = true;
         }
     }
-    let found_in_code: std::collections::HashSet<String> = ingest
+    let mut found_in_code: std::collections::HashSet<String> = ingest
         .files
         .par_iter()
         .filter(|f| !f.lang.semantics().is_prose_document())
@@ -366,6 +383,7 @@ fn filter_present_in_code_drift(
             }
         })
         .collect();
+    extend_from_scm_queries(root_path, &wants_first, &wanted, &mut found_in_code);
     drift_items.retain(|d| {
         if d["kind"].as_str() == Some("symbol")
             && let Some(sym) = d["referenced"].as_str()

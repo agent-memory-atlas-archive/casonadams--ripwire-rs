@@ -716,12 +716,13 @@ fn dispatch_lens_queries<W: Write>(
         crate::metrics::serialize_layout_xml(&rep, root, stdout)?;
         return Ok(true);
     }
-    if let Some(_sym_opt) = &a.field_affinity {
-        let rep = crate::metrics::StructLayoutReport {
-            sym: String::new(),
-            found: false,
-            defs: Vec::new(),
-        };
+    if let Some(sym_opt) = &a.field_affinity {
+        let rep = crate::metrics::layout::compute_field_affinity_report(
+            sym_opt.as_deref(),
+            ingest,
+            interner,
+            root,
+        );
         crate::metrics::serialize_field_affinity_xml(&rep, root, stdout)?;
         return Ok(true);
     }

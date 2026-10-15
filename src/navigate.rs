@@ -1415,11 +1415,11 @@ pub fn execute_graph_query_expr<W: Write>(
         .unwrap_or_else(|| GraphExpr::Name(expr.to_string()));
     let matched_nodes = evaluate_graph_expr(&parsed, ingest, graph, interner);
     let count = matched_nodes.len();
-
+    let amb = graph.total_ambiguous();
     let escaped_expr = crate::serialize::escape::escape_xml_str(expr);
     writeln!(
         out,
-        "<!-- ripwire graph-query schema=ripwire.graph-query/v1: graph-query expression over the symbol graph. -->\n<query schema=\"ripwire.graph-query/v1\" expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\" pr_iters=\"44\">"
+        "<!-- ripwire graph-query schema=ripwire.graph-query/v1: graph-query expression over the symbol graph. -->\n<query schema=\"ripwire.graph-query/v1\" expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\" graph_ambiguous=\"{amb}\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\" pr_iters=\"44\">"
     )?;
     for node_id in matched_nodes {
         if let Some(sym) = ingest.symbols.get(node_id as usize) {

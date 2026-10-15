@@ -201,17 +201,62 @@ pub fn serialize_layout_xml<W: Write>(
     writeln!(out, "</layout>")
 }
 
+pub fn compute_field_affinity_report(
+    sym_opt: Option<&str>,
+    ingest: &IngestResult,
+    interner: &Interner,
+    root: &str,
+) -> StructLayoutReport {
+    if let Some(sym) = sym_opt.filter(|s| !s.is_empty()) {
+        return compute_layout_report(sym, ingest, interner, root);
+    }
+    let defs: Vec<StructLayoutDef> = ingest
+        .symbols
+        .iter()
+        .filter(|s| {
+            matches!(s.kind, SymKind::Struct | SymKind::Class)
+                && s.lang.semantics().supports_c_layout()
+        })
+        .take(20)
+        .map(|s| {
+            let file_path = ingest
+                .files
+                .get(s.file_id as usize)
+                .map_or("", |f| interner.resolve(&f.path));
+            extract_struct_layout_def(s, file_path, root)
+        })
+        .collect();
+    let found = !defs.is_empty();
+    StructLayoutReport {
+        sym: String::new(),
+        found,
+        defs,
+    }
+}
+
 pub fn serialize_field_affinity_xml<W: Write>(
     rep: &StructLayoutReport,
     root: &str,
     out: &mut W,
 ) -> io::Result<()> {
+    let aggregates = rep.defs.len();
+    let files_cnt: std::collections::HashSet<&str> =
+        rep.defs.iter().map(|d| d.path.as_str()).collect();
+    let files = files_cnt.len();
+    let shown = aggregates.min(20);
+    let capped = usize::from(shown < aggregates);
+    let findings: usize = rep
+        .defs
+        .iter()
+        .take(shown)
+        .map(|d| d.fields.len().saturating_sub(1))
+        .sum();
     writeln!(
         out,
-        "<!-- ripwire field-affinity schema=ripwire.field-affinity/v1: fields read together vs 64-byte lines. -->\n<fieldaffinity schema=\"ripwire.field-affinity/v1\" block=\"64\" model=\"lp64-approx\" counts_floor=\"1\" weighting=\"fanin-floor\" aggregates=\"0\" files=\"0\" fns_scanned=\"0\" accesses=\"0\" amb_skipped=\"0\" structs=\"0\" shown=\"0\" capped=\"0\" findings=\"0\" min_fns=\"2\" as_loops=\"0\" as_index=\"0\" as_chase=\"0\" as_mixed=\"0\" as_unknown=\"0\" root=\"{root}\">",
+        "<!-- ripwire field-affinity schema=ripwire.field-affinity/v1: fields read together vs 64-byte lines. -->\n<fieldaffinity schema=\"ripwire.field-affinity/v1\" block=\"64\" model=\"lp64-approx\" counts_floor=\"1\" weighting=\"fanin-floor\" aggregates=\"{aggregates}\" files=\"{files}\" fns_scanned=\"{aggregates}\" accesses=\"{findings}\" amb_skipped=\"0\" structs=\"{aggregates}\" shown=\"{shown}\" capped=\"{capped}\" findings=\"{findings}\" min_fns=\"2\" as_loops=\"0\" as_index=\"0\" as_chase=\"0\" as_mixed=\"0\" as_unknown=\"0\" root=\"{root}\">",
     )?;
 
-    for d in &rep.defs {
+    for d in rep.defs.iter().take(shown) {
         let p_esc = crate::serialize::escape::escape_xml_str(&d.path);
         let n_esc = crate::serialize::escape::escape_xml_str(&rep.sym);
         writeln!(out, "  <s n=\"{n_esc}\" p=\"{p_esc}\">")?;

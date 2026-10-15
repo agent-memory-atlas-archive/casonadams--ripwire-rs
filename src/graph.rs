@@ -168,6 +168,10 @@ impl Graph {
     }
 
     #[must_use]
+    pub fn total_ambiguous(&self) -> usize {
+        self.amb_out.iter().map(|&x| x as usize).sum()
+    }
+    #[must_use]
     pub fn page_rank(&self, config: &PageRankConfig) -> PageRankResult {
         let teleport = uniform_teleport(self.node_count());
         self.page_rank_custom(config, &teleport)
