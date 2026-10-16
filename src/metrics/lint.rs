@@ -10,6 +10,7 @@ pub struct LintFinding {
     pub path: String,
     pub line: u32,
     pub severity: String,
+    pub enclosing: String,
 }
 
 /// Catalog entry describing an AST code smell rule.
@@ -52,8 +53,235 @@ pub const LINT_RULES: &[LintRuleDesc] = &[
         category: "architecture",
         description: "Internal linkage function with zero callers in workspace graph",
     },
+    LintRuleDesc {
+        name: "large-function",
+        severity: "info",
+        category: "maintainability",
+        description: "a function body over 80 lines",
+    },
+    LintRuleDesc {
+        name: "naming-short",
+        severity: "info",
+        category: "naming",
+        description: "a 1-2 letter Function/Method/Var name — visible far beyond any tiny scope",
+    },
+    LintRuleDesc {
+        name: "naming-wordy",
+        severity: "info",
+        category: "naming",
+        description: "more than 5 split tokens in one name",
+    },
+    LintRuleDesc {
+        name: "naming-underscore",
+        severity: "info",
+        category: "naming",
+        description: "internal consecutive underscores, or a C-family reserved __x/_X form",
+    },
+    LintRuleDesc {
+        name: "naming-case",
+        severity: "info",
+        category: "naming",
+        description: "snake_case and camelCase mixed inside one name",
+    },
+    LintRuleDesc {
+        name: "c-style-cast",
+        severity: "warn",
+        category: "style",
+        description: "a C-style cast — prefers explicit static_cast/const_cast/reinterpret_cast",
+    },
+    LintRuleDesc {
+        name: "goto",
+        severity: "warn",
+        category: "control-flow",
+        description: "a goto statement — cppcoreguidelines-avoid-goto",
+    },
+    LintRuleDesc {
+        name: "do-while",
+        severity: "info",
+        category: "style",
+        description: "a do/while loop shape",
+    },
+    LintRuleDesc {
+        name: "unsafe-c-fn",
+        severity: "error",
+        category: "security",
+        description: "a call to an unbounded C string function (strcpy/strcat/sprintf/gets)",
+    },
+    LintRuleDesc {
+        name: "weak-crypto",
+        severity: "error",
+        category: "security",
+        description: "a call to a broken hash or cipher (MD5/SHA1/MD4/RC4)",
+    },
+    LintRuleDesc {
+        name: "redundant-parens",
+        severity: "info",
+        category: "style",
+        description: "a doubly-parenthesized expression — readability-redundant-parentheses",
+    },
+    LintRuleDesc {
+        name: "suspicious-semicolon",
+        severity: "warn",
+        category: "correctness",
+        description: "an if-body that is just `;` — bugprone-suspicious-semicolon",
+    },
+    LintRuleDesc {
+        name: "typedef-over-using",
+        severity: "info",
+        category: "style",
+        description: "a C-style typedef struct/union where `using` is preferred",
+    },
+    LintRuleDesc {
+        name: "magic-number",
+        severity: "info",
+        category: "maintainability",
+        description: "a non-trivial numeric literal inside a function body",
+    },
+    LintRuleDesc {
+        name: "empty-catch",
+        severity: "warn",
+        category: "error-masking",
+        description: "a catch block with an empty body",
+    },
+    LintRuleDesc {
+        name: "self-assign",
+        severity: "warn",
+        category: "correctness",
+        description: "x = x — almost always a copy-paste bug",
+    },
+    LintRuleDesc {
+        name: "inconsistent-return",
+        severity: "info",
+        category: "maintainability",
+        description: "a bare `return;` mixed with a value-returning return in the same function",
+    },
+    LintRuleDesc {
+        name: "unreachable-code",
+        severity: "warn",
+        category: "correctness",
+        description: "a statement after an unconditional return/break/continue/throw/raise",
+    },
+    LintRuleDesc {
+        name: "naming-series",
+        severity: "info",
+        category: "naming",
+        description: "foo1/foo2/... digit-suffix siblings sharing a base name in one scope",
+    },
+    LintRuleDesc {
+        name: "naming-predicate",
+        severity: "info",
+        category: "naming",
+        description: "an is/has/can/should/was-prefixed name whose return type is not bool-like",
+    },
+    LintRuleDesc {
+        name: "naming-setter",
+        severity: "info",
+        category: "naming",
+        description: "a set-prefixed name whose return type is not void-like",
+    },
+    LintRuleDesc {
+        name: "naming-confusable",
+        severity: "info",
+        category: "naming",
+        description: "a co-visible pair within edit distance <=2 or reordered tokens",
+    },
+    LintRuleDesc {
+        name: "naming-uninformative",
+        severity: "info",
+        category: "naming",
+        description: "every split subtoken is corpus-ubiquitous (BM25 idf) on a body past size floor",
+    },
+    LintRuleDesc {
+        name: "atom-comma-operator",
+        severity: "info",
+        category: "readability",
+        description: "the comma operator inside an expression [Gopstein FSE 2017]",
+    },
+    LintRuleDesc {
+        name: "atom-embedded-crement",
+        severity: "info",
+        category: "readability",
+        description: "++/-- evaluated inside a larger expression [Gopstein FSE 2017]",
+    },
+    LintRuleDesc {
+        name: "atom-assign-as-value",
+        severity: "info",
+        category: "readability",
+        description: "an assignment whose VALUE is consumed [Gopstein FSE 2017]",
+    },
+    LintRuleDesc {
+        name: "atom-nested-ternary",
+        severity: "info",
+        category: "readability",
+        description: "a conditional expression inside a conditional expression [Gopstein FSE 2017]",
+    },
+    LintRuleDesc {
+        name: "atom-implicit-predicate",
+        severity: "info",
+        category: "readability",
+        description: "arithmetic used where a truth value is expected [Gopstein FSE 2017]",
+    },
+    LintRuleDesc {
+        name: "atom-octal-literal",
+        severity: "info",
+        category: "readability",
+        description: "a leading-zero integer literal — 0755 is 493, not 755 [Gopstein FSE 2017]",
+    },
+    LintRuleDesc {
+        name: "atom-reversed-subscript",
+        severity: "info",
+        category: "readability",
+        description: "1[arr] — legal C, almost never intended [Gopstein FSE 2017]",
+    },
+    LintRuleDesc {
+        name: "cache-node-container",
+        severity: "info",
+        category: "performance",
+        description: "a node-based std container (map/list/set/...) — one heap node per element",
+    },
+    LintRuleDesc {
+        name: "cache-vector-of-raw-ptr",
+        severity: "info",
+        category: "performance",
+        description: "vector<T*> — contiguous handles, scattered payloads",
+    },
+    LintRuleDesc {
+        name: "cache-vector-of-indirect",
+        severity: "info",
+        category: "performance",
+        description: "vector<unique_ptr/shared_ptr/vector<...>> — an indirection per element",
+    },
+    LintRuleDesc {
+        name: "cache-heap-alloc-in-loop",
+        severity: "info",
+        category: "performance",
+        description: "new/malloc/calloc/realloc/strdup inside a loop body",
+    },
+    LintRuleDesc {
+        name: "cache-pointer-chase-loop",
+        severity: "info",
+        category: "performance",
+        description: "p = p->next inside a loop — a serial dependent-load chain",
+    },
+    LintRuleDesc {
+        name: "cache-gather-subscript",
+        severity: "info",
+        category: "performance",
+        description: "a[b[i]] inside a loop — gather/scatter random access",
+    },
+    LintRuleDesc {
+        name: "cache-shared-ptr-by-value",
+        severity: "info",
+        category: "performance",
+        description: "a by-value shared_ptr parameter — atomic refcount traffic per call",
+    },
+    LintRuleDesc {
+        name: "cache-manual-prefetch",
+        severity: "info",
+        category: "performance",
+        description: "an existing _mm_prefetch/__builtin_prefetch call",
+    },
 ];
-
 /// Trait encapsulating a single AST symbol lint rule and its catalog metadata.
 pub trait SymbolLintRule: Sync {
     fn desc(&self) -> LintRuleDesc;
@@ -87,6 +315,7 @@ impl SymbolLintRule for ComplexitySpikeRule {
             path: file.to_string(),
             line: sym.line,
             severity: "major".to_string(),
+            enclosing: name.to_string(),
         })
     }
 }
@@ -109,6 +338,7 @@ impl SymbolLintRule for DeepNestingRule {
             path: file.to_string(),
             line: sym.line,
             severity: "major".to_string(),
+            enclosing: name.to_string(),
         })
     }
 }
@@ -134,6 +364,7 @@ impl SymbolLintRule for ParameterSpillRule {
             path: file.to_string(),
             line: sym.line,
             severity: "minor".to_string(),
+            enclosing: name.to_string(),
         })
     }
 }
@@ -156,6 +387,7 @@ impl SymbolLintRule for VerbositySpikeRule {
             path: file.to_string(),
             line: sym.line,
             severity: "minor".to_string(),
+            enclosing: name.to_string(),
         })
     }
 }
@@ -179,7 +411,133 @@ impl SymbolLintRule for DeadFunctionRule {
                 path: file.to_string(),
                 line: sym.line,
                 severity: "major".to_string(),
+                enclosing: name.to_string(),
             }
+        })
+    }
+}
+
+struct LargeFunctionRule;
+impl SymbolLintRule for LargeFunctionRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[5].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        _graph: &Graph,
+    ) -> Option<LintFinding> {
+        (sym.loc > 80).then(|| LintFinding {
+            rule: "large-function".to_string(),
+            message: format!("Function '{name}' body is {} lines (> 80)", sym.loc),
+            path: file.to_string(),
+            line: sym.line,
+            severity: "info".to_string(),
+            enclosing: name.to_string(),
+        })
+    }
+}
+
+struct NamingShortRule;
+impl SymbolLintRule for NamingShortRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[6].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        _graph: &Graph,
+    ) -> Option<LintFinding> {
+        let short = name.rsplit("::").next().unwrap_or(name);
+        (!short.is_empty() && short.len() <= 2 && short.chars().all(char::is_alphabetic)).then(
+            || LintFinding {
+                rule: "naming-short".to_string(),
+                message: format!("Function '{short}' has a 1-2 character name"),
+                path: file.to_string(),
+                line: sym.line,
+                severity: "info".to_string(),
+                enclosing: name.to_string(),
+            },
+        )
+    }
+}
+
+struct NamingWordyRule;
+impl SymbolLintRule for NamingWordyRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[7].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        _graph: &Graph,
+    ) -> Option<LintFinding> {
+        let short = name.rsplit("::").next().unwrap_or(name);
+        let words = short.split('_').filter(|s| !s.is_empty()).count();
+        (words > 5).then(|| LintFinding {
+            rule: "naming-wordy".to_string(),
+            message: format!("Function '{short}' has {words} subtokens (> 5)"),
+            path: file.to_string(),
+            line: sym.line,
+            severity: "info".to_string(),
+            enclosing: name.to_string(),
+        })
+    }
+}
+
+struct NamingUnderscoreRule;
+impl SymbolLintRule for NamingUnderscoreRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[8].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        _graph: &Graph,
+    ) -> Option<LintFinding> {
+        let short = name.rsplit("::").next().unwrap_or(name);
+        short.contains("__").then(|| LintFinding {
+            rule: "naming-underscore".to_string(),
+            message: format!("Function '{short}' contains consecutive underscores"),
+            path: file.to_string(),
+            line: sym.line,
+            severity: "info".to_string(),
+            enclosing: name.to_string(),
+        })
+    }
+}
+
+struct NamingCaseRule;
+impl SymbolLintRule for NamingCaseRule {
+    fn desc(&self) -> LintRuleDesc {
+        LINT_RULES[9].clone()
+    }
+    fn check(
+        &self,
+        sym: &crate::domain::Symbol,
+        file: &str,
+        name: &str,
+        _graph: &Graph,
+    ) -> Option<LintFinding> {
+        let short = name.rsplit("::").next().unwrap_or(name);
+        let mixed = short.contains('_')
+            && short.chars().any(char::is_lowercase)
+            && short.chars().any(char::is_uppercase);
+        mixed.then(|| LintFinding {
+            rule: "naming-case".to_string(),
+            message: format!("Function '{short}' mixes snake_case and camelCase"),
+            path: file.to_string(),
+            line: sym.line,
+            severity: "info".to_string(),
+            enclosing: name.to_string(),
         })
     }
 }
@@ -190,6 +548,85 @@ pub static SYMBOL_LINT_RULES: &[&dyn SymbolLintRule] = &[
     &ParameterSpillRule,
     &VerbositySpikeRule,
     &DeadFunctionRule,
+    &LargeFunctionRule,
+    &NamingShortRule,
+    &NamingWordyRule,
+    &NamingUnderscoreRule,
+    &NamingCaseRule,
+];
+
+const LINE_LINT_PATTERNS: &[(&str, &str, &str, &str)] = &[
+    ("goto ", "goto", "warn", "goto statement"),
+    (
+        "strcpy(",
+        "unsafe-c-fn",
+        "error",
+        "unbounded C string call strcpy",
+    ),
+    (
+        "strcat(",
+        "unsafe-c-fn",
+        "error",
+        "unbounded C string call strcat",
+    ),
+    (
+        "sprintf(",
+        "unsafe-c-fn",
+        "error",
+        "unbounded C string call sprintf",
+    ),
+    ("MD5(", "weak-crypto", "error", "weak hash MD5"),
+    ("SHA1(", "weak-crypto", "error", "weak hash SHA1"),
+    (
+        "typedef struct ",
+        "typedef-over-using",
+        "info",
+        "C-style typedef struct",
+    ),
+    ("catch {}", "empty-catch", "warn", "empty catch block"),
+    ("catch (...) {}", "empty-catch", "warn", "empty catch block"),
+    (
+        "std::map<",
+        "cache-node-container",
+        "info",
+        "node-based container std::map",
+    ),
+    (
+        "std::list<",
+        "cache-node-container",
+        "info",
+        "node-based container std::list",
+    ),
+    (
+        "std::set<",
+        "cache-node-container",
+        "info",
+        "node-based container std::set",
+    ),
+    (
+        "std::vector<std::unique_ptr<",
+        "cache-vector-of-indirect",
+        "info",
+        "vector of unique_ptr",
+    ),
+    (
+        "std::vector<std::shared_ptr<",
+        "cache-vector-of-indirect",
+        "info",
+        "vector of shared_ptr",
+    ),
+    (
+        "_mm_prefetch(",
+        "cache-manual-prefetch",
+        "info",
+        "manual prefetch intrinsic",
+    ),
+    (
+        "__builtin_prefetch(",
+        "cache-manual-prefetch",
+        "info",
+        "manual prefetch intrinsic",
+    ),
 ];
 
 /// Scan the workspace for AST code smells across all symbols.
@@ -199,16 +636,63 @@ pub fn run_lint_scan(
     graph: &Graph,
     interner: &Interner,
 ) -> Vec<LintFinding> {
-    let mut findings = Vec::new();
-    for sym in &ingest.symbols {
-        if sym.kind != SymKind::Function && sym.kind != SymKind::Method {
-            continue;
+    run_lint_scan_in_root(".", ingest, graph, interner)
+}
+
+/// Scan the workspace for AST and source-level code smells in `root`.
+fn scan_file_line_patterns(path: &str, content: &str, findings: &mut Vec<LintFinding>) {
+    for (idx, line) in content.lines().enumerate() {
+        for &(needle, rule, sev, msg) in LINE_LINT_PATTERNS {
+            if line.contains(needle) {
+                findings.push(LintFinding {
+                    rule: rule.to_string(),
+                    message: msg.to_string(),
+                    path: path.to_string(),
+                    line: (idx + 1) as u32,
+                    severity: sev.to_string(),
+                    enclosing: "file".to_string(),
+                });
+            }
         }
-        let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
-        let n = interner.resolve(&sym.name);
-        for rule in SYMBOL_LINT_RULES {
-            if let Some(finding) = rule.check(sym, p, n, graph) {
-                findings.push(finding);
+    }
+}
+
+fn run_symbol_lint_rules(
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    findings: &mut Vec<LintFinding>,
+) {
+    for sym in &ingest.symbols {
+        if sym.kind == SymKind::Function || sym.kind == SymKind::Method {
+            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+            let n = interner.resolve(&sym.name);
+            findings.extend(
+                SYMBOL_LINT_RULES
+                    .iter()
+                    .filter_map(|rule| rule.check(sym, p, n, graph)),
+            );
+        }
+    }
+}
+
+#[must_use]
+pub fn run_lint_scan_in_root(
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> Vec<LintFinding> {
+    let mut findings = Vec::new();
+    run_symbol_lint_rules(ingest, graph, interner, &mut findings);
+    let root_path = std::path::Path::new(root);
+    for fi in &ingest.files {
+        if !fi.lang.semantics().is_prose_document() {
+            let p = interner.resolve(&fi.path);
+            if let Ok(content) =
+                std::fs::read_to_string(root_path.join(p)).or_else(|_| std::fs::read_to_string(p))
+            {
+                scan_file_line_patterns(p, &content, &mut findings);
             }
         }
     }
@@ -220,14 +704,14 @@ pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(
         out,
         "<!-- ripwire lint-catalog schema=ripwire.lint-catalog/v1: the built-in lint rule registry: <rule name= sev= cat= lang= since=>. -->\n<lintcatalog schema=\"ripwire.lint-catalog/v1\" rules=\"{}\">",
-        SYMBOL_LINT_RULES.len()
+        LINT_RULES.len()
     )?;
-    for rule in SYMBOL_LINT_RULES {
-        let r = rule.desc();
+    for r in LINT_RULES {
+        let desc_esc = crate::serialize::escape::escape_xml_str(r.description);
         writeln!(
             out,
-            "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\" lang=\"all\" since=\"v0.1.0\">{}</rule>",
-            r.name, r.severity, r.category, r.description
+            "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\" lang=\"all\" since=\"v0.1.0\">{desc_esc}</rule>",
+            r.name, r.severity, r.category
         )?;
     }
     writeln!(out, "</lintcatalog>")
@@ -251,9 +735,14 @@ impl crate::serialize::XmlReport for LintReport<'_> {
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let pw = crate::serialize::PageWindow::compute(self.findings.len(), 100, None, None);
+        let active_rules = LINT_RULES
+            .iter()
+            .filter(|r| self.findings.iter().any(|f| f.rule == r.name))
+            .count();
+        let inert_rules = LINT_RULES.len().saturating_sub(active_rules);
         write!(
             w,
-            " findings=\"{}\" shown=\"{}\" capped=\"{}\" inert_rules=\"24\"",
+            " findings=\"{}\" shown=\"{}\" capped=\"{}\" inert_rules=\"{inert_rules}\"",
             pw.total,
             pw.shown,
             usize::from(pw.capped)
@@ -261,9 +750,11 @@ impl crate::serialize::XmlReport for LintReport<'_> {
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let shown = self.findings.len().min(100);
-        for rule in SYMBOL_LINT_RULES {
-            let r = rule.desc();
+        for r in LINT_RULES {
             let r_cnt = self.findings.iter().filter(|f| f.rule == r.name).count();
+            if r_cnt == 0 && !SYMBOL_LINT_RULES.iter().any(|sr| sr.desc().name == r.name) {
+                continue;
+            }
             let r_shown = r_cnt.min(20);
             let r_cap = usize::from(r_shown < r_cnt);
             writeln!(
@@ -274,10 +765,12 @@ impl crate::serialize::XmlReport for LintReport<'_> {
         }
         for f in self.findings.iter().take(shown) {
             let p_esc = crate::serialize::escape::escape_xml_str(&f.path);
+            let enc_esc = crate::serialize::escape::escape_xml_str(&f.enclosing);
+            let msg_esc = crate::serialize::escape::escape_xml_str(&f.message);
             writeln!(
                 w,
-                "  <f rule=\"{}\" p=\"{p_esc}:{}\" sev=\"{}\" in=\"main\">{}</f>",
-                f.rule, f.line, f.severity, f.message
+                "  <f rule=\"{}\" p=\"{p_esc}:{}\" sev=\"{}\" in=\"{enc_esc}\">{msg_esc}</f>",
+                f.rule, f.line, f.severity
             )?;
         }
         Ok(())

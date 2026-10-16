@@ -329,6 +329,18 @@ fn check_structural_regressions(
             });
         }
     }
+    for pub_sym in working.public_api.difference(&baseline.public_api) {
+        regressions.push(QualityRegression {
+            kind: "api-surface".to_string(),
+            sym_name: pub_sym.split("::").last().unwrap_or(pub_sym).to_string(),
+            file_path: pub_sym.split("::").next().unwrap_or(pub_sym).to_string(),
+            line: 1,
+            was_val: 0,
+            now_val: 1,
+            is_gating: false,
+            is_new_symbol: true,
+        });
+    }
 }
 
 /// Compute quality delta report comparing working tree snapshot against baseline.
@@ -623,6 +635,222 @@ fn check_churn_regressions(
     }
 }
 
+fn check_body_text_regressions(
+    sym: &crate::domain::Symbol,
+    sym_name: &str,
+    file_path: &str,
+    body: &str,
+    is_new: bool,
+    regressions: &mut Vec<QualityRegression>,
+) {
+    if body.contains("todo!(")
+        || body.contains("unimplemented!(")
+        || body.contains("NotImplementedError")
+        || body.contains("TODO:")
+        || body.contains("FIXME:")
+    {
+        regressions.push(QualityRegression {
+            kind: "placeholder".to_string(),
+            sym_name: sym_name.to_string(),
+            file_path: file_path.to_string(),
+            line: sym.line,
+            was_val: 0,
+            now_val: 1,
+            is_gating: false,
+            is_new_symbol: is_new,
+        });
+    }
+    if body.contains("catch {}")
+        || body.contains("catch (_) {}")
+        || body.contains("except:\n        pass")
+        || body.contains(".catch(() => {})")
+    {
+        regressions.push(QualityRegression {
+            kind: "error-masking".to_string(),
+            sym_name: sym_name.to_string(),
+            file_path: file_path.to_string(),
+            line: sym.line,
+            was_val: 0,
+            now_val: 1,
+            is_gating: false,
+            is_new_symbol: is_new,
+        });
+    }
+    if body.contains("std::unique(") && !body.contains("std::sort(") {
+        regressions.push(QualityRegression {
+            kind: "defect-shape".to_string(),
+            sym_name: sym_name.to_string(),
+            file_path: file_path.to_string(),
+            line: sym.line,
+            was_val: 0,
+            now_val: 1,
+            is_gating: false,
+            is_new_symbol: is_new,
+        });
+    }
+}
+
+fn check_changed_clone_regressions(
+    root_path: &Path,
+    state: &McpState,
+    changed_files: &[String],
+    regressions: &mut Vec<QualityRegression>,
+) {
+    let clones = crate::clones::find_clones_in_root(
+        &state.ingest,
+        &state.interner,
+        60,
+        None,
+        Some(root_path),
+    );
+    for cg in clones {
+        let Some(first_sym) = cg
+            .members
+            .first()
+            .and_then(|&id| state.ingest.symbols.get(id as usize))
+        else {
+            continue;
+        };
+        let fp = state
+            .ingest
+            .files
+            .get(first_sym.file_id as usize)
+            .map_or("", |f| state.interner.resolve(&f.path));
+        if !changed_files.iter().any(|cf| fp == cf || fp.ends_with(cf)) {
+            continue;
+        }
+        let has_reused_helper = cg.members.iter().any(|&id| state.graph.in_degree(id) >= 2);
+        let kind = if has_reused_helper {
+            "new-clone-of-reused-helper"
+        } else {
+            "duplication"
+        };
+        regressions.push(QualityRegression {
+            kind: kind.to_string(),
+            sym_name: state.interner.resolve(&first_sym.name).to_string(),
+            file_path: fp.to_string(),
+            line: first_sym.line,
+            was_val: 0,
+            now_val: cg.token_count as u32,
+            is_gating: false,
+            is_new_symbol: true,
+        });
+    }
+}
+
+fn check_source_and_clone_regressions(
+    root: &str,
+    state: &McpState,
+    baseline: &QualitySnapshot,
+    changed_files: &[String],
+    regressions: &mut Vec<QualityRegression>,
+) {
+    let root_path = Path::new(root);
+    for sym in &state.ingest.symbols {
+        let file_path = state
+            .ingest
+            .files
+            .get(sym.file_id as usize)
+            .map_or("", |f| state.interner.resolve(&f.path));
+        if (sym.kind == crate::domain::SymKind::Function
+            || sym.kind == crate::domain::SymKind::Method)
+            && changed_files
+                .iter()
+                .any(|cf| file_path == cf || file_path.ends_with(cf))
+            && let Ok(bytes) =
+                std::fs::read(root_path.join(file_path)).or_else(|_| std::fs::read(file_path))
+        {
+            let start = (sym.sig_start_byte as usize).min(bytes.len());
+            let end = (sym.end_byte as usize).min(bytes.len());
+            let body = String::from_utf8_lossy(&bytes[start..end]);
+            let sym_name = state.interner.resolve(&sym.name);
+            let key = format!("{file_path}::{sym_name}");
+            let is_new = !baseline.ccx_by_sym.contains_key(&key);
+            check_body_text_regressions(sym, sym_name, file_path, &body, is_new, regressions);
+        }
+    }
+    check_changed_clone_regressions(root_path, state, changed_files, regressions);
+}
+
+fn filter_regressions_by_scope(
+    root: &str,
+    regressions: &mut [QualityRegression],
+    scope_spec: &str,
+) {
+    let changed = crate::cli::safety::get_working_tree_changed_files(root);
+    let pats: Vec<&str> = scope_spec.split(',').map(str::trim).collect();
+    for r in regressions {
+        let in_scope = if scope_spec == "diff" {
+            changed
+                .iter()
+                .any(|cf| r.file_path == *cf || r.file_path.ends_with(cf))
+        } else {
+            pats.iter().any(|&p| r.file_path.contains(p))
+        };
+        if !in_scope {
+            r.is_gating = false;
+        }
+    }
+}
+
+fn regression_matches_ack_filter(r: &QualityRegression, ack_pats: &[&str]) -> bool {
+    ack_pats.is_empty()
+        || ack_pats.iter().any(|&p| {
+            r.kind.contains(p)
+                || r.sym_name.contains(p)
+                || r.file_path.contains(p)
+                || (p == "gating" && r.is_gating)
+        })
+}
+
+pub fn apply_cli_delta_options(
+    root: &str,
+    report: &mut QualityDeltaReport,
+    scope_opt: Option<&str>,
+    quality_ack_opt: Option<&str>,
+    ack_only_opt: Option<&str>,
+) -> io::Result<()> {
+    if let Some(scope_spec) = scope_opt.filter(|s| !s.is_empty()) {
+        filter_regressions_by_scope(root, &mut report.regressions, scope_spec);
+    }
+    if let Some(reason) = quality_ack_opt {
+        let ack_pats: Vec<&str> = ack_only_opt
+            .map(|s| {
+                s.split(',')
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let acks_path = Path::new(root).join(DEFAULT_ACKS_FILE);
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&acks_path)?;
+        for r in &mut report.regressions {
+            if regression_matches_ack_filter(r, &ack_pats) {
+                writeln!(
+                    file,
+                    "ack {} {} {} cid=0000000000000000 now={} was={} p={}:{} {}",
+                    r.kind,
+                    r.sym_name,
+                    r.now_val,
+                    r.now_val,
+                    r.was_val,
+                    r.file_path,
+                    r.line,
+                    reason
+                )?;
+                r.is_gating = false;
+                report.acked_count += 1;
+            }
+        }
+    }
+    report.gating_count = report.regressions.iter().filter(|r| r.is_gating).count();
+    report.minor_count = report.regressions.len().saturating_sub(report.gating_count);
+    Ok(())
+}
+
 /// Evaluate quality delta for a workspace root.
 pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<QualityDeltaReport> {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
@@ -665,6 +893,13 @@ pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<Qualit
     }
     if !changed_files.is_empty() {
         check_churn_regressions(root, state, &baseline, &mut report.regressions);
+        check_source_and_clone_regressions(
+            root,
+            state,
+            &baseline,
+            &changed_files,
+            &mut report.regressions,
+        );
         if let Some(ledger) = &acks {
             let _ = apply_quality_acks(&mut report.regressions, ledger);
         }

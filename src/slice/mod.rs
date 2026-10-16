@@ -223,6 +223,15 @@ pub fn execute_slice_command(
     target: Option<&str>,
     flow_str: &str,
 ) -> std::io::Result<()> {
+    execute_slice_command_with_depth(root, target, flow_str, 8)
+}
+
+pub fn execute_slice_command_with_depth(
+    root: &str,
+    target: Option<&str>,
+    flow_str: &str,
+    max_depth: u32,
+) -> std::io::Result<()> {
     let Some(target) = target else {
         eprintln!("ripwire: target required (e.g. ripwire slice sym:var)");
         return Ok(());
@@ -257,7 +266,7 @@ pub fn execute_slice_command(
         &interner,
         target,
         flow_dir,
-        8,
+        max_depth,
         custom_bytes.as_deref(),
     ) {
         Ok(out) => {

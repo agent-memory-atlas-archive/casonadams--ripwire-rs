@@ -56,6 +56,7 @@ mod tests {
                 affected: a,
                 quality_baseline: b,
                 quality_delta: d,
+                ..Default::default()
             }
             .is_active()
         };

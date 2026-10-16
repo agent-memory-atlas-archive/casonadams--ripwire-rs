@@ -276,6 +276,7 @@ fn build_connect_node_json(
 
 /// Execute `connect` tool: minimal connecting subgraph relating 2..16 symbols.
 struct ConnectAccum {
+    max_radius: u32,
     chosen_terminals: Vec<(NodeId, usize)>,
     connections: Vec<Value>,
     all_path_nodes: std::collections::BTreeSet<NodeId>,
@@ -293,7 +294,9 @@ fn record_connect_pair(
 ) {
     let (name_a, ref ids_a) = resolved[i];
     let (name_b, ref ids_b) = resolved[j];
-    let Some((nodes, d_edges)) = find_undirected_path_between_sets(graph, ids_a, ids_b, 6) else {
+    let Some((nodes, d_edges)) =
+        find_undirected_path_between_sets(graph, ids_a, ids_b, acc.max_radius)
+    else {
         return;
     };
     if let Some(&first_id) = nodes.first() {
@@ -319,6 +322,16 @@ pub fn call_connect(
     interner: &Interner,
     symbol_names: &[String],
 ) -> Value {
+    call_connect_with_radius(ingest, graph, interner, symbol_names, 6)
+}
+
+pub fn call_connect_with_radius(
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    symbol_names: &[String],
+    max_radius: u32,
+) -> Value {
     let resolved: Vec<(&str, Vec<NodeId>)> = symbol_names
         .iter()
         .filter_map(|name| {
@@ -327,6 +340,7 @@ pub fn call_connect(
         })
         .collect();
     let mut acc = ConnectAccum {
+        max_radius,
         chosen_terminals: resolved
             .iter()
             .map(|(_, ids)| (ids[0], ids.len()))

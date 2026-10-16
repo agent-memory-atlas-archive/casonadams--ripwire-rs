@@ -4,12 +4,17 @@ use crate::graph::Graph;
 use crate::serialize::ToXmlString;
 use std::io::{self, Write};
 use std::path::Path;
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct GateDispatchArgs<'a> {
     pub edit_check: Option<&'a str>,
     pub affected: Option<&'a str>,
     pub quality_baseline: bool,
     pub quality_delta: bool,
+    pub scope: Option<&'a str>,
+    pub quality_ack: Option<&'a str>,
+    pub ack_only: Option<&'a str>,
+    pub show_stale: bool,
+    pub allow_dirty: bool,
 }
 
 impl GateDispatchArgs<'_> {
@@ -36,7 +41,7 @@ pub fn execute_gate_action<W: Write>(
         return Some(execute_quality_baseline_with(state, out));
     }
     if args.quality_delta {
-        return Some(run_quality_delta_gate(state, out));
+        return Some(run_quality_delta_gate_with_args(args, state, out));
     }
     None
 }
@@ -45,7 +50,15 @@ pub fn run_quality_delta_gate<W: Write>(
     state: &crate::mcp::McpState,
     out: &mut W,
 ) -> io::Result<()> {
-    match execute_quality_delta_with(state, out) {
+    run_quality_delta_gate_with_args(GateDispatchArgs::default(), state, out)
+}
+
+pub fn run_quality_delta_gate_with_args<W: Write>(
+    args: GateDispatchArgs<'_>,
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
+    match execute_quality_delta_with_args(args, state, out) {
         Ok(has_failures) if has_failures => {
             let _ = out.flush();
             std::process::exit(2);
@@ -874,7 +887,22 @@ pub fn execute_quality_delta_with<W: Write>(
     state: &crate::mcp::McpState,
     out: &mut W,
 ) -> io::Result<bool> {
-    let report = crate::gate::quality_delta::evaluate_quality_delta(&state.root, state)?;
+    execute_quality_delta_with_args(GateDispatchArgs::default(), state, out)
+}
+
+pub fn execute_quality_delta_with_args<W: Write>(
+    args: GateDispatchArgs<'_>,
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<bool> {
+    let mut report = crate::gate::quality_delta::evaluate_quality_delta(&state.root, state)?;
+    crate::gate::quality_delta::apply_cli_delta_options(
+        &state.root,
+        &mut report,
+        args.scope,
+        args.quality_ack,
+        args.ack_only,
+    )?;
     report.write_xml(out)?;
     Ok(report.has_gating_failures())
 }

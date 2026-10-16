@@ -126,10 +126,23 @@ pub fn execute_connect_query_in_root<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
+    execute_connect_query_with_radius(root, syms, 6, ingest, graph, interner, out)
+}
+
+pub fn execute_connect_query_with_radius<W: Write>(
+    root: &str,
+    syms: &str,
+    max_radius: u32,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
     let sym_list: Vec<String> = syms
         .split(',')
-        .map(|s| s.trim().to_string())
+        .map(str::trim)
         .filter(|s| !s.is_empty())
+        .map(String::from)
         .collect();
     for s in &sym_list {
         if crate::navigate::find_symbols_by_name(s, ingest, interner).is_empty() {
@@ -138,7 +151,9 @@ pub fn execute_connect_query_in_root<W: Write>(
             )));
         }
     }
-    let mut val = crate::mcp::graph_tools::call_connect(ingest, graph, interner, &sym_list);
+    let mut val = crate::mcp::graph_tools::call_connect_with_radius(
+        ingest, graph, interner, &sym_list, max_radius,
+    );
     val["root"] = serde_json::Value::String(root.to_string());
     crate::serialize::serialize_connect_xml(&val, out)
 }
@@ -1557,6 +1572,13 @@ fn execute_task_or_signatures<W: Write>(
                 adaptive: ret.adaptive,
             },
         );
+        if let Some(in_pat) = ret.in_scope.as_deref()
+            && let Some(arr) = val
+                .get_mut("symbols")
+                .and_then(serde_json::Value::as_array_mut)
+        {
+            arr.retain(|s| s["path"].as_str().is_some_and(|p| p.contains(in_pat)));
+        }
         if let Some(sec) = ret.sections.as_deref() {
             val["sections"] = serde_json::json!(sec);
         }
@@ -1675,6 +1697,44 @@ fn execute_advanced_retrieval<W: Write>(
     }
 }
 
+fn execute_grep_cli_dispatch<W: Write>(
+    ret: &TopRetrievalArgs,
+    pat: &str,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let before = ret.grep_before.or(ret.grep_context).unwrap_or(0);
+    let after = ret.grep_after.or(ret.grep_context).unwrap_or(0);
+    let path_filter = ret
+        .grep_in
+        .as_deref()
+        .or(ret.grep_scope.as_deref())
+        .or(ret.in_scope.as_deref());
+    let mut val = crate::mcp::retrieval::call_grep_with_context(
+        root,
+        ingest,
+        interner,
+        pat,
+        path_filter,
+        before,
+        after,
+    );
+    if let Some(arr) = val
+        .get_mut("hits")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        if let Some(and_p) = ret.and_pat.as_deref() {
+            arr.retain(|h| h["text"].as_str().is_some_and(|t| t.contains(and_p)));
+        }
+        if let Some(not_p) = ret.not_pat.as_deref() {
+            arr.retain(|h| !h["text"].as_str().is_some_and(|t| t.contains(not_p)));
+        }
+    }
+    crate::serialize::serialize_grep_xml(&val, out)
+}
+
 pub fn execute_retrieval_dispatch<W: Write>(
     ret: &TopRetrievalArgs,
     root: &str,
@@ -1688,20 +1748,17 @@ pub fn execute_retrieval_dispatch<W: Write>(
         return Ok(());
     }
     if let Some(pat) = ret.grep.as_deref() {
-        let before = ret.grep_before.or(ret.grep_context).unwrap_or(0);
-        let after = ret.grep_after.or(ret.grep_context).unwrap_or(0);
-        let val = crate::mcp::retrieval::call_grep_with_context(
-            root,
-            ingest,
-            interner,
-            pat,
-            ret.grep_in.as_deref(),
-            before,
-            after,
-        );
-        crate::serialize::serialize_grep_xml(&val, out)
+        execute_grep_cli_dispatch(ret, pat, root, ingest, interner, out)
     } else if let Some(syms) = ret.connect.as_deref() {
-        execute_connect_query_in_root(root, syms, ingest, graph, interner, out)
+        execute_connect_query_with_radius(
+            root,
+            syms,
+            ret.connect_radius,
+            ingest,
+            graph,
+            interner,
+            out,
+        )
     } else if let Some(pair) = ret.path_between.as_deref() {
         execute_path_query(pair, ingest, graph, interner, out)
     } else if let Some(ex) = ret.exemplar.as_deref() {

@@ -153,11 +153,27 @@ pub fn load_repo_analysis_cached(
     cache_path: Option<&Path>,
     no_cache: bool,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
-    if !no_cache && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path) {
+    load_repo_analysis_with_options(root, cache_path, no_cache, true)
+}
+
+pub fn load_repo_analysis_with_options(
+    root: &str,
+    cache_path: Option<&Path>,
+    no_cache: bool,
+    honor_gitignore: bool,
+) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
+    if !no_cache
+        && honor_gitignore
+        && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path)
+    {
         return Ok(cached);
     }
     let path = Path::new(root);
-    let files = crate::crawler::crawl_directory(path, &crate::crawler::CrawlerOptions::default());
+    let opts = crate::crawler::CrawlerOptions {
+        honor_gitignore,
+        ..Default::default()
+    };
+    let files = crate::crawler::crawl_directory(path, &opts);
     let registry =
         crate::ingest::LanguageRegistry::new().map_err(|e| io::Error::other(e.to_string()))?;
     let interner = Interner::new();
@@ -173,8 +189,17 @@ pub fn load_repo_analysis_for_cli(
     root: &str,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
     let cache_path = cli.modifiers.cache.as_deref().map(Path::new);
-    let no_cache = cli.modifiers.no_cache;
-    load_repo_analysis_cached(root, cache_path, no_cache)
+    let no_cache = cli.modifiers.no_cache
+        || cli.modifiers.ignore_tests
+        || cli.modifiers.max_file_size.is_some();
+    let (mut ingest, graph, pr, interner) =
+        load_repo_analysis_with_options(root, cache_path, no_cache, !cli.modifiers.no_ignore)?;
+    if cli.modifiers.ignore_tests {
+        ingest
+            .files
+            .retain(|f| !crate::gate::affected::is_test_path(interner.resolve(&f.path)));
+    }
+    Ok((ingest, graph, pr, interner))
 }
 
 pub fn compute_effective_budget(
@@ -472,24 +497,38 @@ fn execute_workspace_owners<W: Write>(cli: &Cli, root: &str, out: &mut W) -> io:
     crate::serialize::serialize_owners_xml(&val, out)
 }
 
-fn cap_lint_findings_per_rule(
+fn split_csv_patterns(raw: &str) -> Vec<&str> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn filter_and_cap_lint_findings(
     findings: &mut Vec<crate::metrics::lint::LintFinding>,
-    max_per_rule: Option<usize>,
+    detail: &TopDetailArgs,
 ) {
-    let Some(limit) = max_per_rule else {
-        return;
-    };
-    let mut rule_counts: std::collections::HashMap<String, usize> =
-        std::collections::HashMap::new();
-    findings.retain(|f| {
-        let c = rule_counts.entry(f.rule.clone()).or_insert(0);
-        if *c < limit {
+    if let Some(sel) = detail
+        .lint_select
+        .as_deref()
+        .or(detail.lint_rules.as_deref())
+    {
+        let pats = split_csv_patterns(sel);
+        findings.retain(|f| pats.is_empty() || pats.iter().any(|&p| f.rule.contains(p)));
+    }
+    if let Some(ign) = detail.lint_ignore.as_deref() {
+        let pats = split_csv_patterns(ign);
+        findings.retain(|f| !pats.iter().any(|&p| f.rule.contains(p)));
+    }
+    if let Some(limit) = detail.lint_max_per_rule {
+        let mut rule_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        findings.retain(|f| {
+            let c = rule_counts.entry(f.rule.clone()).or_insert(0);
             *c += 1;
-            true
-        } else {
-            false
-        }
-    });
+            *c <= limit
+        });
+    }
 }
 
 fn execute_detail_extended<W: Write>(
@@ -503,8 +542,9 @@ fn execute_detail_extended<W: Write>(
 ) -> io::Result<()> {
     let detail = &cli.detail;
     if detail.lint {
-        let mut findings = crate::metrics::lint::run_lint_scan(ingest, graph, interner);
-        cap_lint_findings_per_rule(&mut findings, detail.lint_max_per_rule);
+        let mut findings =
+            crate::metrics::lint::run_lint_scan_in_root(root, ingest, graph, interner);
+        filter_and_cap_lint_findings(&mut findings, detail);
         if cli.arch.sarif {
             crate::metrics::lint::serialize_lint_sarif(&findings, stdout)
         } else {
@@ -835,6 +875,7 @@ pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
                 affected: gate_args.affected.as_deref(),
                 quality_baseline: gate_args.quality_baseline,
                 quality_delta: gate_args.quality_delta,
+                ..Default::default()
             };
             if let Some(res) = dispatch_gate_command(root, sub_gate) {
                 return res;
@@ -922,12 +963,20 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     if let Some(res) = dispatch_primary_workflows(&cli, root) {
         return res;
     }
-
     let cli_gate = GateDispatchArgs {
         edit_check: cli.edit_check.as_deref(),
         affected: cli.affected.as_deref(),
         quality_baseline: cli.quality_baseline,
-        quality_delta: cli.quality_delta,
+        quality_delta: cli.quality_delta || cli.safety.quality_ack.is_some(),
+        scope: cli.safety.scope.as_deref(),
+        quality_ack: cli
+            .safety
+            .quality_ack
+            .as_ref()
+            .map(|o| o.as_deref().unwrap_or("acknowledged")),
+        ack_only: cli.safety.ack_only.as_deref(),
+        show_stale: cli.safety.show_stale,
+        allow_dirty: cli.safety.allow_dirty,
     };
     if let Some(res) = dispatch_gate_command(root, cli_gate) {
         return res;
@@ -948,15 +997,21 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     }
 
     if let Some(Commands::Slice(slice_args)) = &cli.command {
-        return crate::slice::execute_slice_command(
+        return crate::slice::execute_slice_command_with_depth(
             root,
             slice_args.target.as_deref(),
             &slice_args.flow,
+            cli.slice_depth,
         );
     }
 
     if let Some(target) = cli.slice.as_deref() {
-        return crate::slice::execute_slice_command(root, Some(target), &cli.slice_flow);
+        return crate::slice::execute_slice_command_with_depth(
+            root,
+            Some(target),
+            &cli.slice_flow,
+            cli.slice_depth,
+        );
     }
 
     let budget = if cli.top_k.is_some()
