@@ -228,8 +228,11 @@ Enforce architectural layering rules from file \fIFILE\fR. Exits with code \fB2\
 .B \-\-mermaid
 Export a Mermaid flowchart diagram of module call dependency topology to stdout.
 .TP
-.B \-\-zoom
-Hierarchical Louvain community clustering view.
+.BR \-\-zoom [=\fIDEPTH\fR]
+Multi-level Louvain module hierarchy over the call graph. \fBlevels=\fR is the computed depth (level 0 is the finest partition); the top \fB2\fR levels print by default, and modules at the cut carry \fBchildren=\fIK\fR. \fIDEPTH\fR keeps only the finest \fIDEPTH\fR levels. Top modules are windowed at 40 (\fB\-\-limit\fR/\fB\-\-offset\fR page them).
+.TP
+.BI \-\-zoom\-levels= N
+With \fB\-\-zoom\fR, print \fIN\fR levels from the top (\fB0\fR = every level). Refused alone.
 .TP
 .B \-\-biggest\-first
 Rank functions by readability volume and physical size, largest first.

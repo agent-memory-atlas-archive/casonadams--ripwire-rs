@@ -17,7 +17,7 @@ pub use query_xml::{
     serialize_mentions_xml, serialize_owners_xml, serialize_pack_top_n_xml,
     serialize_path_between_xml, serialize_recall_xml, serialize_safe_delete_xml,
     serialize_stray_content_xml, serialize_test_gate_xml, serialize_tree_xml,
-    serialize_whereis_xml, serialize_zoom_xml,
+    serialize_whereis_xml,
 };
 
 pub use html::{ColorBy, generate_call_graph_html, write_call_graph_html};

@@ -684,8 +684,21 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
         if let Some(rules_file) = a.arch.as_deref() {
             execute_arch_rules_query(rules_file, root, &ingest, &graph, &interner, &mut stdout)?;
-        } else if a.zoom.is_some() {
-            execute_zoom_query(&ingest, &graph, &interner, &mut stdout)?;
+        } else if let Some(depth) = a.zoom {
+            let opts = crate::graph::zoom::ZoomOptions {
+                depth,
+                levels_shown: a.zoom_levels,
+                limit: cli.modifiers.limit,
+                offset: cli.modifiers.offset,
+            };
+            crate::graph::zoom::execute_zoom_query(
+                &ingest,
+                &graph,
+                &interner,
+                pr.iterations,
+                opts,
+                &mut stdout,
+            )?;
         } else if a.dead_code {
             execute_dead_code_query(root, &ingest, &graph, &interner, &mut stdout)?;
         } else if a.communities || a.community.is_some() {
@@ -960,7 +973,17 @@ fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     None
 }
 
+fn validate_arch_modifiers(a: &TopArchitectureArgs) -> io::Result<()> {
+    if a.zoom_levels.is_some() && a.zoom.is_none() {
+        return Err(io::Error::other(
+            "ripwire: --zoom-levels=N modifies --zoom; pass it too (e.g. --zoom --zoom-levels=0 prints every level)",
+        ));
+    }
+    Ok(())
+}
+
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
+    validate_arch_modifiers(&cli.arch)?;
     let root = cli.path.as_deref().unwrap_or(".");
     if let Some(res) = dispatch_primary_workflows(&cli, root) {
         return res;

@@ -160,6 +160,51 @@ fn compact_community_ids(comm: &[u32]) -> (Vec<u32>, u32) {
     (compacted, next_id)
 }
 
+fn louvain_partition(adj: &[Vec<UndirectedEdge>], self_w: &[f64], m2: f64) -> (Vec<u32>, u32) {
+    let deg: Vec<f64> = adj
+        .iter()
+        .zip(self_w)
+        .map(|(edges, s)| edges.iter().map(|e| f64::from(e.weight)).sum::<f64>() + s)
+        .collect();
+    let mut comm: Vec<u32> = (0..adj.len() as u32).collect();
+    let mut comm_tot = deg.clone();
+    for _pass in 0..16 {
+        if !perform_louvain_pass(adj, &deg, m2, &mut comm, &mut comm_tot) {
+            break;
+        }
+    }
+    compact_community_ids(&comm)
+}
+
+fn aggregate_communities(
+    adj: &[Vec<UndirectedEdge>],
+    self_w: &[f64],
+    comm: &[u32],
+    count: u32,
+) -> (Vec<Vec<UndirectedEdge>>, Vec<f64>) {
+    let mut next_adj: Vec<Vec<UndirectedEdge>> = vec![Vec::new(); count as usize];
+    let mut next_self = vec![0.0f64; count as usize];
+    for (u, edges) in adj.iter().enumerate() {
+        let cu = comm[u] as usize;
+        next_self[cu] += self_w[u];
+        for e in edges {
+            let cv = comm[e.target as usize];
+            if cv as usize == cu {
+                next_self[cu] += f64::from(e.weight);
+            } else {
+                next_adj[cu].push(UndirectedEdge {
+                    target: cv,
+                    weight: e.weight,
+                });
+            }
+        }
+    }
+    for edges in &mut next_adj {
+        coalesce_sorted_edges(edges);
+    }
+    (next_adj, next_self)
+}
+
 /// Detect cohesive communities in the call graph using the Louvain modularity algorithm.
 #[must_use]
 pub fn detect_communities(graph: &Graph) -> Communities {
@@ -170,7 +215,6 @@ pub fn detect_communities(graph: &Graph) -> Communities {
             count: 0,
         };
     }
-
     let (adj, m2) = build_undirected_adj(graph);
     if m2 <= 0.0 {
         return Communities {
@@ -178,24 +222,39 @@ pub fn detect_communities(graph: &Graph) -> Communities {
             count: 1,
         };
     }
+    let (comm, count) = louvain_partition(&adj, &vec![0.0; n], m2);
+    Communities { comm, count }
+}
 
-    let deg: Vec<f64> = adj
-        .iter()
-        .map(|edges| edges.iter().map(|e| f64::from(e.weight)).sum())
-        .collect();
-
-    let mut comm: Vec<u32> = (0..n as u32).collect();
-    let mut comm_tot = deg.clone();
-    for _pass in 0..16 {
-        if !perform_louvain_pass(&adj, &deg, m2, &mut comm, &mut comm_tot) {
+/// Multi-level Louvain: each level aggregates the previous level's communities and re-runs local
+/// moving. Returns one per-node assignment per level, finest first; stops when a level merges nothing.
+#[must_use]
+pub fn detect_hierarchy(graph: &Graph) -> Vec<Vec<u32>> {
+    let n = graph.node_count();
+    if n == 0 {
+        return Vec::new();
+    }
+    let (mut adj, m2) = build_undirected_adj(graph);
+    if m2 <= 0.0 {
+        return vec![vec![0; n]];
+    }
+    let mut self_w = vec![0.0f64; n];
+    let mut node_comm: Vec<u32> = (0..n as u32).collect();
+    let mut levels = Vec::new();
+    loop {
+        let (comm, count) = louvain_partition(&adj, &self_w, m2);
+        let merged = (count as usize) < adj.len();
+        if !merged && !levels.is_empty() {
             break;
         }
+        node_comm = node_comm.iter().map(|&c| comm[c as usize]).collect();
+        levels.push(node_comm.clone());
+        if !merged || count <= 1 {
+            break;
+        }
+        (adj, self_w) = aggregate_communities(&adj, &self_w, &comm, count);
     }
-    let (compacted, count) = compact_community_ids(&comm);
-    Communities {
-        comm: compacted,
-        count,
-    }
+    levels
 }
 
 #[cfg(test)]
@@ -231,5 +290,51 @@ mod tests {
         assert_eq!(comms.comm[3], comms.comm[4]);
         assert_eq!(comms.comm[4], comms.comm[5]);
         assert_ne!(comms.comm[0], comms.comm[3]);
+    }
+
+    #[test]
+    fn test_hierarchy_merges_linked_cliques_at_a_coarser_level() {
+        let interner = Interner::new();
+        let registry = LanguageRegistry::new().unwrap();
+        let clique = |p: usize| {
+            let link = if p.is_multiple_of(2) {
+                let q = p + 1;
+                format!("q{q}a(); q{q}b(); q{q}c();")
+            } else {
+                String::new()
+            };
+            format!(
+                "fn q{p}a() {{ q{p}b(); q{p}c(); {link} }} fn q{p}b() {{ q{p}a(); q{p}c(); {link} }} fn q{p}c() {{ q{p}a(); q{p}b(); {link} }}"
+            )
+        };
+        let files: Vec<(String, String)> = (0..8)
+            .map(|p| (format!("src/q{p}.rs"), clique(p)))
+            .collect();
+        let mem: Vec<(&str, crate::domain::Lang, &[u8])> = files
+            .iter()
+            .map(|(p, c)| (p.as_str(), crate::domain::Lang::Rust, c.as_bytes()))
+            .collect();
+        let ingest = crate::ingest::ingest_in_memory_files(&mem, &registry, &interner);
+        let graph = Graph::build(&ingest, &interner);
+        let levels = detect_hierarchy(&graph);
+
+        assert!(levels.len() >= 2);
+        let finest = &levels[0];
+        let top = levels.last().unwrap();
+        assert_eq!(finest.len(), graph.node_count());
+        let distinct = |v: &Vec<u32>| v.iter().collect::<std::collections::HashSet<_>>().len();
+        assert!(distinct(top) < distinct(finest));
+        let comm_of = |name: &str| {
+            let id = ingest
+                .symbols
+                .iter()
+                .position(|s| interner.resolve(&s.name) == name)
+                .unwrap();
+            (finest[id], top[id])
+        };
+        assert_eq!(comm_of("q0a").0, comm_of("q0b").0);
+        assert_ne!(comm_of("q0a").0, comm_of("q1a").0);
+        assert_eq!(comm_of("q0a").1, comm_of("q1a").1);
+        assert_ne!(comm_of("q0a").1, comm_of("q2a").1);
     }
 }

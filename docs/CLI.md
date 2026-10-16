@@ -190,8 +190,11 @@ ripwire-rs . --arch=rules.txt
 # Export Mermaid flowchart of module call dependencies
 ripwire-rs . --mermaid
 
-# Hierarchical Louvain community clustering
+# Multi-level Louvain module hierarchy (computed levels=, top 2 printed)
 ripwire-rs . --zoom
+
+# Print every hierarchy level
+ripwire-rs . --zoom --zoom-levels=0
 
 # Rank functions by readability volume and size, largest first
 ripwire-rs . --biggest-first

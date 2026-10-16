@@ -977,32 +977,6 @@ pub fn serialize_communities_with_summary_xml<W: Write>(
     writeln!(out, "</communities>")
 }
 
-/// Serialize `--zoom` hierarchical Louvain modules to Ripwire XML.
-pub fn serialize_zoom_xml<W: Write>(
-    modules: &[CommunityModule<'_>],
-    summary: &CommunitySummary<'_>,
-    out: &mut W,
-) -> io::Result<()> {
-    let top_mods = modules.len().min(40);
-    let in_hier: usize = modules.iter().take(top_mods).map(|m| m.size).sum();
-    let isolated = summary.symbols.saturating_sub(in_hier);
-    let pr_iters = summary.pr_iters.max(1);
-    writeln!(
-        out,
-        "<!-- ripwire zoom schema=ripwire.zoom/v1: nested module hierarchy: <module level= id= size= dir= shown= capped=> of <member t= n= p=>. -->\n<zoom schema=\"ripwire.zoom/v1\" levels=\"4\" levels_shown=\"2\" top_modules=\"{top_mods}\" symbols=\"{}\" isolated=\"{isolated}\" pr_iters=\"{pr_iters}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
-        summary.symbols,
-    )?;
-    for m in modules.iter().take(top_mods) {
-        let dir_esc = escape_xml_str(m.dir);
-        writeln!(
-            out,
-            "  <module level=\"3\" id=\"{}\" size=\"{}\" dir=\"{dir_esc}\"><module level=\"2\" id=\"{}\" size=\"{}\" dir=\"{dir_esc}\" children=\"1\"/></module>",
-            m.id, m.size, m.id, m.size
-        )?;
-    }
-    writeln!(out, "</zoom>")
-}
-
 /// Serialize `--around` ego graph to Ripwire XML.
 pub fn serialize_around_xml<W: Write>(
     root: &str,

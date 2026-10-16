@@ -998,36 +998,6 @@ pub fn execute_communities_query<W: Write>(
     crate::serialize::serialize_communities_with_summary_xml(root, &modules, &summary, out)
 }
 
-pub fn execute_zoom_query<W: Write>(
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
-    let comms = graph.communities();
-    let mut by_comm: std::collections::HashMap<u32, Vec<NodeId>> = std::collections::HashMap::new();
-    for (node, &c) in comms.comm.iter().enumerate() {
-        by_comm.entry(c).or_default().push(node as u32);
-    }
-    let mut comm_ids: Vec<u32> = by_comm
-        .iter()
-        .filter(|(_, nodes)| nodes.len() >= 2)
-        .map(|(&id, _)| id)
-        .collect();
-    comm_ids.sort_by(|a, b| {
-        by_comm[b]
-            .len()
-            .cmp(&by_comm[a].len())
-            .then_with(|| a.cmp(b))
-    });
-    let modules: Vec<crate::serialize::CommunityModule<'_>> = comm_ids
-        .into_iter()
-        .map(|id| build_community_module(id, &by_comm[&id], ingest, interner))
-        .collect();
-    let summary = compute_community_summary(&comms.comm, &by_comm, &modules, ingest, graph);
-    crate::serialize::serialize_zoom_xml(&modules, &summary, out)
-}
-
 fn enqueue_around_neighbors(
     curr: NodeId,
     next_d: u32,
