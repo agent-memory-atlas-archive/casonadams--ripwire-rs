@@ -71,10 +71,9 @@ pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
                 }
             }
         }
-        write!(
-            out,
-            "</sigs><tail total=\"0\" shown=\"0\" capped=\"0\"></tail>"
-        )?;
+        write!(out, "</sigs>")?;
+        write_for_lego_section(out, val, raw_task)?;
+        write!(out, "<tail total=\"0\" shown=\"0\" capped=\"0\"></tail>")?;
         let n = bodies_to_show.len();
         write!(out, "<bodies shown=\"{n}\" total=\"{n}\" capped=\"0\">")?;
         for (k, l, p, name, b) in bodies_to_show {
@@ -85,6 +84,55 @@ pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
         }
         writeln!(out, "</bodies>")
     })
+}
+
+fn for_section_requested(val: &Value, name: &str) -> bool {
+    val["sections"]
+        .as_array()
+        .is_some_and(|s| s.iter().any(|v| v.as_str() == Some(name)))
+}
+
+fn write_for_lego_section<W: Write>(out: &mut W, val: &Value, raw_task: &str) -> io::Result<()> {
+    let Some(ifaces) = val["lego"].as_array().filter(|a| !a.is_empty()) else {
+        return Ok(());
+    };
+    if !for_section_requested(val, "lego") {
+        let replay = format!(
+            "--for='{}' --sections=lego",
+            raw_task.replace('\'', "'\\''")
+        );
+        let next = escape_xml_str(&replay);
+        return write!(
+            out,
+            "<!-- lego total=N shown=0 capped=1: N interfaces with implementors in the ranked files, collapsed; next= restores them. --><lego total=\"{}\" shown=\"0\" capped=\"1\" next=\"{next}\"/>",
+            ifaces.len()
+        );
+    }
+    write!(out, "<lego>")?;
+    for iface in ifaces {
+        let impls = iface["implementors"]
+            .as_array()
+            .map_or(&[][..], Vec::as_slice);
+        write!(
+            out,
+            "<iface n=\"{}\" p=\"{}:{}\" implementors=\"{}\">",
+            escape_xml_str(iface["name"].as_str().unwrap_or("")),
+            escape_xml_str(iface["path"].as_str().unwrap_or("")),
+            iface["line"].as_u64().unwrap_or(0),
+            impls.len()
+        )?;
+        for imp in impls {
+            write!(
+                out,
+                "<impl n=\"{}\" p=\"{}:{}\"/>",
+                escape_xml_str(imp["name"].as_str().unwrap_or("")),
+                escape_xml_str(imp["path"].as_str().unwrap_or("")),
+                imp["line"].as_u64().unwrap_or(0)
+            )?;
+        }
+        write!(out, "</iface>")?;
+    }
+    write!(out, "</lego>")
 }
 
 /// Serialize `grep` search result to Ripwire XML.

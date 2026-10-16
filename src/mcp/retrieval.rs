@@ -183,6 +183,30 @@ pub struct ForTaskOptions<'a> {
     pub adaptive: bool,
 }
 
+/// Parse `--sections=`: a closed, comma-separated, order-insensitive set of `lego` and `compose`.
+pub fn parse_for_sections(raw: &str) -> Result<Vec<&'static str>, String> {
+    let mut out: Vec<&'static str> = Vec::new();
+    for part in raw.split(',').map(str::trim) {
+        let name = match part {
+            "lego" => "lego",
+            "compose" => "compose",
+            "" => return Err(
+                "ripwire: --sections= names an empty section; use lego, compose, or lego,compose"
+                    .to_string(),
+            ),
+            other => {
+                return Err(format!(
+                    "ripwire: --sections={raw}: unknown section `{other}`; use lego, compose, or lego,compose"
+                ));
+            }
+        };
+        if out.contains(&name) {
+            return Err(format!("ripwire: --sections={raw}: `{name}` named twice"));
+        }
+        out.push(name);
+    }
+    Ok(out)
+}
 /// Execute `for` task-lens ranking tool.
 pub fn compute_adaptive_cut(scores: &[f64], floor: usize, ceiling: usize) -> (usize, usize, f64) {
     let limit = ceiling.min(scores.len());
@@ -369,6 +393,7 @@ pub fn call_for_task_with_options(
     let (route, confidence, margin_pct, coverage) =
         compute_for_route_metadata(task, &raw_terms, &scored, interner);
     let est_tokens = (symbols_json.len() * 22 + detail_count * 120 + 180) as u64;
+    let lego = collect_for_lego(ingest, interner, &scored[..limit]);
     json!({
         "task": task,
         "root": opts.root,
@@ -380,8 +405,45 @@ pub fn call_for_task_with_options(
         "symbols": symbols_json,
         "count": symbols_json.len(),
         "detail": detail_count,
+        "lego": lego,
         "adaptive": adaptive_info.map(|(k, t, g)| json!({ "kept": k, "total": t, "gap": g }))
     })
+}
+
+/// Interfaces that are ranked, or declared in a file holding a ranked symbol, and have implementors.
+fn collect_for_lego(
+    ingest: &IngestResult,
+    interner: &Interner,
+    ranked: &[(f64, &crate::domain::Symbol)],
+) -> Vec<Value> {
+    let ranked_files: std::collections::HashSet<u32> =
+        ranked.iter().map(|(_, s)| s.file_id).collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for sym in &ingest.symbols {
+        if sym.kind != SymKind::Interface || !ranked_files.contains(&sym.file_id) {
+            continue;
+        }
+        let name = interner.resolve(&sym.name);
+        if !seen.insert(name) {
+            continue;
+        }
+        let lego = call_lego(ingest, interner, name);
+        if lego["count"].as_u64().unwrap_or(0) == 0 {
+            continue;
+        }
+        let path = ingest
+            .files
+            .get(sym.file_id as usize)
+            .map_or("", |f| interner.resolve(&f.path));
+        out.push(json!({
+            "name": name,
+            "path": path,
+            "line": sym.line,
+            "implementors": lego["implementors"]
+        }));
+    }
+    out
 }
 
 /// Execute `fetch_body` tool.
@@ -1030,6 +1092,59 @@ pub fn call_ast_match(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_for_sections_is_a_closed_set() {
+        assert_eq!(parse_for_sections("lego").unwrap(), vec!["lego"]);
+        assert_eq!(
+            parse_for_sections("compose, lego").unwrap(),
+            vec!["compose", "lego"]
+        );
+        assert!(
+            parse_for_sections("lego,lego")
+                .unwrap_err()
+                .contains("named twice")
+        );
+        assert!(
+            parse_for_sections("legos")
+                .unwrap_err()
+                .contains("unknown section")
+        );
+        assert!(parse_for_sections("").is_err());
+    }
+
+    #[test]
+    fn test_for_lego_section_stub_by_default_full_on_request() {
+        let mut val = json!({
+            "task": "parse flags",
+            "symbols": [],
+            "lego": [{
+                "name": "VerbGroup",
+                "path": "src/cli/args.rs",
+                "line": 30,
+                "implementors": [
+                    { "name": "TopNavArgs", "path": "src/cli/args.rs", "line": 122 },
+                    { "name": "TopDetailArgs", "path": "src/cli/args.rs", "line": 142 }
+                ]
+            }]
+        });
+        let render = |v: &Value| {
+            let mut out = Vec::new();
+            crate::serialize::serialize_for_xml(v, &mut out).unwrap();
+            String::from_utf8(out).unwrap()
+        };
+        let stub = render(&val);
+        assert!(stub.contains("<lego total=\"1\" shown=\"0\" capped=\"1\" next=\"--for=&apos;parse flags&apos; --sections=lego\"/>"));
+        assert!(!stub.contains("<iface "));
+
+        val["sections"] = json!(["lego"]);
+        let full = render(&val);
+        assert!(full.contains("<lego><iface n=\"VerbGroup\" p=\"src/cli/args.rs:30\" implementors=\"2\"><impl n=\"TopNavArgs\" p=\"src/cli/args.rs:122\"/>"));
+        assert!(!full.contains("<lego total="));
+
+        val["lego"] = json!([]);
+        assert!(!render(&val).contains("<lego"));
+    }
 
     #[test]
     fn test_score_symbol_match() {

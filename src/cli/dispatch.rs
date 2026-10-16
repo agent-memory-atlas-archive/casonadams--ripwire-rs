@@ -982,8 +982,23 @@ fn validate_arch_modifiers(a: &TopArchitectureArgs) -> io::Result<()> {
     Ok(())
 }
 
+fn validate_retrieval_modifiers(r: &TopRetrievalArgs) -> io::Result<()> {
+    let Some(raw) = r.sections.as_deref() else {
+        return Ok(());
+    };
+    if r.task_for.is_none() {
+        return Err(io::Error::other(
+            "ripwire: --sections= modifies --for=TASK; pass it too",
+        ));
+    }
+    crate::mcp::retrieval::parse_for_sections(raw)
+        .map(|_| ())
+        .map_err(io::Error::other)
+}
+
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     validate_arch_modifiers(&cli.arch)?;
+    validate_retrieval_modifiers(&cli.retrieval)?;
     let root = cli.path.as_deref().unwrap_or(".");
     if let Some(res) = dispatch_primary_workflows(&cli, root) {
         return res;

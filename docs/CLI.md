@@ -302,6 +302,9 @@ ripwire-rs . --for="parser" --adaptive
 
 # Print declaration skeletons with bodies elided (~80% token savings)
 ripwire-rs . --for="parser" --pack-signatures
+
+# Restore the interface/implementor <lego> section collapsed to a counted stub by default
+ripwire-rs . --for="parser" --sections=lego
 # Find which local branch defines or mentions a symbol (HEAD first, with git history oracle)
 ripwire-rs . --whereis="Symbol" --with-history --whereis-full-text --whereis-listing=defs
 

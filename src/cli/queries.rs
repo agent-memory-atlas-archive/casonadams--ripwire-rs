@@ -1549,8 +1549,10 @@ fn execute_task_or_signatures<W: Write>(
         {
             arr.retain(|s| s["path"].as_str().is_some_and(|p| p.contains(in_pat)));
         }
-        if let Some(sec) = ret.sections.as_deref() {
-            val["sections"] = serde_json::json!(sec);
+        if let Some(raw) = ret.sections.as_deref() {
+            let sections =
+                crate::mcp::retrieval::parse_for_sections(raw).map_err(io::Error::other)?;
+            val["sections"] = serde_json::json!(sections);
         }
         crate::serialize::serialize_for_xml(&val, out)?;
         return Ok(true);
