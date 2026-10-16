@@ -153,35 +153,46 @@ pub fn load_repo_analysis_cached(
     cache_path: Option<&Path>,
     no_cache: bool,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
-    load_repo_analysis_with_options(root, cache_path, no_cache, true)
+    let opts = crate::crawler::CrawlerOptions::default();
+    load_repo_analysis_with_options(root, cache_path, no_cache, &opts)
 }
 
 pub fn load_repo_analysis_with_options(
     root: &str,
     cache_path: Option<&Path>,
     no_cache: bool,
-    honor_gitignore: bool,
+    opts: &crate::crawler::CrawlerOptions,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
-    if !no_cache
-        && honor_gitignore
-        && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path)
-    {
+    let use_cache = !no_cache && *opts == crate::crawler::CrawlerOptions::default();
+    if use_cache && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path) {
         return Ok(cached);
     }
-    let path = Path::new(root);
-    let opts = crate::crawler::CrawlerOptions {
-        honor_gitignore,
-        ..Default::default()
-    };
-    let files = crate::crawler::crawl_directory(path, &opts);
+    let files = crate::crawler::crawl_directory(Path::new(root), opts);
     let registry =
         crate::ingest::LanguageRegistry::new().map_err(|e| io::Error::other(e.to_string()))?;
     let interner = Interner::new();
     let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
     let graph = Graph::build(&ingest, &interner);
     let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
-    let _ = crate::cache::save_cached_analysis(root, cache_path, (&ingest, &graph, &pr, &interner));
+    if use_cache {
+        let _ =
+            crate::cache::save_cached_analysis(root, cache_path, (&ingest, &graph, &pr, &interner));
+    }
     Ok((ingest, graph, pr, interner))
+}
+
+#[must_use]
+pub fn crawler_options_for_cli(cli: &Cli) -> crate::crawler::CrawlerOptions {
+    let defaults = crate::crawler::CrawlerOptions::default();
+    crate::crawler::CrawlerOptions {
+        max_file_size: cli
+            .modifiers
+            .max_file_size
+            .unwrap_or(defaults.max_file_size),
+        honor_gitignore: !cli.modifiers.no_ignore,
+        ignore_tests: cli.modifiers.ignore_tests,
+        custom_excludes: defaults.custom_excludes,
+    }
 }
 
 pub fn load_repo_analysis_for_cli(
@@ -189,17 +200,8 @@ pub fn load_repo_analysis_for_cli(
     root: &str,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
     let cache_path = cli.modifiers.cache.as_deref().map(Path::new);
-    let no_cache = cli.modifiers.no_cache
-        || cli.modifiers.ignore_tests
-        || cli.modifiers.max_file_size.is_some();
-    let (mut ingest, graph, pr, interner) =
-        load_repo_analysis_with_options(root, cache_path, no_cache, !cli.modifiers.no_ignore)?;
-    if cli.modifiers.ignore_tests {
-        ingest
-            .files
-            .retain(|f| !crate::gate::affected::is_test_path(interner.resolve(&f.path)));
-    }
-    Ok((ingest, graph, pr, interner))
+    let opts = crawler_options_for_cli(cli);
+    load_repo_analysis_with_options(root, cache_path, cli.modifiers.no_cache, &opts)
 }
 
 pub fn compute_effective_budget(

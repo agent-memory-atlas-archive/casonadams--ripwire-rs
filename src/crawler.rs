@@ -38,10 +38,11 @@ pub struct CrawledFile {
     pub byte_size: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrawlerOptions {
     pub max_file_size: u64,
     pub honor_gitignore: bool,
+    pub ignore_tests: bool,
     pub custom_excludes: Vec<String>,
 }
 
@@ -50,6 +51,7 @@ impl Default for CrawlerOptions {
         Self {
             max_file_size: DEFAULT_MAX_FILE_SIZE,
             honor_gitignore: true,
+            ignore_tests: false,
             custom_excludes: Vec::new(),
         }
     }
@@ -156,7 +158,9 @@ pub fn evaluate_candidate(
     options: &CrawlerOptions,
 ) -> Option<CrawledFile> {
     let path = Path::new(rel_path);
-    if is_path_denylisted(path, &options.custom_excludes) {
+    if is_path_denylisted(path, &options.custom_excludes)
+        || (options.ignore_tests && crate::gate::affected::is_test_path(rel_path))
+    {
         return None;
     }
     let lang = resolve_path_lang(path);
@@ -267,5 +271,22 @@ mod tests {
         assert_eq!(files[1].lang, Lang::Rust);
         assert!(is_binary_buffer(b"\0hello"));
         assert!(!is_binary_buffer(b"hello world"));
+    }
+
+    #[test]
+    fn test_crawl_scope_ignore_tests_and_max_file_size() {
+        let scoped = CrawlerOptions {
+            max_file_size: 100,
+            ignore_tests: true,
+            ..CrawlerOptions::default()
+        };
+        let kept = |rel: &str, size: u64| evaluate_candidate(rel, size, false, &scoped).is_some();
+        assert!(kept("src/lib.rs", 100));
+        assert!(!kept("src/lib.rs", 101));
+        assert!(!kept("tests/test_cli.rs", 10));
+        assert!(!kept("src/foo_test.go", 10));
+        let defaults = CrawlerOptions::default();
+        assert!(evaluate_candidate("tests/test_cli.rs", 10, false, &defaults).is_some());
+        assert!(evaluate_candidate("src/lib.rs", 101, false, &defaults).is_some());
     }
 }
