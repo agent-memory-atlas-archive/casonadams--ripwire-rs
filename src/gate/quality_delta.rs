@@ -327,6 +327,7 @@ fn check_symbol_numeric_regressions(
     let parts: Vec<&str> = key.split("::").collect();
     let file_path = parts.first().copied().unwrap_or(key).to_string();
     let sym_name = parts.last().copied().unwrap_or(key).to_string();
+    let line = working.line_by_sym.get(key).copied().unwrap_or(0);
 
     for dim in DELTA_DIMENSIONS {
         let now_val = dim.extract(working, key);
@@ -337,7 +338,7 @@ fn check_symbol_numeric_regressions(
                     kind: dim.kind().to_string(),
                     sym_name: sym_name.clone(),
                     file_path: file_path.clone(),
-                    line: 1,
+                    line,
                     was_val,
                     now_val,
                     is_gating: dim.is_preexisting_gating(now_val),
@@ -349,7 +350,7 @@ fn check_symbol_numeric_regressions(
                 kind: dim.kind().to_string(),
                 sym_name: sym_name.clone(),
                 file_path: file_path.clone(),
-                line: 1,
+                line,
                 was_val: 0,
                 now_val,
                 is_gating: false,
@@ -371,7 +372,7 @@ fn check_structural_regressions(
                 kind: "dead-code".to_string(),
                 sym_name: dead.clone(),
                 file_path: dead.split("::").next().unwrap_or(dead).to_string(),
-                line: 1,
+                line: working.line_by_sym.get(dead).copied().unwrap_or(0),
                 was_val: 0,
                 now_val: 1,
                 is_gating: !is_new,
@@ -384,7 +385,7 @@ fn check_structural_regressions(
             kind: "api-surface".to_string(),
             sym_name: pub_sym.split("::").last().unwrap_or(pub_sym).to_string(),
             file_path: pub_sym.split("::").next().unwrap_or(pub_sym).to_string(),
-            line: 1,
+            line: working.line_by_sym.get(pub_sym).copied().unwrap_or(0),
             was_val: 0,
             now_val: 1,
             is_gating: false,
@@ -1142,6 +1143,9 @@ mod tests {
         working
             .ccx_by_sym
             .insert("src/math.rs::calc".to_string(), 20);
+        working
+            .line_by_sym
+            .insert("src/math.rs::calc".to_string(), 42);
 
         let report = compute_quality_delta(&working, &baseline, "test-baseline");
         assert_eq!(report.regressions.len(), 1);
@@ -1155,10 +1159,11 @@ mod tests {
         assert_eq!(reg.now_val, 20);
         assert!(reg.is_gating);
         assert!(!reg.is_new_symbol);
+        assert_eq!(reg.line, 42);
 
         let xml = report.to_xml_string();
         assert!(xml.contains("gating=\"1\""));
-        assert!(xml.contains("<r kind=\"complexity\" sym=\"calc\""));
+        assert!(xml.contains("<r kind=\"complexity\" sym=\"calc\" p=\"src/math.rs:42\""));
     }
     #[test]
     fn test_quality_delta_nesting_and_params_regressions() {

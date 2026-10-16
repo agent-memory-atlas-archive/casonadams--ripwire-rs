@@ -20,6 +20,7 @@ pub struct QualitySnapshot {
     pub params_by_sym: HashMap<String, u16>,
     pub dead_symbols: HashSet<String>,
     pub public_api: HashSet<String>,
+    pub line_by_sym: HashMap<String, u32>,
 }
 
 fn symbol_canonical_key(sym_name: &str, file_path: &str, scope: Option<&str>) -> String {
@@ -54,6 +55,10 @@ pub fn compute_snapshot(
         let scope = sym.scope.map(|sc| interner.resolve(&sc));
         let key = symbol_canonical_key(name, path, scope);
 
+        snap.line_by_sym
+            .entry(key.clone())
+            .and_modify(|v| *v = (*v).min(sym.line))
+            .or_insert(sym.line);
         snap.ccx_by_sym
             .entry(key.clone())
             .and_modify(|v| *v = (*v).max(sym.ccx))

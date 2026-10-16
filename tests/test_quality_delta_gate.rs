@@ -79,6 +79,9 @@ fn test_quality_delta_clean_vs_regression() {
     clean_working
         .ccx_by_sym
         .insert("src/calc.rs::evaluate".to_string(), 25);
+    clean_working
+        .line_by_sym
+        .insert("src/calc.rs::evaluate".to_string(), 7);
     let reg_report = compute_quality_delta(&clean_working, &baseline, "test-base");
     assert_eq!(reg_report.regressions.len(), 1);
     assert_eq!(reg_report.gating_count, 1);
@@ -94,7 +97,7 @@ fn test_quality_delta_clean_vs_regression() {
 
     let xml = reg_report.to_xml_string();
     assert!(xml.contains("gating=\"1\""));
-    assert!(xml.contains("<r kind=\"complexity\" sym=\"evaluate\" p=\"src/calc.rs:1\" was=\"10\" now=\"25\" gating=\"1\" bar=\"15\"/>"));
+    assert!(xml.contains("<r kind=\"complexity\" sym=\"evaluate\" p=\"src/calc.rs:7\" was=\"10\" now=\"25\" gating=\"1\" bar=\"15\"/>"));
 }
 
 #[test]
