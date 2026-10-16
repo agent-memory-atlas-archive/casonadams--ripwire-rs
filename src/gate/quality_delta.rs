@@ -855,17 +855,61 @@ fn regression_matches_ack_filter(r: &QualityRegression, ack_pats: &[&str]) -> bo
         })
 }
 
+/// Whitespace-insensitive body identity with the symbol's own name replaced by a sentinel byte.
+#[must_use]
+pub fn content_id(body: &str, own_name: &str) -> u64 {
+    // FNV-1a 64-bit offset basis and prime (draft-eastlake-fnv); stable across Rust releases.
+    const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0100_0000_01b3;
+    let normalized = if own_name.is_empty() {
+        std::borrow::Cow::Borrowed(body)
+    } else {
+        std::borrow::Cow::Owned(body.replace(own_name, "\u{1}"))
+    };
+    normalized
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace())
+        .fold(OFFSET, |h, b| (h ^ u64::from(b)).wrapping_mul(PRIME))
+}
+
+fn regression_content_id(state: &McpState, r: &QualityRegression) -> Option<u64> {
+    if matches!(
+        r.kind.as_str(),
+        "duplication" | "new-clone-of-reused-helper"
+    ) {
+        return None;
+    }
+    let file_id = state
+        .ingest
+        .files
+        .iter()
+        .position(|f| state.interner.resolve(&f.path) == r.file_path)?;
+    let sym =
+        state.ingest.symbols.iter().find(|s| {
+            s.file_id as usize == file_id && state.interner.resolve(&s.name) == r.sym_name
+        })?;
+    let bytes = std::fs::read(Path::new(&state.root).join(&r.file_path)).ok()?;
+    let start = (sym.sig_start_byte as usize).min(bytes.len());
+    let end = (sym.end_byte as usize).min(bytes.len());
+    Some(content_id(
+        &String::from_utf8_lossy(&bytes[start..end]),
+        &r.sym_name,
+    ))
+}
+
 fn ack_matching_regressions<W: Write>(
     report: &mut QualityDeltaReport,
     ack_pats: &[&str],
     reason: &str,
+    cid_for: impl Fn(&QualityRegression) -> Option<u64>,
     ledger: &mut W,
 ) -> io::Result<()> {
     for r in &mut report.regressions {
         if regression_matches_ack_filter(r, ack_pats) {
+            let cid = cid_for(r).map_or_else(String::new, |c| format!("cid={c:016x} "));
             writeln!(
                 ledger,
-                "ack {} {} {} cid=0000000000000000 now={} was={} p={}:{} {}",
+                "ack {} {} {} {cid}now={} was={} p={}:{} {}",
                 r.kind, r.sym_name, r.now_val, r.now_val, r.was_val, r.file_path, r.line, reason
             )?;
             r.is_gating = false;
@@ -883,10 +927,11 @@ fn stale_replay_for(scope: Option<&str>) -> String {
 }
 
 pub fn apply_cli_delta_options(
-    root: &str,
+    state: &McpState,
     report: &mut QualityDeltaReport,
     opts: DeltaCliOptions<'_>,
 ) -> io::Result<()> {
+    let root = state.root.as_str();
     let scope_opt = opts.scope.filter(|s| !s.is_empty());
     if let Some(scope_spec) = scope_opt {
         filter_regressions_by_scope(root, &mut report.regressions, scope_spec);
@@ -900,7 +945,8 @@ pub fn apply_cli_delta_options(
             .create(true)
             .append(true)
             .open(Path::new(root).join(DEFAULT_ACKS_FILE))?;
-        ack_matching_regressions(report, &ack_pats, reason, &mut file)?;
+        let cid_for = |r: &QualityRegression| regression_content_id(state, r);
+        ack_matching_regressions(report, &ack_pats, reason, cid_for, &mut file)?;
     }
     report.gating_count = report.regressions.iter().filter(|r| r.is_gating).count();
     report.minor_count = report.regressions.len().saturating_sub(report.gating_count);
@@ -1044,23 +1090,44 @@ mod tests {
             is_gating: true,
             is_new_symbol: false,
         };
-        report.regressions = vec![row("complexity", "calc"), row("nesting", "walk")];
+        report.regressions = vec![
+            row("complexity", "calc"),
+            row("nesting", "walk"),
+            row("duplication", "calc"),
+        ];
         let mut ledger = Vec::new();
+        let cid_for = |r: &QualityRegression| (r.kind != "duplication").then_some(0xabcu64);
         ack_matching_regressions(
             &mut report,
-            &split_ack_patterns(" complexity ,"),
+            &split_ack_patterns(" complexity ,duplication"),
             "why",
+            cid_for,
             &mut ledger,
         )
         .unwrap();
         let text = String::from_utf8(ledger).unwrap();
-        assert_eq!(text.lines().count(), 1);
-        assert!(text.starts_with("ack complexity calc 20 "));
-        assert!(text.trim_end().ends_with("p=src/a.rs:3 why"));
-        assert_eq!(report.acked_count, 1);
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 2);
+        assert!(lines[0].starts_with("ack complexity calc 20 cid=0000000000000abc now=20"));
+        assert!(lines[0].ends_with("p=src/a.rs:3 why"));
+        assert!(lines[1].starts_with("ack duplication calc 20 now=20"));
+        assert!(!text.contains("cid=0000000000000000"));
+        assert_eq!(report.acked_count, 2);
         assert!(!report.regressions[0].is_gating);
         assert!(report.regressions[1].is_gating);
         assert_eq!(stale_replay_for(Some("src")), "--quality-delta --scope=src");
+    }
+
+    #[test]
+    fn test_content_id_survives_reindent_and_self_rename_only() {
+        let base = content_id("fn calc(x: i32) -> i32 {\n    x + 1\n}", "calc");
+        let reindented = content_id("fn calc(x: i32) -> i32 {\n\t\tx + 1\n}", "calc");
+        let renamed = content_id("fn total(x: i32) -> i32 {\n    x + 1\n}", "total");
+        let changed = content_id("fn calc(x: i32) -> i32 {\n    x + 2\n}", "calc");
+        assert_eq!(base, reindented);
+        assert_eq!(base, renamed);
+        assert_ne!(base, changed);
+        assert_ne!(base, 0);
     }
 
     #[test]

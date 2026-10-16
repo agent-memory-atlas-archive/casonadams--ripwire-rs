@@ -946,7 +946,7 @@ pub fn execute_quality_delta_with_args<W: Write>(
 ) -> io::Result<bool> {
     let mut report = crate::gate::quality_delta::evaluate_quality_delta(&state.root, state)?;
     crate::gate::quality_delta::apply_cli_delta_options(
-        &state.root,
+        state,
         &mut report,
         crate::gate::quality_delta::DeltaCliOptions {
             scope: args.scope,
