@@ -38,7 +38,7 @@ pub fn execute_gate_action<W: Write>(
         return Some(execute_affected_with(spec, state, out));
     }
     if args.quality_baseline {
-        return Some(execute_quality_baseline_with(state, out));
+        return Some(execute_quality_baseline_with(state, args.allow_dirty, out));
     }
     if args.quality_delta {
         return Some(run_quality_delta_gate_with_args(args, state, out));
@@ -83,7 +83,25 @@ fn load_gate_state(root: &str, is_delta: bool) -> io::Result<crate::mcp::McpStat
     Ok(state)
 }
 
+/// Refuse gate modifiers passed without the verb they shape.
+pub fn validate_gate_modifiers(args: &GateDispatchArgs<'_>) -> io::Result<()> {
+    if args.allow_dirty && !args.quality_baseline {
+        return Err(io::Error::other(
+            "ripwire: --allow-dirty modifies --quality-baseline; pass it too",
+        ));
+    }
+    if args.show_stale && !args.quality_delta {
+        return Err(io::Error::other(
+            "ripwire: --show-stale modifies --quality-delta; pass it too",
+        ));
+    }
+    Ok(())
+}
+
 pub fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<io::Result<()>> {
+    if let Err(e) = validate_gate_modifiers(&args) {
+        return Some(Err(e));
+    }
     if !args.is_active() {
         return None;
     }
@@ -851,8 +869,29 @@ pub fn execute_affected_with<W: Write>(
     report.write_xml(out)
 }
 
+fn dirty_pin_absorbed_gating(state: &crate::mcp::McpState) -> io::Result<Option<(usize, String)>> {
+    if get_working_tree_changed_files(&state.root).is_empty() {
+        return Ok(None);
+    }
+    let rep = crate::gate::quality_delta::evaluate_quality_delta_with_basis(
+        &state.root,
+        state,
+        crate::gate::quality_delta::DeltaBasis::HeadOnly,
+    )?;
+    let mut gating = rep.regressions.iter().filter(|r| r.is_gating);
+    let Some(first) = gating.next() else {
+        return Ok(None);
+    };
+    let first_row = format!(
+        "{} {} {}:{} was={} now={}",
+        first.kind, first.sym_name, first.file_path, first.line, first.was_val, first.now_val
+    );
+    Ok(Some((1 + gating.count(), first_row)))
+}
+
 pub fn execute_quality_baseline_with<W: Write>(
     state: &crate::mcp::McpState,
+    allow_dirty: bool,
     out: &mut W,
 ) -> io::Result<()> {
     let head_sha = state
@@ -861,13 +900,23 @@ pub fn execute_quality_baseline_with<W: Write>(
         .and_then(|c| c.first())
         .map(|c| c.id.as_str())
         .unwrap_or("HEAD");
-    let snap = crate::gate::baseline::compute_snapshot(
+    let mut snap = crate::gate::baseline::compute_snapshot(
         &state.ingest,
         &state.graph,
         &state.interner,
         head_sha,
     );
-    if state.root == ":memory:" || state.root.is_empty() {
+    let in_memory = state.root == ":memory:" || state.root.is_empty();
+    if !in_memory && let Some((absorbed, first_row)) = dirty_pin_absorbed_gating(state)? {
+        if !allow_dirty {
+            return Err(io::Error::other(format!(
+                "ripwire: --quality-baseline: this tree already holds {absorbed} gating finding(s) against HEAD; pinning here would absorb them into the floor. First: {first_row}\n  Commit the tree first, or pass --allow-dirty to pin anyway (the sidecar then records absorbed={absorbed})."
+            )));
+        }
+        snap.dirty = true;
+        snap.absorbed = absorbed;
+    }
+    if in_memory {
         writeln!(
             out,
             "ripwire: pinned quality baseline stamped at {head_sha} -> in-memory"

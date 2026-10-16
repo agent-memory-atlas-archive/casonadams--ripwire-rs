@@ -554,7 +554,7 @@
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
-            <p class="cmd-desc">Writes baseline sidecar files recording known violations so <code>--quality-delta</code> enforces zero net-new regressions.</p>
+            <p class="cmd-desc">Writes baseline sidecar files recording known violations so <code>--quality-delta</code> enforces zero net-new regressions. <code>--quality-baseline</code> refuses on a dirty tree that already gates against HEAD; <code>--allow-dirty</code> pins anyway and later deltas report <code>baseline_absorbed=</code>. A regression-free delta collapses stale ack rows to <code>stale_by_kind=</code>; <code>--show-stale</code> prints them.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">When To Use It</span>
@@ -827,7 +827,7 @@
             <tr><td><code>owners</code></td><td>Git Analytics</td><td>Recency-weighted author ownership per file.</td></tr>
             <tr><td><code>edit_check</code></td><td>Safety Gates</td><td>Verify caller compatibility after editing a function contract.</td></tr>
             <tr><td><code>affected</code></td><td>Safety Gates</td><td>Transitive test reachability mapping from changed symbols.</td></tr>
-            <tr><td><code>quality_baseline</code></td><td>Safety Gates</td><td>Snapshot code quality floor at current commit.</td></tr>
+            <tr><td><code>quality_baseline</code></td><td>Safety Gates</td><td>Snapshot code quality floor at current commit; refuses on a dirty tree that already gates unless <code>allow_dirty</code> is true.</td></tr>
             <tr><td><code>quality_delta</code></td><td>Safety Gates</td><td>Pre-commit quality regression self-check against baseline or git HEAD.</td></tr>
             <tr><td><code>doc_drift</code></td><td>Documentation</td><td>Detect out-of-bounds file:line references in markdown documents.</td></tr>
             <tr><td><code>mentions</code></td><td>Documentation</td><td>Locate markdown design notes referencing a code symbol in backticks.</td></tr>

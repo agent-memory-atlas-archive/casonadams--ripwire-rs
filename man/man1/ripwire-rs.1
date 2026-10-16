@@ -202,7 +202,10 @@ Safe deletion assessment: joins 1-hop callers, impact blast radius, test coverag
 Show which non-test domain symbols a specific test harness file reaches.
 .TP
 .B \-\-quality\-baseline
-Pin a code quality baseline stamped with git \fBHEAD\fR to \fB.ripwire_quality_baseline\fR.
+Pin a code quality baseline stamped with git \fBHEAD\fR to \fB.ripwire_quality_baseline\fR. On a dirty tree that already holds gating findings against \fBHEAD\fR, refuses (exit \fB1\fR) and names the first finding.
+.TP
+.B \-\-allow\-dirty
+With \fB\-\-quality\-baseline\fR, pin anyway; the sidecar records \fBdirty 1\fR and \fBabsorbed N\fR, and every later \fB\-\-quality\-delta\fR against it carries \fBbaseline_absorbed="N"\fR. Refused alone.
 .TP
 .B \-\-quality\-delta
 Measure code quality regressions against git \fBHEAD\fR (or pinned baseline) across 10 facets (cognitive complexity, cyclomatic complexity, dead code, duplicates, nesting, params, churn, and arity breaks). Exits non-zero (\fB2\fR) if gating regressions are detected.
@@ -422,7 +425,7 @@ Enforce an explicit RSS memory ceiling (or set via \fBRIPWIRE_MAX_MEMORY\fR).
 Cap the maximum findings emitted per AST lint rule.
 .TP
 .B \-\-show\-stale
-Emit stale \fB.ripwire_quality_acks\fR rows in \fB\-\-quality\-delta\fR even on clean runs.
+With \fB\-\-quality\-delta\fR, print every stale \fB.ripwire_quality_acks\fR row. Without it, a regression-free delta collapses those rows to \fBstale_by_kind=\fR and a \fBstale_next=\fR replay. Refused alone.
 .TP
 .B \-\-whereis\-full\-text
 Emit verbatim matched lines in \fB\-\-whereis\fR without length truncation.

@@ -65,6 +65,32 @@ mod tests {
     }
 
     #[test]
+    fn test_gate_modifiers_refused_without_their_verb() {
+        let lone_dirty = GateDispatchArgs {
+            allow_dirty: true,
+            ..Default::default()
+        };
+        let err = dispatch_gate_command(".", lone_dirty).unwrap().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("--allow-dirty modifies --quality-baseline")
+        );
+        let lone_stale = GateDispatchArgs {
+            show_stale: true,
+            ..Default::default()
+        };
+        assert!(validate_gate_modifiers(&lone_stale).is_err());
+        let paired = GateDispatchArgs {
+            quality_baseline: true,
+            allow_dirty: true,
+            quality_delta: true,
+            show_stale: true,
+            ..Default::default()
+        };
+        assert!(validate_gate_modifiers(&paired).is_ok());
+    }
+
+    #[test]
     fn test_compute_effective_budget() {
         assert_eq!(compute_effective_budget(Some(1024), None, None), Some(1024));
         assert_eq!(compute_effective_budget(None, Some(100), None), Some(400));

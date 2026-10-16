@@ -45,7 +45,7 @@
 | `owners` | Git Analytics | Recency-weighted author ownership per file. |
 | `edit_check` | Safety Gates | Verify caller compatibility after editing a function contract. |
 | `affected` | Safety Gates | Transitive test reachability mapping from changed symbols. |
-| `quality_baseline` | Safety Gates | Snapshot code quality floor at current commit. |
+| `quality_baseline` | Safety Gates | Snapshot code quality floor at current commit; refuses on a dirty tree that already gates unless `allow_dirty` is true. |
 | `quality_delta` | Safety Gates | Pre-commit quality regression self-check against baseline or git HEAD. |
 | `doc_drift` | Documentation | Detect out-of-bounds file:line references in markdown documents. |
 | `mentions` | Documentation | Locate markdown design notes referencing a code symbol in backticks. |

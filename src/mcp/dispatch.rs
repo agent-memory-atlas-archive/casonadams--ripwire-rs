@@ -251,9 +251,11 @@ pub fn call_affected(state: &McpState, args: &Value) -> Result<Value, String> {
     }))
 }
 
-pub fn call_quality_baseline(state: &McpState, _args: &Value) -> Result<Value, String> {
+pub fn call_quality_baseline(state: &McpState, args: &Value) -> Result<Value, String> {
     let mut out = Vec::new();
-    crate::cli::execute_quality_baseline_with(state, &mut out).map_err(|e| e.to_string())?;
+    let allow_dirty = args["allow_dirty"].as_bool().unwrap_or(false);
+    crate::cli::execute_quality_baseline_with(state, allow_dirty, &mut out)
+        .map_err(|e| e.to_string())?;
     let msg = String::from_utf8(out).unwrap_or_default();
     Ok(json!({ "result": msg.trim() }))
 }

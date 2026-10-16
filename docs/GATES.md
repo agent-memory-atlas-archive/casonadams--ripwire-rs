@@ -57,6 +57,8 @@ Enforces regression-free commits across 10 architectural quality dimensions agai
 ```
 
 - **Radical Honesty**: Discloses working copy status (`+dirty`), new public API surface, and separates non-blocking new-symbol debt from blocking pre-existing regressions.
+- **Dirty Pins**: `--quality-baseline` refuses on a dirty tree that already gates against `HEAD`; `--allow-dirty` pins anyway, stamps the absorbed count, and later deltas carry `baseline_absorbed="N"` (green then means clean since the pin).
+- **Stale Acks**: a regression-free delta collapses stale `.ripwire_quality_acks` rows to `stale_by_kind=` plus a `stale_next=` replay; `--show-stale` prints every row.
 - **Exit Code**: Returns exit code 2 if blocking quality regressions exist (`gating > 0`).
 
 ---

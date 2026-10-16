@@ -101,11 +101,17 @@ ripwire-rs . --safe-delete="Interner::len"
 # Show non-test symbols reached by a test suite
 ripwire-rs . --exercises="tests/test_cli_and_mcp.rs"
 
-# Snapshot code quality baseline at current commit
+# Snapshot code quality baseline at current commit (refuses on a dirty tree that already gates)
 ripwire-rs . --quality-baseline
+
+# Pin anyway; the absorbed gating count is stamped and reported as baseline_absorbed=
+ripwire-rs . --quality-baseline --allow-dirty
 
 # Check for quality regressions against baseline or git HEAD (exits 2 on failure)
 ripwire-rs . --quality-delta
+
+# Print stale ack rows that a regression-free delta collapses to stale_by_kind=
+ripwire-rs . --quality-delta --show-stale
 
 # Re-rank map toward git-changed files so recent work floats up
 ripwire-rs . --map-diff --top-k=30

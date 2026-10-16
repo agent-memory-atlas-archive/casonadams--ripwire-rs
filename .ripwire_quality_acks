@@ -558,3 +558,4 @@ ack short-horizon-churn 1000000000000016 15 cid=1000000000000016 now=2 was=0 fac
 ack short-horizon-churn 1000000000000017 15 cid=1000000000000017 now=12 was=0 facet=self p=src/serialize/mod.rs:150 refactor(traits): unify lint, quality family, delta, verb, and report traits
 ack short-horizon-churn 1000000000000018 15 cid=1000000000000018 now=2 was=0 facet=self p=src/metrics/layout.rs:237 feat(metrics): compute field-affinity report and graph_ambiguous
 ack short-horizon-churn 1000000000000019 15 cid=1000000000000019 now=3 was=0 facet=self p=src/cli/mod.rs:50 feat(cli,gate,lint): wire all CLI flags, 12 delta kinds, and 39 lint rules
+ack short-horizon-churn 1000000000000020 15 cid=1000000000000020 now=3 was=0 facet=self p=src/mcp/schema.rs:5 fix(quality-baseline): MCP quality_baseline gains allow_dirty

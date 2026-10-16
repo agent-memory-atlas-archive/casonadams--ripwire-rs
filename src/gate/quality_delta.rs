@@ -118,6 +118,7 @@ pub struct QualityDeltaReport {
     pub minor_count: usize,
     pub api_new_surface: usize,
     pub stale_collapse_replay: Option<String>,
+    pub baseline_absorbed: usize,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -175,10 +176,16 @@ impl QualityDeltaReport {
 
 impl crate::serialize::ToXmlString for QualityDeltaReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let hb_attr = match self.head_basis {
+        let mut hb_attr = match self.head_basis {
             Some(hb) => format!(" head_basis=\"{hb}\""),
             None => String::new(),
         };
+        if self.baseline_absorbed > 0 {
+            hb_attr.push_str(&format!(
+                " baseline_absorbed=\"{}\"",
+                self.baseline_absorbed
+            ));
+        }
         let collapse = self.collapsed_stale_replay();
         let stale_attr = collapse.map_or_else(String::new, |replay| {
             format!(
@@ -189,7 +196,7 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
         });
         writeln!(
             out,
-            "<!-- ripwire quality-delta schema=ripwire.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. -->\n<quality-delta schema=\"ripwire.quality-delta/v1\" baseline=\"{}\" regressions=\"{}\" minor=\"{}\" acked=\"{}\" stale=\"{}\" preexisting-worse=\"{}\" new-symbol=\"{}\" gating=\"{}\" register-macro-excluded=\"0\" api-new-surface=\"{}\" at=\"{}\" renames=\"0\" rename_window_commits=\"0\" acked_by_rename=\"0\" acked_by_content=\"0\"{hb_attr}{stale_attr}>",
+            "<!-- ripwire quality-delta schema=ripwire.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. baseline_absorbed=N: the pinned sidecar was taken on a dirty tree that already held N gating findings, so a green exit means clean since the pin. -->\n<quality-delta schema=\"ripwire.quality-delta/v1\" baseline=\"{}\" regressions=\"{}\" minor=\"{}\" acked=\"{}\" stale=\"{}\" preexisting-worse=\"{}\" new-symbol=\"{}\" gating=\"{}\" register-macro-excluded=\"0\" api-new-surface=\"{}\" at=\"{}\" renames=\"0\" rename_window_commits=\"0\" acked_by_rename=\"0\" acked_by_content=\"0\"{hb_attr}{stale_attr}>",
             self.baseline_source,
             self.regressions.len(),
             self.minor_count,
@@ -510,6 +517,7 @@ pub fn compute_quality_delta_with_acks(
         minor_count,
         api_new_surface,
         stale_collapse_replay: None,
+        baseline_absorbed: 0,
     }
 }
 
@@ -906,8 +914,22 @@ fn split_ack_patterns(raw: &str) -> Vec<&str> {
         .collect()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeltaBasis {
+    PinnedOrHead,
+    HeadOnly,
+}
+
 /// Evaluate quality delta for a workspace root.
 pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<QualityDeltaReport> {
+    evaluate_quality_delta_with_basis(root, state, DeltaBasis::PinnedOrHead)
+}
+
+pub fn evaluate_quality_delta_with_basis(
+    root: &str,
+    state: &McpState,
+    basis: DeltaBasis,
+) -> io::Result<QualityDeltaReport> {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
     let head_sha = at_stamp
         .strip_suffix("+dirty")
@@ -921,7 +943,9 @@ pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<Qualit
     working.dirty = !changed_files.is_empty();
 
     let baseline_path = Path::new(root).join(DEFAULT_BASELINE_FILE);
-    let (baseline, source_name, head_basis) = if baseline_path.exists() {
+    let (baseline, source_name, head_basis) = if basis == DeltaBasis::PinnedOrHead
+        && baseline_path.exists()
+    {
         let snap = read_baseline_file(&baseline_path)?;
         (snap, "sidecar", None)
     } else if changed_files.is_empty() {
@@ -943,6 +967,7 @@ pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<Qualit
     let mut report =
         compute_quality_delta_with_acks(&working, &baseline, source_name, acks.as_ref());
     report.head_basis = head_basis;
+    report.baseline_absorbed = baseline.absorbed;
     if !at_stamp.is_empty() {
         report.at_stamp = at_stamp;
     }

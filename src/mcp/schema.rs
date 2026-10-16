@@ -270,7 +270,9 @@ pub fn all_tool_definitions() -> Vec<Value> {
         json!({
             "name": "quality_baseline",
             "description": "PIN the quality floor: writes .ripwire_quality_baseline stamped with git HEAD sha",
-            "inputSchema": { "type": "object", "properties": {} }
+            "inputSchema": { "type": "object", "properties": {
+                "allow_dirty": { "type": "boolean", "description": "Pin even when the dirty tree already holds gating findings against HEAD; the count is stamped as absorbed" }
+            } }
         }),
         json!({
             "name": "quality_delta",
