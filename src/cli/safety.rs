@@ -894,19 +894,23 @@ pub fn execute_quality_baseline_with<W: Write>(
     allow_dirty: bool,
     out: &mut W,
 ) -> io::Result<()> {
-    let head_sha = state
-        .commits
-        .as_ref()
-        .and_then(|c| c.first())
-        .map(|c| c.id.as_str())
-        .unwrap_or("HEAD");
+    let in_memory = state.root == ":memory:" || state.root.is_empty();
+    let head_sha = if in_memory {
+        String::new()
+    } else {
+        crate::git::history::resolve_head_sha(&state.root).unwrap_or_default()
+    };
+    let stamp_label = if head_sha.is_empty() {
+        "no git HEAD"
+    } else {
+        head_sha.as_str()
+    };
     let mut snap = crate::gate::baseline::compute_snapshot(
         &state.ingest,
         &state.graph,
         &state.interner,
-        head_sha,
+        &head_sha,
     );
-    let in_memory = state.root == ":memory:" || state.root.is_empty();
     if !in_memory && let Some((absorbed, first_row)) = dirty_pin_absorbed_gating(state)? {
         if !allow_dirty {
             return Err(io::Error::other(format!(
@@ -919,7 +923,7 @@ pub fn execute_quality_baseline_with<W: Write>(
     if in_memory {
         writeln!(
             out,
-            "ripwire: pinned quality baseline stamped at {head_sha} -> in-memory"
+            "ripwire: pinned quality baseline stamped at {stamp_label} -> in-memory"
         )?;
         return Ok(());
     }
@@ -927,7 +931,7 @@ pub fn execute_quality_baseline_with<W: Write>(
     crate::gate::baseline::write_baseline_file(&snap, &baseline_path)?;
     writeln!(
         out,
-        "ripwire: pinned quality baseline stamped at {head_sha} -> {}",
+        "ripwire: pinned quality baseline stamped at {stamp_label} -> {}",
         baseline_path.display()
     )?;
     Ok(())

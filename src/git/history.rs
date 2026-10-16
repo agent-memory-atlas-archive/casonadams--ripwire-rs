@@ -496,23 +496,25 @@ pub fn walk_repository_history_scoped(
     Ok(strip_subdir_prefix(commits, prefix.as_deref()))
 }
 
+/// Full hex id of the repository's HEAD commit, or `None` outside a git repository.
+#[must_use]
+pub fn resolve_head_sha(root: &str) -> Option<String> {
+    let repo = gix::discover(Path::new(root)).ok()?;
+    let head = repo.head_commit().ok()?;
+    Some(head.id().to_string())
+}
+
 /// Compute the canonical git stamp `sha[+dirty]` for a repository root.
 #[must_use]
 pub fn compute_git_at_stamp(root: &str) -> Option<String> {
-    let path = Path::new(root);
-    if let Ok(repo) = gix::discover(path)
-        && let Ok(head) = repo.head_commit()
-    {
-        let full_id = head.id().to_string();
-        let short_sha = &full_id[..9.min(full_id.len())];
-        let dirty = !crate::cli::safety::get_working_tree_changed_files(root).is_empty();
-        return Some(if dirty {
-            format!("{short_sha}+dirty")
-        } else {
-            short_sha.to_string()
-        });
-    }
-    None
+    let full_id = resolve_head_sha(root)?;
+    let short_sha = &full_id[..9.min(full_id.len())];
+    let dirty = !crate::cli::safety::get_working_tree_changed_files(root).is_empty();
+    Some(if dirty {
+        format!("{short_sha}+dirty")
+    } else {
+        short_sha.to_string()
+    })
 }
 #[cfg(test)]
 mod tests {
