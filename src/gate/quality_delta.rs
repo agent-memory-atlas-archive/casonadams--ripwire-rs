@@ -117,6 +117,32 @@ pub struct QualityDeltaReport {
     pub new_symbol_count: usize,
     pub minor_count: usize,
     pub api_new_surface: usize,
+    pub stale_collapse_replay: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct DeltaCliOptions<'a> {
+    pub scope: Option<&'a str>,
+    pub quality_ack: Option<&'a str>,
+    pub ack_only: Option<&'a str>,
+    pub show_stale: bool,
+}
+
+#[must_use]
+pub fn stale_by_kind(stale: &[StaleAck]) -> String {
+    let mut by_kind: Vec<(&str, usize)> = Vec::new();
+    for sa in stale {
+        let kind = sa.kind.split(':').next().unwrap_or(&sa.kind);
+        match by_kind.iter_mut().find(|(k, _)| *k == kind) {
+            Some((_, n)) => *n += 1,
+            None => by_kind.push((kind, 1)),
+        }
+    }
+    by_kind
+        .iter()
+        .map(|(k, n)| format!("{k}:{n}"))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 fn write_regression_row<W: Write>(r: &QualityRegression, out: &mut W) -> io::Result<()> {
@@ -140,15 +166,30 @@ fn write_regression_row<W: Write>(r: &QualityRegression, out: &mut W) -> io::Res
     )
 }
 
+impl QualityDeltaReport {
+    fn collapsed_stale_replay(&self) -> Option<&str> {
+        let eligible = self.regressions.is_empty() && !self.stale_acks.is_empty();
+        self.stale_collapse_replay.as_deref().filter(|_| eligible)
+    }
+}
+
 impl crate::serialize::ToXmlString for QualityDeltaReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let hb_attr = match self.head_basis {
             Some(hb) => format!(" head_basis=\"{hb}\""),
             None => String::new(),
         };
+        let collapse = self.collapsed_stale_replay();
+        let stale_attr = collapse.map_or_else(String::new, |replay| {
+            format!(
+                " stale_by_kind=\"{}\" stale_next=\"{}\"",
+                crate::serialize::escape::escape_xml_str(&stale_by_kind(&self.stale_acks)),
+                crate::serialize::escape::escape_xml_str(&format!("{replay} --show-stale"))
+            )
+        });
         writeln!(
             out,
-            "<!-- ripwire quality-delta schema=ripwire.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked. -->\n<quality-delta schema=\"ripwire.quality-delta/v1\" baseline=\"{}\" regressions=\"{}\" minor=\"{}\" acked=\"{}\" stale=\"{}\" preexisting-worse=\"{}\" new-symbol=\"{}\" gating=\"{}\" register-macro-excluded=\"0\" api-new-surface=\"{}\" at=\"{}\" renames=\"0\" rename_window_commits=\"0\" acked_by_rename=\"0\" acked_by_content=\"0\"{hb_attr}>",
+            "<!-- ripwire quality-delta schema=ripwire.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. -->\n<quality-delta schema=\"ripwire.quality-delta/v1\" baseline=\"{}\" regressions=\"{}\" minor=\"{}\" acked=\"{}\" stale=\"{}\" preexisting-worse=\"{}\" new-symbol=\"{}\" gating=\"{}\" register-macro-excluded=\"0\" api-new-surface=\"{}\" at=\"{}\" renames=\"0\" rename_window_commits=\"0\" acked_by_rename=\"0\" acked_by_content=\"0\"{hb_attr}{stale_attr}>",
             self.baseline_source,
             self.regressions.len(),
             self.minor_count,
@@ -163,12 +204,14 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
         for r in &self.regressions {
             write_regression_row(r, out)?;
         }
-        for sa in &self.stale_acks {
-            writeln!(
-                out,
-                "  <sa kind=\"{}\" key=\"{}\" why=\"{}\" sym=\"{}\" p=\"{}\"/>",
-                sa.kind, sa.key, sa.why, sa.sym, sa.path
-            )?;
+        if collapse.is_none() {
+            for sa in &self.stale_acks {
+                writeln!(
+                    out,
+                    "  <sa kind=\"{}\" key=\"{}\" why=\"{}\" sym=\"{}\" p=\"{}\"/>",
+                    sa.kind, sa.key, sa.why, sa.sym, sa.path
+                )?;
+            }
         }
         writeln!(out, "</quality-delta>")
     }
@@ -466,6 +509,7 @@ pub fn compute_quality_delta_with_acks(
         new_symbol_count,
         minor_count,
         api_new_surface,
+        stale_collapse_replay: None,
     }
 }
 
@@ -803,52 +847,63 @@ fn regression_matches_ack_filter(r: &QualityRegression, ack_pats: &[&str]) -> bo
         })
 }
 
+fn ack_matching_regressions<W: Write>(
+    report: &mut QualityDeltaReport,
+    ack_pats: &[&str],
+    reason: &str,
+    ledger: &mut W,
+) -> io::Result<()> {
+    for r in &mut report.regressions {
+        if regression_matches_ack_filter(r, ack_pats) {
+            writeln!(
+                ledger,
+                "ack {} {} {} cid=0000000000000000 now={} was={} p={}:{} {}",
+                r.kind, r.sym_name, r.now_val, r.now_val, r.was_val, r.file_path, r.line, reason
+            )?;
+            r.is_gating = false;
+            report.acked_count += 1;
+        }
+    }
+    Ok(())
+}
+
+fn stale_replay_for(scope: Option<&str>) -> String {
+    match scope {
+        Some(s) => format!("--quality-delta --scope={s}"),
+        None => "--quality-delta".to_string(),
+    }
+}
+
 pub fn apply_cli_delta_options(
     root: &str,
     report: &mut QualityDeltaReport,
-    scope_opt: Option<&str>,
-    quality_ack_opt: Option<&str>,
-    ack_only_opt: Option<&str>,
+    opts: DeltaCliOptions<'_>,
 ) -> io::Result<()> {
-    if let Some(scope_spec) = scope_opt.filter(|s| !s.is_empty()) {
+    let scope_opt = opts.scope.filter(|s| !s.is_empty());
+    if let Some(scope_spec) = scope_opt {
         filter_regressions_by_scope(root, &mut report.regressions, scope_spec);
     }
-    if let Some(reason) = quality_ack_opt {
-        let ack_pats: Vec<&str> = ack_only_opt
-            .map(|s| {
-                s.split(',')
-                    .map(str::trim)
-                    .filter(|p| !p.is_empty())
-                    .collect()
-            })
-            .unwrap_or_default();
-        let acks_path = Path::new(root).join(DEFAULT_ACKS_FILE);
+    if !opts.show_stale {
+        report.stale_collapse_replay = Some(stale_replay_for(scope_opt));
+    }
+    if let Some(reason) = opts.quality_ack {
+        let ack_pats = opts.ack_only.map(split_ack_patterns).unwrap_or_default();
         let mut file = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&acks_path)?;
-        for r in &mut report.regressions {
-            if regression_matches_ack_filter(r, &ack_pats) {
-                writeln!(
-                    file,
-                    "ack {} {} {} cid=0000000000000000 now={} was={} p={}:{} {}",
-                    r.kind,
-                    r.sym_name,
-                    r.now_val,
-                    r.now_val,
-                    r.was_val,
-                    r.file_path,
-                    r.line,
-                    reason
-                )?;
-                r.is_gating = false;
-                report.acked_count += 1;
-            }
-        }
+            .open(Path::new(root).join(DEFAULT_ACKS_FILE))?;
+        ack_matching_regressions(report, &ack_pats, reason, &mut file)?;
     }
     report.gating_count = report.regressions.iter().filter(|r| r.is_gating).count();
     report.minor_count = report.regressions.len().saturating_sub(report.gating_count);
     Ok(())
+}
+
+fn split_ack_patterns(raw: &str) -> Vec<&str> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect()
 }
 
 /// Evaluate quality delta for a workspace root.
@@ -919,6 +974,69 @@ pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<Qualit
 mod tests {
     use super::*;
     use crate::serialize::ToXmlString;
+
+    #[test]
+    fn test_stale_rows_collapse_unless_show_stale() {
+        let snap = QualitySnapshot::default();
+        let mut report = compute_quality_delta_with_acks(&snap, &snap, "git-HEAD", None);
+        let stale = |kind: &str, key: &str| StaleAck {
+            kind: kind.to_string(),
+            key: key.to_string(),
+            why: "finding-gone",
+            sym: key.to_string(),
+            path: "src/a.rs:1".to_string(),
+        };
+        report.stale_acks = vec![
+            stale("complexity", "k1"),
+            stale("dead-code:new-symbol", "k2"),
+            stale("complexity", "k3"),
+        ];
+
+        report.stale_collapse_replay = Some("--quality-delta --scope=src".to_string());
+        let collapsed = report.to_xml_string();
+        assert!(collapsed.contains("stale=\"3\""));
+        assert!(collapsed.contains("stale_by_kind=\"complexity:2,dead-code:1\""));
+        assert!(collapsed.contains("stale_next=\"--quality-delta --scope=src --show-stale\""));
+        assert!(!collapsed.contains("<sa "));
+
+        report.stale_collapse_replay = None;
+        let full = report.to_xml_string();
+        assert_eq!(full.matches("<sa ").count(), 3);
+        assert!(!full.contains(" stale_by_kind=\""));
+    }
+
+    #[test]
+    fn test_ack_only_filter_marks_and_records_matching_rows() {
+        let snap = QualitySnapshot::default();
+        let mut report = compute_quality_delta_with_acks(&snap, &snap, "git-HEAD", None);
+        let row = |kind: &str, sym: &str| QualityRegression {
+            kind: kind.to_string(),
+            sym_name: sym.to_string(),
+            file_path: "src/a.rs".to_string(),
+            line: 3,
+            was_val: 10,
+            now_val: 20,
+            is_gating: true,
+            is_new_symbol: false,
+        };
+        report.regressions = vec![row("complexity", "calc"), row("nesting", "walk")];
+        let mut ledger = Vec::new();
+        ack_matching_regressions(
+            &mut report,
+            &split_ack_patterns(" complexity ,"),
+            "why",
+            &mut ledger,
+        )
+        .unwrap();
+        let text = String::from_utf8(ledger).unwrap();
+        assert_eq!(text.lines().count(), 1);
+        assert!(text.starts_with("ack complexity calc 20 "));
+        assert!(text.trim_end().ends_with("p=src/a.rs:3 why"));
+        assert_eq!(report.acked_count, 1);
+        assert!(!report.regressions[0].is_gating);
+        assert!(report.regressions[1].is_gating);
+        assert_eq!(stale_replay_for(Some("src")), "--quality-delta --scope=src");
+    }
 
     #[test]
     fn test_quality_delta_complexity_regression() {

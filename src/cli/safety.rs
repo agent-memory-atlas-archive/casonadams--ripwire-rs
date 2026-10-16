@@ -899,9 +899,12 @@ pub fn execute_quality_delta_with_args<W: Write>(
     crate::gate::quality_delta::apply_cli_delta_options(
         &state.root,
         &mut report,
-        args.scope,
-        args.quality_ack,
-        args.ack_only,
+        crate::gate::quality_delta::DeltaCliOptions {
+            scope: args.scope,
+            quality_ack: args.quality_ack,
+            ack_only: args.ack_only,
+            show_stale: args.show_stale,
+        },
     )?;
     report.write_xml(out)?;
     Ok(report.has_gating_failures())
