@@ -41,13 +41,20 @@ pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let task = escape_xml_str(raw_task);
     let default_route = format!("name-exact({raw_task})");
     let route = escape_xml_str(val["route"].as_str().unwrap_or(&default_route));
-    let root = escape_xml_str(val["root"].as_str().unwrap_or("."));
+    let raw_root = val["root"].as_str().unwrap_or(".");
+    let root = escape_xml_str(raw_root);
+    let at_stamp =
+        crate::git::history::compute_git_at_stamp(raw_root).unwrap_or_else(|| "HEAD".to_string());
     let confidence = escape_xml_str(val["confidence"].as_str().unwrap_or("high"));
     let margin_pct = val["margin_pct"].as_u64().unwrap_or(0);
     let coverage = val["coverage"].as_u64().unwrap_or(100);
-    let est_tokens = val["est_tokens"].as_u64().unwrap_or(550);
+    let sym_cnt = val["symbols"].as_array().map_or(0, Vec::len);
+    let est_tokens = val["est_tokens"]
+        .as_u64()
+        .unwrap_or_else(|| (80 + sym_cnt * 24) as u64);
+    let bodies_cnt = val["detail"].as_u64().unwrap_or(1).max(1);
     let attrs = format!(
-        "task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" at=\"HEAD\" schema=\"ripwire.for/v1\" bundle=\"auto\" bodies=\"1\" est_tokens=\"{est_tokens}\""
+        "task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" at=\"{at_stamp}\" schema=\"ripwire.for/v1\" bundle=\"auto\" bodies=\"{bodies_cnt}\" est_tokens=\"{est_tokens}\""
     );
     write_xml_envelope(out, "ctx", &attrs, |out| {
         let mut bodies_to_show = Vec::new();
@@ -1149,9 +1156,11 @@ pub fn serialize_around_xml<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let t_esc = escape_xml_str(target);
+    let est_tokens = 25 + symbols.len() * 14;
+    let depth_trunc = usize::from(!symbols.is_empty());
     write!(
         out,
-        "<!-- ripwire around schema=ripwire.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop. -->\n<r schema=\"ripwire.around/v1\" root=\"{root}\" of=\"{t_esc}\" depth=\"{depth}\" fanout=\"{fanout}\" depth_truncated=\"1\" est_tokens=\"400\">",
+        "<!-- ripwire around schema=ripwire.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop. -->\n<r schema=\"ripwire.around/v1\" root=\"{root}\" of=\"{t_esc}\" depth=\"{depth}\" fanout=\"{fanout}\" depth_truncated=\"{depth_trunc}\" est_tokens=\"{est_tokens}\">",
     )?;
     let mut grouped: Vec<(&str, Vec<(&str, &'static str)>)> = Vec::new();
     for &(name, kind, path, _line) in symbols {

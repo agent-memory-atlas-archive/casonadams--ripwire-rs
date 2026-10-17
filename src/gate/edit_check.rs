@@ -51,9 +51,21 @@ impl crate::serialize::XmlReport for EditCheckReport {
         Some(self.gauges)
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let est_tokens = 60 + self.callers.len() * 24;
+        let rows_next = if self.status == ContractStatus::Unchanged
+            && self.incompatible_callers == 0
+            && self.total_callers > 0
+        {
+            format!(
+                " rows_next=\"--edit-check={} --limit={}\"",
+                self.symbol_name, self.total_callers
+            )
+        } else {
+            String::new()
+        };
         write!(
             out,
-            " sym=\"{}\" t=\"fn\" p=\"{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"HEAD\" root=\".\" next=\"--test-gate={}\" est_tokens=\"400\"",
+            " sym=\"{}\" t=\"fn\" p=\"{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"HEAD\" root=\".\"{rows_next} next=\"--test-gate={}\" est_tokens=\"{est_tokens}\"",
             self.symbol_name,
             self.file_path,
             self.status,

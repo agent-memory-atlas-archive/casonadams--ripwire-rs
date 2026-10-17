@@ -194,6 +194,20 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
                 crate::serialize::escape::escape_xml_str(&format!("{replay} --show-stale"))
             )
         });
+        let verdict_only = collapse.is_some()
+            && self.head_basis == Some("identity")
+            && self.acked_count == 0
+            && self.baseline_absorbed == 0
+            && self.api_new_surface == 0;
+        if verdict_only {
+            return writeln!(
+                out,
+                "<!-- ripwire quality-delta schema=ripwire.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. -->\n<quality-delta schema=\"ripwire.quality-delta/v1\" baseline=\"{}\" regressions=\"0\" gating=\"0\" stale=\"{}\" at=\"{}\"{hb_attr}{stale_attr}></quality-delta>",
+                self.baseline_source,
+                self.stale_acks.len(),
+                self.at_stamp
+            );
+        }
         writeln!(
             out,
             "<!-- ripwire quality-delta schema=ripwire.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. baseline_absorbed=N: the pinned sidecar was taken on a dirty tree that already held N gating findings, so a green exit means clean since the pin. -->\n<quality-delta schema=\"ripwire.quality-delta/v1\" baseline=\"{}\" regressions=\"{}\" minor=\"{}\" acked=\"{}\" stale=\"{}\" preexisting-worse=\"{}\" new-symbol=\"{}\" gating=\"{}\" register-macro-excluded=\"0\" api-new-surface=\"{}\" at=\"{}\" renames=\"0\" rename_window_commits=\"0\" acked_by_rename=\"0\" acked_by_content=\"0\"{hb_attr}{stale_attr}>",
@@ -744,19 +758,12 @@ fn check_body_text_regressions(
     }
 }
 
-fn check_changed_clone_regressions(
-    root_path: &Path,
+fn collect_changed_clone_regressions(
+    clones: Vec<crate::clones::CloneGroup>,
     state: &McpState,
     changed_files: &[String],
     regressions: &mut Vec<QualityRegression>,
 ) {
-    let clones = crate::clones::find_clones_in_root(
-        &state.ingest,
-        &state.interner,
-        60,
-        None,
-        Some(root_path),
-    );
     for cg in clones {
         let Some(first_sym) = cg
             .members
@@ -792,6 +799,17 @@ fn check_changed_clone_regressions(
     }
 }
 
+fn is_changed_callable(
+    sym: &crate::domain::Symbol,
+    file_path: &str,
+    changed_files: &[String],
+) -> bool {
+    (sym.kind == crate::domain::SymKind::Function || sym.kind == crate::domain::SymKind::Method)
+        && changed_files
+            .iter()
+            .any(|cf| file_path == cf || file_path.ends_with(cf))
+}
+
 fn check_source_and_clone_regressions(
     root: &str,
     state: &McpState,
@@ -806,11 +824,7 @@ fn check_source_and_clone_regressions(
             .files
             .get(sym.file_id as usize)
             .map_or("", |f| state.interner.resolve(&f.path));
-        if (sym.kind == crate::domain::SymKind::Function
-            || sym.kind == crate::domain::SymKind::Method)
-            && changed_files
-                .iter()
-                .any(|cf| file_path == cf || file_path.ends_with(cf))
+        if is_changed_callable(sym, file_path, changed_files)
             && let Ok(bytes) =
                 std::fs::read(root_path.join(file_path)).or_else(|_| std::fs::read(file_path))
         {
@@ -823,7 +837,14 @@ fn check_source_and_clone_regressions(
             check_body_text_regressions(sym, sym_name, file_path, &body, is_new, regressions);
         }
     }
-    check_changed_clone_regressions(root_path, state, changed_files, regressions);
+    let clones = crate::clones::find_clones_in_root(
+        &state.ingest,
+        &state.interner,
+        60,
+        None,
+        Some(root_path),
+    );
+    collect_changed_clone_regressions(clones, state, changed_files, regressions);
 }
 
 fn filter_regressions_by_scope(
@@ -1047,6 +1068,46 @@ pub fn evaluate_quality_delta_with_basis(
 mod tests {
     use super::*;
     use crate::serialize::ToXmlString;
+
+    #[test]
+    fn test_changed_callable_and_clone_regressions_in_memory() {
+        let interner = crate::domain::Interner::new();
+        let mut ingest = crate::domain::IngestResult::new();
+        ingest.files.push(crate::domain::FileInfo {
+            id: 0,
+            path: interner.intern("src/a.rs"),
+            lang: crate::domain::Lang::Rust,
+            line_count: 20,
+            byte_size: 200,
+        });
+        let sym = crate::domain::Symbol::new(
+            0,
+            interner.intern("dup_fn"),
+            interner.intern("src/a.rs::dup_fn"),
+            crate::domain::SymKind::Function,
+            crate::domain::Lang::Rust,
+            0,
+            5,
+        );
+        ingest.symbols.push(sym);
+        let changed = vec!["src/a.rs".to_string()];
+        assert!(is_changed_callable(&sym, "src/a.rs", &changed));
+        assert!(!is_changed_callable(&sym, "src/b.rs", &changed));
+        let state = McpState::from_ingest(":memory:", ingest, interner);
+        let cg = crate::clones::CloneGroup {
+            members: vec![0],
+            clone_type: crate::clones::CloneType::Type1,
+            token_count: 80,
+            similarity: 1.0,
+            idiom: crate::clones::CloneIdiom::None,
+            tokens_saved: 80,
+        };
+        let mut regs = Vec::new();
+        collect_changed_clone_regressions(vec![cg], &state, &changed, &mut regs);
+        assert_eq!(regs.len(), 1);
+        assert_eq!(regs[0].kind, "duplication");
+        assert_eq!(regs[0].line, 5);
+    }
 
     #[test]
     fn test_body_text_kinds_ignore_literals_and_read_comments_for_markers() {

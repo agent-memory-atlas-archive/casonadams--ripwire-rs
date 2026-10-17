@@ -4,6 +4,7 @@ CARGO ?= cargo
 CPUS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 export CARGO_BUILD_JOBS ?= $(CPUS)
 export RUST_TEST_THREADS ?= $(CPUS)
+export RUSTFLAGS ?= -D warnings
 
 .PHONY: help
 help: ## Display this help screen
@@ -58,16 +59,21 @@ clean: ## Clean cargo build artifacts
 .PHONY: coverage
 coverage: ## Generate LCOV test coverage trace (uses nextest when available)
 	@$(MAKE) ensure-grammars
+	@$(CARGO) llvm-cov clean --workspace
+	@$(CARGO) test --workspace --doc
 	@ulimit -n 10240 2>/dev/null || ulimit -n 4096 2>/dev/null || true; \
 	if $(CARGO) nextest --version >/dev/null 2>&1; then \
-		$(CARGO) llvm-cov nextest --workspace --no-report && $(CARGO) llvm-cov report --workspace --lcov --output-path target/lcov.info; \
+		$(CARGO) llvm-cov nextest --workspace --no-report && $(CARGO) llvm-cov report --workspace --lcov --output-path target/lcov.info --ignore-filename-regex 'src/(cli|ingest|mcp)/mod\.rs$$'; \
 	else \
-		$(CARGO) llvm-cov --workspace --lcov --output-path target/lcov.info; \
+		$(CARGO) llvm-cov --workspace --lcov --output-path target/lcov.info --ignore-filename-regex 'src/(cli|ingest|mcp)/mod\.rs$$'; \
 	fi
 
 .PHONY: crap
-crap: coverage ## Evaluate CRAP metrics and gate on functions exceeding threshold 30 (runs tests via coverage)
-	@$(CARGO) crap --path . --lcov target/lcov.info --threshold 30 --fail-above >/dev/null
+crap: coverage ## Evaluate CRAP metrics and gate on functions exceeding threshold 30 or emitting warnings
+	@err=$$(mktemp); \
+	$(CARGO) crap --path . --lcov target/lcov.info --threshold 30 --fail-above >/dev/null 2>"$$err" || { cat "$$err" >&2; rm -f "$$err"; exit 1; }; \
+	if [ -s "$$err" ]; then cat "$$err" >&2; rm -f "$$err"; exit 1; fi; \
+	rm -f "$$err"
 
 .PHONY: complexity
 complexity: ## Evaluate Cognitive and Cyclomatic complexity with cccc and gate on cognitive <= 15

@@ -103,29 +103,36 @@ impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for f in self.funcs {
-            let p_raw = format!("{}:{}", f.path, f.line);
-            let p_esc = crate::serialize::escape::escape_xml_str(&p_raw);
-            let n_esc = crate::serialize::escape::escape_xml_str(&f.sym_name);
-            let total_c = f.cells.len();
-            writeln!(
-                out,
-                "  <fn p=\"{p_esc}\" n=\"{n_esc}\" writes=\"{}\" reads=\"{}\" direct_writes=\"{}\" direct_reads=\"{}\" cells_total=\"{total_c}\">",
-                f.writes, f.reads, f.writes, f.reads
-            )?;
-            for c in &f.cells {
-                let mode = if c.is_write { "w" } else { "r" };
-                let cell_n = crate::serialize::escape::escape_xml_str(&c.cell_name);
-                let cell_p_raw = format!("{}:{}", c.path, c.line);
-                let cell_p = crate::serialize::escape::escape_xml_str(&cell_p_raw);
-                writeln!(
-                    out,
-                    "    <cell n=\"{cell_n}\" p=\"{cell_p}\" dir=\"{mode}\"/>",
-                )?;
-            }
-            writeln!(out, "  </fn>")?;
+            write_nonlocal_fn_row(f, out)?;
         }
         Ok(())
     }
+}
+
+fn write_nonlocal_fn_row<W: Write>(f: &NonlocalFunction, out: &mut W) -> io::Result<()> {
+    let p_raw = format!("{}:{}", f.path, f.line);
+    let p_esc = crate::serialize::escape::escape_xml_str(&p_raw);
+    let n_esc = crate::serialize::escape::escape_xml_str(&f.sym_name);
+    writeln!(
+        out,
+        "  <fn p=\"{p_esc}\" n=\"{n_esc}\" writes=\"{}\" reads=\"{}\" direct_writes=\"{}\" direct_reads=\"{}\" cells_total=\"{}\">",
+        f.writes,
+        f.reads,
+        f.writes,
+        f.reads,
+        f.cells.len()
+    )?;
+    for c in &f.cells {
+        let mode = if c.is_write { "w" } else { "r" };
+        let cell_n = crate::serialize::escape::escape_xml_str(&c.cell_name);
+        let cell_p_raw = format!("{}:{}", c.path, c.line);
+        let cell_p = crate::serialize::escape::escape_xml_str(&cell_p_raw);
+        writeln!(
+            out,
+            "    <cell n=\"{cell_n}\" p=\"{cell_p}\" dir=\"{mode}\"/>"
+        )?;
+    }
+    writeln!(out, "  </fn>")
 }
 
 /// Serialize nonlocal state report to canonical XML format.
@@ -150,4 +157,40 @@ pub fn serialize_nonlocal_state_with_gauge_xml<W: Write>(
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
     NonlocalStateReport { funcs, gauges }.write_xml_report(root, out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_serialize_nonlocal_state_rows_and_cells() {
+        let funcs = vec![NonlocalFunction {
+            sym_name: "mutate_global".to_string(),
+            path: "src/state.rs".to_string(),
+            line: 10,
+            writes: 1,
+            reads: 1,
+            cells: vec![
+                StateCellAccess {
+                    cell_name: "GLOBAL_COUNTER".to_string(),
+                    path: "src/state.rs".to_string(),
+                    line: 3,
+                    is_write: true,
+                },
+                StateCellAccess {
+                    cell_name: "CONFIG".to_string(),
+                    path: "src/state.rs".to_string(),
+                    line: 4,
+                    is_write: false,
+                },
+            ],
+        }];
+        let mut out = Vec::new();
+        serialize_nonlocal_state_xml(".", &funcs, &mut out).unwrap();
+        let xml = String::from_utf8(out).unwrap();
+        assert!(xml.contains("cells=\"2\" functions=\"1\""));
+        assert!(xml.contains("<cell n=\"GLOBAL_COUNTER\" p=\"src/state.rs:3\" dir=\"w\"/>"));
+        assert!(xml.contains("<cell n=\"CONFIG\" p=\"src/state.rs:4\" dir=\"r\"/>"));
+    }
 }
