@@ -94,10 +94,10 @@ moment has exactly one clear entry.
 and its `--compress` scope/when-NOT-to-compress guidance never had its own MOMENT — agents already land in
 `ripwire-rs-efficient` first (the map-before-you-read discipline), and `--compress` is the next question once
 you're already reading a body `--expand`/`--outline` surfaced. Moved verbatim (plus the redaction/
-`--no-redact` note, A3-S5) into `skills/ripwire-efficient/compress-ladder.md`, a companion file loaded on
-demand — same pattern as `ripwire-rs-quality-bar/quality-metrics.md`. `ripwire-rs-efficient/SKILL.md` gained one
+`--no-redact` note, A3-S5) into `skills/ripwire-rs-orient/compress-ladder.md`, a companion file loaded on
+demand — same pattern as `skills/ripwire-rs-quality-bar/quality-metrics.md`. `ripwire-rs-efficient/SKILL.md` gained one
 pointer line; every `ripwire-rs-compress` reference elsewhere (router's reference-skills list) was repointed.
-Directory `skills/ripwire-compress/` deleted.
+Directory `skills/ripwire-rs-compress/` deleted.
 
 Net: 16 skills (compress folded into efficient as a companion file, no moment lost).
 
@@ -118,7 +118,7 @@ every description in front of three blind LLM raters — full text, head-cut at 
 loss that survived in every model and every arm was the efficient skill's rows routing to `ripwire-rs-orient`:
 raters could not see the boundary even from the full 977-character description, because "about to open
 several files to answer one question" is the same moment as "understand this fast". The fold arm had zero
-such misses. So the directory is gone: its `SKILL.md` became `skills/ripwire-orient/map-before-you-read.md`
+such misses. So the directory is gone: its `SKILL.md` became `skills/ripwire-rs-orient/map-before-you-read.md`
 (the discipline, verbatim), `compress-ladder.md` moved beside it, orient's description claims the moment, the
 router's four rows point at orient, the corpus's 12 rows carry the mechanical relabel, and `--help-task`'s
 `compact-legend` intent names orient.

@@ -66,9 +66,6 @@ and `--owners` carry **no** stamp — record the sha yourself if you quote them.
 On a large diff the bundle can be huge — cap it with `--max-tokens=N` (e.g. `ripwire-rs <dir> --pr-context --legend=compact
 --max-tokens=8000`): every changed file stays present with its structural counts (blast radius / tests /
 callers), the deep detail trims deepest-first, and `truncated=`/`est_tokens=` on the header report the fit.
-To feed an EXTERNAL reranker instead of reviewing directly, `--query="…" --format=candidates` (or `--for=…`)
-emits a flat `<cand r= s= n= id= k= p= l=>` top-K — identity + score + signature only, capped by `--top-k`.
-
 1. **Situational awareness on the diff** — `ripwire-rs <dir> --situ`
    (Reads `git diff` against HEAD; or `--situ=fileA.cpp,fileB.h` to name the changed set explicitly.)
    One pass, plain text:
@@ -170,26 +167,7 @@ emits a flat `<cand r= s= n= id= k= p= l=>` top-K — identity + score + signatu
     (repo, HEAD sha) and shared with `--doc-drift --with-history`.
 
 9d. **"Of all my branches, which still hold REAL work, and in what order should I land them?"** — `ripwire-rs <dir> --stray-content --plan`. Composes 9b + 9 in one call: selects the refs 9b calls `v="unmerged"`,
-    DROPS the `v="superseded"` ones (`<excluded reason="…">` names them — landing a superseded branch would
-    re-do work the live line already did, exactly the waste 9b exists to catch), and feeds the survivors to
-    9's pairwise-conflict + fewest-conflicts-first landing-order machinery, unmodified. `<ref scouted="0">`
-    is real unmerged work NOT fed to merge-scout THIS run — a cost bound, not a verdict (`bounded=` on the
-    root element counts it; `--detail` lifts the bound to scout everything). **Cost**: 9b is a cheap per-blob
-    sweep, but 9 is per-ARM (git-archive + full ingest of each ref's tree) — measured ~3s/ref on a real C++
-    repo, so this is an EXPLICIT "before you land" call (pass both flags on purpose), not a per-question one.
-    Bare `--plan` refuses loudly without `--stray-content`. Read-only; single-root only.
-9d. **Did a branch silently break a CPU/GPU struct's byte layout?** — `ripwire-rs <dir> --stray-content --legend=compact --abi`
-    (`=SUBSTR` filters ref names, same as 9b). Neither `--layout=STRUCT` (one index, the working tree) nor
-    `--stray-content` (line-granular — "added a float field" is just a stray line to it) catches a branch
-    that adds one field to a dual-compile uniform struct: the merge is textually clean, review sees a
-    harmless "+1 field", and the CPU ends up writing more bytes than the GPU reads for — wrong pixels, no
-    compiler error. This runs `--layout`'s own field-offset arithmetic LEXICALLY on every ref that changed a
-    path HEAD declares a struct/class in, and diffs the result against HEAD's computed fields. `kind="drift"`
-    is a real byte-contract break (the only kind that exits 2); `kind="spelling"`/`"stub"` mirror `--layout`'s
-    own harmless cases; `kind="unknown"` is a ref-side copy that could not be modelled (its caveats ride along
-    — never reported as unchanged); `kind="absent"` is a ref that does not define the struct there at all.
-    Matching structs are omitted (report only differences). Read-only, single-root, exit 2 on a real drift.
-
+    drops the `v="superseded"` ones, and feeds the survivors to `--merge-scout`'s pairwise-conflict and fewest-conflicts-first landing-order machinery.
 10. **Mid-edit contract check, one symbol at a time** — `ripwire-rs <dir> --edit-check=SYM --legend=compact` (file:name
     disambiguates a same-named symbol, like `--around`/`--lego`). The fast, targeted sibling of step 8's
     `--test-gate`/`--quality-delta`: right after you touch a function, ask "did I just change a contract

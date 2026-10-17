@@ -191,7 +191,17 @@ pub fn crawler_options_for_cli(cli: &Cli) -> crate::crawler::CrawlerOptions {
             .unwrap_or(defaults.max_file_size),
         honor_gitignore: !cli.modifiers.no_ignore,
         ignore_tests: cli.modifiers.ignore_tests,
-        custom_excludes: defaults.custom_excludes,
+        custom_excludes: cli
+            .modifiers
+            .exclude
+            .as_deref()
+            .map(|s| {
+                split_csv_patterns(s)
+                    .into_iter()
+                    .map(String::from)
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -897,6 +907,7 @@ fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         GitMetricsFlags {
             cochange: cli.cochange.as_ref().map(|o| o.as_deref()),
             cochange_groups: cli.safety.cochange_groups,
+            cochange_recur: cli.safety.cochange_recur,
             hotspots: cli.hotspots,
             since: cli.since.as_deref(),
             pretty: cli.modifiers.is_pretty(),

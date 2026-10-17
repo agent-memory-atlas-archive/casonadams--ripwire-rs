@@ -24,34 +24,10 @@ Before configuring MCP:
 Trigger: "wire ripwire into my agent", "set up the ripwire MCP server", or "which ripwire MCP verb
 answers this?".
 
-**The 33 verbs, at a glance**: 17 read verbs (`analyze`, `rank_by` — the same map, ranked by
-authority/hub/rrf instead of plain PageRank — `for`, `find_symbol`,
-`find_referencing_symbols`, `grep`, `cochange`, `memory_recall`, `situational_awareness`, `mentions`,
-`owners`, `lego`, `batch` — N read sub-queries in ONE call — `fetch_body`, and `flags` — what is BUILT but
-DARK here: every compile / CMake `option()` / `getenv` gate with its default and the size of the code it
-guards, the answer to "why don't I see feature X?", and `doc_drift` — which of the repo's markdown claims
-are now FALSE: dead `file:line` anchors, deleted symbols, `= N` constants and `[N]` extents the code has
-since changed; call it before trusting a design doc or audit you did not just write, and `slice` — per-line
-def-use rows of ONE variable inside ONE definition, `flow=back|fwd|both` for the transitive data-flow
-slice, `@FILE:LINE` seeds by location and pre-picks the variable the seed line names) + 13 flagship-reflex verbs
-(`exemplar`, `quality_delta`, `quality_baseline`, `impact`, `uses`, `affected` — which tests transitively
-reach a changed file/symbol, the pre-PR "what do I run?" reflex — `path_between`, `connect` — the
-minimal joining subgraph over N task symbols — the L4 one-call/B11-parity trio `explore`, `from_trace`,
-`edit_check` — so an MCP-only agent gets the same write & done reflexes as the CLI — and the CROSS-BRANCH
-pair `whereis` / `stray_content`, which answer "where does this content live?" across every branch: the
-question `git cherry` cannot, since it compares commit ancestry and every other verb indexes one worktree.
-`stray_content` marks a branch `superseded` when the live line re-implemented its work, which is exactly
-the case `git cherry` calls unmerged forever; `whereis` lists the definitions and counts the references
-(`listing="defs"` on the root) when that page lists MORE definitions than the whole list would under the same row
-cap, or the same ones in strictly fewer bytes — `listing:"all"` asks for every row) + the 3 span-addressed
-edit verbs (`replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`). Only `find_symbol` and
-`find_referencing_symbols` attach a stable `handle=` instead of the body (fetch it only when you need it,
-via `fetch_body`); the edit verbs enforce a safety contract (staleness refusal, ambiguity refusal, atomic
-writes) detailed below and in full in [`mcp-reference.md`](mcp-reference.md).
-
-The server exposes **33 MCP verbs**: 17 read verbs (incl. `rank_by`/`fetch_body`/`flags`/`slice`), 13 flagship-reflex
-verbs (`affected`/`connect`/`explore`/`from_trace`/`edit_check` and the cross-branch pair `whereis`/`stray_content`) and
-3 edit verbs.
+**The 35 MCP tools, at a glance** (`33` primary tools + `callers`/`callees` aliases, backed by `McpToolHandler`):
+- **17 read verbs**: `analyze`, `rank_by`, `for`, `find_symbol`, `find_referencing_symbols` (plus `callers` and `callees` aliases), `grep`, `cochange`, `memory_recall`, `situational_awareness`, `mentions`, `owners`, `lego`, `batch` (up to 16 read sub-queries in one call), `fetch_body`, `flags`, `doc_drift`, and `slice`.
+- **13 flagship-reflex verbs**: `exemplar`, `quality_delta`, `quality_baseline`, `impact`, `uses`, `affected`, `path_between`, `connect`, `explore`, `from_trace`, `edit_check`, `whereis`, and `stray_content`.
+- **3 atomic span-addressed edit verbs**: `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`.
 
 ## Wiring — Starting the stdio MCP server
 
@@ -67,13 +43,9 @@ verbs (`affected`/`connect`/`explore`/`from_trace`/`edit_check` and the cross-br
 ```
 
 Run `ripwire-rs <repo> --doctor` to verify binary PATH agreement, grammar compilation, cache health, and git reachability.
-### "no project root" / "memory limit reached" / `_memory_stop`
+### Workspace Root & Caching
 
-`$HOME`, `/` and system directories are never a project root over MCP — not as the launch directory and not as
-`path=`: pass the project directory itself (a server started as `ripwire-rs ~ --mcp` still answers about `~`). A tool call refused with "memory limit reached", or an answer carrying `_memory_stop`
-in its envelope, means the memory guard cut or refused the work on a tree too large for the machine: point
-`path=` at a smaller root, or raise the limit with `--max-memory=<N>[K|M|G]` (or `RIPWIRE_MAX_MEMORY`) on the
-server's command line. The default (65% of RAM) is silent on real projects.
+Start the server with `ripwire-rs <repo> --mcp` or `ripwire-rs mcp` (defaulting to `.`). The server maintains an in-memory `McpState` backed by `.ripwire.cache` so subsequent tool calls answer in milliseconds without re-parsing unchanged files.
 
 ## The read verbs + fetch_body (and when each beats the CLI form)
 
@@ -130,34 +102,8 @@ enclosing-chain report) and `@FILE:LINE` in any SYM selector; contract gate: `te
 | `edit_check` (`symbol`) | `--edit-check=SYM` | just edited a symbol? did its CONTRACT (params/publicness) change vs git HEAD, and which 1-hop callers are now PROVABLY incompatible? Fast targeted check — for the same question over a whole diff use `quality_delta` instead |
 
 **MCP beats the CLI when you're mid-task and will ask more than once**: the server keeps the parsed
-{ingest, graph, rank} in memory, so after the first parse every verb answers warm (~ms, no shell
-round-trip). **The CLI still wins for what no verb exposes** — `--expand`/`--outline`, `--around`,
-`--deps`/`--hotspots`/`--clones`, `--graph-query`, `--arch`, `--pr-context`, `--scip`, `--lint-rules`,
-`--export`, and the two remaining B11 verbs with no MCP twin — `--merge-scout` (multi-ref UX doesn't map
-cleanly onto a single JSON-RPC call) and `--note-add`/`--notes` (a write verb; adding it needs the same
-safety-contract thinking the 3 edit verbs got) — shell out for all of these even with the server running;
-the on-disk warm cache keeps them fast too.
-
-**Team/CI: commit the warm cache as an index artifact.** `ripwire-rs <dir> --index-out=BASE` cold-parses once,
-writes `BASE.lean.ripwirecache` + `BASE.rich.ripwirecache` (`--for`/`--exemplar`/`--metrics` need RICH), then
-exits with no map. Generate on main, commit or CI-cache it, restore with `--cache=BASE.lean.ripwirecache` (or
-`.rich.`) in PR jobs so only changed files re-parse — a same-arch SPEED cache that self-heals to a cold parse
-if stale or cross-arch (correct, slower). See README "The committable index artifact".
-
-## Remote transport: `--listen` (Streamable HTTP) — opt-in, security posture is the feature
-
-By default `--mcp` speaks JSON-RPC over **stdio** (one co-located agent). For a team sharing one warm
-index, `--listen=HOST:PORT` serves the *same verbs* over **Streamable HTTP** (protocol `2025-11-25`)
-instead — byte-identical JSON-RPC, only the transport differs, single-threaded against one warm index.
-
-**The security posture is the whole point** (a 2026 survey found ~200K MCP servers naively bridged to the
-open internet with no auth — ripwire is built so it cannot become one by default): loopback-only by
-default; a routable host needs *both* the explicit host flag *and* a bearer token or the server **refuses
-to start**; no TLS built in (reverse-proxy it); one listener pins to ONE workspace at startup; and the 3
-edit verbs are refused over remote unless you pass `--allow-remote-edits` (which also forces the token).
-Full flag/env reference, the `curl` recipe, and each refusal's exact wire behavior →
-[`mcp-reference.md`](mcp-reference.md#remote-transport).
-
+`{ingest, graph, pr, interner}` in memory, so after the first parse every verb answers warm (~ms, no shell
+round-trip). **Use the CLI for report/visualization verbs not exposed over MCP** (`--report`, `--quality-panel`, `--ensemble`, `--context-ratio`, `--comment-coherence`, `--dmm`, `--hotspots`, `--clones`, `--dead-code`, `--communities`, `--zoom`, `--mermaid`, `--html`, `--deps`, `--arch`, `--seams`, `--pr-context`, `--merge-scout`, `--test-gate`, `--safe-delete`, `--exercises`, `--layout`, `--field-affinity`, `--lint`, `--notes`).
 ## Editor transport: `--lsp` (navigation LSP server) — read-only, Phase 1
 
 `--mcp` answers agents and `--listen` serves a team; `--lsp` answers **editors**: a read-only,

@@ -10,7 +10,7 @@ catch yourself about to open more than ~2 files, or to paste whole files, to ans
 > • Not sure which skill at all → **ripwire-rs-router**.
 
 Reading files is the single biggest token sink in an agent loop, and exploratory reads
-snowball — every verbose read inflates every later step. `ripwire` (on PATH) replaces exploratory reads with
+snowball — every verbose read inflates every later step. `ripwire-rs` (on PATH) replaces exploratory reads with
 a deterministic, PageRank-ranked map. The discipline is one line: **map before you read.**
 
 ## Why this isn't just about cost — it's about accuracy
@@ -23,8 +23,7 @@ This is the load-bearing fact, not a nice-to-have: **less context is more accura
 - A **~300-token** focused prompt **beat** a **~113K-token** full-file dump on the same task (Chroma
   context-rot study, 2025) — more context didn't just cost more, it made the model worse.
 - Position matters: actionable content at the END of a long input measured **up to +30%** — the
-  evidence behind `--order=important-last` (formerly `--most-important-last`, still a working alias)
-  for large maps.
+  evidence behind `--order=important-last` for large maps.
 - On the public Loc-Bench benchmark (n=560), `--for`'s focused bundle put the right file in the top-10
   **~4.5×** as often as raw `--query` BM25 — a small ranked map beats a flat lexical dump on someone else's
   scoreboard too.
@@ -94,7 +93,6 @@ only the files it surfaces.
 | a question the fixed verbs don't have | `--graph-query='and(callers(name("X"),2),kind(all,fn))'` |
 | ONE symbol in full | `--expand=SYM` (body + inline callee sigs) — not its whole file. Add `--compress` for ~20-35% off the body |
 | signatures only | `--pack-signatures` (bodies already elided — `--compress` is a no-op here; it affects SERVED BODIES: `--expand`/`--outline`, `--for`'s auto/anchor and `--detail=N` bodies, `--pack-task`, `--from-trace`, `--exemplar` — disclosed as `compress="1"` on the `<bodies>` element) |
-| a FLAT-LIST verb's output, cheaper | `--format=columnar` on `--callers`/`--callees`/`--uses`/`--impact`/`--pr-context` — a `<paths>` table + parallel name/line/kind arrays instead of repeated per-row markup, ~50%+ fewer tokens, same data. The map itself is unaffected — this only reshapes the flat-list verbs. |
 | `--for`/grep/regex schema prose is already known | `--legend=compact` — keep the evidence rows and emit a versioned schema id instead of repeating the full legend. Default/`--legend=full` remains byte-compatible; compact is for a consumer that already knows that schema version. |
 | `--for`/`--query` returning more than you need | `--adaptive` — cuts the ranked result at the relevance CLIFF (largest relative score gap) instead of a fixed top-k; a sharp query returns few, a flat/broad one still hits the ceiling. Prints `[adaptive: kept K of N ...]` so you can see the cut. |
 | readable bodies for ONLY the relevant head of `--for` | `--detail=N` — full bodies for the top-N ranked symbols + signatures for the rest, in ONE call (measured +63% tokens for the 3 relevant heads vs +355% for all-bodies). Spend body detail on the head the rank identifies; composes with `--max-tokens` (bounds the bodies) and `--adaptive`. |
@@ -102,9 +100,7 @@ only the files it surfaces.
 | the WHOLE orientation for a task, budgeted, in ONE call | `--pack-task="<task in words>"` — assembles the usual 3-5 call dance (`--for` ranking → top-K full bodies → their 1-hop callers → their field notes → `tests_to_run`) under ONE deterministic budget (default 6K tokens; `--token-budget=N` overrides), in a FIXED section order. Each section truncates rank-adaptively and the header REPORTS every truncation (no silent caps); a tiny budget degrades to ranking-only. Reach for it as the first move on a new task instead of firing `--for` then `--expand` then `--callers` then `--affected` yourself — one call, one budget, one round-trip. |
 | the same task about to FAN OUT to N parallel agents | `--pack-task="<task>" --partition=N` (N=2..16) — one call returns a shared common core plus N per-agent slices carved along the call graph's communities, instead of N agents each re-deriving the same orientation. `--token-budget` becomes ONE AGENT's budget (core + its slice); each `<bundle>` is handed to one agent verbatim. Check `overlap_max` / `split` / `partitions` vs `requested` on the wrapper before trusting the split — a task whose surface sits in one module is not partitionable and says so. |
 | the same fan-out, but you need to know which lanes would COLLIDE or which agent lane should take each slice | `--plan-lanes=N --task="<goal>"`, or `--plan-lanes --brief=FILE` with one line per lane — a deterministic JSON plan: per-lane claimed symbols/files, predicted `conflicts` (same claim key on two lanes), `same_file_risk`, `contract_touch` (a claim inside another lane's blast radius — NOT a merge conflict), `landing_order`, per-lane `tests_to_run`, and `execution` (reasoning effort, rule, exact structural signals and caveats). `--partition` splits the work; this predicts the collisions BEFORE a line is written. Read `warnings[]` first, then treat `execution` as advisory: `basis=structural-only` cannot see task semantics, runtime behavior or security sensitivity. Prefer `--brief` when your task has enumerable parts — the auto-carve balances the RANKING and can leave a part in no lane. |
-| a SCRIPT/CI step parsing the output, not an agent reading it | `--json` — the same content as the XML, machine-parseable (keys mirror the XML attr names 1:1), for the default map, `--for`, `--pack-task`, `--callers`/`--callees`/`--impact`, `--quality-delta`, `--test-gate`. Every other verb refuses loudly (stderr + exit 1) rather than silently falling back to XML. Pipe it straight to `jq`: `ripwire-rs . --quality-delta --json \| jq '.regressions'`. |
-| a VISUAL of the bundle's own anchor neighborhood | `--with-graph` (with `--for`/`--pack-task`) — appends a small `<graph fmt="mermaid">` block (top-8 ranked anchors + their 1-hop call edges) right before `</ctx>`. It's PURE ADD — more tokens on top of the sigs you already paid for — so only reach for it when the calling agent actually renders mermaid (a multimodal/diagram-aware reader); a text-only reader gets no benefit from the extra bytes. Off by default. |
-
+| a SCRIPT/CI step parsing the output, not an agent reading it | `--json` — the same content as the XML, machine-parseable (keys mirror the XML attr names 1:1), for the default map, `--for`, `--pack-task`, `--callers`/`--callees`/`--impact`, `--quality-delta`, `--test-gate`. Pipe it straight to `jq`: `ripwire-rs . --quality-delta --json \| jq '.regressions'`. |
 Choosing HOW MUCH detail to pull (the full skeleton→outline→body ladder, `--compress`'s exact scope, when
 NOT to compress, and the default credential redaction on emitted bodies / `--no-redact` opt-out) →
 **[`compress-ladder.md`](compress-ladder.md)**. Load it once you've picked the file(s) from the map above and
@@ -112,11 +108,7 @@ are deciding how much of them to read.
 
 ## Cost calibration (stay honest)
 - **First call on a tree parses (~1s); every call after is warm (~instant).** A follow-up query is nearly
-  free — chain several rather than reading one big file.
-- **Portable indexes for a cold team/CI:** `ripwire-rs <dir> --index-out=BASE` cold-parses once, writes
-  `BASE.lean.ripwirecache` + `BASE.rich.ripwirecache`, exits without a map. Restore lean for
-  map/navigation/PR-context work, rich for exemplar/metrics/uses, via `--cache=PATH`. A plain `--cache=PATH`
-  stays useful for a repeated local query; `--index-out` is the generate-once artifact workflow.
+  free — chain several rather than reading one big file. Pass `--cache=PATH` to read/write an explicit cache file path.
 - Budget a large map: `--max-tokens=8000` or `--top-k=50`. `est_tokens` is calibrated per language against
   real tokenizer output, not a flat chars/4 guess, and `--max-tokens` fits to 90%-of-budget headroom — a
   ceiling, never a target you pad against.

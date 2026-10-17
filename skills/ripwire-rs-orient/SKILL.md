@@ -55,8 +55,7 @@ as a ranked section instead of waiting behind a front-first cut. Raising `--max-
 already-served document gets — that per-document guarantee is not global: dump several documents into one
 dir and admitting another one re-divides the shared budget, which can shrink an already-served document's
 own slice (`share_bytes=` in the header discloses it). Full form in
-[`map-before-you-read.md`](map-before-you-read.md); the recorded run is `docs/COMMANDS.md`'s `--recall`
-pattern subsection.
+[`map-before-you-read.md`](map-before-you-read.md).
 
 **1. Architecture summary** — `ripwire-rs <dir> --report`
 Plain markdown: file + symbol count, call-graph modules (Louvain clusters with lead symbol), god-files
@@ -98,10 +97,7 @@ FILE-GRAIN page — one row per file holding any positive-score symbol, `score=`
 `--offset=M` for the next page. A thin answer's own `next=` names that page for you; reach for it on the
 FIRST call when the task is vague enough that one ranked head is unlikely to hold the answer.
 `--adaptive` cuts the result at the relevance cliff instead of a fixed top-k. Same
-routing in the MCP `for` verb. Orienting from a pasted issue/bug-report's own text? `--anchor` beats plain
-`--for` on Loc-Bench (n=560) — a mild win, not a default (`bench/locbench/README.md`). `--cochange-boost` is
-an experimental, off-by-default co-change prior — see `ripwire-rs --help` before reaching for it.
-
+routing in the MCP `for` verb.
 **3. File-by-file map** — `ripwire-rs <dir> --tree --legend=compact` — each file with its top symbols, a quick "what's where".
 
 **4. Cohesive modules** — `ripwire-rs <dir> --communities --legend=compact` — `<communities modules="N">`, each cluster with its
@@ -161,13 +157,6 @@ Trailing `<bridge …>` entries name the high-traffic integration seams *between
 `flowchart TB`, paste at mermaid.live. For hand-exploring, `ripwire-rs <dir> --html[=FILE]` writes a
 self-contained clickable wiki (module cards → subgraphs → Sourcetrail-style node recentering, no CDN);
 `--color-by=community|cx|churn|tested` sets its initial node-colour lens (a live selector covers the rest).
-Working inside a `--for`/`--pack-task` bundle instead of a whole-repo pass? Add `--with-graph` to that
-same call — it appends a tiny `<graph fmt="mermaid">` block (top-8 ranked anchors + their 1-hop call
-edges) right in the bundle, no second call.
-
-**9. Export it** — `ripwire-rs <dir> --export=cc.json[:FILE]` — per-file metrics (loc, cx, fan-in/out, churn) as
-a CodeCharta `cc.json` for its 3D city view; the ladder's visualization end-point, not a map to read.
-
 ## Then read, and trust the honesty signals
 
 **Read the specific files ripwire surfaces** (god-files + hotspots first) — don't grep blindly. A symbol's

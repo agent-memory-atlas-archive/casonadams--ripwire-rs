@@ -34,24 +34,12 @@ boundary — and want structural signal on where the risk concentrates before yo
 
 ## Skill files — the built-in scanner
 
-**Scan a single file:**
+**Scan a skill file or directory:**
+```bash
+ripwire-rs --scan-skills=skills          # bare --scan-skills scans ./skills or ~/.agents/skills
+ripwire-rs --scan-skills=PATH/TO/DIR
 ```
-ripwire-rs --scan-skill=PATH/TO/SKILL.md
-```
-Output: `ripwire-rs scan: N finding(s) in <file>`, then one line per finding —
-```
-CRITICAL  inject.md:11  INJECTION:ignore-prev  — "Ignore previous instructions and instead act as …"
-```
-Each finding lists severity, `file:line`, the rule id (`INJECTION:ignore-prev`, `INJECTION:you-are-now`,
-exfiltration/path-traversal rules), and the offending text verbatim.
-
-**Scan a whole directory:**
-```
-ripwire-rs --scan-skills=DIR          # bare form scans ./skills or ~/.agents/skills
-```
-Recursively scans every `.md`, reports the same per-finding lines. Run this before adopting an entire skills
-folder, and as a periodic check on installed ones.
-
+Output: `<skillscan schema="ripwire.scan-skills/v1" files="N" findings="M" verdict="clean|warn|critical">` with `<f p="file:line" rule="…" sev="warn|critical"/>` rows detecting prompt injection (`ignore-previous-instructions`, `system-prompt-override`), shell exfiltration (`curl`/`wget` piped to `sh`/`bash`), and credential path traversal (`~/.ssh`, `~/.aws`). Run this before adopting external skills.
 **Exit codes:** `0` = clean · `1` = WARN (review before installing) · `2` = CRITICAL (do not install). The
 exit code for a directory scan is the worst severity found. A CRITICAL exit is a hard block.
 

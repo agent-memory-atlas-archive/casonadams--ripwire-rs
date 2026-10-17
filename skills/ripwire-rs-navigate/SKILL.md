@@ -162,20 +162,9 @@ two hops away, a read/write that never calls SYM, or an `#include` that pulls it
 a high-rank symbol with no callees may be a dispatch hub (virtual/callback/macro), not a leaf — read it.
 
 **What a high `amb=` should CHANGE about your next action**: `amb="K"` on a symbol means K of its outgoing
-calls matched more than one same-named definition and the resolver guessed. Don't treat that edge as fact —
-before you rely on it to judge safety or trace a flow, open the source at that call site and confirm which
-definition it actually resolves to (or overlay `--scip=index.scip` if you have a compiler index; matched
-edges get `prov="scip"` and stop being a guess). A high-rank symbol with a high `amb=` and an `--impact`
-result you're about to act on is exactly the case where "read the source" isn't optional.
-
-**Sharper trust with a SCIP index** — `ripwire-rs <dir> --scip=index.scip` overlays compiler-backed precise
-edges on top of the name-based graph: a matched edge is tagged `prov="scip"` and its `amb=` risk drops (it's
-no longer a guess). Edges `--scip` didn't cover keep their plain name-based status — `amb="K"` on a symbol
-still means K of its calls are guessed, `prov=` absent or not. Read `prov="scip"` as "trust this edge more
-than an unmarked one," not as "the whole symbol is now precise." A path that is missing, empty or not a
-regular file refuses (exit 1); a corrupt index warns on stderr and proceeds all-name-based (same stdout as not
-passing `--scip`) — check header `precise=N` to confirm the overlay actually matched anything.
-
+calls matched more than one same-named definition and the resolver guessed. Before relying on an ambiguous
+edge to judge safety or trace a flow, inspect the source at that call site (`--expand=SYM`) to confirm which
+definition it resolves to.
 ## Deep-dive ONE symbol — understand it before editing
 
 When you need to understand a specific function/class/concept in full (its body, contract, and rationale):
@@ -241,13 +230,8 @@ field un-places every field after it. A `modeled="1"` number that agrees with th
 - Rule of thumb: `--for` for a task you're about to do; `--query` for a vocabulary you're hunting. Both shine
   on specific technical wording; for broad common-word asks, plain `rg` + one read can still win.
 
-**Budgeting trap:** a positive, explicit `--top-k` is inert on plain `--for` — the run warns on stderr and
-emits the full bundle anyway. (`--for --format=candidates --top-k=N` is different: the export consumes the
-flag and caps the rows, no warning. `--for --top-k=0` is refused by the payload-only guard.)
-Narrow plain `--for` with its own arguments: `--signatures-only` (no auto-bodies), `--token-budget=N` (shapes
-the bundle to fit), `--detail=N` (full bodies for just the top N). `--top-k` does shape `--query`. `--expand`/`--outline` need no
-`--top-k=0`: they drop the map by default whenever every definition asked for is served (`topk_default="0"`),
-an ambiguous bare name included; pass `--top-k=N` only if you want the map back in the same call.
+**Budgeting trap:** a positive, explicit `--top-k` is inert on plain `--for`. Narrow plain `--for` with its own arguments: `--signatures-only` (no auto-bodies), `--token-budget=N` (shapes
+the bundle to fit), `--detail=N` (full bodies for just the top N). `--top-k` does shape `--query`. `--expand`/`--outline` drop the map by default; pass `--top-k=N` only if you want the map back in the same call.
 
 ## When the fixed verbs can't phrase the question
 

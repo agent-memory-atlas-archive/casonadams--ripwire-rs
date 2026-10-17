@@ -64,21 +64,11 @@ source shape.
    ALL `#else`/`#ifdef` branches, not just the one your build compiles, so a hot function that also happens
    to be preprocessor-heavy can look structurally worse than the code path actually executing.
 
-4a2. **Join the measured heat onto the static findings** — `ripwire-rs <dir> --lint --legend=compact --with-profile=REPORT`
-
-   REPORT is a RIPWIRE_PROFILE build's own stderr report (its `#PROF_TSV` block, verbatim). Every `--lint`
-   finding whose enclosing symbol contains a `PROFILE_SCOPE` site gains `heat_*` attributes — the scope's
-   measured calls, total_ms, and whichever counter columns that run armed (`heat_l1d_mpki` etc.; an ABSENT
-   column was not measured, never zero). This is the one-command answer to "which of these cache-* rows are
-   actually HOT": static shape × PMU weight (SYZYGY's advice mode, Hundt CGO 2006). `heat_joined="0"` on
-   the root is honest — no finding sits inside a profiled scope — never an error.
-
-4b. **If the profile points at MEMORY, not compute** — cheapest first, `ripwire-rs <dir> --lint --legend=compact` runs the
+4b. **If the profile points at MEMORY, not compute** — cheapest first, `ripwire-rs <dir> --lint --lint-select=cache- --legend=compact` runs the
    built-in **cache-\* pack** (8 static data-layout checks, e.g. `cache-gather-subscript`,
-   `cache-vector-of-indirect`, `cache-pointer-chase-loop`) as part of an ordinary lint pass — no profile
+   `cache-vector-of-raw-ptr`, `cache-pointer-chase-loop`, `cache-node-container`, `cache-heap-alloc-in-loop`) as part of an ordinary lint pass — no profile
    required, so it is worth a look before reaching for the heavier lens below. When a specific struct is
-   already implicated, `--field-affinity[=STRUCT]`
-
+   already implicated, run `ripwire-rs <dir> --field-affinity[=STRUCT] --legend=compact` or `ripwire-rs <dir> --layout=STRUCT --legend=compact`.
    **When to reach for it.** The measurement already implicates a struct-heavy path and the *shape* of the
    evidence says data layout, not algorithm: cache-miss or memory-stall counters dominating the profile,
    a loop whose cost does not track its instruction count, a hot/cold field mix (a couple of fields read on
@@ -117,13 +107,7 @@ source shape.
      means "not classified", never "no chases." It ships **report-only** — it does not move the ranking.
 
    **This is a HYPOTHESIS GENERATOR, not a measurement** — same rule as every static signal on this page.
-   For runtime truth, go back to the counters: `<validate>` names the instrumented `PROFILE_SCOPE` whose
-   hardware counters would confirm or refute the hypothesis (the PMC backend is `src/infra/profilePmc.h` —
-   kpep on macOS, `perf_event_open` on Linux), `bench/bench_field_ab.cpp` is the A/B harness, and
-   `docs/FIELDAFFINITY.md` records a worked example in which the static hypothesis was **refuted** under one
-   access pattern. Confirm on hardware before changing a layout, exactly as with every other item on this
-   list. Exit is always 0: a report, not a gate.
-
+   Confirm on hardware counters or benchmarks before changing a struct layout. Exit is always 0: a report, not a gate.
 5. **Expand measured candidates** — `ripwire-rs <dir> --expand=SYM --legend=compact` for the implicated symbols.
    Output: full body + callee signatures. Look for inner-loop allocations, redundant work,
    or O(N²) patterns that profiler data would confirm.

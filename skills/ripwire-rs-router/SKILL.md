@@ -100,7 +100,7 @@ grew 32K → 256K, LongCodeBench).
 
 Every command these skills spell asks for the compact legend (`--legend=compact`: terse definitions of only the attributes the answer carries). Compact is also the CLI's DEFAULT now, so on a current binary the flag is redundant — it stays so a command reads the same on an older one. Add `--legend=full` when a definition's reasoning is needed — a term you do not recognise, a floor or cap you need explained, or a map a human will read. `--for` spells no flag: its compact legend is its own dialect, and the default.
 
-The other exceptions are not a choice — **the binary refuses `--legend=compact` on any command that does not answer with an XML legend**, and a command it refuses runs not at all. Two families: the **state-changing** commands, which write something rather than answer (`--quality-ack`, `--quality-baseline`, `--arch --baseline`, `--note-add`, `--replace-symbol-body` / `--insert-before-symbol` / `--insert-after-symbol`, `--edit-plan`, `--index-out=`), which refuse either posture, and the **non-XML renderings** (`--mermaid`, `--html`, `--report`, `--sarif`, `--situ`, `--recall=`, `--export`), where `--legend=full` is accepted as a no-op because the full form is the only one they have. Those carry no `--legend=compact`. `--pin-census=` is not among them: it writes its census beside a map, and the map takes a posture like any other. This matters when you compose rather than copy: a flag that turns an XML verb into one of these — `--zoom --mermaid`, `--quality-delta --quality-ack` — takes the whole command with it, so the verb is not what decides, the command is. Nothing here is a rule you have to apply by hand: `ripwire-rs --help-task` spells no posture at all (the binary's default decides), and `test/skilltruthcheck.sh` runs every `--legend=compact` command these skills spell against the binary and fails on a refusal.
+The other exceptions are not a choice — **the binary refuses `--legend=compact` on any command that does not answer with an XML legend**, and a command it refuses runs not at all. Two families: the **state-changing** commands, which write something rather than answer (`--quality-ack`, `--quality-baseline`, `--arch --baseline`, `--note-add`, `--replace-symbol-body` / `--insert-before-symbol` / `--insert-after-symbol`, `--edit-plan`), which refuse either posture, and the **non-XML renderings** (`--mermaid`, `--html`, `--report`, `--sarif`, `--situ`, `--recall=`), where `--legend=full` is accepted as a no-op because the full form is the only one they have. Those carry no `--legend=compact`.
 
 ## Cross-cutting disciplines (fire ALONGSIDE a moment skill, not instead)
 
@@ -112,7 +112,7 @@ These aren't a "moment" you land in; they're reflexes you carry into every momen
 
 ## Wrong tool for the job
 
-ripwire parses **35 languages across systems, cloud, functional, and web codebases**: Rust, TypeScript, JavaScript, Python, Go, C, C++, CUDA, Metal, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS, SQL, Protobuf, GraphQL, and Dockerfile. A repo in an unindexed language gets a thin or empty map, not an error — don't mistake that for
+ripwire-rs parses **36 languages across systems, cloud, functional, and web codebases**: Rust, TypeScript, JavaScript, Astro, Python, Go, C, C++, CUDA, Metal, Objective-C, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS, SQL, Protobuf, GraphQL, and Dockerfile. A repo in an unindexed language gets a thin or empty map, not an error — don't mistake that for
 "nothing here." Reach for plain `rg` + reads instead. And ripwire maps *structure*, not build/link state — a
 build failure or a linker error is the compiler's/linker's question, not ripwire's; it can still tell you
 *where* the broken symbol lives (`--grep`/`--callers`), just not why the toolchain rejected it.
@@ -121,11 +121,9 @@ build failure or a linker error is the compiler's/linker's question, not ripwire
 
 **ripwire-rs-layers** (architecture-health / `--arch` CI gate), **ripwire-rs-graph-query** (custom graph queries),
 **ripwire-rs-mcp** (run ripwire as an MCP server). `--doctor` (setup-health row above) is diagnostic, not a
-moment skill. `--eval` / `--eval-retrieval` / `--eval-mined` are
-maintainer self-eval harnesses (not an agent moment) — `--eval-mined=FILE` scores ranker recall against
-real session-mined (query, gold-files) pairs from `bench/mine_traces.py`. The
+moment skill. `--eval` and `--eval-retrieval` are maintainer self-eval harnesses (not an agent moment). The
 detail-ladder / token-squeeze (`--compress`) material
-lives inside **ripwire-rs-orient**'s companion file (`skills/ripwire-orient/compress-ladder.md`) now — it's not a standalone
+lives inside **ripwire-rs-orient**'s companion file (`skills/ripwire-rs-orient/compress-ladder.md`) now — it's not a standalone
 moment. You don't recognize "the graph-query moment" — reach for these when a moment skill points you at
 them.
 
@@ -138,9 +136,9 @@ The always-loaded ripwire primer trains the READ verbs (`--for`/`--recall`/`--ca
   → the repo's best-in-class instance of that shape to imitate (by ROLE, not text similarity), plus
   `--for="<task>"` to reuse before reinventing. Duplicates are born on tasks that felt too small to tool up
   for. (→ **ripwire-rs-reuse-first**.)
-- **Before you call it DONE:** `ripwire-rs <dir> --quality-delta --legend=compact` → ONLY what your change made worse across 10
-  kinds (complexity, verbosity, nesting, params, duplication, dead-code, api-surface, error-masking,
-  short-horizon-churn, new-clone-of-reused-helper); exit 2 = new debt.
+- **Before you call it DONE:** `ripwire-rs <dir> --quality-delta --legend=compact` → ONLY what your change made worse across 12
+  kinds (`complexity`, `verbosity`, `nesting`, `params`, `duplication`, `dead-code`, `api-surface`, `error-masking`,
+  `short-horizon-churn`, `new-clone-of-reused-helper`, `placeholder`, `defect-shape`); exit 2 = new gating debt.
   In a git repo it **auto-compares vs `git HEAD`** (no start-of-task ritual — just run it before you push).
   **A finding is only half the job** — the fix is not done until it is proven: `--quality-delta` (targeted
   kind gone, nothing else regressed) → `--edit-check=SYM` (contract intact) → `--affected` (the tests that

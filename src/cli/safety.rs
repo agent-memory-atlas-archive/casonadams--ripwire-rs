@@ -166,6 +166,7 @@ where
 pub struct GitMetricsFlags<'a> {
     pub cochange: Option<Option<&'a str>>,
     pub cochange_groups: bool,
+    pub cochange_recur: Option<u32>,
     pub hotspots: bool,
     pub since: Option<&'a str>,
     pub pretty: bool,
@@ -183,6 +184,7 @@ pub fn dispatch_git_metrics_command(
         GitMetricsFlags {
             cochange,
             cochange_groups: false,
+            cochange_recur: None,
             hotspots,
             since,
             pretty: false,
@@ -204,10 +206,11 @@ pub fn dispatch_git_metrics_with_flags(
             flags.pretty,
             flags.json_out,
             |commits, state, out| {
-                execute_cochange_full(
+                execute_cochange_with_recur(
                     probed,
                     flags.since,
                     flags.cochange_groups,
+                    flags.cochange_recur,
                     commits,
                     state,
                     out,
@@ -788,6 +791,26 @@ pub fn execute_cochange_full<W: Write>(
     state: &crate::mcp::McpState,
     out: &mut W,
 ) -> io::Result<()> {
+    execute_cochange_with_recur(
+        probed_file,
+        since_str,
+        groups_mode,
+        None,
+        commits,
+        state,
+        out,
+    )
+}
+
+pub fn execute_cochange_with_recur<W: Write>(
+    probed_file: Option<&str>,
+    since_str: Option<&str>,
+    groups_mode: bool,
+    min_recur: Option<u32>,
+    commits: &[crate::git::history::CommitInfo],
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
     let anchor_epoch = commits.first().map(|c| c.timestamp).unwrap_or(0);
     let scope = crate::git::history::parse_since_scope(since_str, anchor_epoch);
     let filtered = crate::git::history::filter_commits_by_scope(commits, &scope);
@@ -801,7 +824,7 @@ pub fn execute_cochange_full<W: Write>(
     let target_file =
         probed_file.filter(|f| !f.is_empty() && *f != "." && !std::path::Path::new(f).is_dir());
     if let Some(file) = target_file {
-        let partners = crate::git::cochange::mine_cochange_for_file(
+        let mut partners = crate::git::cochange::mine_cochange_for_file(
             file,
             filtered,
             Some(&coupling),
@@ -809,15 +832,21 @@ pub fn execute_cochange_full<W: Write>(
             Some(&state.interner),
             &opts,
         );
+        if let Some(mr) = min_recur {
+            partners.retain(|p| p.recur >= mr);
+        }
         print_cochange_partners(file, &partners, out)
     } else {
-        let pairs = crate::git::cochange::mine_repo_cochange_pairs(
+        let mut pairs = crate::git::cochange::mine_repo_cochange_pairs(
             filtered,
             Some(&coupling),
             Some(&state.ingest),
             Some(&state.interner),
             &opts,
         );
+        if let Some(mr) = min_recur {
+            pairs.retain(|p| p.recur >= mr);
+        }
         if groups_mode {
             let groups = crate::git::cochange::cluster_cochange_groups(&pairs);
             print_cochange_groups(&state.root, &groups, out)
