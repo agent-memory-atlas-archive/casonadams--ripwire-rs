@@ -322,6 +322,18 @@ impl Paginated for ExecutionContext<'_> {
     }
 }
 
+impl ExecutionContext<'_> {
+    #[inline]
+    pub fn write_report<R: crate::serialize::XmlReport, W: Write>(
+        &self,
+        rep: &R,
+        out: &mut W,
+    ) -> io::Result<bool> {
+        rep.write_xml_report(self.root, out)?;
+        Ok(true)
+    }
+}
+
 /// Trait for CLI verb groups that execute against an `ExecutionContext`.
 pub trait CliVerb: VerbGroup {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()>;
@@ -744,22 +756,21 @@ fn dispatch_lens_queries<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W) -
             interner,
             preset_opt.as_deref(),
         );
-        crate::serialize::XmlReport::write_xml_report(&rep, root, stdout)?;
-        return Ok(true);
+        return ctx.write_report(&rep, stdout);
     }
     if let Some(sym) = a.layout.as_deref() {
+        use crate::domain::CorpusView;
         let has_c_agg = ingest
             .symbols
             .iter()
-            .any(|s| interner.resolve(&s.name) == sym && s.lang.semantics().supports_c_layout());
+            .any(|s| ctx.sym_name(s) == sym && s.lang.semantics().supports_c_layout());
         if !has_c_agg {
             return Err(io::Error::other(format!(
                 "ripwire: --layout: '{sym}' is indexed but has no C-family aggregate body — this verb models C/C++/ObjC byte layout only"
             )));
         }
         let rep = crate::metrics::compute_layout_report(sym, ingest, interner, root);
-        crate::metrics::serialize_layout_xml(&rep, root, stdout)?;
-        return Ok(true);
+        return ctx.write_report(&rep, stdout);
     }
     if let Some(sym_opt) = &a.field_affinity {
         let rep = crate::metrics::layout::compute_field_affinity_report(
@@ -768,25 +779,21 @@ fn dispatch_lens_queries<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W) -
             interner,
             root,
         );
-        crate::metrics::serialize_field_affinity_xml(&rep, root, stdout)?;
-        return Ok(true);
+        return ctx.write_report(&rep, stdout);
     }
     if a.context_ratio {
         let rep = crate::metrics::compute_context_ratio(ingest, graph, interner);
-        crate::metrics::serialize_context_ratio_xml(&rep, root, stdout)?;
-        return Ok(true);
+        return ctx.write_report(&rep, stdout);
     }
     if a.ensemble {
         let rep = crate::metrics::compute_ensemble(ingest, graph, interner);
-        crate::metrics::serialize_ensemble_xml(&rep, root, stdout)?;
-        return Ok(true);
+        return ctx.write_report(&rep, stdout);
     }
     if a.comment_coherence {
         let rep = crate::metrics::analysis_lenses::compute_comment_coherence_in_root(
             root, ingest, interner,
         );
-        crate::metrics::serialize_comment_coherence_xml(&rep, root, stdout)?;
-        return Ok(true);
+        return ctx.write_report(&rep, stdout);
     }
     Ok(false)
 }
