@@ -700,7 +700,7 @@ fn check_churn_regressions(
                 line: sym.line,
                 was_val: 0,
                 now_val: commit_count as u32,
-                is_gating: true,
+                is_gating: false,
                 is_new_symbol: false,
             });
         }

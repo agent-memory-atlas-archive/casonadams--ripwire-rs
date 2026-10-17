@@ -221,19 +221,7 @@ pub fn compute_effective_budget(
 }
 
 pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    let (sym, mode) = if let Some(s) = cli.nav.callers.as_deref() {
-        (s, NavMode::Callers)
-    } else if let Some(s) = cli.nav.callees.as_deref() {
-        (s, NavMode::Callees)
-    } else if let Some(s) = cli.nav.impact.as_deref() {
-        (s, NavMode::Impact)
-    } else if let Some(s) = cli.nav.uses.as_deref() {
-        (s, NavMode::Uses)
-    } else {
-        let s = cli.nav.find_symbol.as_deref()?;
-        (s, NavMode::FindSymbol)
-    };
-
+    let (sym, mode) = cli.nav.active_query()?;
     Some((|| {
         let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
         let mut stdout_lock = io::stdout().lock();
@@ -284,8 +272,12 @@ pub struct ExecutionContext<'a> {
 }
 
 /// Trait for CLI verb groups that execute against an `ExecutionContext`.
-pub trait CliVerb {
+pub trait CliVerb: VerbGroup {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()>;
+
+    fn force_plain_markdown(&self) -> bool {
+        false
+    }
 }
 
 /// Trait for architecture and quality analysis lenses.
@@ -302,6 +294,32 @@ pub trait VerificationGate {
     ) -> io::Result<Option<i32>>;
 }
 
+pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    if !verb.is_group_active() {
+        return None;
+    }
+    Some((|| {
+        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+        let ctx = ExecutionContext {
+            cli,
+            root,
+            ingest: &ingest,
+            graph: &graph,
+            pr: &pr,
+            interner: &interner,
+        };
+        let plain = verb.force_plain_markdown();
+        let mut stdout_lock = io::stdout().lock();
+        let mut stdout = crate::serialize::XmlWriter::with_options(
+            &mut stdout_lock,
+            cli.is_pretty_out() || plain,
+            cli.is_json_out() && !plain,
+            cli.is_legend_none() && !plain,
+        );
+        verb.execute_verb(&ctx, &mut stdout)?;
+        stdout.flush()
+    })())
+}
 impl CliVerb for TopRetrievalArgs {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
         execute_retrieval_dispatch(
@@ -354,6 +372,10 @@ impl CliVerb for TopDetailArgs {
             )
         }
     }
+
+    fn force_plain_markdown(&self) -> bool {
+        self.report
+    }
 }
 
 impl VerificationGate for TopSafetyArgs {
@@ -363,6 +385,17 @@ impl VerificationGate for TopSafetyArgs {
         out: &mut W,
     ) -> io::Result<Option<i32>> {
         execute_safety_dispatch(self, ctx.root, ctx.ingest, ctx.graph, ctx.interner, out)
+    }
+}
+
+impl CliVerb for TopSafetyArgs {
+    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+        let res = self.evaluate_gate(ctx, out);
+        out.flush()?;
+        if let Some(code) = res? {
+            std::process::exit(code);
+        }
+        Ok(())
     }
 }
 
@@ -381,33 +414,18 @@ impl AnalysisLens for TopArchitectureArgs {
 }
 
 pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    if !cli.retrieval.is_group_active() {
-        return None;
-    }
-    Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-        let ctx = ExecutionContext {
-            cli,
-            root,
-            ingest: &ingest,
-            graph: &graph,
-            pr: &pr,
-            interner: &interner,
-        };
-        let mut stdout_lock = io::stdout().lock();
-        let mut stdout = crate::serialize::XmlWriter::with_options(
-            &mut stdout_lock,
-            cli.is_pretty_out(),
-            cli.is_json_out(),
-            cli.is_legend_none(),
-        );
-        cli.retrieval.execute_verb(&ctx, &mut stdout)?;
-        stdout.flush()
-    })())
+    run_cli_verb(&cli.retrieval, cli, root)
 }
 
 impl CliVerb for TopWorkspaceArgs {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+        if self.owners {
+            return execute_workspace_owners(ctx, out);
+        }
+        if self.stray_content {
+            let val = crate::mcp::doc_tools::call_stray_content(ctx.root);
+            return crate::serialize::serialize_stray_content_xml(&val, out);
+        }
         if let Some((spec, op)) = self
             .replace_symbol_body
             .as_deref()
@@ -449,48 +467,19 @@ impl CliVerb for TopWorkspaceArgs {
 }
 
 pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    let ws = &cli.workspace;
-    if !ws.is_group_active() {
-        return None;
-    }
-    Some((|| {
-        let mut stdout_lock = io::stdout().lock();
-        let mut stdout = crate::serialize::XmlWriter::with_options(
-            &mut stdout_lock,
-            cli.is_pretty_out(),
-            cli.is_json_out(),
-            cli.is_legend_none(),
-        );
-        if ws.owners {
-            execute_workspace_owners(cli, root, &mut stdout)?;
-        } else if ws.stray_content {
-            let val = crate::mcp::doc_tools::call_stray_content(root);
-            crate::serialize::serialize_stray_content_xml(&val, &mut stdout)?;
-        } else {
-            let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-            let ctx = ExecutionContext {
-                cli,
-                root,
-                ingest: &ingest,
-                graph: &graph,
-                pr: &pr,
-                interner: &interner,
-            };
-            ws.execute_verb(&ctx, &mut stdout)?;
-        }
-        stdout.flush()
-    })())
+    run_cli_verb(&cli.workspace, cli, root)
 }
 
-fn execute_workspace_owners<W: Write>(cli: &Cli, root: &str, out: &mut W) -> io::Result<()> {
+fn execute_workspace_owners<W: Write>(ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
     let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 12);
-    let commits = crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
-    let at_stamp = crate::git::history::compute_git_at_stamp(root);
-    let (ingest, _graph, _pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-    let known_files: std::collections::HashSet<String> = ingest
+    let commits =
+        crate::git::history::walk_repository_history_scoped(Path::new(ctx.root), cutoff).ok();
+    let at_stamp = crate::git::history::compute_git_at_stamp(ctx.root);
+    let known_files: std::collections::HashSet<String> = ctx
+        .ingest
         .files
         .iter()
-        .map(|f| interner.resolve(&f.path).to_string())
+        .map(|f| ctx.interner.resolve(&f.path).to_string())
         .collect();
     let mut val = crate::mcp::doc_tools::call_owners(
         commits.as_deref(),
@@ -498,7 +487,7 @@ fn execute_workspace_owners<W: Write>(cli: &Cli, root: &str, out: &mut W) -> io:
         at_stamp.as_deref(),
         Some(&known_files),
     );
-    if cli.retrieval.detail.is_some_and(|d| d > 0) {
+    if ctx.cli.detail_opt().is_some_and(|d| d > 0) {
         val["detail"] = serde_json::Value::Bool(true);
     }
     crate::serialize::serialize_owners_xml(&val, out)
@@ -577,63 +566,11 @@ fn execute_detail_extended<W: Write>(
 }
 
 pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    let detail = &cli.detail;
-    if !detail.is_group_active() {
-        return None;
-    }
-
-    Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-        let ctx = ExecutionContext {
-            cli,
-            root,
-            ingest: &ingest,
-            graph: &graph,
-            pr: &pr,
-            interner: &interner,
-        };
-        let mut stdout_lock = io::stdout().lock();
-        let mut stdout = crate::serialize::XmlWriter::with_options(
-            &mut stdout_lock,
-            cli.is_pretty_out() || detail.report,
-            cli.is_json_out() && !detail.report,
-            cli.is_legend_none() && !detail.report,
-        );
-        detail.execute_verb(&ctx, &mut stdout)?;
-        stdout.flush()?;
-        Ok(())
-    })())
+    run_cli_verb(&cli.detail, cli, root)
 }
 
 pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    let s = &cli.safety;
-    if !s.is_group_active() {
-        return None;
-    }
-    Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-        let ctx = ExecutionContext {
-            cli,
-            root,
-            ingest: &ingest,
-            graph: &graph,
-            pr: &pr,
-            interner: &interner,
-        };
-        let mut stdout_lock = io::stdout().lock();
-        let mut stdout = crate::serialize::XmlWriter::with_options(
-            &mut stdout_lock,
-            cli.is_pretty_out(),
-            cli.is_json_out(),
-            cli.is_legend_none(),
-        );
-        let res = s.evaluate_gate(&ctx, &mut stdout);
-        stdout.flush()?;
-        if let Some(code) = res? {
-            std::process::exit(code);
-        }
-        Ok(())
-    })())
+    run_cli_verb(&cli.safety, cli, root)
 }
 fn execute_arch_rules_query<W: Write>(
     rules_file: &str,
@@ -653,78 +590,74 @@ fn execute_arch_rules_query<W: Write>(
     Ok(())
 }
 
-pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    let a = &cli.arch;
-    if !a.is_group_active() {
-        return None;
-    }
-
-    Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
-        let mut stdout_lock = io::stdout().lock();
-
-        if a.mermaid {
+impl CliVerb for TopArchitectureArgs {
+    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+        if self.mermaid {
             return crate::graph::generate_mermaid_diagram(
-                &ingest,
-                &graph,
-                &interner,
-                &mut stdout_lock,
+                ctx.ingest,
+                ctx.graph,
+                ctx.interner,
+                out,
             );
         }
-
-        let mut stdout = crate::serialize::XmlWriter::with_options(
-            &mut stdout_lock,
-            cli.is_pretty_out(),
-            cli.is_json_out(),
-            cli.is_legend_none(),
-        );
-        let ctx = ExecutionContext {
-            cli,
-            root,
-            ingest: &ingest,
-            graph: &graph,
-            pr: &pr,
-            interner: &interner,
-        };
-
-        if let Some(rules_file) = a.arch.as_deref() {
-            execute_arch_rules_query(rules_file, root, &ingest, &graph, &interner, &mut stdout)?;
-        } else if let Some(depth) = a.zoom {
+        if let Some(rules_file) = self.arch.as_deref() {
+            execute_arch_rules_query(
+                rules_file,
+                ctx.root,
+                ctx.ingest,
+                ctx.graph,
+                ctx.interner,
+                out,
+            )
+        } else if let Some(depth) = self.zoom {
             let opts = crate::graph::zoom::ZoomOptions {
                 depth,
-                levels_shown: a.zoom_levels,
-                limit: cli.modifiers.limit,
-                offset: cli.modifiers.offset,
+                levels_shown: self.zoom_levels,
+                limit: ctx.cli.modifiers.limit,
+                offset: ctx.cli.modifiers.offset,
             };
             crate::graph::zoom::execute_zoom_query(
-                &ingest,
-                &graph,
-                &interner,
-                pr.iterations,
+                ctx.ingest,
+                ctx.graph,
+                ctx.interner,
+                ctx.pr.iterations,
                 opts,
-                &mut stdout,
-            )?;
-        } else if a.dead_code {
-            execute_dead_code_query(root, &ingest, &graph, &interner, &mut stdout)?;
-        } else if a.communities || a.community.is_some() {
-            execute_communities_query(root, a.community, &ingest, &graph, &interner, &mut stdout)?;
-        } else if let Some(sym) = a.around.as_deref() {
+                out,
+            )
+        } else if self.dead_code {
+            execute_dead_code_query(ctx.root, ctx.ingest, ctx.graph, ctx.interner, out)
+        } else if self.communities || self.community.is_some() {
+            execute_communities_query(
+                ctx.root,
+                self.community,
+                ctx.ingest,
+                ctx.graph,
+                ctx.interner,
+                out,
+            )
+        } else if let Some(sym) = self.around.as_deref() {
             let cfg = AroundConfig {
-                depth: a.around_depth,
-                fanout: a.around_fanout,
+                depth: self.around_depth,
+                fanout: self.around_fanout,
             };
-            execute_around_query(root, sym, cfg, &ingest, &graph, &interner, &mut stdout)?;
-        } else if a.external_surface {
-            execute_external_surface_query(root, &ingest, &interner, &mut stdout)?;
-        } else if a.deps {
-            execute_deps_query(root, &ingest, &graph, &interner, &mut stdout)?;
-        } else if a.execute_lens(&ctx, &mut stdout)? {
-            stdout.flush()?;
-            return Ok(());
+            execute_around_query(ctx.root, sym, cfg, ctx.ingest, ctx.graph, ctx.interner, out)
+        } else if self.external_surface {
+            execute_external_surface_query(ctx.root, ctx.ingest, ctx.interner, out)
+        } else if self.deps {
+            execute_deps_query(ctx.root, ctx.ingest, ctx.graph, ctx.interner, out)
+        } else {
+            let _ = self.execute_lens(ctx, out)?;
+            Ok(())
         }
-        stdout.flush()?;
-        Ok(())
-    })())
+    }
+
+    fn force_plain_markdown(&self) -> bool {
+        self.mermaid
+    }
+}
+
+pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
+    run_cli_verb(&cli.arch, cli, root)
 }
 
 fn dispatch_lens_queries<W: Write>(

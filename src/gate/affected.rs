@@ -23,17 +23,28 @@ pub struct AffectedReport {
     pub tests: Vec<AffectedTest>,
 }
 
-impl crate::serialize::ToXmlString for AffectedReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        writeln!(
+impl crate::serialize::XmlReport for AffectedReport {
+    fn schema_tag(&self) -> &'static str {
+        "affected"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.affected/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        write!(
             out,
-            "<affected schema=\"ripwire.affected/v1\" files=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\">",
+            " files=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\"",
             self.changed_spec,
             self.seed_count,
             self.seed_test_files.len(),
             self.total_tests,
             self.reached_symbols
-        )?;
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for t in &self.tests {
             let direct_attr = if t.is_direct_change {
                 " direct=\"1\""
@@ -46,7 +57,14 @@ impl crate::serialize::ToXmlString for AffectedReport {
                 t.path, t.hops, direct_attr
             )?;
         }
-        writeln!(out, "</affected>")
+        Ok(())
+    }
+}
+
+impl crate::serialize::ToXmlString for AffectedReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::XmlReport;
+        self.render_envelope(out)
     }
 }
 

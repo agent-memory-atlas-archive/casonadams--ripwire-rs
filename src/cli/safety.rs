@@ -363,16 +363,18 @@ pub fn execute_safe_delete_query<W: Write>(
     let ranks = vec![0.0; ingest.symbols.len()];
     let blast_radius =
         crate::navigate::transitive_impact(sym_id, ingest, graph, &ranks, interner, Some(32)).len();
-    crate::serialize::query_xml::serialize_safe_delete_with_gauge_xml(
+    let gauge_attrs = graph.xml_gauge_attrs();
+    use crate::serialize::XmlReport;
+    crate::serialize::query_xml::SafeDeleteReport {
         root,
         sym_name,
-        sym.kind.tag(),
-        &def_loc,
-        &callers,
+        kind_tag: sym.kind.tag(),
+        def_loc: &def_loc,
+        callers: &callers,
         blast_radius,
-        &graph.xml_gauge_attrs(),
-        out,
-    )
+        gauge_attrs: &gauge_attrs,
+    }
+    .render_envelope(out)
 }
 
 pub fn execute_exercises_query<W: Write>(

@@ -206,26 +206,44 @@ pub fn scan_skills_directory(dir: &Path) -> io::Result<SkillScanReport> {
     })
 }
 
+impl crate::serialize::XmlReport for SkillScanReport {
+    fn schema_tag(&self) -> &'static str {
+        "skillscan"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.scan-skills/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
+        write!(
+            out,
+            " files=\"{}\" findings=\"{}\" verdict=\"{}\"",
+            self.files_scanned,
+            self.findings.len(),
+            self.verdict
+        )
+    }
+    fn write_body<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
+        for f in &self.findings {
+            let p_esc = crate::serialize::escape::escape_xml_str(&f.path);
+            writeln!(
+                out,
+                "  <f p=\"{p_esc}:{}\" rule=\"{}\" sev=\"{}\"/>",
+                f.line, f.rule, f.sev
+            )?;
+        }
+        Ok(())
+    }
+}
+
 pub fn serialize_skill_scan_xml<W: io::Write>(
     rep: &SkillScanReport,
     out: &mut W,
 ) -> io::Result<()> {
-    writeln!(
-        out,
-        "<skillscan schema=\"ripwire.scan-skills/v1\" files=\"{}\" findings=\"{}\" verdict=\"{}\">",
-        rep.files_scanned,
-        rep.findings.len(),
-        rep.verdict
-    )?;
-    for f in &rep.findings {
-        let p_esc = crate::serialize::escape::escape_xml_str(&f.path);
-        writeln!(
-            out,
-            "  <f p=\"{p_esc}:{}\" rule=\"{}\" sev=\"{}\"/>",
-            f.line, f.rule, f.sev
-        )?;
-    }
-    writeln!(out, "</skillscan>")
+    use crate::serialize::XmlReport;
+    rep.render_envelope(out)
 }
 #[cfg(test)]
 mod tests {

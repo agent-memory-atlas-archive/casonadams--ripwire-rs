@@ -352,310 +352,268 @@ pub fn call_edit_tool(
     ))
 }
 
-pub fn dispatch_read_tools(
-    state: &McpState,
-    tool_name: &str,
-    args: &Value,
-) -> Result<Value, String> {
-    match tool_name {
-        "find_symbol" => call_find_symbol(state, args),
-        "callers" | "find_referencing_symbols" => call_callers(state, args),
-        "callees" => call_callees(state, args),
-        "impact" => call_impact(state, args),
-        "explore" => call_explore(state, args),
-        "cochange" => call_cochange(state, args),
-        "edit_check" => call_edit_check(state, args),
-        "affected" => call_affected(state, args),
-        "quality_baseline" => call_quality_baseline(state, args),
-        "quality_delta" => call_quality_delta(state, args),
-        "slice" => call_slice(state, args),
-        "replace_symbol_body" => call_edit_tool(state, edit::EditOp::ReplaceBody, args, true),
-        "insert_before_symbol" => call_edit_tool(state, edit::EditOp::InsertBefore, args, false),
-        "insert_after_symbol" => call_edit_tool(state, edit::EditOp::InsertAfter, args, false),
-        "for" => {
-            let task = args["task"].as_str().unwrap_or("");
-            let budget = args["budget_tokens"].as_u64().map(|b| b as usize);
-            let detail = args["detail"].as_u64().map(|d| d as usize);
-            let adaptive = args["adaptive"].as_bool().unwrap_or(false);
-            Ok(retrieval::call_for_task_with_options(
-                &state.ingest,
-                &state.interner,
-                &state.ranks,
-                task,
-                retrieval::ForTaskOptions {
-                    root: &state.root,
-                    graph: Some(&state.graph),
-                    budget_tokens: budget,
-                    detail,
-                    adaptive,
-                },
-            ))
-        }
-        "fetch_body" => {
-            let sym = args["symbol"]
-                .as_str()
-                .or_else(|| args["handle"].as_str())
-                .unwrap_or("");
-            let path_hint = args["path"].as_str().or_else(|| args["file"].as_str());
-            let sl = args["start_line"].as_u64().map(|l| l as usize);
-            let el = args["end_line"].as_u64().map(|l| l as usize);
-            Ok(retrieval::call_fetch_body_in_root(
-                &state.root,
-                &state.ingest,
-                &state.interner,
-                sym,
-                path_hint,
-                sl,
-                el,
-            ))
-        }
-        "exemplar" => {
-            let role = args["role"]
-                .as_str()
-                .or_else(|| args["kind"].as_str())
-                .unwrap_or("fn");
-            Ok(retrieval::call_exemplar_in_root(
-                &state.root,
-                &state.ingest,
-                &state.interner,
-                &state.ranks,
-                role,
-                Some(&state.graph),
-            ))
-        }
-        "lego" => {
-            let iface = args["interface"]
-                .as_str()
-                .or_else(|| args["symbol"].as_str())
-                .unwrap_or("");
-            Ok(retrieval::call_lego(&state.ingest, &state.interner, iface))
-        }
-        "memory_recall" => {
-            let task = args["task"].as_str().unwrap_or("");
-            let top_k = args["top_k"].as_u64().map(|k| k as usize);
-            Ok(retrieval::call_memory_recall_in_root(
-                &state.root,
-                &state.ingest,
-                &state.interner,
-                task,
-                top_k,
-            ))
-        }
-        "grep" => {
-            let pattern = args["pattern"].as_str().unwrap_or("");
-            let path_filter = args["path"].as_str();
-            Ok(retrieval::call_grep_in_root(
-                &state.root,
-                &state.ingest,
-                &state.interner,
-                pattern,
-                path_filter,
-            ))
-        }
-        _ => Err(format!("not a read tool: {tool_name}")),
-    }
+pub fn call_for_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let task = args["task"].as_str().unwrap_or("");
+    let budget = args["budget_tokens"].as_u64().map(|b| b as usize);
+    let detail = args["detail"].as_u64().map(|d| d as usize);
+    let adaptive = args["adaptive"].as_bool().unwrap_or(false);
+    Ok(retrieval::call_for_task_with_options(
+        &state.ingest,
+        &state.interner,
+        &state.ranks,
+        task,
+        retrieval::ForTaskOptions {
+            root: &state.root,
+            graph: Some(&state.graph),
+            budget_tokens: budget,
+            detail,
+            adaptive,
+        },
+    ))
 }
 
-pub fn dispatch_graph_and_doc_tools(
-    state: &McpState,
-    tool_name: &str,
-    args: &Value,
-) -> Result<Value, String> {
-    match tool_name {
-        "connect" => {
-            let symbols: Vec<String> = args["symbols"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            Ok(graph_tools::call_connect(
-                &state.ingest,
-                &state.graph,
-                &state.interner,
-                &symbols,
-            ))
-        }
-        "path_between" => {
-            let from = args["from"].as_str().unwrap_or("");
-            let to = args["to"].as_str().unwrap_or("");
-            Ok(graph_tools::call_path_between(
-                &state.ingest,
-                &state.graph,
-                &state.interner,
-                from,
-                to,
-            ))
-        }
-        "uses" => {
-            let sym = args["symbol"].as_str().unwrap_or("");
-            Ok(graph_tools::call_uses(&state.ingest, &state.interner, sym))
-        }
-        "analyze" => {
-            let top_k = args["top_k"].as_u64().map(|k| k as usize);
-            let rank_by = args["rank_by"].as_str();
-            Ok(graph_tools::call_analyze(
-                &state.ingest,
-                &state.graph,
-                &state.interner,
-                &state.ranks,
-                top_k,
-                rank_by,
-            ))
-        }
-        "rank_by" => {
-            let rank_by = args["rank_by"].as_str().unwrap_or("pagerank");
-            let top_k = args["top_k"].as_u64().map(|k| k as usize);
-            Ok(graph_tools::call_analyze(
-                &state.ingest,
-                &state.graph,
-                &state.interner,
-                &state.ranks,
-                top_k,
-                Some(rank_by),
-            ))
-        }
-        "situational_awareness" => {
-            let changed: Vec<String> = args["files"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            let commits = resolve_state_commits(state, 18);
-            Ok(graph_tools::call_situational_awareness(
-                &state.ingest,
-                &state.graph,
-                &state.interner,
-                &changed,
-                Some(&commits),
-            ))
-        }
-        "from_trace" => {
-            let trace = args["trace"].as_str().unwrap_or("");
-            Ok(graph_tools::call_from_trace(
-                &state.ingest,
-                &state.interner,
-                trace,
-            ))
-        }
-        "mentions" => {
-            let sym = args["symbol"].as_str().unwrap_or("");
-            Ok(doc_tools::call_mentions_in_root(
-                &state.root,
-                &state.ingest,
-                &state.interner,
-                sym,
-            ))
-        }
-        "doc_drift" => {
-            let with_hist = args["with_history"].as_bool().unwrap_or(false);
-            Ok(doc_tools::call_doc_drift_with_history(
-                &state.root,
-                &state.ingest,
-                &state.interner,
-                with_hist,
-            ))
-        }
-        "flags" => Ok(doc_tools::call_flags_in_root(
-            &state.root,
-            &state.ingest,
-            &state.interner,
-        )),
-        "owners" => {
-            let path = args["path"].as_str().or_else(|| args["file"].as_str());
-            let commits = resolve_state_commits(state, 12);
-            Ok(doc_tools::call_owners(Some(&commits), path, None, None))
-        }
-        "whereis" => {
-            let sym = args["symbol"].as_str().unwrap_or("");
-            let with_hist = args["with_history"].as_bool().unwrap_or(false);
-            Ok(doc_tools::call_whereis(
-                &state.ingest,
-                &state.interner,
-                &state.root,
-                sym,
-                with_hist,
-            ))
-        }
-        "stray_content" => Ok(doc_tools::call_stray_content(&state.root)),
-        _ => Err(format!("unknown tool: {tool_name}")),
-    }
+pub fn call_fetch_body_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let sym = args["symbol"]
+        .as_str()
+        .or_else(|| args["handle"].as_str())
+        .unwrap_or("");
+    let path_hint = args["path"].as_str().or_else(|| args["file"].as_str());
+    let sl = args["start_line"].as_u64().map(|l| l as usize);
+    let el = args["end_line"].as_u64().map(|l| l as usize);
+    Ok(retrieval::call_fetch_body_in_root(
+        &state.root,
+        &state.ingest,
+        &state.interner,
+        sym,
+        path_hint,
+        sl,
+        el,
+    ))
 }
 
-/// Trait encapsulating an MCP tool handler.
+pub fn call_exemplar_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let role = args["role"]
+        .as_str()
+        .or_else(|| args["kind"].as_str())
+        .unwrap_or("fn");
+    Ok(retrieval::call_exemplar_in_root(
+        &state.root,
+        &state.ingest,
+        &state.interner,
+        &state.ranks,
+        role,
+        Some(&state.graph),
+    ))
+}
+
+pub fn call_lego_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let iface = args["interface"]
+        .as_str()
+        .or_else(|| args["symbol"].as_str())
+        .unwrap_or("");
+    Ok(retrieval::call_lego(&state.ingest, &state.interner, iface))
+}
+
+pub fn call_memory_recall_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let task = args["task"].as_str().unwrap_or("");
+    let top_k = args["top_k"].as_u64().map(|k| k as usize);
+    Ok(retrieval::call_memory_recall_in_root(
+        &state.root,
+        &state.ingest,
+        &state.interner,
+        task,
+        top_k,
+    ))
+}
+
+pub fn call_grep_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let pattern = args["pattern"].as_str().unwrap_or("");
+    let path_filter = args["path"].as_str();
+    Ok(retrieval::call_grep_in_root(
+        &state.root,
+        &state.ingest,
+        &state.interner,
+        pattern,
+        path_filter,
+    ))
+}
+
+pub fn call_connect_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let symbols: Vec<String> = args["symbols"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(graph_tools::call_connect(
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+        &symbols,
+    ))
+}
+
+pub fn call_path_between_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let from = args["from"].as_str().unwrap_or("");
+    let to = args["to"].as_str().unwrap_or("");
+    Ok(graph_tools::call_path_between(
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+        from,
+        to,
+    ))
+}
+
+pub fn call_uses_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let sym = args["symbol"].as_str().unwrap_or("");
+    Ok(graph_tools::call_uses(&state.ingest, &state.interner, sym))
+}
+
+pub fn call_analyze_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let top_k = args["top_k"].as_u64().map(|k| k as usize);
+    let rank_by = args["rank_by"].as_str();
+    Ok(graph_tools::call_analyze(
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+        &state.ranks,
+        top_k,
+        rank_by,
+    ))
+}
+
+pub fn call_rank_by_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let rank_by = args["rank_by"].as_str().unwrap_or("pagerank");
+    let top_k = args["top_k"].as_u64().map(|k| k as usize);
+    Ok(graph_tools::call_analyze(
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+        &state.ranks,
+        top_k,
+        Some(rank_by),
+    ))
+}
+
+pub fn call_situational_awareness_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let changed: Vec<String> = args["files"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let commits = resolve_state_commits(state, 18);
+    Ok(graph_tools::call_situational_awareness(
+        &state.ingest,
+        &state.graph,
+        &state.interner,
+        &changed,
+        Some(&commits),
+    ))
+}
+
+pub fn call_from_trace_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let trace = args["trace"].as_str().unwrap_or("");
+    Ok(graph_tools::call_from_trace(
+        &state.ingest,
+        &state.interner,
+        trace,
+    ))
+}
+
+pub fn call_mentions_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let sym = args["symbol"].as_str().unwrap_or("");
+    Ok(doc_tools::call_mentions_in_root(
+        &state.root,
+        &state.ingest,
+        &state.interner,
+        sym,
+    ))
+}
+
+pub fn call_doc_drift_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let with_hist = args["with_history"].as_bool().unwrap_or(false);
+    Ok(doc_tools::call_doc_drift_with_history(
+        &state.root,
+        &state.ingest,
+        &state.interner,
+        with_hist,
+    ))
+}
+
+pub fn call_flags_tool(state: &McpState, _args: &Value) -> Result<Value, String> {
+    Ok(doc_tools::call_flags_in_root(
+        &state.root,
+        &state.ingest,
+        &state.interner,
+    ))
+}
+
+pub fn call_owners_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let path = args["path"].as_str().or_else(|| args["file"].as_str());
+    let commits = resolve_state_commits(state, 12);
+    Ok(doc_tools::call_owners(Some(&commits), path, None, None))
+}
+
+pub fn call_whereis_tool(state: &McpState, args: &Value) -> Result<Value, String> {
+    let sym = args["symbol"].as_str().unwrap_or("");
+    let with_hist = args["with_history"].as_bool().unwrap_or(false);
+    Ok(doc_tools::call_whereis(
+        &state.ingest,
+        &state.interner,
+        &state.root,
+        sym,
+        with_hist,
+    ))
+}
+
+pub fn call_stray_content_tool(state: &McpState, _args: &Value) -> Result<Value, String> {
+    Ok(doc_tools::call_stray_content(&state.root))
+}
+
+pub fn call_batch(state: &McpState, args: &Value) -> Result<Value, String> {
+    let queries = args["queries"].as_array().cloned().unwrap_or_default();
+    let mut results = Vec::new();
+    for q in queries.into_iter().take(16) {
+        let q_name = q["name"].as_str().unwrap_or("");
+        let q_args = &q["arguments"];
+        let res = dispatch_tool_action(state, q_name, q_args);
+        results.push(match res {
+            Ok(v) => json!({ "tool": q_name, "result": v }),
+            Err(e) => json!({ "tool": q_name, "error": e }),
+        });
+    }
+    Ok(Value::Array(results))
+}
+
+/// Trait encapsulating an MCP tool handler and its schema metadata.
 pub trait McpToolHandler: Sync {
-    fn matches_name(&self, tool_name: &str) -> bool;
-    fn execute(&self, state: &McpState, tool_name: &str, args: &Value) -> Result<Value, String>;
-}
+    fn name(&self) -> &'static str;
+    fn description(&self) -> &'static str;
+    fn params(&self) -> &'static [(&'static str, &'static str, &'static str)] {
+        &[]
+    }
+    fn required(&self) -> &'static [&'static str] {
+        &[]
+    }
+    fn execute(&self, state: &McpState, args: &Value) -> Result<Value, String>;
 
-struct ReadToolRegistry;
-struct GraphAndDocToolRegistry;
-
-static READ_TOOL_REGISTRY: ReadToolRegistry = ReadToolRegistry;
-static GRAPH_DOC_TOOL_REGISTRY: GraphAndDocToolRegistry = GraphAndDocToolRegistry;
-static MCP_TOOL_HANDLERS: [&dyn McpToolHandler; 2] =
-    [&READ_TOOL_REGISTRY, &GRAPH_DOC_TOOL_REGISTRY];
-
-impl McpToolHandler for ReadToolRegistry {
     fn matches_name(&self, tool_name: &str) -> bool {
-        matches!(
-            tool_name,
-            "find_symbol"
-                | "callers"
-                | "find_referencing_symbols"
-                | "callees"
-                | "impact"
-                | "explore"
-                | "cochange"
-                | "edit_check"
-                | "affected"
-                | "quality_baseline"
-                | "quality_delta"
-                | "slice"
-                | "replace_symbol_body"
-                | "insert_before_symbol"
-                | "insert_after_symbol"
-                | "for"
-                | "fetch_body"
-                | "exemplar"
-                | "lego"
-                | "memory_recall"
-                | "grep"
+        self.name() == tool_name
+    }
+
+    fn to_schema_json(&self) -> Value {
+        super::schema::build_tool_schema_json(
+            self.name(),
+            self.description(),
+            self.params(),
+            self.required(),
         )
-    }
-
-    fn execute(&self, state: &McpState, tool_name: &str, args: &Value) -> Result<Value, String> {
-        dispatch_read_tools(state, tool_name, args)
-    }
-}
-
-impl McpToolHandler for GraphAndDocToolRegistry {
-    fn matches_name(&self, tool_name: &str) -> bool {
-        matches!(
-            tool_name,
-            "connect"
-                | "path_between"
-                | "uses"
-                | "analyze"
-                | "rank_by"
-                | "situational_awareness"
-                | "from_trace"
-                | "mentions"
-                | "doc_drift"
-                | "flags"
-                | "owners"
-                | "whereis"
-                | "stray_content"
-        )
-    }
-
-    fn execute(&self, state: &McpState, tool_name: &str, args: &Value) -> Result<Value, String> {
-        dispatch_graph_and_doc_tools(state, tool_name, args)
     }
 }
 
@@ -664,9 +622,9 @@ pub fn dispatch_tool_action(
     tool_name: &str,
     args: &Value,
 ) -> Result<Value, String> {
-    for handler in MCP_TOOL_HANDLERS {
+    for handler in super::schema::MCP_TOOL_HANDLERS {
         if handler.matches_name(tool_name) {
-            return handler.execute(state, tool_name, args);
+            return handler.execute(state, args);
         }
     }
     Err(format!("unknown tool: {tool_name}"))
@@ -701,15 +659,12 @@ pub fn handle_tools_call(
     state: &mut Option<McpState>,
     default_root: &str,
 ) -> Value {
-    let tool_name = match params["name"].as_str() {
-        Some(name) => name,
-        None => {
-            return json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "error": { "code": -32602, "message": "missing tool 'name'" }
-            });
-        }
+    let Some(tool_name) = params["name"].as_str() else {
+        return json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": -32602, "message": "missing tool 'name'" }
+        });
     };
 
     if state.is_none() {
@@ -724,30 +679,7 @@ pub fn handle_tools_call(
     };
 
     let args = &params["arguments"];
-
-    if tool_name == "batch" {
-        let queries = args["queries"].as_array().cloned().unwrap_or_default();
-        let mut results = Vec::new();
-        for q in queries.into_iter().take(16) {
-            let q_name = q["name"].as_str().unwrap_or("");
-            let q_args = &q["arguments"];
-            let res = dispatch_tool_action(current_state, q_name, q_args);
-            results.push(match res {
-                Ok(v) => json!({ "tool": q_name, "result": v }),
-                Err(e) => json!({ "tool": q_name, "error": e }),
-            });
-        }
-        return json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": {
-                "content": [{ "type": "text", "text": serde_json::to_string_pretty(&results).unwrap_or_default() }]
-            }
-        });
-    }
-
-    let result = dispatch_tool_action(current_state, tool_name, args);
-    match result {
+    match dispatch_tool_action(current_state, tool_name, args) {
         Ok(mut val) => {
             attach_session_legend_meta(&mut val, current_state, args);
             let text = match val {
@@ -758,12 +690,7 @@ pub fn handle_tools_call(
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": text
-                        }
-                    ]
+                    "content": [{ "type": "text", "text": text }]
                 }
             })
         }

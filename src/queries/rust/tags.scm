@@ -105,5 +105,17 @@
 (impl_item
     trait: (type_identifier) @name) @reference.implementation
 
+(impl_item
+    trait: (scoped_type_identifier
+        name: (type_identifier) @name)) @reference.implementation
+
+(impl_item
+    trait: (generic_type
+        type: (type_identifier) @name)) @reference.implementation
+
+(impl_item
+    trait: (generic_type
+        type: (scoped_type_identifier
+            name: (type_identifier) @name))) @reference.implementation
 (use_declaration
     argument: (_) @import.path)

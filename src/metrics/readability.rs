@@ -138,6 +138,53 @@ pub fn compute_readability(code: &str) -> ReadabilityMetrics {
     }
 }
 
+pub struct ReadabilityReport<'a> {
+    pub functions: Vec<(&'a crate::domain::Symbol, String, String)>,
+}
+
+impl crate::serialize::XmlReport for ReadabilityReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "readability"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.readability/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire readability schema=ripwire.readability/v1: Posnett/Hindle/Devanbu lens, largest Halstead volume first: <fn p= n= lines= toks= ops= vocab= vol= ent= posnett=>.",
+        )
+    }
+    fn page_window(&self) -> Option<crate::serialize::PageWindow> {
+        Some(crate::serialize::PageWindow::compute(
+            self.functions.len(),
+            40,
+            None,
+            None,
+        ))
+    }
+    fn write_extra_attrs<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        write!(out, " functions=\"{}\"", self.functions.len())
+    }
+    fn write_body<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        let shown = self.functions.len().min(40);
+        for (sym, p, n) in self.functions.iter().take(shown) {
+            let lines = sym.loc.max(1);
+            let toks = lines * 8;
+            let ops = lines * 5;
+            let vocab = (lines * 2).clamp(4, 280);
+            let vol = (toks as f64) * (vocab as f64).log2();
+            let ent = 4.20;
+            let posnett = posnett_score(vol, lines as f64, ent);
+            writeln!(
+                out,
+                "  <fn p=\"{p}:{}\" n=\"{n}\" lines=\"{lines}\" toks=\"{toks}\" ops=\"{ops}\" vocab=\"{vocab}\" vol=\"{vol:.0}\" ent=\"{ent:.2}\" posnett=\"{posnett:.2}\"/>",
+                sym.line
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// Output biggest functions first based on volume and lines.
 pub fn execute_biggest_first_query<W: std::io::Write>(
     root: &str,
@@ -145,6 +192,7 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
     interner: &crate::domain::Interner,
     out: &mut W,
 ) -> std::io::Result<()> {
+    use crate::serialize::XmlReport;
     let mut functions: Vec<(&crate::domain::Symbol, String, String)> = Vec::new();
     for sym in &ingest.symbols {
         if sym.kind == crate::domain::SymKind::Function
@@ -155,38 +203,8 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
             functions.push((sym, p.to_string(), n.to_string()));
         }
     }
-
     functions.sort_by(|a, b| b.0.loc.cmp(&a.0.loc).then_with(|| b.0.ccx.cmp(&a.0.ccx)));
-    let total = functions.len();
-    let shown = total.min(40);
-    let capped = usize::from(shown < total);
-    let page_attrs = if capped == 1 {
-        format!(
-            " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
-        )
-    } else {
-        format!(" shown=\"{shown}\" capped=\"0\"")
-    };
-
-    writeln!(
-        out,
-        "<!-- ripwire readability schema=ripwire.readability/v1: Posnett/Hindle/Devanbu lens, largest Halstead volume first: <fn p= n= lines= toks= ops= vocab= vol= ent= posnett=>. -->\n<readability schema=\"ripwire.readability/v1\" functions=\"{total}\"{page_attrs} root=\"{root}\">",
-    )?;
-    for (sym, p, n) in functions.iter().take(shown) {
-        let lines = sym.loc.max(1);
-        let toks = lines * 8;
-        let ops = lines * 5;
-        let vocab = (lines * 2).clamp(4, 280);
-        let vol = (toks as f64) * (vocab as f64).log2();
-        let ent = 4.20;
-        let posnett = posnett_score(vol, lines as f64, ent);
-        writeln!(
-            out,
-            "  <fn p=\"{p}:{}\" n=\"{n}\" lines=\"{lines}\" toks=\"{toks}\" ops=\"{ops}\" vocab=\"{vocab}\" vol=\"{vol:.0}\" ent=\"{ent:.2}\" posnett=\"{posnett:.2}\"/>",
-            sym.line
-        )?;
-    }
-    writeln!(out, "</readability>")
+    ReadabilityReport { functions }.write_xml_report(root, out)
 }
 
 #[cfg(test)]

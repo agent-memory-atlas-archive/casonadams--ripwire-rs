@@ -24,27 +24,35 @@ pub struct HotspotsReport {
     pub unranked_no_complexity: usize,
 }
 
-impl crate::serialize::ToXmlString for HotspotsReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let total = self.ranked_count;
-        let shown = self.files.len().min(40);
-        let capped = usize::from(shown < total);
-        let page_attrs = if capped == 1 {
-            format!(
-                " shown=\"{shown}\" capped=\"1\" total=\"{total}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
-            )
-        } else {
-            format!(" shown=\"{shown}\" capped=\"0\"")
-        };
-        writeln!(
+impl crate::serialize::XmlReport for HotspotsReport {
+    fn schema_tag(&self) -> &'static str {
+        "hotspots"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.hotspots/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire hotspots schema=ripwire.hotspots/v1: maintenance pain = churn x ccx over window=.",
+        )
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let pw =
+            crate::serialize::PageWindow::compute(self.ranked_count, 40, None, None).xml_attrs();
+        write!(
             out,
-            "<!-- ripwire hotspots schema=ripwire.hotspots/v1: maintenance pain = churn x ccx over window=. -->\n<hotspots schema=\"ripwire.hotspots/v1\" window=\"12mo@HEAD\" files=\"{}\" ranked=\"{}\"{page_attrs} unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\" root=\".\" at=\"HEAD\">",
+            " window=\"12mo@HEAD\" files=\"{}\" ranked=\"{}\"{pw} unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\" root=\".\" at=\"HEAD\"",
             self.total_files,
             self.ranked_count,
             self.unranked_no_churn,
             self.unranked_no_complexity
-        )?;
-        for f in self.files.iter().take(shown) {
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for f in self.files.iter().take(40) {
             writeln!(
                 out,
                 "  <f p=\"{}\" churn=\"{}\" ccx=\"{}\" score=\"{}\" top=\"{}\" top_ccx=\"{}\" top_l=\"{}\"/>",
@@ -57,7 +65,14 @@ impl crate::serialize::ToXmlString for HotspotsReport {
                 f.top_fn_line
             )?;
         }
-        writeln!(out, "</hotspots>")
+        Ok(())
+    }
+}
+
+impl crate::serialize::ToXmlString for HotspotsReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::XmlReport;
+        self.render_envelope(out)
     }
 }
 

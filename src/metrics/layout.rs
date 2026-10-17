@@ -158,47 +158,59 @@ pub fn compute_layout_report(
     }
 }
 
+impl crate::serialize::XmlReport for StructLayoutReport {
+    fn schema_tag(&self) -> &'static str {
+        "layout"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.layout/v1"
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let sym_esc = crate::serialize::escape::escape_xml_str(&self.sym);
+        let found = usize::from(self.found);
+        let mirror = if self.defs.len() <= 1 {
+            "single"
+        } else {
+            "mismatch"
+        };
+        write!(
+            out,
+            " sym=\"{sym_esc}\" found=\"{found}\" defs=\"{}\" mirror=\"{mirror}\" asserts=\"0\" conflicts=\"0\"",
+            self.defs.len()
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for d in &self.defs {
+            let p_esc = crate::serialize::escape::escape_xml_str(&d.path);
+            writeln!(
+                out,
+                "  <def p=\"{p_esc}\" l=\"{}\" agg=\"{}\" modeled=\"1\" fields=\"{}\">",
+                d.line,
+                d.agg_kind,
+                d.fields.len()
+            )?;
+            for f in &d.fields {
+                let n_esc = crate::serialize::escape::escape_xml_str(&f.name);
+                let ty_esc = crate::serialize::escape::escape_xml_str(&f.ty);
+                writeln!(
+                    out,
+                    "    <f n=\"{n_esc}\" ty=\"{ty_esc}\" sz=\"{}\" al=\"{}\" off=\"{}\"/>",
+                    f.size, f.align, f.offset
+                )?;
+            }
+            writeln!(out, "  </def>")?;
+        }
+        Ok(())
+    }
+}
+
 pub fn serialize_layout_xml<W: Write>(
     rep: &StructLayoutReport,
     root: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let sym_esc = crate::serialize::escape::escape_xml_str(&rep.sym);
-    let found = if rep.found { 1 } else { 0 };
-    let mirror = if rep.defs.len() <= 1 {
-        "single"
-    } else {
-        "mismatch"
-    };
-
-    writeln!(
-        out,
-        "<layout schema=\"ripwire.layout/v1\" sym=\"{sym_esc}\" found=\"{found}\" defs=\"{}\" mirror=\"{mirror}\" asserts=\"0\" conflicts=\"0\" root=\"{root}\">",
-        rep.defs.len()
-    )?;
-
-    for d in &rep.defs {
-        let p_esc = crate::serialize::escape::escape_xml_str(&d.path);
-        writeln!(
-            out,
-            "  <def p=\"{p_esc}\" l=\"{}\" agg=\"{}\" modeled=\"1\" fields=\"{}\">",
-            d.line,
-            d.agg_kind,
-            d.fields.len()
-        )?;
-        for f in &d.fields {
-            let n_esc = crate::serialize::escape::escape_xml_str(&f.name);
-            let ty_esc = crate::serialize::escape::escape_xml_str(&f.ty);
-            writeln!(
-                out,
-                "    <f n=\"{n_esc}\" ty=\"{ty_esc}\" sz=\"{}\" al=\"{}\" off=\"{}\"/>",
-                f.size, f.align, f.offset
-            )?;
-        }
-        writeln!(out, "  </def>")?;
-    }
-
-    writeln!(out, "</layout>")
+    use crate::serialize::XmlReport;
+    rep.write_xml_report(root, out)
 }
 
 pub fn compute_field_affinity_report(
@@ -234,50 +246,74 @@ pub fn compute_field_affinity_report(
     }
 }
 
+pub struct FieldAffinityReport<'a> {
+    pub layout: &'a StructLayoutReport,
+}
+
+impl crate::serialize::XmlReport for FieldAffinityReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "fieldaffinity"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.field-affinity/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire field-affinity schema=ripwire.field-affinity/v1: fields read together vs 64-byte lines.",
+        )
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let aggregates = self.layout.defs.len();
+        let files_cnt: std::collections::HashSet<&str> =
+            self.layout.defs.iter().map(|d| d.path.as_str()).collect();
+        let files = files_cnt.len();
+        let shown = aggregates.min(20);
+        let capped = usize::from(shown < aggregates);
+        let findings: usize = self
+            .layout
+            .defs
+            .iter()
+            .take(shown)
+            .map(|d| d.fields.len().saturating_sub(1))
+            .sum();
+        write!(
+            out,
+            " block=\"64\" model=\"lp64-approx\" counts_floor=\"1\" weighting=\"fanin-floor\" aggregates=\"{aggregates}\" files=\"{files}\" fns_scanned=\"{aggregates}\" accesses=\"{findings}\" amb_skipped=\"0\" structs=\"{aggregates}\" shown=\"{shown}\" capped=\"{capped}\" findings=\"{findings}\" min_fns=\"2\" as_loops=\"0\" as_index=\"0\" as_chase=\"0\" as_mixed=\"0\" as_unknown=\"0\"",
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let shown = self.layout.defs.len().min(20);
+        for d in self.layout.defs.iter().take(shown) {
+            let p_esc = crate::serialize::escape::escape_xml_str(&d.path);
+            let n_esc = crate::serialize::escape::escape_xml_str(&self.layout.sym);
+            writeln!(out, "  <s n=\"{n_esc}\" p=\"{p_esc}\">")?;
+            for i in 0..d.fields.len() {
+                for j in (i + 1)..d.fields.len() {
+                    let fa = &d.fields[i];
+                    let fb = &d.fields[j];
+                    let dist = fb.offset.saturating_sub(fa.offset);
+                    let wt = ((64.0 - dist as f64).max(0.0)) / 64.0;
+                    let a_esc = crate::serialize::escape::escape_xml_str(&fa.name);
+                    let b_esc = crate::serialize::escape::escape_xml_str(&fb.name);
+                    writeln!(
+                        out,
+                        "    <pair a=\"{a_esc}\" b=\"{b_esc}\" dist=\"{dist}\" wt=\"{wt:.2}\"/>"
+                    )?;
+                }
+            }
+            writeln!(out, "  </s>")?;
+        }
+        Ok(())
+    }
+}
+
 pub fn serialize_field_affinity_xml<W: Write>(
     rep: &StructLayoutReport,
     root: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let aggregates = rep.defs.len();
-    let files_cnt: std::collections::HashSet<&str> =
-        rep.defs.iter().map(|d| d.path.as_str()).collect();
-    let files = files_cnt.len();
-    let shown = aggregates.min(20);
-    let capped = usize::from(shown < aggregates);
-    let findings: usize = rep
-        .defs
-        .iter()
-        .take(shown)
-        .map(|d| d.fields.len().saturating_sub(1))
-        .sum();
-    writeln!(
-        out,
-        "<!-- ripwire field-affinity schema=ripwire.field-affinity/v1: fields read together vs 64-byte lines. -->\n<fieldaffinity schema=\"ripwire.field-affinity/v1\" block=\"64\" model=\"lp64-approx\" counts_floor=\"1\" weighting=\"fanin-floor\" aggregates=\"{aggregates}\" files=\"{files}\" fns_scanned=\"{aggregates}\" accesses=\"{findings}\" amb_skipped=\"0\" structs=\"{aggregates}\" shown=\"{shown}\" capped=\"{capped}\" findings=\"{findings}\" min_fns=\"2\" as_loops=\"0\" as_index=\"0\" as_chase=\"0\" as_mixed=\"0\" as_unknown=\"0\" root=\"{root}\">",
-    )?;
-
-    for d in rep.defs.iter().take(shown) {
-        let p_esc = crate::serialize::escape::escape_xml_str(&d.path);
-        let n_esc = crate::serialize::escape::escape_xml_str(&rep.sym);
-        writeln!(out, "  <s n=\"{n_esc}\" p=\"{p_esc}\">")?;
-        for i in 0..d.fields.len() {
-            for j in (i + 1)..d.fields.len() {
-                let fa = &d.fields[i];
-                let fb = &d.fields[j];
-                let dist = fb.offset.saturating_sub(fa.offset);
-                let wt = ((64.0 - dist as f64).max(0.0)) / 64.0;
-                let a_esc = crate::serialize::escape::escape_xml_str(&fa.name);
-                let b_esc = crate::serialize::escape::escape_xml_str(&fb.name);
-                writeln!(
-                    out,
-                    "    <pair a=\"{a_esc}\" b=\"{b_esc}\" dist=\"{dist}\" wt=\"{wt:.2}\"/>"
-                )?;
-            }
-        }
-        writeln!(out, "  </s>")?;
-    }
-
-    writeln!(out, "</fieldaffinity>")
+    use crate::serialize::XmlReport;
+    FieldAffinityReport { layout: rep }.write_xml_report(root, out)
 }
 
 #[cfg(test)]

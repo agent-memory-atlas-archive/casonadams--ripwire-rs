@@ -14,6 +14,30 @@ pub enum NavMode {
     FindSymbol,
 }
 
+impl NavMode {
+    #[must_use]
+    pub const fn cli_flag(self) -> &'static str {
+        match self {
+            Self::Callers => "--callers",
+            Self::Callees => "--callees",
+            Self::Impact => "--impact",
+            Self::Uses => "--uses",
+            Self::FindSymbol => "--find-symbol",
+        }
+    }
+
+    #[must_use]
+    pub fn from_batch_verb(verb: &str) -> Option<Self> {
+        match verb {
+            "callers" => Some(Self::Callers),
+            "callees" => Some(Self::Callees),
+            "impact" => Some(Self::Impact),
+            "uses" => Some(Self::Uses),
+            "find_symbol" | "find-symbol" => Some(Self::FindSymbol),
+            _ => None,
+        }
+    }
+}
 pub struct NavContext<'a> {
     pub ingest: &'a IngestResult,
     pub graph: &'a Graph,
@@ -75,13 +99,7 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
 ) -> io::Result<()> {
     let ids = crate::navigate::find_symbols_by_name(sym, ctx.ingest, ctx.interner);
     if ids.is_empty() {
-        let flag = match mode {
-            NavMode::Callers => "--callers",
-            NavMode::Callees => "--callees",
-            NavMode::Impact => "--impact",
-            NavMode::Uses => "--uses",
-            NavMode::FindSymbol => "--find-symbol",
-        };
+        let flag = mode.cli_flag();
         return Err(io::Error::other(format!(
             "ripwire: {flag} symbol not found: {sym}"
         )));
@@ -1429,70 +1447,25 @@ fn run_batch_subquery_dedup<W: Write>(
     };
     let a = arg.trim();
     let mut sub_buf = Vec::new();
-    match verb.trim() {
-        "callers" => {
-            let _ = execute_nav_symbol_query(
-                a,
-                NavMode::Callers,
-                ingest,
-                graph,
-                &pr.ranks,
-                interner,
-                &mut sub_buf,
-            );
-        }
-        "callees" => {
-            let _ = execute_nav_symbol_query(
-                a,
-                NavMode::Callees,
-                ingest,
-                graph,
-                &pr.ranks,
-                interner,
-                &mut sub_buf,
-            );
-        }
-        "impact" => {
-            let _ = execute_nav_symbol_query(
-                a,
-                NavMode::Impact,
-                ingest,
-                graph,
-                &pr.ranks,
-                interner,
-                &mut sub_buf,
-            );
-        }
-        "uses" => {
-            let _ = execute_nav_symbol_query(
-                a,
-                NavMode::Uses,
-                ingest,
-                graph,
-                &pr.ranks,
-                interner,
-                &mut sub_buf,
-            );
-        }
-        "grep" => {
-            let val = crate::mcp::retrieval::call_grep(ingest, interner, a, None);
-            let _ = crate::serialize::serialize_grep_xml(&val, &mut sub_buf);
-        }
-        "for" => {
-            let val = crate::mcp::retrieval::call_for_task_with_options(
-                ingest,
-                interner,
-                &pr.ranks,
-                a,
-                crate::mcp::retrieval::ForTaskOptions {
-                    root: ".",
-                    graph: Some(graph),
-                    ..Default::default()
-                },
-            );
-            let _ = crate::serialize::serialize_for_xml(&val, &mut sub_buf);
-        }
-        _ => {}
+    let verb_trimmed = verb.trim();
+    if let Some(mode) = NavMode::from_batch_verb(verb_trimmed) {
+        let _ = execute_nav_symbol_query(a, mode, ingest, graph, &pr.ranks, interner, &mut sub_buf);
+    } else if verb_trimmed == "grep" {
+        let val = crate::mcp::retrieval::call_grep(ingest, interner, a, None);
+        let _ = crate::serialize::serialize_grep_xml(&val, &mut sub_buf);
+    } else if verb_trimmed == "for" {
+        let val = crate::mcp::retrieval::call_for_task_with_options(
+            ingest,
+            interner,
+            &pr.ranks,
+            a,
+            crate::mcp::retrieval::ForTaskOptions {
+                root: ".",
+                graph: Some(graph),
+                ..Default::default()
+            },
+        );
+        let _ = crate::serialize::serialize_for_xml(&val, &mut sub_buf);
     }
     let final_bytes = deduplicate_batch_legend(&sub_buf, legend_emitted);
     writeln!(out, "  <result query=\"{line}\">")?;

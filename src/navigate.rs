@@ -396,6 +396,75 @@ fn format_nav_page_attrs(_shown: usize, total: usize) -> String {
     crate::serialize::PageWindow::compute(total, 40, None, None).xml_attrs()
 }
 
+pub struct NavItemsReport<'a> {
+    pub tag: &'static str,
+    pub root: &'a str,
+    pub of: &'a str,
+    pub items: &'a [SymbolNavInfo],
+    pub next_flag: &'static str,
+    pub gauge_attrs: &'a str,
+}
+
+impl crate::serialize::XmlReport for NavItemsReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        self.tag
+    }
+    fn schema_version(&self) -> &'static str {
+        if self.tag == "callers" {
+            "ripwire.callers/v1"
+        } else {
+            "ripwire.callees/v1"
+        }
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        if self.tag == "callers" {
+            Some("ripwire callers schema=ripwire.callers/v1: 1-hop callers of of=.")
+        } else {
+            Some("ripwire callees schema=ripwire.callees/v1: 1-hop callees of of=.")
+        }
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let count = self.items.len();
+        let shown = count.min(40);
+        let page_attrs = format_nav_page_attrs(shown, count);
+        let hop_tested = self
+            .items
+            .iter()
+            .filter(|it| it.tested || crate::gate::affected::is_test_path(&it.path))
+            .count();
+        let hop_untested = count.saturating_sub(hop_tested);
+        write!(
+            out,
+            " of=\"{}\" defs=\"1\" count=\"{count}\" root=\"{}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{page_attrs} {} next=\"{}={}\"",
+            self.of, self.root, self.gauge_attrs, self.next_flag, self.of
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let shown = self.items.len().min(40);
+        let via_attr = if self.tag == "callees" {
+            " via=\"name\""
+        } else {
+            ""
+        };
+        for it in self.items.iter().take(shown) {
+            let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
+                " tested=\"1\""
+            } else {
+                ""
+            };
+            write!(
+                out,
+                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{tested_attr}{via_attr}/>",
+                it.kind, it.name, it.path, it.line
+            )?;
+        }
+        Ok(())
+    }
+}
+
 fn write_nav_items<W: Write>(
     tag: &'static str,
     root: &str,
@@ -405,36 +474,16 @@ fn write_nav_items<W: Write>(
     gauge_attrs: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let count = items.len();
-    let shown = count.min(40);
-    let page_attrs = format_nav_page_attrs(shown, count);
-    let hop_tested = items
-        .iter()
-        .filter(|it| it.tested || crate::gate::affected::is_test_path(&it.path))
-        .count();
-    let hop_untested = count.saturating_sub(hop_tested);
-    let via_attr = if tag == "callees" {
-        " via=\"name\""
-    } else {
-        ""
-    };
-    write!(
-        out,
-        "<!-- ripwire {tag} schema=ripwire.{tag}/v1: 1-hop {tag} of of=. -->\n<{tag} schema=\"ripwire.{tag}/v1\" of=\"{of}\" defs=\"1\" count=\"{count}\" root=\"{root}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{page_attrs} {gauge_attrs} next=\"{next_flag}={of}\">",
-    )?;
-    for it in items.iter().take(shown) {
-        let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
-            " tested=\"1\""
-        } else {
-            ""
-        };
-        write!(
-            out,
-            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{tested_attr}{via_attr}/>",
-            it.kind, it.name, it.path, it.line
-        )?;
+    use crate::serialize::XmlReport;
+    NavItemsReport {
+        tag,
+        root,
+        of,
+        items,
+        next_flag,
+        gauge_attrs,
     }
-    writeln!(out, "</{tag}>")
+    .render_envelope(out)
 }
 
 /// Serialize direct callers to Ripwire-compatible XML.
@@ -550,6 +599,93 @@ pub fn serialize_impact_in_root_xml<W: Write>(
     )
 }
 
+pub struct ImpactReport<'a> {
+    pub root: &'a str,
+    pub sym_name: &'a str,
+    pub nodes: &'a [ImpactNode],
+    pub gauge_attrs: &'a str,
+    pub pr_iters: u32,
+}
+
+impl crate::serialize::XmlReport for ImpactReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "impact"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.impact/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some("ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=.")
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let reaches = self.nodes.len();
+        let shown = reaches.min(40);
+        let capped = usize::from(shown < reaches);
+        let radius_tested = self
+            .nodes
+            .iter()
+            .filter(|n| n.tested || crate::gate::affected::is_test_path(&n.path))
+            .count();
+        let radius_untested = reaches.saturating_sub(radius_tested);
+        let mut depth_counts: std::collections::BTreeMap<u32, usize> =
+            std::collections::BTreeMap::new();
+        let mut importer_paths: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for n in self.nodes {
+            *depth_counts.entry(n.hops).or_insert(0) += 1;
+            if !n.path.is_empty() {
+                importer_paths.insert(&n.path);
+            }
+        }
+        let by_depth = depth_counts
+            .iter()
+            .map(|(d, c)| format!("{d}:{c}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let imp_total = importer_paths.len().max(1);
+        let imp_shown = imp_total.min(10);
+        let imp_capped = usize::from(imp_shown < imp_total);
+        write!(
+            out,
+            " of=\"{}\" defs=\"1\" reaches=\"{reaches}\" by_depth=\"{by_depth}\" importers=\"{imp_total}\" shown_importers=\"{imp_shown}\" importers_capped=\"{imp_capped}\" radius_tested=\"{radius_tested}\" radius_untested=\"{radius_untested}\" root=\"{}\" shown=\"{shown}\" capped=\"{capped}\" {} pr_iters=\"{}\" next=\"--safe-delete={}\"",
+            self.sym_name,
+            self.root,
+            self.gauge_attrs,
+            self.pr_iters.max(1),
+            self.sym_name
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let shown = self.nodes.len().min(40);
+        let mut importer_paths: std::collections::BTreeSet<&str> =
+            std::collections::BTreeSet::new();
+        for n in self.nodes {
+            if !n.path.is_empty() {
+                importer_paths.insert(&n.path);
+            }
+        }
+        for n in self.nodes.iter().take(shown) {
+            write!(
+                out,
+                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\" d=\"{}\" dist=\"{}\"/>",
+                n.kind, n.name, n.path, n.line, n.hops, n.hops
+            )?;
+        }
+        if importer_paths.is_empty() {
+            write!(out, "<f via=\"import\" p=\"src/lib.rs\" lazy=\"0\"/>")
+        } else {
+            for p in importer_paths.into_iter().take(10) {
+                let p_esc = crate::serialize::escape::escape_xml_str(p);
+                write!(out, "<f via=\"import\" p=\"{p_esc}\" lazy=\"0\"/>")?;
+            }
+            Ok(())
+        }
+    }
+}
+
 pub fn serialize_impact_with_gauge_xml<W: Write>(
     root: &str,
     sym_name: &str,
@@ -558,52 +694,15 @@ pub fn serialize_impact_with_gauge_xml<W: Write>(
     pr_iters: u32,
     out: &mut W,
 ) -> io::Result<()> {
-    let reaches = nodes.len();
-    let shown = reaches.min(40);
-    let capped = usize::from(shown < reaches);
-    let radius_tested = nodes
-        .iter()
-        .filter(|n| n.tested || crate::gate::affected::is_test_path(&n.path))
-        .count();
-    let radius_untested = reaches.saturating_sub(radius_tested);
-    let mut depth_counts: std::collections::BTreeMap<u32, usize> =
-        std::collections::BTreeMap::new();
-    let mut importer_paths: std::collections::BTreeSet<&str> = std::collections::BTreeSet::new();
-    for n in nodes {
-        *depth_counts.entry(n.hops).or_insert(0) += 1;
-        if !n.path.is_empty() {
-            importer_paths.insert(&n.path);
-        }
+    use crate::serialize::XmlReport;
+    ImpactReport {
+        root,
+        sym_name,
+        nodes,
+        gauge_attrs,
+        pr_iters,
     }
-    let by_depth = depth_counts
-        .iter()
-        .map(|(d, c)| format!("{d}:{c}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    let imp_total = importer_paths.len().max(1);
-    let imp_shown = imp_total.min(10);
-    let imp_capped = usize::from(imp_shown < imp_total);
-    write!(
-        out,
-        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" by_depth=\"{by_depth}\" importers=\"{imp_total}\" shown_importers=\"{imp_shown}\" importers_capped=\"{imp_capped}\" radius_tested=\"{radius_tested}\" radius_untested=\"{radius_untested}\" root=\"{root}\" shown=\"{shown}\" capped=\"{capped}\" {gauge_attrs} pr_iters=\"{}\" next=\"--safe-delete={sym_name}\">",
-        pr_iters.max(1)
-    )?;
-    for n in nodes.iter().take(shown) {
-        write!(
-            out,
-            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\" d=\"{}\" dist=\"{}\"/>",
-            n.kind, n.name, n.path, n.line, n.hops, n.hops
-        )?;
-    }
-    if importer_paths.is_empty() {
-        write!(out, "<f via=\"import\" p=\"src/lib.rs\" lazy=\"0\"/>")?;
-    } else {
-        for p in importer_paths.into_iter().take(imp_shown) {
-            let p_esc = crate::serialize::escape::escape_xml_str(p);
-            write!(out, "<f via=\"import\" p=\"{p_esc}\" lazy=\"0\"/>")?;
-        }
-    }
-    writeln!(out, "</impact>")
+    .render_envelope(out)
 }
 
 /// Serialize symbol neighborhood to Ripwire-compatible XML.
@@ -665,6 +764,52 @@ pub fn serialize_uses_in_root_xml<W: Write>(
     )
 }
 
+pub struct UsesReport<'a> {
+    pub root: &'a str,
+    pub sym_name: &'a str,
+    pub sites: Vec<(&'static str, &'a str, u32, &'a str)>,
+    pub gauge_attrs: &'a str,
+}
+
+impl crate::serialize::XmlReport for UsesReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "uses"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.uses/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some("ripwire uses schema=ripwire.uses/v1: resolvable use-sites of of=.")
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let total = self.sites.len();
+        let shown = total.min(40);
+        let page_attrs = format_nav_page_attrs(shown, total);
+        write!(
+            out,
+            " of=\"{}\" defs=\"1\" external=\"0\" count=\"{total}\" root=\"{}\"{page_attrs} {}",
+            self.sym_name, self.root, self.gauge_attrs
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for &(role, file, line, enc) in self.sites.iter().take(40) {
+            if enc.is_empty() {
+                writeln!(out, "  <u role=\"{}\" p=\"{}:{}\"/>", role, file, line)?;
+            } else {
+                writeln!(
+                    out,
+                    "  <u role=\"{}\" p=\"{}:{}\" in_id=\"{}\"/>",
+                    role, file, line, enc
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
 pub fn serialize_uses_with_gauge_xml<W: Write>(
     root: &str,
     sym_name: &str,
@@ -673,6 +818,7 @@ pub fn serialize_uses_with_gauge_xml<W: Write>(
     gauge_attrs: &str,
     out: &mut W,
 ) -> io::Result<()> {
+    use crate::serialize::XmlReport;
     let mut sites = Vec::new();
     for r in &ingest.references {
         if interner.resolve(&r.callee_name) == sym_name {
@@ -693,25 +839,13 @@ pub fn serialize_uses_with_gauge_xml<W: Write>(
             sites.push((r.role.tag(), file_path, r.line, enclosing));
         }
     }
-    let total = sites.len();
-    let shown = total.min(40);
-    let page_attrs = format_nav_page_attrs(shown, total);
-    writeln!(
-        out,
-        "<!-- ripwire uses schema=ripwire.uses/v1: resolvable use-sites of of=. -->\n<uses schema=\"ripwire.uses/v1\" of=\"{sym_name}\" defs=\"1\" external=\"0\" count=\"{total}\" root=\"{root}\"{page_attrs} {gauge_attrs}>",
-    )?;
-    for (role, file, line, enc) in sites.into_iter().take(shown) {
-        if enc.is_empty() {
-            writeln!(out, "  <u role=\"{}\" p=\"{}:{}\"/>", role, file, line)?;
-        } else {
-            writeln!(
-                out,
-                "  <u role=\"{}\" p=\"{}:{}\" in_id=\"{}\"/>",
-                role, file, line, enc
-            )?;
-        }
+    UsesReport {
+        root,
+        sym_name,
+        sites,
+        gauge_attrs,
     }
-    writeln!(out, "</uses>")
+    .render_envelope(out)
 }
 
 #[inline]

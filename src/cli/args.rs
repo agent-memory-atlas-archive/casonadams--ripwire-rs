@@ -988,17 +988,27 @@ pub trait VerbGroup {
     fn is_group_active(&self) -> bool;
 }
 
+impl TopNavArgs {
+    #[must_use]
+    pub fn active_query(&self) -> Option<(&str, super::queries::NavMode)> {
+        use super::queries::NavMode;
+        self.callers
+            .as_deref()
+            .map(|s| (s, NavMode::Callers))
+            .or_else(|| self.callees.as_deref().map(|s| (s, NavMode::Callees)))
+            .or_else(|| self.impact.as_deref().map(|s| (s, NavMode::Impact)))
+            .or_else(|| self.uses.as_deref().map(|s| (s, NavMode::Uses)))
+            .or_else(|| {
+                self.find_symbol
+                    .as_deref()
+                    .map(|s| (s, NavMode::FindSymbol))
+            })
+    }
+}
+
 impl VerbGroup for TopNavArgs {
     fn is_group_active(&self) -> bool {
-        [
-            &self.callers,
-            &self.callees,
-            &self.impact,
-            &self.uses,
-            &self.find_symbol,
-        ]
-        .iter()
-        .any(|o| o.is_some())
+        self.active_query().is_some()
     }
 }
 

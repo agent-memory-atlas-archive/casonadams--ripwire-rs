@@ -816,6 +816,70 @@ pub fn serialize_test_gate_xml<W: Write>(
     )
 }
 
+pub struct TestGateReport<'a> {
+    pub root: &'a str,
+    pub tests: &'a [crate::gate::affected::AffectedTest],
+    pub untested: usize,
+    pub gauge_attrs: &'a str,
+}
+
+impl crate::serialize::XmlReport for TestGateReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "test-gate"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.test-gate/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some("ripwire test-gate schema=ripwire.test-gate/v1: tests + untested blast radius.")
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let t_len = self.tests.len();
+        let dirty = t_len > 0 || self.untested > 0;
+        let changed = usize::from(dirty);
+        let extra_attrs = if dirty {
+            let first_test = self
+                .tests
+                .first()
+                .map_or("tests/test_cli_and_mcp.rs", |t| t.path.as_str());
+            format!(
+                " root=\"{}\" declined_calls=\"0\" run_first=\"{}\"",
+                self.root,
+                escape_xml_str(first_test)
+            )
+        } else {
+            String::new()
+        };
+        write!(
+            out,
+            " changed=\"{changed}\" impacted=\"{}\" tests=\"{t_len}\" untested=\"{}\" untested_modscope=\"0\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{}\" untested_capped=\"0\" script_gates_unmodelled=\"0\" script_gates_registered=\"0\" script_gates_mapped=\"0\" script_gates_unresolved_dynamic=\"0\" ccx_bar=\"15\" {} at=\"HEAD\"{extra_attrs} next=\"--situ\"",
+            self.untested, self.untested, self.untested, self.gauge_attrs
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        if !self.tests.is_empty() {
+            let p_joined: Vec<String> = self
+                .tests
+                .iter()
+                .map(|t| escape_xml_str(&t.path).into_owned())
+                .collect();
+            write!(
+                out,
+                "<g changed=\"1\" hops=\"1\" n=\"{}\" p=\"{}\" run_unknown=\"1\"/>",
+                self.tests.len(),
+                p_joined.join(",")
+            )?;
+        }
+        if self.untested > 0 {
+            write!(out, "<u sym=\"main\" p=\"src/main.rs\" l=\"1\" ccx=\"1\"/>")?;
+        }
+        Ok(())
+    }
+}
+
 pub fn serialize_test_gate_with_gauge_xml<W: Write>(
     root: &str,
     tests: &[crate::gate::affected::AffectedTest],
@@ -823,38 +887,67 @@ pub fn serialize_test_gate_with_gauge_xml<W: Write>(
     gauge_attrs: &str,
     out: &mut W,
 ) -> io::Result<()> {
-    let t_len = tests.len();
-    let dirty = t_len > 0 || untested > 0;
-    let changed = if dirty { 1 } else { 0 };
-    let extra_attrs = if dirty {
-        let first_test = tests
-            .first()
-            .map_or("tests/test_cli_and_mcp.rs", |t| t.path.as_str());
-        format!(
-            " root=\"{root}\" declined_calls=\"0\" run_first=\"{}\"",
-            escape_xml_str(first_test)
+    use crate::serialize::XmlReport;
+    TestGateReport {
+        root,
+        tests,
+        untested,
+        gauge_attrs,
+    }
+    .render_envelope(out)
+}
+
+pub struct SafeDeleteReport<'a> {
+    pub root: &'a str,
+    pub sym_name: &'a str,
+    pub kind_tag: &'a str,
+    pub def_loc: &'a str,
+    pub callers: &'a [(&'a str, &'a str)],
+    pub blast_radius: usize,
+    pub gauge_attrs: &'a str,
+}
+
+impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "safe-delete"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.safe-delete/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=.",
         )
-    } else {
-        String::new()
-    };
-    let mut buf = format!(
-        "<!-- ripwire test-gate schema=ripwire.test-gate/v1: tests + untested blast radius. -->\n<test-gate schema=\"ripwire.test-gate/v1\" changed=\"{changed}\" impacted=\"{untested}\" tests=\"{t_len}\" untested=\"{untested}\" untested_modscope=\"0\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{untested}\" untested_capped=\"0\" script_gates_unmodelled=\"0\" script_gates_registered=\"0\" script_gates_mapped=\"0\" script_gates_unresolved_dynamic=\"0\" ccx_bar=\"15\" {gauge_attrs} at=\"HEAD\"{extra_attrs} next=\"--situ\">",
-    );
-    if !tests.is_empty() {
-        let p_joined: Vec<String> = tests
-            .iter()
-            .map(|t| escape_xml_str(&t.path).into_owned())
-            .collect();
-        buf.push_str(&format!(
-            "<g changed=\"1\" hops=\"1\" n=\"{t_len}\" p=\"{}\" run_unknown=\"1\"/>",
-            p_joined.join(",")
-        ));
     }
-    if untested > 0 {
-        buf.push_str("<u sym=\"main\" p=\"src/main.rs\" l=\"1\" ccx=\"1\"/>");
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let risk = if self.callers.is_empty() && self.blast_radius == 0 {
+            "low"
+        } else {
+            "uses-exist"
+        };
+        let sym_esc = escape_xml_str(self.sym_name);
+        let loc_esc = escape_xml_str(self.def_loc);
+        let c_len = self.callers.len();
+        let shown = c_len.min(40);
+        let capped = usize::from(shown < c_len);
+        let dead_cand = usize::from(c_len == 0 && self.blast_radius == 0);
+        write!(
+            out,
+            " sym=\"{sym_esc}\" t=\"{}\" p=\"{loc_esc}\" defs=\"1\" callers=\"{c_len}\" callers_floor=\"1\" ambiguous_callers=\"0\" impact_reaches=\"{}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" {} root=\"{}\"",
+            self.kind_tag, self.blast_radius, self.blast_radius, self.gauge_attrs, self.root
+        )
     }
-    buf.push_str("</test-gate>\n");
-    out.write_all(buf.as_bytes())
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for &(p, n) in self.callers.iter().take(40) {
+            let p_esc = escape_xml_str(p);
+            let n_esc = escape_xml_str(n);
+            writeln!(out, "  <c n=\"{n_esc}\" p=\"{p_esc}\"/>")?;
+        }
+        Ok(())
+    }
 }
 
 /// Serialize `--safe-delete` to Ripwire XML.
@@ -885,50 +978,17 @@ pub fn serialize_safe_delete_at_xml<W: Write>(
     blast_radius: usize,
     out: &mut W,
 ) -> io::Result<()> {
-    serialize_safe_delete_with_gauge_xml(
+    use crate::serialize::XmlReport;
+    SafeDeleteReport {
         root,
         sym_name,
         kind_tag,
         def_loc,
         callers,
         blast_radius,
-        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
-        out,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn serialize_safe_delete_with_gauge_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    kind_tag: &str,
-    def_loc: &str,
-    callers: &[(&str, &str)],
-    blast_radius: usize,
-    gauge_attrs: &str,
-    out: &mut W,
-) -> io::Result<()> {
-    let risk = if callers.is_empty() && blast_radius == 0 {
-        "low"
-    } else {
-        "uses-exist"
-    };
-    let sym_esc = escape_xml_str(sym_name);
-    let loc_esc = escape_xml_str(def_loc);
-    let c_len = callers.len();
-    let shown = c_len.min(40);
-    let capped = usize::from(shown < c_len);
-    let dead_cand = usize::from(c_len == 0 && blast_radius == 0);
-    writeln!(
-        out,
-        "<!-- ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=. -->\n<safe-delete schema=\"ripwire.safe-delete/v1\" sym=\"{sym_esc}\" t=\"{kind_tag}\" p=\"{loc_esc}\" defs=\"1\" callers=\"{c_len}\" callers_floor=\"1\" ambiguous_callers=\"0\" impact_reaches=\"{blast_radius}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{blast_radius}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" {gauge_attrs} root=\"{root}\">",
-    )?;
-    for (p, n) in callers.iter().take(shown) {
-        let p_esc = escape_xml_str(p);
-        let n_esc = escape_xml_str(n);
-        writeln!(out, "  <c n=\"{n_esc}\" p=\"{p_esc}\"/>")?;
+        gauge_attrs: "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
     }
-    writeln!(out, "</safe-delete>")
+    .render_envelope(out)
 }
 
 pub struct ExercisesReport<'a> {
@@ -1162,6 +1222,61 @@ pub fn serialize_communities_with_summary_xml<W: Write>(
     CommunitiesReport { modules, summary }.write_xml_report(root, out)
 }
 
+pub struct AroundReport<'a> {
+    pub target: &'a str,
+    pub depth: u32,
+    pub fanout: usize,
+    pub symbols: &'a [(&'a str, &'static str, &'a str, u32)],
+}
+
+impl crate::serialize::XmlReport for AroundReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "r"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.around/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire around schema=ripwire.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop.",
+        )
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let t_esc = escape_xml_str(self.target);
+        let est_tokens = 25 + self.symbols.len() * 14;
+        let depth_trunc = usize::from(!self.symbols.is_empty());
+        write!(
+            out,
+            " of=\"{t_esc}\" depth=\"{}\" fanout=\"{}\" depth_truncated=\"{depth_trunc}\" est_tokens=\"{est_tokens}\"",
+            self.depth, self.fanout
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let mut grouped: Vec<(&str, Vec<(&str, &'static str)>)> = Vec::new();
+        for &(name, kind, path, _line) in self.symbols {
+            if let Some((_, list)) = grouped.iter_mut().find(|(p, _)| *p == path) {
+                list.push((name, kind));
+            } else {
+                grouped.push((path, vec![(name, kind)]));
+            }
+        }
+        if grouped.is_empty() {
+            write!(out, "<f p=\"src/lib.rs\"></f>")
+        } else {
+            for (path, list) in grouped {
+                let p_esc = escape_xml_str(path);
+                write!(out, "<f p=\"{p_esc}\">")?;
+                for (name, kind) in list {
+                    let n_esc = escape_xml_str(name);
+                    write!(out, "<s t=\"{kind}\" n=\"{n_esc}\" k=\"1.0000\"/>")?;
+                }
+                write!(out, "</f>")?;
+            }
+            Ok(())
+        }
+    }
+}
+
 /// Serialize `--around` ego graph to Ripwire XML.
 pub fn serialize_around_xml<W: Write>(
     root: &str,
@@ -1171,35 +1286,14 @@ pub fn serialize_around_xml<W: Write>(
     symbols: &[(&str, &'static str, &str, u32)],
     out: &mut W,
 ) -> io::Result<()> {
-    let t_esc = escape_xml_str(target);
-    let est_tokens = 25 + symbols.len() * 14;
-    let depth_trunc = usize::from(!symbols.is_empty());
-    write!(
-        out,
-        "<!-- ripwire around schema=ripwire.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop. -->\n<r schema=\"ripwire.around/v1\" root=\"{root}\" of=\"{t_esc}\" depth=\"{depth}\" fanout=\"{fanout}\" depth_truncated=\"{depth_trunc}\" est_tokens=\"{est_tokens}\">",
-    )?;
-    let mut grouped: Vec<(&str, Vec<(&str, &'static str)>)> = Vec::new();
-    for &(name, kind, path, _line) in symbols {
-        if let Some((_, list)) = grouped.iter_mut().find(|(p, _)| *p == path) {
-            list.push((name, kind));
-        } else {
-            grouped.push((path, vec![(name, kind)]));
-        }
+    use crate::serialize::XmlReport;
+    AroundReport {
+        target,
+        depth,
+        fanout,
+        symbols,
     }
-    if grouped.is_empty() {
-        write!(out, "<f p=\"src/lib.rs\"></f>")?;
-    } else {
-        for (path, list) in grouped {
-            let p_esc = escape_xml_str(path);
-            write!(out, "<f p=\"{p_esc}\">")?;
-            for (name, kind) in list {
-                let n_esc = escape_xml_str(name);
-                write!(out, "<s t=\"{kind}\" n=\"{n_esc}\" k=\"1.0000\"/>")?;
-            }
-            write!(out, "</f>")?;
-        }
-    }
-    writeln!(out, "</r>")
+    .write_xml_report(root, out)
 }
 
 /// Serialize `--external-surface` to Ripwire XML.
@@ -1352,60 +1446,85 @@ fn write_deps_file_row<W: Write>(out: &mut W, row: &DepsFileRow<'_>) -> io::Resu
     }
 }
 
+impl crate::serialize::XmlReport for DepsReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "deps"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.deps/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire deps schema=ripwire.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>.",
+        )
+    }
+    fn page_window(&self) -> Option<crate::serialize::PageWindow> {
+        let total = self
+            .rows
+            .iter()
+            .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
+            .count();
+        Some(crate::serialize::PageWindow::compute(total, 40, None, None))
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let total = self
+            .rows
+            .iter()
+            .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
+            .count();
+        write!(out, " files=\"{total}\"")
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let active: Vec<&DepsFileRow<'_>> = self
+            .rows
+            .iter()
+            .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
+            .collect();
+        let shape = if self.nccd < 1.0 {
+            "horizontal"
+        } else if self.nccd > 2.0 {
+            "tangled"
+        } else {
+            "vertical"
+        };
+        writeln!(
+            out,
+            "  <health files=\"{}\" dep_files=\"{}\" ccd=\"{}\" acd=\"{:.1}\" nccd=\"{:.2}\" shape=\"{shape}\" dep_langs=\"cpp,py,ts,go,rs,swift,objc,js,sh,java,rb,cs,c,php,lua,ex,kt\"/>",
+            self.corpus_files, self.dep_files, self.ccd, self.acd, self.nccd
+        )?;
+        write_deps_godfiles(out, &active)?;
+        if !self.violations.is_empty() {
+            writeln!(
+                out,
+                "  <stabledeps violations=\"{}\">",
+                self.violations.len()
+            )?;
+            for &(from, to, gap) in self.violations.iter().take(12) {
+                writeln!(
+                    out,
+                    "    <v from=\"{}\" to=\"{}\" gap=\"{gap:.2}\"/>",
+                    escape_xml_str(from),
+                    escape_xml_str(to)
+                )?;
+            }
+            writeln!(out, "  </stabledeps>")?;
+        }
+        write_deps_cycles(out, &self.cycles)?;
+        for row in active.iter().take(40) {
+            write_deps_file_row(out, row)?;
+        }
+        Ok(())
+    }
+}
+
 /// Serialize structured `DepsReport` to Ripwire XML.
 pub fn serialize_deps_report_xml<W: Write>(
     root: &str,
     rep: &DepsReport<'_>,
     out: &mut W,
 ) -> io::Result<()> {
-    let active: Vec<&DepsFileRow<'_>> = rep
-        .rows
-        .iter()
-        .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
-        .collect();
-    let total = active.len();
-    let pw = crate::serialize::PageWindow::compute(total, 40, None, None);
-    let shown = pw.shown;
-    let page_attrs = pw.xml_attrs();
-    let shape = if rep.nccd < 1.0 {
-        "horizontal"
-    } else if rep.nccd > 2.0 {
-        "tangled"
-    } else {
-        "vertical"
-    };
-    let root_esc = escape_xml_str(root);
-    writeln!(
-        out,
-        "<!-- ripwire deps schema=ripwire.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>. -->\n<deps schema=\"ripwire.deps/v1\" files=\"{total}\"{page_attrs} root=\"{root_esc}\">",
-    )?;
-    writeln!(
-        out,
-        "  <health files=\"{}\" dep_files=\"{}\" ccd=\"{}\" acd=\"{:.1}\" nccd=\"{:.2}\" shape=\"{shape}\" dep_langs=\"cpp,py,ts,go,rs,swift,objc,js,sh,java,rb,cs,c,php,lua,ex,kt\"/>",
-        rep.corpus_files, rep.dep_files, rep.ccd, rep.acd, rep.nccd
-    )?;
-    write_deps_godfiles(out, &active)?;
-    if !rep.violations.is_empty() {
-        writeln!(
-            out,
-            "  <stabledeps violations=\"{}\">",
-            rep.violations.len()
-        )?;
-        for &(from, to, gap) in rep.violations.iter().take(12) {
-            writeln!(
-                out,
-                "    <v from=\"{}\" to=\"{}\" gap=\"{gap:.2}\"/>",
-                escape_xml_str(from),
-                escape_xml_str(to)
-            )?;
-        }
-        writeln!(out, "  </stabledeps>")?;
-    }
-    write_deps_cycles(out, &rep.cycles)?;
-    for row in active.iter().take(shown) {
-        write_deps_file_row(out, row)?;
-    }
-    writeln!(out, "</deps>")
+    use crate::serialize::XmlReport;
+    rep.write_xml_report(root, out)
 }
 
 /// Serialize `--deps` to Ripwire XML.

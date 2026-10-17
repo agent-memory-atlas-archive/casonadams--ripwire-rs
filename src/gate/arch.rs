@@ -165,25 +165,40 @@ pub fn check_architecture_rules(
     violations
 }
 
+pub struct ArchReport<'a> {
+    pub violations: &'a [ArchViolation],
+}
+
+impl crate::serialize::XmlReport for ArchReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "arch"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.arch/v1"
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        write!(out, " violations=\"{}\"", self.violations.len())
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for v in self.violations {
+            writeln!(
+                out,
+                "  <violation from=\"{}\" to=\"{}\" p=\"{}\" tp=\"{}\" caller=\"{}\" callee=\"{}\"/>",
+                v.from_layer, v.to_layer, v.from_file, v.to_file, v.caller, v.callee
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// Serialize architecture violation report to canonical XML format.
 pub fn serialize_arch_xml<W: Write>(
     root: &str,
     violations: &[ArchViolation],
     out: &mut W,
 ) -> io::Result<()> {
-    writeln!(
-        out,
-        "<arch schema=\"ripwire.arch/v1\" root=\"{root}\" violations=\"{}\">",
-        violations.len()
-    )?;
-    for v in violations {
-        writeln!(
-            out,
-            "  <violation from=\"{}\" to=\"{}\" p=\"{}\" tp=\"{}\" caller=\"{}\" callee=\"{}\"/>",
-            v.from_layer, v.to_layer, v.from_file, v.to_file, v.caller, v.callee
-        )?;
-    }
-    writeln!(out, "</arch>")
+    use crate::serialize::XmlReport;
+    ArchReport { violations }.write_xml_report(root, out)
 }
 
 #[cfg(test)]
