@@ -794,6 +794,11 @@ fn parse_with_macro_blank_fallback(
     }
 }
 
+fn dedup_conditional_macros(defs: &mut Vec<RawDef>) {
+    let mut seen_macros = std::collections::HashSet::new();
+    defs.retain(|d| d.kind != SymKind::Macro || seen_macros.insert(d.name.clone()));
+}
+
 pub fn parse_file_tree(
     source_bytes: &[u8],
     language: &Language,
@@ -836,7 +841,7 @@ pub fn parse_file_tree(
                 })
         });
         defs.dedup_by(|a, b| a.start_byte == b.start_byte && a.name == b.name);
-
+        dedup_conditional_macros(&mut defs);
         FileParseResult {
             line_count,
             byte_size: source_bytes.len() as u64,

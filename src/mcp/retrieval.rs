@@ -395,6 +395,55 @@ fn compute_for_route_metadata(
     (route, confidence, margin_pct, coverage)
 }
 
+fn symbol_matches_term(
+    sym: &crate::domain::Symbol,
+    ingest: &IngestResult,
+    interner: &Interner,
+    term: &str,
+) -> bool {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let lower_t = term.to_ascii_lowercase();
+    let stem = stem_query_term(&lower_t);
+    let name = view.sym_name(sym).to_ascii_lowercase();
+    let path = view.sym_path(sym).to_ascii_lowercase();
+    contains_term_aware(&name, &lower_t)
+        || contains_term_aware(&name, &stem)
+        || contains_term_aware(&path, &lower_t)
+        || contains_term_aware(&path, &stem)
+}
+
+fn diversify_top_candidates<'a>(
+    scored: &mut [(f64, &'a crate::domain::Symbol)],
+    raw_terms: &[&str],
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+) {
+    if raw_terms.len() < 3 || scored.len() < 6 {
+        return;
+    }
+    let mut insert_pos = 2usize;
+    for &term in raw_terms.iter().take(8) {
+        if insert_pos >= 8 || insert_pos >= scored.len() {
+            break;
+        }
+        let covered = scored[..insert_pos + 2]
+            .iter()
+            .any(|(_, s)| symbol_matches_term(s, ingest, interner, term));
+        if covered {
+            continue;
+        }
+        if let Some(rel_idx) = scored[insert_pos..].iter().take(60).position(|(_, s)| {
+            !matches!(s.kind, SymKind::Var | SymKind::Field)
+                && symbol_matches_term(s, ingest, interner, term)
+        }) {
+            let found_idx = insert_pos + rel_idx;
+            scored[insert_pos..=found_idx].rotate_right(1);
+            insert_pos += 1;
+        }
+    }
+}
+
 pub fn call_for_task_with_options(
     ingest: &IngestResult,
     interner: &Interner,
@@ -428,6 +477,7 @@ pub fn call_for_task_with_options(
     }
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    diversify_top_candidates(&mut scored, &raw_terms, ingest, interner);
     let mut limit = opts.budget_tokens.unwrap_or(25).min(scored.len());
     let mut adaptive_info = None;
     if opts.adaptive && scored.len() > 5 {
@@ -1308,6 +1358,45 @@ mod tests {
         let res = call_for_task(&ingest, &interner, &[1.0], "test fn", None, Some(1), false);
         assert_eq!(res["count"], 1);
         assert_eq!(res["detail"], 1);
+
+        for i in 1..6 {
+            ingest.symbols.push(crate::domain::Symbol::new(
+                i,
+                interner.intern(&format!("session_secret_{i}")),
+                interner.intern(&format!("c_{i}")),
+                SymKind::Function,
+                crate::domain::Lang::Rust,
+                0,
+                i + 1,
+            ));
+        }
+        ingest.symbols.push(crate::domain::Symbol::new(
+            6,
+            interner.intern("lsp_manager"),
+            interner.intern("c_lsp"),
+            SymKind::Struct,
+            crate::domain::Lang::Rust,
+            0,
+            10,
+        ));
+        let ranks = vec![1.0; ingest.symbols.len()];
+        let div_res = call_for_task(
+            &ingest,
+            &interner,
+            &ranks,
+            "lsp manager session secret",
+            None,
+            None,
+            false,
+        );
+        let top_names: Vec<&str> = div_res["symbols"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .take(5)
+            .filter_map(|s| s["name"].as_str())
+            .collect();
+        assert!(top_names.contains(&"lsp_manager"));
     }
 
     #[test]

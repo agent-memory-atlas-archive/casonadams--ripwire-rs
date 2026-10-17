@@ -579,8 +579,103 @@ pub trait CorpusView<'a> {
     fn is_production_symbol(&self, sym: &Symbol) -> bool {
         sym.is_code_symbol() && !self.is_test_symbol(sym)
     }
+
+    /// Build a fast `path -> file_id` lookup map over all indexed files.
+    #[must_use]
+    fn file_index_map(&self) -> std::collections::HashMap<&'a str, u32> {
+        self.ingest()
+            .files
+            .iter()
+            .map(|f| (self.file_path(f.id), f.id))
+            .collect()
+    }
+
+    /// Collect sorted, deduplicated `file:line` call-site strings from `caller_id` targeting any symbol in `callee_names`.
+    #[must_use]
+    fn caller_site_locations(&self, caller_id: NodeId, callee_names: &[Spur]) -> Vec<String> {
+        let mut sites: Vec<(u32, u32)> = self
+            .ingest()
+            .references
+            .iter()
+            .filter(|r| {
+                r.from_symbol == caller_id
+                    && matches!(r.role, RefRole::Call | RefRole::Macro)
+                    && callee_names.contains(&r.callee_name)
+            })
+            .map(|r| (r.file_id, r.line))
+            .collect();
+        sites.sort_unstable();
+        sites.dedup();
+        sites
+            .into_iter()
+            .map(|(fid, line)| format!("{}:{line}", self.file_path(fid)))
+            .collect()
+    }
+
+    /// Resolve sorted, deduplicated file paths that import any file defining `seed_ids` or reference the target symbols.
+    #[must_use]
+    fn resolve_symbol_importers(&self, seed_ids: &[NodeId]) -> Vec<&'a str> {
+        let ingest = self.ingest();
+        let seed_files: std::collections::HashSet<u32> = seed_ids
+            .iter()
+            .filter_map(|&id| ingest.sym(id).map(|s| s.file_id))
+            .collect();
+        let seed_names: std::collections::HashSet<Spur> = seed_ids
+            .iter()
+            .filter_map(|&id| ingest.sym(id).map(|s| s.name))
+            .collect();
+        let file_index = self.file_index_map();
+        let mut importers = std::collections::BTreeSet::new();
+
+        for r in &ingest.references {
+            if seed_files.contains(&r.file_id) {
+                continue;
+            }
+            let src_path = self.file_path(r.file_id);
+            if !src_path.is_empty()
+                && is_ref_importing_seed(
+                    r,
+                    src_path,
+                    ingest,
+                    self.interner(),
+                    &file_index,
+                    &seed_files,
+                    &seed_names,
+                )
+            {
+                importers.insert(src_path);
+            }
+        }
+        importers.into_iter().collect()
+    }
 }
 
+fn is_ref_importing_seed(
+    r: &Reference,
+    src_path: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    file_index: &std::collections::HashMap<&str, u32>,
+    seed_files: &std::collections::HashSet<u32>,
+    seed_names: &std::collections::HashSet<Spur>,
+) -> bool {
+    if r.role != RefRole::Import {
+        return seed_names.contains(&r.callee_name);
+    }
+    let raw = interner.resolve(&r.callee_name);
+    let target_fid = ingest.file(r.file_id).and_then(|f| {
+        f.lang
+            .semantics()
+            .resolve_import_target(src_path, raw, file_index)
+    });
+    if target_fid.is_some_and(|tf| seed_files.contains(&tf)) {
+        return true;
+    }
+    seed_names.iter().any(|&sn| {
+        let sname = interner.resolve(&sn);
+        raw == sname || raw.ends_with(&format!("::{sname}"))
+    })
+}
 impl<'a> CorpusView<'a> for (&'a IngestResult, &'a Interner) {
     #[inline]
     fn ingest(&self) -> &'a IngestResult {
@@ -658,5 +753,35 @@ mod tests {
         assert_eq!(view.sym_path(&sym), "src/engine.rs");
         assert!(view.is_production_symbol(&sym));
         assert_eq!(Lang::from_extension("h"), Lang::Cpp);
+
+        ingest.files.push(FileInfo {
+            id: 1,
+            path: interner.intern("src/main.rs"),
+            lang: Lang::Rust,
+            line_count: 15,
+            byte_size: 120,
+        });
+        ingest.references.push(Reference::new(
+            NO_NODE,
+            interner.intern("crate::engine::Engine"),
+            1,
+            1,
+            Lang::Rust,
+            RefRole::Import,
+        ));
+        ingest.references.push(Reference::new(
+            0,
+            interner.intern("execute_turn"),
+            1,
+            8,
+            Lang::Rust,
+            RefRole::Call,
+        ));
+        let view = (&ingest, &interner);
+        assert_eq!(view.resolve_symbol_importers(&[0]), vec!["src/main.rs"]);
+        assert_eq!(
+            view.caller_site_locations(0, &[interner.intern("execute_turn")]),
+            vec!["src/main.rs:8".to_string()]
+        );
     }
 }

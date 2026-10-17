@@ -431,8 +431,10 @@ pub fn serialize_flags_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()>
 /// Serialize `doc_drift` out-of-date document references to Ripwire XML.
 fn format_doc_drift_extra_attrs(d: &Value) -> String {
     let mut extra = String::new();
-    for key in ["fate", "commit", "date", "subject"] {
-        if let Some(v) = d[key].as_str() {
+    for key in ["sym", "got", "tgt", "fate", "commit", "date", "subject"] {
+        if let Some(v) = d[key].as_str()
+            && !v.is_empty()
+        {
             extra.push_str(&format!(" {key}=\"{}\"", v.xml_escaped()));
         }
     }

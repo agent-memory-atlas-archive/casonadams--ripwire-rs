@@ -916,4 +916,34 @@ class MobileSwapService {
         .unwrap();
         assert!(String::from_utf8_lossy(&callers_buf).contains("n=\"executeSwap\""));
     }
+
+    #[test]
+    fn test_cpp_type_uses_and_ifdef_macro_dedup() {
+        let reg = LanguageRegistry::new().unwrap();
+        let interner = crate::domain::Interner::new();
+        let cpp_src = br#"
+#ifdef DEBUG
+#define RW_ASSUME_(x) check(x)
+#else
+#define RW_ASSUME_(x) ((void)0)
+#endif
+struct RankedGraph { int nodes; };
+RankedGraph rankGraph(const RankedGraph& g) { return g; }
+"#;
+        let ingest =
+            ingest_in_memory_files(&[("src/graph.h", Lang::Cpp, cpp_src)], &reg, &interner);
+        let macro_count = ingest
+            .symbols
+            .iter()
+            .filter(|s| interner.resolve(&s.name) == "RW_ASSUME_")
+            .count();
+        assert_eq!(macro_count, 1);
+
+        let mut uses_xml = Vec::new();
+        crate::navigate::serialize_uses_xml("RankedGraph", &ingest, &interner, &mut uses_xml)
+            .unwrap();
+        let uses_str = String::from_utf8(uses_xml).unwrap();
+        assert!(uses_str.contains("role=\"type\""));
+        assert!(uses_str.contains("count=\"2\""));
+    }
 }

@@ -42,11 +42,81 @@ pub fn call_mentions_in_root(
 }
 
 /// Execute `doc_drift` tool: verify checkable doc references.
+fn extract_line_resolved_symbols<'a>(
+    line: &'a str,
+    sym_set: &std::collections::HashSet<&str>,
+) -> Vec<&'a str> {
+    let mut out = Vec::new();
+    let mut rest = line;
+    while let Some(start) = rest.find('`') {
+        let after_open = &rest[start + 1..];
+        let Some(end) = after_open.find('`') else {
+            break;
+        };
+        if let Some(sym) = is_candidate_symbol_anchor(&after_open[..end])
+            && sym_set.contains(sym)
+        {
+            out.push(sym);
+        }
+        rest = &after_open[end + 1..];
+    }
+    out
+}
+
+fn check_line_moved_drift(
+    doc_path: &str,
+    doc_line: usize,
+    target_file: &str,
+    target_line: u32,
+    line_syms: &[&str],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> Option<Value> {
+    use crate::domain::CorpusView;
+    if line_syms.is_empty() || ingest.symbols.is_empty() {
+        return None;
+    }
+    let view = (ingest, interner);
+    let got_sym = crate::navigate::resolve_symbol_at(target_file, target_line, ingest, interner);
+    for &sym_name in line_syms {
+        if got_sym.is_some_and(|gs| view.sym_name(gs) == sym_name) {
+            return None;
+        }
+        let Some(moved) = ingest
+            .symbols
+            .iter()
+            .find(|s| view.sym_name(s) == sym_name && view.sym_path(s) == target_file)
+        else {
+            continue;
+        };
+        if target_line < moved.line || target_line > moved.end_line() {
+            let got_name = got_sym.map_or("", |gs| view.sym_name(gs));
+            return Some(json!({
+                "doc": doc_path,
+                "line": doc_line,
+                "doc_line": doc_line,
+                "kind": "file-line",
+                "referenced": format!("{target_file}:{target_line}"),
+                "target_file": target_file,
+                "claimed_line": target_line,
+                "sym": sym_name,
+                "got": got_name,
+                "tgt": format!("{target_file}:{}", moved.line),
+                "why": "line-moved"
+            }));
+        }
+    }
+    None
+}
+
 fn check_word_drift(
     word: &str,
     doc_path: &str,
     doc_line: usize,
     file_map: &HashMap<&str, u32>,
+    line_syms: &[&str],
+    ingest: &IngestResult,
+    interner: &Interner,
 ) -> Option<Value> {
     let clean = word.trim_matches(|c: char| matches!(c, '`' | '(' | ')' | '[' | ']' | ',' | ';'));
     let (target_file, line_str) = clean.split_once(':')?;
@@ -60,6 +130,7 @@ fn check_word_drift(
             "doc": doc_path,
             "line": doc_line,
             "doc_line": doc_line,
+            "kind": "file-line",
             "referenced": format!("{target_file}:{target_line}"),
             "target_file": target_file,
             "claimed_line": target_line,
@@ -67,10 +138,17 @@ fn check_word_drift(
             "why": "line-out-of-bounds"
         }))
     } else {
-        None
+        check_line_moved_drift(
+            doc_path,
+            doc_line,
+            target_file,
+            target_line,
+            line_syms,
+            ingest,
+            interner,
+        )
     }
 }
-
 fn is_code_shaped_ident(sym: &str) -> bool {
     let bytes = sym.as_bytes();
     let has_underscore = bytes.contains(&b'_');
@@ -249,6 +327,8 @@ fn scan_doc_text_for_drift(
     doc_path: &str,
     file_map: &HashMap<&str, u32>,
     sym_set: &std::collections::HashSet<&str>,
+    ingest: &IngestResult,
+    interner: &Interner,
     drift_items: &mut Vec<Value>,
 ) {
     let mut in_code_fence = false;
@@ -264,8 +344,11 @@ fn scan_doc_text_for_drift(
             continue;
         }
         let doc_line = line_idx + 1;
+        let line_syms = extract_line_resolved_symbols(line, sym_set);
         for word in line.split_whitespace() {
-            if let Some(item) = check_word_drift(word, doc_path, doc_line, file_map) {
+            if let Some(item) = check_word_drift(
+                word, doc_path, doc_line, file_map, &line_syms, ingest, interner,
+            ) {
                 drift_items.push(item);
             }
         }
@@ -436,7 +519,15 @@ fn scan_corpus_markdown_docs(
         if is_dated_or_historical_doc(doc_path, &text) {
             dated_docs += 1;
         } else {
-            scan_doc_text_for_drift(&text, doc_path, file_map, sym_set, drift_items);
+            scan_doc_text_for_drift(
+                &text,
+                doc_path,
+                file_map,
+                sym_set,
+                ingest,
+                interner,
+                drift_items,
+            );
         }
     }
     (docs_scanned, dated_docs)
@@ -1485,17 +1576,6 @@ mod tests {
         let mut sym_set = std::collections::HashSet::new();
         sym_set.insert("existingFn");
 
-        let mut drift = Vec::new();
-        scan_doc_text_for_drift(
-            "See `existingFn` and `deletedFunction` at src/lib.rs:50\n```rust\n`ignoredInFence`\n```",
-            "README.md",
-            &file_map,
-            &sym_set,
-            &mut drift,
-        );
-        assert_eq!(drift.len(), 2);
-        assert!(drift.iter().any(|d| d["referenced"] == "src/lib.rs:50"));
-        assert!(drift.iter().any(|d| d["referenced"] == "deletedFunction"));
         let mut ingest = IngestResult::new();
         let interner = Interner::new();
         ingest.files.push(crate::domain::FileInfo {
@@ -1505,8 +1585,38 @@ mod tests {
             line_count: 20,
             byte_size: 100,
         });
+        let mut sym = crate::domain::Symbol::new(
+            0,
+            interner.intern("existingFn"),
+            interner.intern("src/lib.rs::existingFn"),
+            crate::domain::SymKind::Function,
+            crate::domain::Lang::Rust,
+            0,
+            10,
+        );
+        sym.loc = 3;
+        ingest.symbols.push(sym);
+
+        let mut drift = Vec::new();
+        scan_doc_text_for_drift(
+            "See `existingFn` at src/lib.rs:3 and `deletedFunction` at src/lib.rs:50\n```rust\n`ignoredInFence`\n```",
+            "README.md",
+            &file_map,
+            &sym_set,
+            &ingest,
+            &interner,
+            &mut drift,
+        );
+        assert_eq!(drift.len(), 3);
+        assert!(
+            drift
+                .iter()
+                .any(|d| d["why"] == "line-moved" && d["tgt"] == "src/lib.rs:10")
+        );
+        assert!(drift.iter().any(|d| d["referenced"] == "src/lib.rs:50"));
+        assert!(drift.iter().any(|d| d["referenced"] == "deletedFunction"));
         filter_present_in_code_drift(std::path::Path::new("."), &ingest, &interner, &mut drift);
-        assert_eq!(drift.len(), 2);
+        assert_eq!(drift.len(), 3);
         let mut wanted = std::collections::HashSet::new();
         wanted.insert("deletedFunction".to_string());
         let mut wants_first = [false; 256];

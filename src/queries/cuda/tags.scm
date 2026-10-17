@@ -356,6 +356,19 @@
 (base_class_clause
   (type_identifier) @name) @reference.extends
 
+
+(function_definition
+  type: (type_identifier) @name) @reference.type
+
+(parameter_declaration
+  type: (type_identifier) @name) @reference.type
+
+(parameter_declaration
+  type: (qualified_identifier
+    name: (type_identifier) @name)) @reference.type
+
+(field_declaration
+  type: (type_identifier) @name) @reference.type
 ; EXPLICIT-TEMPLATE-ARGUMENT CALLS: `tmplFn<int>( a )` parses as
 ; call_expression function: (template_function name: (identifier) arguments: (template_argument_list)) —
 ; a distinct node kind none of the patterns above match, so these were dropped by the same silent mechanism

@@ -17,6 +17,7 @@ pub fn print_symbol_nav_to<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     if args.impact {
+        use crate::domain::CorpusView;
         let impact = crate::navigate::transitive_impact(
             id,
             ctx.ingest,
@@ -25,7 +26,16 @@ pub fn print_symbol_nav_to<W: Write>(
             ctx.interner,
             None,
         );
-        return crate::navigate::serialize_impact_xml(sym_name, &impact, out);
+        let importers = (ctx.ingest, ctx.interner).resolve_symbol_importers(&[id]);
+        return crate::navigate::serialize_impact_with_importers_xml(
+            ".",
+            sym_name,
+            &impact,
+            importers,
+            &ctx.graph.xml_gauge_attrs(),
+            1,
+            out,
+        );
     }
     let Some(nav) =
         crate::navigate::navigate_1hop(id, ctx.ingest, ctx.graph, ctx.ranks, ctx.interner)
@@ -62,6 +72,7 @@ pub fn execute_navigate_with<W: Write>(
 
     if args.callers || args.callees || args.impact {
         if args.impact {
+            use crate::domain::CorpusView;
             let impact = crate::navigate::transitive_impact_multi(
                 &ids,
                 ctx.ingest,
@@ -70,7 +81,16 @@ pub fn execute_navigate_with<W: Write>(
                 ctx.interner,
                 None,
             );
-            crate::navigate::serialize_impact_xml(sym_name, &impact, out)?;
+            let importers = (ctx.ingest, ctx.interner).resolve_symbol_importers(&ids);
+            crate::navigate::serialize_impact_with_importers_xml(
+                ".",
+                sym_name,
+                &impact,
+                importers,
+                &ctx.graph.xml_gauge_attrs(),
+                1,
+                out,
+            )?;
         } else if let Some(nav) = crate::navigate::navigate_1hop_multi(
             &ids,
             ctx.ingest,
@@ -333,6 +353,20 @@ pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::R
 }
 impl CliVerb for TopRetrievalArgs {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+        if let Some(expr) = self.graph_query.as_deref() {
+            return crate::navigate::execute_graph_query_expr_paged(
+                expr,
+                ctx.root,
+                ctx.ingest,
+                ctx.graph,
+                ctx.interner,
+                crate::navigate::GraphQueryPageOptions {
+                    limit: ctx.cli.modifiers.limit,
+                    offset: ctx.cli.modifiers.offset,
+                },
+                out,
+            );
+        }
         execute_retrieval_dispatch(
             self,
             ctx.root,

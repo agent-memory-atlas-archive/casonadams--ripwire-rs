@@ -83,7 +83,9 @@ pub fn call_callees(state: &McpState, args: &Value) -> Result<Value, String> {
 pub fn call_impact(state: &McpState, args: &Value) -> Result<Value, String> {
     let sym_name = args.req_str("symbol")?;
     let max_depth = args.u64_or("max_depth", 8) as u32;
+    use crate::domain::CorpusView;
     let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
+    let importers = (&state.ingest, &state.interner).resolve_symbol_importers(&ids);
     let blast_radius: Vec<Value> = ids
         .into_iter()
         .map(|id| {
@@ -103,7 +105,7 @@ pub fn call_impact(state: &McpState, args: &Value) -> Result<Value, String> {
         })
         .collect();
 
-    Ok(json!({ "symbol": sym_name, "impact": blast_radius }))
+    Ok(json!({ "symbol": sym_name, "importers": importers, "impact": blast_radius }))
 }
 
 pub fn call_explore(state: &McpState, args: &Value) -> Result<Value, String> {

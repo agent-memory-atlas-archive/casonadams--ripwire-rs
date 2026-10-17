@@ -15,6 +15,8 @@ pub struct SymbolNavInfo {
     pub rank: f64,
     pub weight: f32,
     pub tested: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sites: Vec<String>,
 }
 /// 1-hop neighborhood of a symbol containing both incoming callers and outgoing callees.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -198,6 +200,7 @@ pub fn get_symbol_nav_info(
         rank,
         weight,
         tested,
+        sites: Vec::new(),
     })
 }
 
@@ -263,40 +266,7 @@ pub fn navigate_1hop(
     ranks: &[f64],
     interner: &Interner,
 ) -> Option<NavNeighborhood> {
-    let tested_mask = compute_tested_node_mask(ingest, graph, interner);
-    let mut target = get_symbol_nav_info(sym_id, ingest, ranks, interner, 1.0)?;
-    target.tested |= tested_mask.get(sym_id as usize).copied().unwrap_or(false);
-
-    let mut callers = Vec::new();
-    for (caller_id, weight) in graph.callers(sym_id) {
-        if let Some(mut info) = get_symbol_nav_info(caller_id, ingest, ranks, interner, weight) {
-            info.tested |= tested_mask
-                .get(caller_id as usize)
-                .copied()
-                .unwrap_or(false);
-            callers.push(info);
-        }
-    }
-    callers.sort_by(|a, b| b.rank.total_cmp(&a.rank).then_with(|| a.id.cmp(&b.id)));
-
-    let mut callees = Vec::new();
-    for (callee_id, weight) in graph.callees(sym_id) {
-        if let Some(mut info) = get_symbol_nav_info(callee_id, ingest, ranks, interner, weight) {
-            info.tested |= tested_mask
-                .get(callee_id as usize)
-                .copied()
-                .unwrap_or(false);
-            callees.push(info);
-        }
-    }
-    callees.sort_by(|a, b| b.rank.total_cmp(&a.rank).then_with(|| a.id.cmp(&b.id)));
-
-    Some(NavNeighborhood {
-        target,
-        callers,
-        callees,
-        gauge_attrs: graph.xml_gauge_attrs(),
-    })
+    navigate_1hop_multi(&[sym_id], ingest, graph, ranks, interner)
 }
 
 /// Compute 1-hop neighborhood unioned across multiple symbol definitions/overloads.
@@ -316,7 +286,12 @@ pub fn navigate_1hop_multi(
     let mut callers = Vec::new();
     let mut seen_callees = HashSet::new();
     let mut callees = Vec::new();
-
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let target_names: Vec<_> = sym_ids
+        .iter()
+        .filter_map(|&id| ingest.sym(id).map(|s| s.name))
+        .collect();
     for &sym_id in sym_ids {
         for (caller_id, weight) in graph.callers(sym_id) {
             if seen_callers.insert(caller_id)
@@ -327,6 +302,7 @@ pub fn navigate_1hop_multi(
                     .get(caller_id as usize)
                     .copied()
                     .unwrap_or(false);
+                info.sites = view.caller_site_locations(caller_id, &target_names);
                 callers.push(info);
             }
         }
@@ -533,9 +509,14 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
             } else {
                 ""
             };
+            let sites_attr = if self.tag == "callers" && !it.sites.is_empty() {
+                format!(" sites_at=\"{}\"", it.sites.join(" ").xml_escaped())
+            } else {
+                String::new()
+            };
             write!(
                 out,
-                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{tested_attr}{via_attr}/>",
+                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{tested_attr}{sites_attr}{via_attr}/>",
                 it.kind, it.name, it.path, it.line
             )?;
         }
@@ -681,8 +662,21 @@ pub struct ImpactReport<'a> {
     pub root: &'a str,
     pub sym_name: &'a str,
     pub nodes: &'a [ImpactNode],
+    pub importers: Vec<&'a str>,
     pub gauge_attrs: &'a str,
     pub pr_iters: u32,
+}
+
+impl<'a> ImpactReport<'a> {
+    fn effective_importers(&self) -> BTreeSet<&'a str> {
+        let mut set: BTreeSet<&'a str> = self.importers.iter().copied().collect();
+        for n in self.nodes {
+            if !n.path.is_empty() {
+                set.insert(&n.path);
+            }
+        }
+        set
+    }
 }
 
 impl crate::serialize::XmlReport for ImpactReport<'_> {
@@ -710,21 +704,17 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
         let radius_untested = reaches.saturating_sub(radius_tested);
         let mut depth_counts: std::collections::BTreeMap<u32, usize> =
             std::collections::BTreeMap::new();
-        let mut importer_paths: std::collections::BTreeSet<&str> =
-            std::collections::BTreeSet::new();
         for n in self.nodes {
             *depth_counts.entry(n.hops).or_insert(0) += 1;
-            if !n.path.is_empty() {
-                importer_paths.insert(&n.path);
-            }
         }
         let by_depth = depth_counts
             .iter()
             .map(|(d, c)| format!("{d}:{c}"))
             .collect::<Vec<_>>()
             .join(",");
-        let imp_total = importer_paths.len().max(1);
-        let imp_shown = imp_total.min(10);
+        let importer_paths = self.effective_importers();
+        let imp_total = importer_paths.len();
+        let imp_shown = imp_total.min(37);
         let imp_capped = usize::from(imp_shown < imp_total);
         write!(
             out,
@@ -738,32 +728,26 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let shown = self.nodes.len().min(40);
-        let mut importer_paths: std::collections::BTreeSet<&str> =
-            std::collections::BTreeSet::new();
-        for n in self.nodes {
-            if !n.path.is_empty() {
-                importer_paths.insert(&n.path);
-            }
-        }
         for n in self.nodes.iter().take(shown) {
+            let tested_attr = if n.tested || crate::gate::affected::is_test_path(&n.path) {
+                " tested=\"1\""
+            } else {
+                ""
+            };
             write!(
                 out,
-                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\" d=\"{}\" dist=\"{}\"/>",
+                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\" d=\"{}\" dist=\"{}\"{tested_attr}/>",
                 n.kind, n.name, n.path, n.line, n.hops, n.hops
             )?;
         }
-        if importer_paths.is_empty() {
-            write!(out, "<f via=\"import\" p=\"src/lib.rs\" lazy=\"0\"/>")
-        } else {
-            for p in importer_paths.into_iter().take(10) {
-                write!(
-                    out,
-                    "<f via=\"import\" p=\"{}\" lazy=\"0\"/>",
-                    p.xml_escaped()
-                )?;
-            }
-            Ok(())
+        for p in self.effective_importers().into_iter().take(37) {
+            write!(
+                out,
+                "<f via=\"import\" p=\"{}\" lazy=\"0\"/>",
+                p.xml_escaped()
+            )?;
         }
+        Ok(())
     }
 }
 
@@ -775,11 +759,32 @@ pub fn serialize_impact_with_gauge_xml<W: Write>(
     pr_iters: u32,
     out: &mut W,
 ) -> io::Result<()> {
+    serialize_impact_with_importers_xml(
+        root,
+        sym_name,
+        nodes,
+        Vec::new(),
+        gauge_attrs,
+        pr_iters,
+        out,
+    )
+}
+
+pub fn serialize_impact_with_importers_xml<'a, W: Write>(
+    root: &'a str,
+    sym_name: &'a str,
+    nodes: &'a [ImpactNode],
+    importers: Vec<&'a str>,
+    gauge_attrs: &'a str,
+    pr_iters: u32,
+    out: &mut W,
+) -> io::Result<()> {
     use crate::serialize::XmlReport;
     ImpactReport {
         root,
         sym_name,
         nodes,
+        importers,
         gauge_attrs,
         pr_iters,
     }
@@ -1125,14 +1130,68 @@ struct PackTaskBody {
     body: String,
 }
 
+const MAX_PACK_BODY_BYTES: usize = 3600;
+const MAX_PACK_TOTAL_BODY_BYTES: usize = 9600;
+const MAX_PACK_CALLERS: usize = 12;
+const MAX_PACK_TESTS: usize = 20;
+
+fn truncate_body_to_budget(raw: &str, max_bytes: usize) -> String {
+    if raw.len() <= max_bytes {
+        return raw.to_string();
+    }
+    let mut end = max_bytes;
+    while end > 0 && !raw.is_char_boundary(end) {
+        end -= 1;
+    }
+    if let Some(nl) = raw[..end].rfind('\n') {
+        end = nl;
+    }
+    format!(
+        "{}\n// ... [truncated to fit pack-task budget]",
+        &raw[..end]
+    )
+}
+
+fn maybe_push_pack_body(
+    it: &serde_json::Value,
+    l: u64,
+    p_esc: String,
+    n_esc: String,
+    bodies: &mut Vec<PackTaskBody>,
+    acc_body_bytes: &mut usize,
+) -> bool {
+    let Some(b) = it
+        .get("body")
+        .or_else(|| it.get("sig"))
+        .and_then(serde_json::Value::as_str)
+    else {
+        return false;
+    };
+    let remaining = MAX_PACK_TOTAL_BODY_BYTES.saturating_sub(*acc_body_bytes);
+    if bodies.len() < 3 && remaining >= 256 {
+        let capped_body = truncate_body_to_budget(b, MAX_PACK_BODY_BYTES.min(remaining));
+        *acc_body_bytes += capped_body.len();
+        bodies.push(PackTaskBody {
+            kind: it["kind"].as_str().unwrap_or("fn").to_string(),
+            line: l,
+            path_esc: p_esc,
+            name_esc: n_esc,
+            body: capped_body,
+        });
+    }
+    true
+}
+
 fn write_pack_task_sigs_and_collect<'a, W: Write>(
     syms: &'a [serde_json::Value],
     ingest: &'a IngestResult,
     interner: &'a Interner,
     out: &mut W,
-) -> io::Result<(Vec<PackTaskBody>, Vec<&'a str>)> {
+) -> io::Result<(Vec<PackTaskBody>, Vec<&'a str>, usize)> {
     let mut bodies = Vec::new();
     let mut changed_paths = Vec::new();
+    let mut total_body_candidates = 0usize;
+    let mut acc_body_bytes = 0usize;
     for (idx, it) in syms.iter().enumerate() {
         let raw_name = it["name"].as_str().unwrap_or("");
         let raw_path = it["path"].as_str().unwrap_or("");
@@ -1151,19 +1210,8 @@ fn write_pack_task_sigs_and_collect<'a, W: Write>(
         if !raw_path.is_empty() {
             changed_paths.push(raw_path);
         }
-        if let Some(b) = it
-            .get("body")
-            .or_else(|| it.get("sig"))
-            .and_then(serde_json::Value::as_str)
-            && bodies.len() < 3
-        {
-            bodies.push(PackTaskBody {
-                kind: it["kind"].as_str().unwrap_or("fn").to_string(),
-                line: l,
-                path_esc: p_esc,
-                name_esc: n_esc,
-                body: b.to_string(),
-            });
+        if maybe_push_pack_body(it, l, p_esc, n_esc, &mut bodies, &mut acc_body_bytes) {
+            total_body_candidates += 1;
         }
     }
     if syms.is_empty()
@@ -1181,6 +1229,7 @@ fn write_pack_task_sigs_and_collect<'a, W: Write>(
             first_sym.ccx
         )?;
         changed_paths.push(p_raw);
+        total_body_candidates = 1;
         bodies.push(PackTaskBody {
             kind: first_sym.kind.tag().to_string(),
             line: u64::from(l),
@@ -1189,7 +1238,7 @@ fn write_pack_task_sigs_and_collect<'a, W: Write>(
             body: n_esc,
         });
     }
-    Ok((bodies, changed_paths))
+    Ok((bodies, changed_paths, total_body_candidates))
 }
 
 pub fn execute_pack_task<W: Write>(
@@ -1217,10 +1266,24 @@ pub fn execute_pack_task<W: Write>(
     let empty = Vec::new();
     let syms = for_val["symbols"].as_array().unwrap_or(&empty);
     let mut sigs_buf = Vec::new();
-    let (bodies, changed_paths) =
+    let (bodies, changed_paths, total_bodies) =
         write_pack_task_sigs_and_collect(syms, ingest, interner, &mut sigs_buf)?;
+    let top_caller_nodes = syms
+        .first()
+        .and_then(|it| it["name"].as_str())
+        .and_then(|n| find_symbols_by_name(n, ingest, interner).into_iter().next())
+        .and_then(|id| navigate_1hop(id, ingest, &graph, &pr.ranks, interner))
+        .map(|nav| nav.callers)
+        .unwrap_or_default();
+    let aff = crate::gate::affected::find_affected_tests(&changed_paths, ingest, &graph, interner);
+    let callers_shown = top_caller_nodes.len().min(MAX_PACK_CALLERS);
+    let callers_capped = usize::from(callers_shown < top_caller_nodes.len());
+    let tests_shown = aff.tests.len().min(MAX_PACK_TESTS);
+    let tests_capped = usize::from(tests_shown < aff.tests.len());
+    let bodies_capped = usize::from(bodies.len() < total_bodies);
     let body_bytes: usize = bodies.iter().map(|b| b.body.len() + 64).sum();
-    let est_tokens = ((sigs_buf.len() + body_bytes + 400) / 4).max(120);
+    let aux_bytes = callers_shown * 56 + tests_shown * 64 + 400;
+    let est_tokens = ((sigs_buf.len() + body_bytes + aux_bytes) / 4).max(120);
     write!(
         out,
         "<!-- ripwire pack-task schema=ripwire.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire.pack-task/v1\" task=\"{}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"{est_tokens}\" budget_tokens=\"6000\"><sigs>",
@@ -1229,9 +1292,9 @@ pub fn execute_pack_task<W: Write>(
     out.write_all(&sigs_buf)?;
     write!(
         out,
-        "</sigs><bodies shown=\"{}\" total=\"{}\" capped=\"0\">",
+        "</sigs><bodies shown=\"{}\" total=\"{}\" capped=\"{bodies_capped}\">",
         bodies.len(),
-        bodies.len()
+        total_bodies.max(bodies.len())
     )?;
     for b in &bodies {
         write!(
@@ -1241,20 +1304,12 @@ pub fn execute_pack_task<W: Write>(
         )?;
     }
     write!(out, "</bodies>")?;
-    let top_caller_nodes = syms
-        .first()
-        .and_then(|it| it["name"].as_str())
-        .and_then(|n| find_symbols_by_name(n, ingest, interner).into_iter().next())
-        .and_then(|id| navigate_1hop(id, ingest, &graph, &pr.ranks, interner))
-        .map(|nav| nav.callers)
-        .unwrap_or_default();
     write!(
         out,
-        "<callers of_top=\"1\" shown=\"{}\" total=\"{}\" capped=\"0\">",
-        top_caller_nodes.len(),
+        "<callers of_top=\"1\" shown=\"{callers_shown}\" total=\"{}\" capped=\"{callers_capped}\">",
         top_caller_nodes.len()
     )?;
-    for c in &top_caller_nodes {
+    for c in top_caller_nodes.iter().take(callers_shown) {
         write!(
             out,
             "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
@@ -1265,14 +1320,12 @@ pub fn execute_pack_task<W: Write>(
         )?;
     }
     write!(out, "</callers>")?;
-    let aff = crate::gate::affected::find_affected_tests(&changed_paths, ingest, &graph, interner);
     write!(
         out,
-        "<tests shown=\"{}\" total=\"{}\" capped=\"0\">",
-        aff.tests.len(),
+        "<tests shown=\"{tests_shown}\" total=\"{}\" capped=\"{tests_capped}\">",
         aff.tests.len()
     )?;
-    for t in &aff.tests {
+    for t in aff.tests.iter().take(tests_shown) {
         write!(
             out,
             "<t p=\"{}\" hops=\"{}\"/>",
@@ -1794,6 +1847,16 @@ pub struct GraphQueryReport<'a> {
     pub interner: &'a Interner,
     pub pr_iters: u32,
     pub gauges: crate::serialize::GraphGauges,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
+impl GraphQueryReport<'_> {
+    fn window(&self) -> crate::serialize::PageWindow {
+        let total = self.matched_nodes.len();
+        let default_cap = self.limit.unwrap_or(total);
+        crate::serialize::PageWindow::compute(total, default_cap, self.limit, self.offset)
+    }
 }
 
 impl crate::serialize::XmlReport for GraphQueryReport<'_> {
@@ -1816,14 +1879,17 @@ impl crate::serialize::XmlReport for GraphQueryReport<'_> {
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let count = self.matched_nodes.len();
+        let pw = self.window();
         write!(
             out,
-            " expr=\"{}\" count=\"{count}\" shown=\"{count}\" capped=\"0\"",
-            self.expr.xml_escaped()
+            " expr=\"{}\" count=\"{count}\"{}",
+            self.expr.xml_escaped(),
+            pw.xml_attrs()
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for &node_id in self.matched_nodes {
+        let pw = self.window();
+        for &node_id in self.matched_nodes.iter().skip(pw.begin).take(pw.shown) {
             if let Some(sym) = self.ingest.sym(node_id) {
                 let n = &self.interner[sym.name];
                 let p = self.ingest.sym_file_path(sym, self.interner);
@@ -1838,12 +1904,38 @@ impl crate::serialize::XmlReport for GraphQueryReport<'_> {
     }
 }
 
+#[derive(Debug, Default, Clone, Copy)]
+pub struct GraphQueryPageOptions {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
 pub fn execute_graph_query_expr<W: Write>(
     expr: &str,
     root: &str,
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    execute_graph_query_expr_paged(
+        expr,
+        root,
+        ingest,
+        graph,
+        interner,
+        GraphQueryPageOptions::default(),
+        out,
+    )
+}
+
+pub fn execute_graph_query_expr_paged<W: Write>(
+    expr: &str,
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    page: GraphQueryPageOptions,
     out: &mut W,
 ) -> io::Result<()> {
     let tokens = tokenize_graph_query(expr);
@@ -1867,6 +1959,8 @@ pub fn execute_graph_query_expr<W: Write>(
         interner,
         pr_iters,
         gauges: graph.gauges(),
+        limit: page.limit,
+        offset: page.offset,
     }
     .write_xml_report(root, out)
 }
@@ -1935,8 +2029,17 @@ mod tests {
         assert_eq!(nav.target.name, "b");
         assert_eq!(nav.callers.len(), 1);
         assert_eq!(nav.callers[0].name, "a");
+        assert_eq!(nav.callers[0].sites, vec!["src/lib.rs:2".to_string()]);
         assert_eq!(nav.callees.len(), 1);
         assert_eq!(nav.callees[0].name, "c");
+
+        let mut callers_xml = Vec::new();
+        serialize_callers_xml("b", &nav.callers, &mut callers_xml).unwrap();
+        assert!(
+            String::from_utf8(callers_xml)
+                .unwrap()
+                .contains("sites_at=\"src/lib.rs:2\"")
+        );
 
         // Impact of c: callers reach b (1 hop) and a (2 hops)
         let impact = transitive_impact(2, &ingest, &graph, &ranks, &interner, None);
@@ -1945,6 +2048,21 @@ mod tests {
         assert_eq!(impact[0].hops, 1);
         assert_eq!(impact[1].name, "a");
         assert_eq!(impact[1].hops, 2);
+
+        let mut imp_xml = Vec::new();
+        serialize_impact_with_importers_xml(
+            ".",
+            "c",
+            &impact,
+            vec!["src/main.rs"],
+            "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+            1,
+            &mut imp_xml,
+        )
+        .unwrap();
+        let imp_str = String::from_utf8(imp_xml).unwrap();
+        assert!(imp_str.contains("importers=\"2\""));
+        assert!(imp_str.contains("p=\"src/main.rs\""));
     }
 
     #[test]
@@ -2033,6 +2151,27 @@ mod tests {
         )
         .unwrap();
         assert!(String::from_utf8(out).unwrap().contains("count=\"2\""));
+        let mut paged_out = Vec::new();
+        execute_graph_query_expr_paged(
+            "or(not(name(\"foo\")), callers(\"bar\", 1))",
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            GraphQueryPageOptions {
+                limit: Some(1),
+                offset: Some(0),
+            },
+            &mut paged_out,
+        )
+        .unwrap();
+        let paged_str = String::from_utf8(paged_out).unwrap();
+        assert!(paged_str.contains("shown=\"1\" capped=\"1\" total=\"2\""));
+
+        let long_body = "let x = 1;\n".repeat(400);
+        let truncated = truncate_body_to_budget(&long_body, 512);
+        assert!(truncated.len() < 600);
+        assert!(truncated.contains("truncated to fit pack-task budget"));
 
         let mut v_out = Vec::new();
         evaluate_verify_claim("calls(foo,bar)", &ingest, &graph, &interner, &mut v_out).unwrap();

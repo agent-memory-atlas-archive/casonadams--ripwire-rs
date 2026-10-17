@@ -149,6 +149,7 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
             out,
         ),
         NavMode::Impact => {
+            use crate::domain::CorpusView;
             let impact = crate::navigate::transitive_impact_multi(
                 &ids,
                 ctx.ingest,
@@ -157,14 +158,16 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
                 ctx.interner,
                 None,
             );
+            let importers = (ctx.ingest, ctx.interner).resolve_symbol_importers(&ids);
             let pr_iters = ctx
                 .graph
                 .page_rank(&crate::rank::PageRankConfig::default())
                 .iterations;
-            crate::navigate::serialize_impact_with_gauge_xml(
+            crate::navigate::serialize_impact_with_importers_xml(
                 root,
                 sym,
                 &impact,
+                importers,
                 &gauge_attrs,
                 pr_iters,
                 out,
