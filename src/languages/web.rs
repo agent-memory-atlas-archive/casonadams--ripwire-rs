@@ -64,6 +64,105 @@ fn is_js_builtin_member_name(name: &str) -> bool {
             | "finally"
             | "test"
             | "match"
+            | "has"
+            | "get"
+            | "set"
+            | "delete"
+            | "add"
+            | "clear"
+            | "some"
+            | "every"
+            | "flat"
+            | "flatMap"
+            | "sort"
+            | "reverse"
+            | "concat"
+            | "fill"
+            | "at"
+            | "charAt"
+            | "charCodeAt"
+            | "codePointAt"
+            | "padStart"
+            | "padEnd"
+            | "repeat"
+            | "search"
+            | "matchAll"
+            | "exec"
+            | "toFixed"
+            | "toISOString"
+            | "getTime"
+            | "resolve"
+            | "reject"
+            | "all"
+            | "allSettled"
+            | "race"
+            | "any"
+            | "from"
+            | "of"
+            | "isArray"
+            | "assign"
+            | "freeze"
+            | "create"
+            | "defineProperty"
+            | "hasOwn"
+            | "hasOwnProperty"
+            | "parse"
+            | "stringify"
+            | "now"
+            | "Date"
+            | "dirname"
+            | "basename"
+            | "extname"
+            | "relative"
+            | "isAbsolute"
+    )
+}
+
+fn is_js_builtin_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Array"
+            | "Object"
+            | "JSON"
+            | "Math"
+            | "Number"
+            | "String"
+            | "Boolean"
+            | "Symbol"
+            | "BigInt"
+            | "Date"
+            | "RegExp"
+            | "Promise"
+            | "Reflect"
+            | "Proxy"
+            | "Map"
+            | "Set"
+            | "WeakMap"
+            | "WeakSet"
+            | "Error"
+            | "TypeError"
+            | "RangeError"
+            | "SyntaxError"
+            | "Uint8Array"
+            | "Int32Array"
+            | "Float64Array"
+            | "ArrayBuffer"
+            | "DataView"
+            | "Buffer"
+            | "console"
+            | "process"
+            | "URL"
+            | "URLSearchParams"
+            | "Intl"
+            | "crypto"
+            | "TextEncoder"
+            | "TextDecoder"
+            | "Performance"
+            | "performance"
+            | "navigator"
+            | "window"
+            | "document"
+            | "globalThis"
     )
 }
 
@@ -82,6 +181,10 @@ impl LanguageSemantics for TypeScriptLanguage {
 
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
         is_js_builtin_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_js_builtin_qualifier_name(qualifier)
     }
 
     fn parse_file_override(
@@ -144,6 +247,10 @@ impl LanguageSemantics for JavaScriptLanguage {
 
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
         is_js_builtin_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_js_builtin_qualifier_name(qualifier)
     }
 
     fn resolve_import_target(

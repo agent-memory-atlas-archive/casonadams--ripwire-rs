@@ -37,6 +37,10 @@ impl LanguageSemantics for RustLanguage {
         is_rust_std_member_name(name)
     }
 
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_rust_std_qualifier_name(qualifier)
+    }
+
     fn resolve_import_target(
         &self,
         importer_path: &str,
@@ -143,6 +147,53 @@ fn is_rust_std_member_name(name: &str) -> bool {
             | "index"
             | "deref"
             | "next"
+    )
+}
+
+fn is_rust_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "std"
+            | "core"
+            | "alloc"
+            | "Vec"
+            | "String"
+            | "Option"
+            | "Result"
+            | "Box"
+            | "Arc"
+            | "Rc"
+            | "Mutex"
+            | "RwLock"
+            | "HashMap"
+            | "HashSet"
+            | "BTreeMap"
+            | "BTreeSet"
+            | "VecDeque"
+            | "Path"
+            | "PathBuf"
+            | "OsStr"
+            | "OsString"
+            | "CStr"
+            | "CString"
+            | "File"
+            | "Command"
+            | "Instant"
+            | "Duration"
+            | "SystemTime"
+            | "env"
+            | "fs"
+            | "io"
+            | "mem"
+            | "ptr"
+            | "slice"
+            | "str"
+            | "fmt"
+            | "iter"
+            | "cmp"
+            | "ops"
+            | "sync"
+            | "thread"
     )
 }
 

@@ -39,7 +39,7 @@ impl LanguageSemantics for JavaLanguage {
         kind: crate::domain::SymKind,
         rel_path: &str,
     ) -> bool {
-        kind.is_callable() && !crate::gate::affected::is_test_path(rel_path) && sym_name == "main"
+        kind.is_callable() && !super::is_non_entrypoint_path(rel_path) && sym_name == "main"
     }
 }
 
@@ -96,7 +96,7 @@ impl LanguageSemantics for CSharpLanguage {
         rel_path: &str,
     ) -> bool {
         kind.is_callable()
-            && !crate::gate::affected::is_test_path(rel_path)
+            && !super::is_non_entrypoint_path(rel_path)
             && (sym_name == "main" || sym_name == "Main")
     }
 }

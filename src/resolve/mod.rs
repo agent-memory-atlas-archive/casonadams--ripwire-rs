@@ -73,6 +73,7 @@ pub fn resolve_reference_chunk(
         file_dirs,
         by_name,
         interner: None,
+        file_scopes: None,
     };
     resolve_reference_chunk_with_context(chunk, &ctx, num_symbols)
 }
@@ -97,12 +98,14 @@ pub fn merge_resolutions(
 pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> ResolutionResult {
     let file_dirs = compute_file_dirs(&ingest.files, interner);
     let by_name = index_symbols_by_name(&ingest.symbols);
+    let file_scopes = index_file_scope_mentions(ingest.files.len(), &ingest.references);
     let num_symbols = ingest.symbols.len();
     let ctx = ResolutionContext {
         symbols: &ingest.symbols,
         file_dirs: &file_dirs,
         by_name: &by_name,
         interner: Some(interner),
+        file_scopes: Some(&file_scopes),
     };
 
     let (edge_accumulators, amb_out, unresolved) = if ingest.references.len() < 256 {
@@ -431,5 +434,91 @@ mod tests {
         let res = resolve_all_references(&ingest, &interner);
         assert!(res.edge_accumulators.is_empty());
         assert_eq!(res.unresolved, 1);
+    }
+
+    #[test]
+    fn test_std_qualifier_and_cross_file_scope_evidence() {
+        let interner = Interner::new();
+        let f0 = FileInfo {
+            id: 0,
+            path: interner.intern("src/index.ts"),
+            lang: Lang::TypeScript,
+            line_count: 20,
+            byte_size: 200,
+        };
+        let f1 = FileInfo {
+            id: 1,
+            path: interner.intern("src/caller_with_type.ts"),
+            lang: Lang::TypeScript,
+            line_count: 20,
+            byte_size: 200,
+        };
+        let f2 = FileInfo {
+            id: 2,
+            path: interner.intern("src/unrelated_set_user.ts"),
+            lang: Lang::TypeScript,
+            line_count: 20,
+            byte_size: 200,
+        };
+        let has_name = interner.intern("has");
+        let is_arr_name = interner.intern("isArray");
+        let idx_scope = interner.intern("ReviewAnchorIndex");
+        let arr_qual = interner.intern("Array");
+
+        let anchor_has = Symbol::new(
+            0,
+            has_name,
+            interner.intern("src/index.ts::ReviewAnchorIndex::has"),
+            SymKind::Method,
+            Lang::TypeScript,
+            0,
+            5,
+        )
+        .with_scope(idx_scope);
+        let local_is_arr = Symbol::new(
+            1,
+            is_arr_name,
+            interner.intern("src/index.ts::isArray"),
+            SymKind::Function,
+            Lang::TypeScript,
+            0,
+            10,
+        );
+        let typed_caller = Symbol::new(
+            2,
+            interner.intern("checkAnchors"),
+            interner.intern("src/caller_with_type.ts::checkAnchors"),
+            SymKind::Function,
+            Lang::TypeScript,
+            1,
+            1,
+        );
+        let untyped_caller = Symbol::new(
+            3,
+            interner.intern("isNoise"),
+            interner.intern("src/unrelated_set_user.ts::isNoise"),
+            SymKind::Function,
+            Lang::TypeScript,
+            2,
+            1,
+        );
+
+        let mut ingest = IngestResult::new();
+        ingest.files.extend_from_slice(&[f0, f1, f2]);
+        ingest
+            .symbols
+            .extend_from_slice(&[anchor_has, local_is_arr, typed_caller, untyped_caller]);
+        ingest.references.extend_from_slice(&[
+            Reference::new(2, idx_scope, 1, 2, Lang::TypeScript, RefRole::Type),
+            Reference::new(2, has_name, 1, 4, Lang::TypeScript, RefRole::Call),
+            Reference::new(3, has_name, 2, 4, Lang::TypeScript, RefRole::Call),
+            Reference::new(3, is_arr_name, 2, 5, Lang::TypeScript, RefRole::Call)
+                .with_qualifier(arr_qual),
+        ]);
+
+        let res = resolve_all_references(&ingest, &interner);
+        assert!(res.edge_accumulators.contains_key(&(2, 0)));
+        assert!(!res.edge_accumulators.contains_key(&(3, 0)));
+        assert!(!res.edge_accumulators.contains_key(&(3, 1)));
     }
 }

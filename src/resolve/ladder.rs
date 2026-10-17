@@ -174,21 +174,73 @@ pub fn select_precedence_tier(
     is_unique_global_group(cands, symbols).then(|| (cands.to_vec(), 0.2))
 }
 
-fn is_unpinned_std_member_blocked(
+fn is_method_std_member_blocked<L: ResolutionLookup + ?Sized>(
+    lookup: &L,
+    r: &Reference,
+    sym: &Symbol,
+    caller_scope: Option<Spur>,
+) -> bool {
+    let Some(sym_sc) = sym.scope else {
+        return true;
+    };
+    if caller_scope == Some(sym_sc) {
+        return false;
+    }
+    !(caller_scope.is_none()
+        && sym.file_id != r.file_id
+        && lookup.file_mentions_scope(r.file_id, sym_sc))
+}
+
+fn is_unpinned_std_member_blocked<L: ResolutionLookup + ?Sized>(
+    lookup: &L,
     r: &Reference,
     sym: &Symbol,
     caller_scope: Option<Spur>,
     callee_str: &str,
 ) -> bool {
-    if r.qualifier.is_some() || !sym.lang.semantics().is_std_or_builtin_member(callee_str) {
+    if !sym.lang.semantics().is_std_or_builtin_member(callee_str) {
         return false;
+    }
+    if let Some(q) = r.qualifier {
+        return sym.scope != Some(q);
     }
     match sym.kind {
         crate::domain::SymKind::Field | crate::domain::SymKind::Var => true,
-        crate::domain::SymKind::Method => sym.scope.is_none() || caller_scope != sym.scope,
+        crate::domain::SymKind::Method => {
+            is_method_std_member_blocked(lookup, r, sym, caller_scope)
+        }
         crate::domain::SymKind::Function => sym.file_id != r.file_id,
         _ => false,
     }
+}
+
+fn filter_matching_scope(cands: &CandBuffer, symbols: &[Symbol], q: Spur) -> CandBuffer {
+    let mut qualified = CandBuffer::default();
+    for &id in cands {
+        let s = &symbols[id as usize];
+        if s.scope == Some(q) || s.name == q {
+            qualified.push(id);
+        }
+    }
+    qualified
+}
+
+/// Index per-file referenced identifiers and qualifiers for cross-file receiver evidence.
+#[must_use]
+pub fn index_file_scope_mentions(
+    files_len: usize,
+    references: &[Reference],
+) -> Vec<std::collections::HashSet<Spur>> {
+    let mut sets = vec![std::collections::HashSet::new(); files_len];
+    for r in references {
+        if let Some(set) = sets.get_mut(r.file_id as usize) {
+            set.insert(r.callee_name);
+            if let Some(q) = r.qualifier {
+                set.insert(q);
+            }
+        }
+    }
+    sets
 }
 
 /// Trait encapsulating symbol table and directory context for call resolution.
@@ -198,6 +250,9 @@ pub trait ResolutionLookup {
     fn by_name(&self) -> &HashMap<Spur, Vec<NodeId>>;
     fn interner(&self) -> Option<&Interner> {
         None
+    }
+    fn file_mentions_scope(&self, _file_id: u32, _scope: Spur) -> bool {
+        false
     }
 
     #[must_use]
@@ -213,7 +268,7 @@ pub trait ResolutionLookup {
                 .symbols()
                 .get(r.from_symbol as usize)
                 .and_then(|cs| cs.scope);
-            if is_unpinned_std_member_blocked(r, sym, caller_scope, callee_str) {
+            if is_unpinned_std_member_blocked(self, r, sym, caller_scope, callee_str) {
                 return false;
             }
         }
@@ -222,6 +277,33 @@ pub trait ResolutionLookup {
             || r.arg_count <= sym.params
             || (sym.params == 0 && !sym.is_callable());
         sym.lang.is_compatible(r.lang) && arity_ok
+    }
+
+    #[must_use]
+    fn apply_qualifier_or_caller_scope(
+        &self,
+        cands: CandBuffer,
+        r: &Reference,
+    ) -> Option<CandBuffer> {
+        let symbols = self.symbols();
+        if let Some(q) = r.qualifier {
+            let qualified = filter_matching_scope(&cands, symbols, q);
+            if !qualified.is_empty() {
+                return Some(qualified);
+            }
+            let is_std_qual = self
+                .interner()
+                .and_then(|i| i.try_resolve(&q))
+                .is_some_and(|qs| r.lang.semantics().is_std_or_builtin_qualifier(qs));
+            return (!is_std_qual).then_some(cands);
+        }
+        if let Some(caller_sc) = symbols.get(r.from_symbol as usize).and_then(|cs| cs.scope) {
+            let qualified = filter_matching_scope(&cands, symbols, caller_sc);
+            if !qualified.is_empty() {
+                return Some(qualified);
+            }
+        }
+        Some(cands)
     }
 
     #[must_use]
@@ -236,21 +318,7 @@ pub trait ResolutionLookup {
         if cands.is_empty() {
             return None;
         }
-        let target_scope = r
-            .qualifier
-            .or_else(|| symbols.get(r.from_symbol as usize).and_then(|cs| cs.scope));
-        if let Some(q) = target_scope {
-            let mut qualified = CandBuffer::default();
-            for &id in &cands {
-                if symbols[id as usize].scope == Some(q) {
-                    qualified.push(id);
-                }
-            }
-            if !qualified.is_empty() {
-                cands = qualified;
-            }
-        }
-        Some(cands)
+        self.apply_qualifier_or_caller_scope(cands, r)
     }
 
     #[must_use]
@@ -302,6 +370,7 @@ pub struct ResolutionContext<'a> {
     pub file_dirs: &'a [u32],
     pub by_name: &'a HashMap<Spur, Vec<NodeId>>,
     pub interner: Option<&'a Interner>,
+    pub file_scopes: Option<&'a [std::collections::HashSet<Spur>]>,
 }
 
 impl ResolutionLookup for ResolutionContext<'_> {
@@ -324,6 +393,13 @@ impl ResolutionLookup for ResolutionContext<'_> {
     fn interner(&self) -> Option<&Interner> {
         self.interner
     }
+
+    #[inline]
+    fn file_mentions_scope(&self, file_id: u32, scope: Spur) -> bool {
+        self.file_scopes
+            .and_then(|sets| sets.get(file_id as usize))
+            .is_some_and(|set| set.contains(&scope))
+    }
 }
 
 pub fn filter_candidates(
@@ -337,6 +413,7 @@ pub fn filter_candidates(
         file_dirs: &[],
         by_name: &empty_map,
         interner: None,
+        file_scopes: None,
     };
     ctx.filter_ref_candidates(all_cands, r)
 }
@@ -352,6 +429,7 @@ pub fn resolve_call_reference(
         file_dirs,
         by_name,
         interner: None,
+        file_scopes: None,
     };
     ctx.resolve_ref(r)
 }

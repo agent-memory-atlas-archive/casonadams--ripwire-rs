@@ -3,13 +3,62 @@ use crate::graph::Graph;
 use serde_json::{Value, json};
 use std::fs;
 
-fn stem_query_term(term: &str) -> String {
-    let t = term.to_ascii_lowercase();
-    if t.len() >= 5 && t.ends_with('s') && !t.ends_with("ss") {
-        t[..t.len() - 1].to_string()
-    } else {
-        t
+fn stem_derivational_suffix(t: &str) -> Option<String> {
+    if let Some(prefix) = t.strip_suffix("ution").filter(|p| p.len() >= 3) {
+        return Some(format!("{prefix}v"));
     }
+    for (suffix, min_stem) in [
+        ("ization", 4),
+        ("ation", 4),
+        ("ition", 4),
+        ("tion", 4),
+        ("sion", 4),
+        ("ment", 4),
+        ("ing", 4),
+        ("y", 5),
+    ] {
+        if let Some(stripped) = t.strip_suffix(suffix)
+            && stripped.len() >= min_stem
+        {
+            return Some(stripped.to_string());
+        }
+    }
+    None
+}
+
+fn stem_plural_only(term: &str) -> String {
+    let mut t = term.to_ascii_lowercase();
+    if t.len() >= 5 && t.ends_with('s') && !t.ends_with("ss") {
+        t.pop();
+    }
+    t
+}
+
+fn stem_query_term(term: &str) -> String {
+    let t = stem_plural_only(term);
+    stem_derivational_suffix(&t).unwrap_or(t)
+}
+
+fn is_camel_boundary(bytes: &[u8], i: usize) -> bool {
+    if i == 0 || !bytes[i].is_ascii_uppercase() {
+        return false;
+    }
+    let prev_lower = bytes[i - 1].is_ascii_lowercase() || bytes[i - 1].is_ascii_digit();
+    let next_lower =
+        bytes.get(i + 1).is_some_and(u8::is_ascii_lowercase) && bytes[i - 1].is_ascii_uppercase();
+    prev_lower || next_lower
+}
+
+fn normalize_camel_case_lower(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len() + 4);
+    for (i, ch) in s.char_indices() {
+        if is_camel_boundary(bytes, i) {
+            out.push('_');
+        }
+        out.push(ch.to_ascii_lowercase());
+    }
+    out
 }
 
 fn is_for_stopword(w: &str) -> bool {
@@ -48,36 +97,42 @@ fn contains_term_aware(haystack: &str, needle: &str) -> bool {
 }
 
 /// Score a symbol against a single search term across name, scope, and file path.
+fn matches_term_or_stem(haystack: &str, t: &str, stem: &str) -> bool {
+    contains_term_aware(haystack, t) || contains_term_aware(haystack, stem)
+}
+
 fn score_single_term(
     lower_name: &str,
+    norm_name: &str,
     lower_scope: Option<&str>,
     lower_path: &str,
     term: &str,
-) -> f64 {
+) -> (f64, bool) {
     let t = term.to_ascii_lowercase();
     let stem = stem_query_term(&t);
     let name_hit = if lower_name == t || lower_name == stem {
         30.0
-    } else if contains_term_aware(lower_name, &t) || contains_term_aware(lower_name, &stem) {
+    } else if matches_term_or_stem(lower_name, &t, &stem)
+        || matches_term_or_stem(norm_name, &t, &stem)
+    {
         12.0
     } else {
         0.0
     };
-    let scope_hit = if lower_scope
-        .is_some_and(|sc| contains_term_aware(sc, &t) || contains_term_aware(sc, &stem))
-    {
+    let scope_hit = if lower_scope.is_some_and(|sc| matches_term_or_stem(sc, &t, &stem)) {
         6.0
     } else {
         0.0
     };
-    let path_hit = if !lower_path.is_empty()
-        && (contains_term_aware(lower_path, &t) || contains_term_aware(lower_path, &stem))
-    {
+    let path_hit = if !lower_path.is_empty() && matches_term_or_stem(lower_path, &t, &stem) {
         4.0
     } else {
         0.0
     };
-    name_hit + scope_hit + path_hit
+    (
+        name_hit + scope_hit + path_hit,
+        name_hit > 0.0 || scope_hit > 0.0,
+    )
 }
 
 fn build_body_term_masks(
@@ -94,7 +149,7 @@ fn build_body_term_masks(
         .take(16)
         .map(|&t| {
             let low = t.to_ascii_lowercase();
-            let st = stem_query_term(&low);
+            let st = stem_plural_only(&low);
             (low, st)
         })
         .collect();
@@ -158,15 +213,30 @@ struct SymbolMatchCtx<'a> {
     rank: f64,
 }
 
+fn compute_match_synergy(direct_hits: usize, body_only_hits: usize, name_hits: usize) -> f64 {
+    let eff_matches = direct_hits as f64 + (body_only_hits as f64) * 0.45;
+    eff_matches.powi(3) * (1.0 + (name_hits.saturating_sub(1) as f64) * 0.75)
+}
+
 fn score_symbol_match_with_idf(ctx: &SymbolMatchCtx<'_>) -> f64 {
     let lower_name = ctx.name.to_ascii_lowercase();
-    let lower_scope = ctx.scope.map(str::to_ascii_lowercase);
+    let norm_name = normalize_camel_case_lower(ctx.name);
+    let lower_scope = ctx.scope.map(normalize_camel_case_lower);
     let lower_path = ctx.file_path.to_ascii_lowercase();
-    let mut matched_cnt = 0usize;
+    let mut direct_hits = 0usize;
+    let mut body_only_hits = 0usize;
+    let mut name_hits = 0usize;
     let mut max_raw = 0.0f64;
     let mut weighted_sum = 0.0f64;
     for (i, &t) in ctx.terms.iter().enumerate() {
-        let base = score_single_term(&lower_name, lower_scope.as_deref(), &lower_path, t);
+        let (base, is_name_hit) = score_single_term(
+            &lower_name,
+            &norm_name,
+            lower_scope.as_deref(),
+            &lower_path,
+            t,
+        );
+        name_hits += usize::from(is_name_hit);
         let body = if (ctx.body_mask & (1u32 << i.min(31))) != 0 {
             6.0
         } else {
@@ -174,7 +244,8 @@ fn score_symbol_match_with_idf(ctx: &SymbolMatchCtx<'_>) -> f64 {
         };
         let raw = base + body;
         if raw > 0.0 {
-            matched_cnt += 1;
+            direct_hits += usize::from(base > 0.0);
+            body_only_hits += usize::from(base == 0.0);
             max_raw = max_raw.max(raw);
             let idf = ctx.idf_weights.get(i).copied().unwrap_or(1.0);
             weighted_sum += raw * idf;
@@ -183,7 +254,7 @@ fn score_symbol_match_with_idf(ctx: &SymbolMatchCtx<'_>) -> f64 {
     if max_raw <= 6.0 {
         return 0.0;
     }
-    let synergy = (matched_cnt as f64).powi(3);
+    let synergy = compute_match_synergy(direct_hits, body_only_hits, name_hits);
     let query_wants_test = ctx.terms.iter().any(|t| {
         let l = t.to_ascii_lowercase();
         l.contains("test") || l.contains("spec")
@@ -1632,5 +1703,34 @@ mod tests {
         );
         assert!(!res["compose"].as_array().unwrap().is_empty());
         assert!(!res["hops"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_camel_case_and_derivational_stem_scoring() {
+        assert_eq!(
+            normalize_camel_case_lower("discoverAndLoadMCPTools"),
+            "discover_and_load_mcp_tools"
+        );
+        assert_eq!(stem_query_term("discovery"), "discover");
+        assert_eq!(stem_query_term("validation"), "valid");
+        assert_eq!(stem_query_term("resolution"), "resolv");
+
+        let s_discover = score_symbol_match_in_file(
+            "discoverAndLoadMCPTools",
+            None,
+            "packages/coding-agent/src/mcp/loader.ts",
+            0b11111,
+            &["mcp", "tool", "cache", "server", "discovery"],
+            0.001,
+        );
+        let s_reload = score_symbol_match_in_file(
+            "reloadServers",
+            None,
+            "packages/coding-agent/src/modes/controllers/mcp-command-controller.ts",
+            0b11111,
+            &["mcp", "tool", "cache", "server", "discovery"],
+            0.001,
+        );
+        assert!(s_discover > s_reload);
     }
 }

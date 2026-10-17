@@ -116,7 +116,7 @@ pub trait LanguageSemantics: Sync {
         kind: SymKind,
         rel_path: &str,
     ) -> bool {
-        if !kind.is_callable() || crate::gate::affected::is_test_path(rel_path) {
+        if !kind.is_callable() || is_non_entrypoint_path(rel_path) {
             return false;
         }
         sym_name == "main" && scope.is_none()
@@ -174,6 +174,11 @@ pub trait LanguageSemantics: Sync {
 
     /// True if a method name belongs to the language's standard container/string/builtin types (declined on untyped receivers).
     fn is_std_or_builtin_member(&self, _name: &str) -> bool {
+        false
+    }
+
+    /// True if an explicit call qualifier names a standard library or builtin runtime namespace/type.
+    fn is_std_or_builtin_qualifier(&self, _qualifier: &str) -> bool {
         false
     }
 
@@ -264,6 +269,20 @@ impl Lang {
     pub fn semantics(self) -> &'static dyn LanguageSemantics {
         SEMANTICS_TABLE[self as usize]
     }
+}
+
+pub(crate) fn is_non_entrypoint_path(rel_path: &str) -> bool {
+    if crate::gate::affected::is_test_or_bench_path(rel_path) {
+        return true;
+    }
+    Path::new(rel_path).components().any(|c| {
+        c.as_os_str().to_str().is_some_and(|s| {
+            matches!(
+                s.to_ascii_lowercase().as_str(),
+                "example" | "examples" | "doc" | "docs"
+            )
+        })
+    })
 }
 
 pub(crate) fn find_enclosing_definition_node(
@@ -489,5 +508,18 @@ mod tests {
             c_sem.resolve_import_target("src/main.c", "<stdio.h>", &file_index),
             None
         );
+        assert!(ts_sem.is_std_or_builtin_qualifier("Array"));
+        assert!(ts_sem.is_std_or_builtin_member("has"));
+        assert!(ts_sem.is_std_or_builtin_member("dirname"));
+        assert!(rs_sem.is_std_or_builtin_qualifier("std"));
+        assert!(Lang::Cpp.semantics().is_std_or_builtin_qualifier("std"));
+        assert!(rs_sem.is_entrypoint_symbol("main", None, SymKind::Function, "src/main.rs"));
+        assert!(!rs_sem.is_entrypoint_symbol("main", None, SymKind::Function, "examples/demo.rs"));
+        assert!(!py_sem.is_entrypoint_symbol(
+            "main",
+            None,
+            SymKind::Function,
+            "docs/build_docs.py"
+        ));
     }
 }

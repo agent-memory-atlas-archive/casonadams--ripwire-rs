@@ -132,6 +132,13 @@ fn is_cpp_std_member(name: &str) -> bool {
     CPP_STD_MEMBER_NAMES.binary_search(&name).is_ok()
 }
 
+fn is_cpp_std_qualifier(name: &str) -> bool {
+    matches!(
+        name,
+        "std" | "boost" | "chrono" | "filesystem" | "fs" | "ranges" | "views" | "this_thread"
+    )
+}
+
 fn is_semicolonless_macro_line(line: &[u8]) -> Option<(usize, usize)> {
     let start = line.iter().position(|&b| b != b' ' && b != b'\t')?;
     let trimmed_end = line
@@ -434,6 +441,9 @@ impl LanguageSemantics for CLanguage {
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
         is_cpp_std_member(name)
     }
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_cpp_std_qualifier(qualifier)
+    }
     fn blank_error_macros(&self, source_bytes: &[u8]) -> Option<Vec<u8>> {
         blank_c_family_macro_lines(source_bytes)
     }
@@ -489,6 +499,9 @@ impl LanguageSemantics for CppLanguage {
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
         is_cpp_std_member(name)
     }
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_cpp_std_qualifier(qualifier)
+    }
     fn blank_error_macros(&self, source_bytes: &[u8]) -> Option<Vec<u8>> {
         blank_c_family_macro_lines(source_bytes)
     }
@@ -536,6 +549,9 @@ impl LanguageSemantics for CudaLanguage {
     }
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
         is_cpp_std_member(name)
+    }
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_cpp_std_qualifier(qualifier)
     }
     fn blank_error_macros(&self, source_bytes: &[u8]) -> Option<Vec<u8>> {
         blank_c_family_macro_lines(source_bytes)

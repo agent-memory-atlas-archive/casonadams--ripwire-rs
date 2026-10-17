@@ -213,8 +213,11 @@ fn extract_member_receiver_qualifier(
     if matches!(text, "self" | "this" | "Self") {
         return find_enclosing_scope(name_node, source_bytes);
     }
+    let is_screaming_const =
+        text.len() >= 2 && text.contains('_') && !text.bytes().any(|b| b.is_ascii_lowercase());
     let is_type_ident = text.bytes().next().is_some_and(|b| b.is_ascii_uppercase())
-        && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+        && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && !is_screaming_const;
     is_type_ident.then(|| text.to_string())
 }
 
@@ -718,14 +721,17 @@ fn is_sql_string_node(kind: &str) -> bool {
     kind.contains("string") || kind == "raw_string_literal" || kind == "template_string"
 }
 
-fn has_sql_dml_anchor(text: &str) -> bool {
-    let bytes = text.as_bytes();
+fn has_sql_dml_anchor_bytes(bytes: &[u8]) -> bool {
     for kw in [b"select" as &[u8], b"insert", b"update", b"delete", b"join"] {
         if bytes.windows(kw.len()).any(|w| w.eq_ignore_ascii_case(kw)) {
             return true;
         }
     }
     false
+}
+
+fn has_sql_dml_anchor(text: &str) -> bool {
+    has_sql_dml_anchor_bytes(text.as_bytes())
 }
 
 fn trim_sql_punct(s: &str) -> &str {
@@ -908,7 +914,7 @@ pub fn parse_file_tree(
                 record_extracted_item(ext, source_bytes, lang, &mut defs, &mut refs);
             }
         }
-        if lang.semantics().supports_embedded_sql() {
+        if lang.semantics().supports_embedded_sql() && has_sql_dml_anchor_bytes(source_bytes) {
             extract_embedded_sql_refs(tree.root_node(), source_bytes, &mut refs);
         }
 
