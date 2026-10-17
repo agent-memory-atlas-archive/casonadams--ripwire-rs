@@ -1,7 +1,7 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::gate::affected::is_test_path;
 use crate::graph::Graph;
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -44,38 +44,12 @@ fn compute_directory(path: &str) -> String {
         .to_string()
 }
 
-fn collect_tested_nodes(
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-) -> HashSet<NodeId> {
-    let mut tested = HashSet::new();
-    let mut queue = VecDeque::new();
-
-    for sym in &ingest.symbols {
-        let path = ingest.sym_file_path(sym, interner);
-        if is_test_path(path) {
-            tested.insert(sym.id);
-            queue.push_back(sym.id);
-        }
-    }
-
-    while let Some(curr) = queue.pop_front() {
-        for (callee, _) in graph.callees(curr) {
-            if tested.insert(callee) {
-                queue.push_back(callee);
-            }
-        }
-    }
-    tested
-}
-
 fn check_cross_module_edge(
     sym: &crate::domain::Symbol,
     target_id: NodeId,
     ingest: &IngestResult,
     interner: &Interner,
-    tested_nodes: &HashSet<NodeId>,
+    tested_mask: &[bool],
 ) -> Option<(String, String, bool, Option<SeamEdge>)> {
     let from_file = ingest.sym_file_path(sym, interner);
     if is_test_path(from_file) {
@@ -93,7 +67,12 @@ fn check_cross_module_edge(
         return None;
     }
 
-    let is_untested = !tested_nodes.contains(&sym.id) || !tested_nodes.contains(&target_id);
+    let sym_tested = tested_mask.get(sym.id as usize).copied().unwrap_or(false);
+    let tgt_tested = tested_mask
+        .get(target_id as usize)
+        .copied()
+        .unwrap_or(false);
+    let is_untested = !sym_tested || !tgt_tested;
     let seam_edge = if is_untested {
         Some(SeamEdge {
             caller: interner[sym.name].to_string(),
@@ -130,13 +109,13 @@ fn process_sym_seams(
     graph: &Graph,
     ingest: &IngestResult,
     interner: &Interner,
-    tested_nodes: &HashSet<NodeId>,
+    tested_mask: &[bool],
     bridges_count: &mut usize,
     groups_map: &mut BTreeMap<(String, String), Vec<SeamEdge>>,
 ) {
     for (target_id, _) in graph.callees(sym.id) {
         if let Some((from_dir, to_dir, is_bridge, maybe_edge)) =
-            check_cross_module_edge(sym, target_id, ingest, interner, tested_nodes)
+            check_cross_module_edge(sym, target_id, ingest, interner, tested_mask)
         {
             if is_bridge {
                 *bridges_count += 1;
@@ -155,8 +134,9 @@ pub fn find_integration_seams(
     graph: &Graph,
     interner: &Interner,
 ) -> SeamsReport {
+    use crate::domain::CorpusView;
     let (all_modules, test_files) = collect_module_and_test_files(ingest, interner);
-    let tested_nodes = collect_tested_nodes(ingest, graph, interner);
+    let tested_mask = (ingest, interner).compute_test_reachability(graph);
     let mut bridges_count = 0usize;
     let mut groups_map: BTreeMap<(String, String), Vec<SeamEdge>> = BTreeMap::new();
 
@@ -166,7 +146,7 @@ pub fn find_integration_seams(
             graph,
             ingest,
             interner,
-            &tested_nodes,
+            &tested_mask,
             &mut bridges_count,
             &mut groups_map,
         );

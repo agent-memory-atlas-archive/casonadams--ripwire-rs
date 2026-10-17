@@ -209,57 +209,13 @@ pub fn get_symbol_nav_info(
     })
 }
 
-fn seed_tested_nodes(
-    ingest: &IngestResult,
-    interner: &Interner,
-    tested: &mut [bool],
-    queue: &mut VecDeque<NodeId>,
-) {
-    let mut by_name: std::collections::HashMap<lasso::Spur, Vec<NodeId>> =
-        std::collections::HashMap::new();
-    for sym in &ingest.symbols {
-        by_name.entry(sym.name).or_default().push(sym.id);
-        let path = ingest.sym_file_path(sym, interner);
-        if crate::gate::affected::is_test_path(path) && !tested[sym.id as usize] {
-            tested[sym.id as usize] = true;
-            queue.push_back(sym.id);
-        }
-    }
-    for r in &ingest.references {
-        let path = ingest.file_path(r.file_id, interner);
-        let Some(ids) = by_name
-            .get(&r.callee_name)
-            .filter(|_| crate::gate::affected::is_test_path(path))
-        else {
-            continue;
-        };
-        for &id in ids {
-            if !tested[id as usize] {
-                tested[id as usize] = true;
-                queue.push_back(id);
-            }
-        }
-    }
-}
-
 pub fn compute_tested_node_mask(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
 ) -> Vec<bool> {
-    let n = ingest.symbols.len();
-    let mut tested = vec![false; n];
-    let mut queue = VecDeque::new();
-    seed_tested_nodes(ingest, interner, &mut tested, &mut queue);
-    while let Some(curr) = queue.pop_front() {
-        for (callee, _) in graph.callees(curr) {
-            if (callee as usize) < n && !tested[callee as usize] {
-                tested[callee as usize] = true;
-                queue.push_back(callee);
-            }
-        }
-    }
-    tested
+    use crate::domain::CorpusView;
+    (ingest, interner).compute_test_reachability(graph)
 }
 
 /// Compute 1-hop neighborhood (direct callers and callees) for a target symbol.

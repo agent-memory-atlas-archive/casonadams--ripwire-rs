@@ -38,13 +38,15 @@ fn build_single_pr_file_context(
     let mut dependents = 0usize;
     let mut caller_files = std::collections::HashSet::new();
 
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     for sym in &ingest.symbols {
-        let path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        let path = view.sym_path(sym);
         if path == f || path.ends_with(f) {
-            symbols.push(interner.resolve(&sym.name).to_string());
+            symbols.push(view.sym_name(sym).to_string());
             dependents += graph.in_degree(sym.id);
             for (caller_id, _) in graph.callers(sym.id) {
-                if let Some(cs) = ingest.symbols.get(caller_id as usize)
+                if let Some(cs) = ingest.sym(caller_id)
                     && cs.file_id != sym.file_id
                 {
                     caller_files.insert(cs.file_id);
