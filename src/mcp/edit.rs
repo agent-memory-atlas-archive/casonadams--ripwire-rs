@@ -46,19 +46,18 @@ fn resolve_edit_target<'a>(
     symbol_name: &str,
     path_hint: Option<&str>,
 ) -> Result<(&'a crate::domain::Symbol, &'a str), Value> {
-    let mut matches = Vec::new();
-
-    for sym in &ingest.symbols {
-        let name = interner.resolve(&sym.name);
-        if name == symbol_name
-            && let Some(file_info) = ingest.files.get(sym.file_id as usize)
-        {
-            let file_path = interner.resolve(&file_info.path);
-            if path_hint.is_none() || path_hint.is_some_and(|h| file_path.contains(h)) {
-                matches.push((sym, file_path));
-            }
-        }
-    }
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let matches: Vec<_> = ingest
+        .symbols
+        .iter()
+        .filter(|sym| {
+            view.sym_name(sym) == symbol_name
+                && !view.sym_path(sym).is_empty()
+                && path_hint.is_none_or(|h| view.sym_path(sym).contains(h))
+        })
+        .map(|sym| (sym, view.sym_path(sym)))
+        .collect();
 
     if matches.is_empty() {
         return Err(json!({

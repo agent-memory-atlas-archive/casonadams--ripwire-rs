@@ -168,13 +168,12 @@ fn handle_lsp_references(id: &Value, params: &Value, state: &McpState) -> Value 
     else {
         return json!({ "jsonrpc": "2.0", "id": id, "result": [] });
     };
-    let target_name = state.interner.resolve(&sym.name);
+    use crate::domain::CorpusView;
+    let target_name = state.sym_name(sym);
     let mut locations = Vec::new();
     for r in &state.ingest.references {
-        if state.interner.resolve(&r.callee_name) == target_name
-            && let Some(fi) = state.ingest.files.get(r.file_id as usize)
-        {
-            let p = state.interner.resolve(&fi.path);
+        let p = state.file_path(r.file_id);
+        if state.reference_matches_query(r, target_name) && !p.is_empty() {
             let l = r.line.saturating_sub(1);
             locations.push(json!({
                 "uri": format!("file://{p}"),

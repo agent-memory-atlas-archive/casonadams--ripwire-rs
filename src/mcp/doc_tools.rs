@@ -21,8 +21,7 @@ pub fn call_mentions_in_root(
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
         if (path.ends_with(".md") || path.contains("doc"))
-            && let Ok(content) =
-                fs::read_to_string(root_path.join(path)).or_else(|_| fs::read_to_string(path))
+            && let Ok(content) = crate::domain::read_rel_string(root_path, path)
         {
             let occurrences = content.matches(&backtick_target).count();
             if occurrences > 0 {
@@ -493,10 +492,9 @@ fn filter_present_in_code_drift(
         .filter(|f| !f.lang.semantics().is_prose_document())
         .flat_map_iter(|f| {
             let rel = interner.resolve(&f.path);
-            match fs::read(root_path.join(rel)).or_else(|_| fs::read(rel)) {
-                Ok(bytes) => collect_file_wanted_tokens(&bytes, &wants_first, &wanted),
-                Err(_) => Vec::new(),
-            }
+            crate::domain::read_rel_bytes(root_path, rel)
+                .map(|bytes| collect_file_wanted_tokens(&bytes, &wants_first, &wanted))
+                .unwrap_or_default()
         })
         .collect();
     extend_from_scm_queries(root_path, &wants_first, &wanted, &mut found_in_code);
@@ -533,9 +531,7 @@ fn scan_corpus_markdown_docs(
         if file.lang != crate::domain::Lang::Markdown && !doc_path.ends_with(".md") {
             continue;
         }
-        let Ok(text) =
-            fs::read_to_string(root_path.join(doc_path)).or_else(|_| fs::read_to_string(doc_path))
-        else {
+        let Ok(text) = crate::domain::read_rel_string(root_path, doc_path) else {
             continue;
         };
         summary.docs_scanned += 1;
@@ -819,8 +815,7 @@ impl FlagsScanTally {
 }
 
 fn scan_file_flags(root_path: &std::path::Path, path: &str, tally: &mut FlagsScanTally) {
-    let Ok(text) = fs::read_to_string(root_path.join(path)).or_else(|_| fs::read_to_string(path))
-    else {
+    let Ok(text) = crate::domain::read_rel_string(root_path, path) else {
         return;
     };
     let lines: Vec<&str> = text.lines().collect();

@@ -71,3 +71,15 @@ impl McpState {
         self
     }
 }
+
+impl<'a> crate::domain::CorpusView<'a> for &'a McpState {
+    #[inline]
+    fn ingest(&self) -> &'a IngestResult {
+        &self.ingest
+    }
+
+    #[inline]
+    fn interner(&self) -> &'a Interner {
+        &self.interner
+    }
+}

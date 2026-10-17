@@ -7,7 +7,6 @@ use crate::ingest::LanguageRegistry;
 use crate::navigate::{find_symbols_by_name, navigate_1hop, transitive_impact};
 use crate::serialize::JsonValueExt;
 use serde_json::{Value, json};
-use std::path::Path;
 #[inline]
 pub fn require_str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args.req_str(key)
@@ -280,20 +279,17 @@ pub fn call_slice(state: &McpState, args: &Value) -> Result<Value, String> {
     let flow_str = args.str_or("flow", "fwd");
     let flow_dir = flow_str.parse().unwrap_or_default();
     let registry = LanguageRegistry::new().map_err(|e| e.to_string())?;
+    use crate::domain::CorpusView;
     let sym_query = target.split(':').next().unwrap_or(target);
     let custom_bytes = state
         .ingest
         .symbols
         .iter()
         .find(|s| {
-            state.interner.resolve(&s.name) == sym_query
+            state.sym_name(s) == sym_query
                 || state.interner.resolve(&s.canonical_id).ends_with(sym_query)
         })
-        .and_then(|s| state.ingest.files.get(s.file_id as usize))
-        .and_then(|fi| {
-            let rel = state.interner.resolve(&fi.path);
-            std::fs::read(Path::new(&state.root).join(rel)).ok()
-        });
+        .and_then(|s| state.read_sym_bytes(&state.root, s).ok());
     let xml = crate::slice::execute_slice(
         &state.ingest,
         &registry,

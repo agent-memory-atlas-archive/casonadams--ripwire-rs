@@ -1,7 +1,6 @@
 use crate::domain::{IngestResult, Interner, RefRole, SymKind};
 use crate::graph::Graph;
 use serde_json::{Value, json};
-use std::fs;
 
 fn stem_derivational_suffix(t: &str) -> Option<String> {
     if let Some(prefix) = t.strip_suffix("ution").filter(|p| p.len() >= 3) {
@@ -334,12 +333,9 @@ fn read_file_cached<'a>(
     file_id: u32,
     cache: &'a mut std::collections::HashMap<u32, Vec<u8>>,
 ) -> &'a [u8] {
-    cache.entry(file_id).or_insert_with(|| {
-        let candidate = std::path::Path::new(root).join(rel_path);
-        fs::read(&candidate)
-            .or_else(|_| fs::read(rel_path))
-            .unwrap_or_default()
-    })
+    cache
+        .entry(file_id)
+        .or_insert_with(|| crate::domain::read_rel_bytes(root, rel_path).unwrap_or_default())
 }
 
 #[derive(Default, Clone, Copy)]
@@ -854,34 +850,19 @@ pub fn call_fetch_body_in_root(
     start_line: Option<usize>,
     end_line: Option<usize>,
 ) -> Value {
-    let sym = ingest.symbols.iter().find(|s| {
-        let n = interner.resolve(&s.name);
-        if n == symbol_name {
-            if let Some(hint) = path_hint
-                && let Some(fi) = ingest.files.get(s.file_id as usize)
-            {
-                return interner.resolve(&fi.path).contains(hint);
-            }
-            return true;
-        }
-        false
-    });
-
-    let Some(sym) = sym else {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let Some(sym) = view.find_symbol_with_hint(symbol_name, path_hint) else {
         return json!({ "error": format!("symbol '{symbol_name}' not found") });
     };
-
-    let Some(file_info) = ingest.files.get(sym.file_id as usize) else {
+    let file_path = view.sym_path(sym);
+    if file_path.is_empty() {
         return json!({ "error": "file info missing" });
-    };
-
-    let file_path = interner.resolve(&file_info.path);
-    let joined = std::path::Path::new(root).join(file_path);
-    let bytes = match fs::read(&joined).or_else(|_| fs::read(file_path)) {
+    }
+    let bytes = match view.read_sym_bytes(root, sym) {
         Ok(b) => b,
         Err(e) => return json!({ "error": format!("cannot read file '{file_path}': {e}") }),
     };
-
     let body_str = sym.source_text(&bytes).unwrap_or_default();
     let lines: Vec<&str> = body_str.lines().collect();
     let total_lines = lines.len();
@@ -989,13 +970,10 @@ fn select_best_exemplar<'a>(
     let mut best: Option<(&crate::domain::Symbol, usize, f64)> = None;
     let mut best_score = (false, 0usize, i64::MIN, 0.0f64);
 
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     for &sym in candidates_pool {
-        let file_path = ingest
-            .files
-            .get(sym.file_id as usize)
-            .map(|f| interner.resolve(&f.path))
-            .unwrap_or("");
-        let is_non_test = !crate::gate::affected::is_test_path(file_path);
+        let is_non_test = !crate::gate::affected::is_test_path(view.sym_path(sym));
         let in_deg = graph.map(|g| g.in_degree(sym.id)).unwrap_or(0);
         let neg_ccx = -(sym.ccx as i64);
         let r = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
@@ -1032,19 +1010,11 @@ pub fn call_exemplar_in_root(
     else {
         return json!({ "error": format!("no exemplar found for role '{role}'") });
     };
-    let name = interner.resolve(&sym.name);
-    let file_path = ingest
-        .files
-        .get(sym.file_id as usize)
-        .map(|f| interner.resolve(&f.path))
-        .unwrap_or("");
-
-    let joined = std::path::Path::new(root).join(file_path);
-    let body = fs::read(&joined)
-        .or_else(|_| fs::read(file_path))
-        .ok()
-        .and_then(|bytes| sym.source_text(&bytes).map(std::borrow::Cow::into_owned));
-
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let name = view.sym_name(sym);
+    let file_path = view.sym_path(sym);
+    let body = view.read_sym_source(root, sym);
     json!({
         "role": role,
         "kind": sym.kind.tag(),
@@ -1122,10 +1092,10 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
                     || s.kind == SymKind::Struct)
         })
         .collect();
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     let iface_sym = iface_defs.first().copied();
-    let iface_path = iface_sym
-        .and_then(|s| ingest.files.get(s.file_id as usize))
-        .map_or("", |f| interner.resolve(&f.path));
+    let iface_path = iface_sym.map_or("", |s| view.sym_path(s));
     let methods = collect_interface_methods(
         ingest,
         interner,
@@ -1141,12 +1111,8 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
             && let Some(src_sym) = resolve_implementor_symbol(ingest, r)
             && seen_impls.insert(src_sym.id)
         {
-            let name = interner.resolve(&src_sym.name);
-            let path = ingest
-                .files
-                .get(src_sym.file_id as usize)
-                .map(|f| interner.resolve(&f.path))
-                .unwrap_or("");
+            let name = view.sym_name(src_sym);
+            let path = view.sym_path(src_sym);
             implementors.push(json!({
                 "name": name,
                 "kind": src_sym.kind.tag(),
@@ -1194,8 +1160,7 @@ pub fn call_memory_recall_in_root(
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
         if (path.ends_with(".md") || path.contains("doc") || path.contains("notes"))
-            && let Ok(content) =
-                fs::read_to_string(root_path.join(path)).or_else(|_| fs::read_to_string(path))
+            && let Ok(content) = crate::domain::read_rel_string(root_path, path)
         {
             let lower = content.to_ascii_lowercase();
             let score = terms.iter().filter(|&t| lower.contains(t)).count();
@@ -1289,7 +1254,7 @@ pub fn call_grep_with_context(
             continue;
         }
 
-        let Ok(bytes) = fs::read(root_path.join(path)).or_else(|_| fs::read(path)) else {
+        let Ok(bytes) = crate::domain::read_rel_bytes(root_path, path) else {
             continue;
         };
         let Ok(text) = std::str::from_utf8(&bytes) else {
@@ -1388,7 +1353,7 @@ pub fn call_pattern_search(
         if path_filter.is_some_and(|pf| !path.contains(pf)) {
             continue;
         }
-        let Ok(bytes) = fs::read(root_path.join(path)).or_else(|_| fs::read(path)) else {
+        let Ok(bytes) = crate::domain::read_rel_bytes(root_path, path) else {
             continue;
         };
         let Ok(text) = std::str::from_utf8(&bytes) else {
@@ -1483,7 +1448,7 @@ pub fn call_ast_match(
             compiled_any = true;
         }
         let path = interner.resolve(&file.path);
-        let Ok(bytes) = fs::read(root_path.join(path)).or_else(|_| fs::read(path)) else {
+        let Ok(bytes) = crate::domain::read_rel_bytes(root_path, path) else {
             continue;
         };
         if let Some(file_hits) = collect_query_file_hits(file, &bytes, query_str, ingest, interner)
