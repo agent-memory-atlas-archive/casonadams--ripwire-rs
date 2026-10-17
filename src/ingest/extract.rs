@@ -428,9 +428,9 @@ fn is_gated_def_allowed(
     }
 }
 
-fn find_def_body_start(node: tree_sitter::Node<'_>) -> usize {
-    if matches!(
-        node.kind(),
+fn is_body_block_kind(kind: &str) -> bool {
+    matches!(
+        kind,
         "compound_statement"
             | "function_body"
             | "block"
@@ -439,30 +439,51 @@ fn find_def_body_start(node: tree_sitter::Node<'_>) -> usize {
             | "field_declaration_list"
             | "class_body"
             | "enum_class_body"
-    ) {
+    )
+}
+
+fn is_callable_wrapper_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "lexical_declaration"
+            | "variable_declaration"
+            | "variable_declarator"
+            | "public_field_definition"
+            | "field_definition"
+            | "property_declaration"
+            | "export_statement"
+            | "arrow_function"
+            | "function_expression"
+            | "function"
+            | "generator_function"
+            | "as_expression"
+            | "satisfies_expression"
+            | "parenthesized_expression"
+    )
+}
+
+fn child_body_start(ch: tree_sitter::Node<'_>) -> Option<usize> {
+    if is_body_block_kind(ch.kind()) {
+        return Some(ch.start_byte());
+    }
+    if is_callable_wrapper_kind(ch.kind()) {
+        let nested = find_def_body_start(ch);
+        return (nested > 0).then_some(nested);
+    }
+    None
+}
+
+fn find_def_body_start(node: tree_sitter::Node<'_>) -> usize {
+    if is_body_block_kind(node.kind()) {
         return node.start_byte();
     }
     if let Some(b) = node.child_by_field_name("body") {
         return b.start_byte();
     }
-    for i in 0..node.child_count() {
-        if let Some(ch) = node.child(i)
-            && matches!(
-                ch.kind(),
-                "compound_statement"
-                    | "function_body"
-                    | "block"
-                    | "statement_block"
-                    | "declaration_list"
-                    | "field_declaration_list"
-                    | "class_body"
-                    | "enum_class_body"
-            )
-        {
-            return ch.start_byte();
-        }
-    }
-    0
+    (0..node.child_count())
+        .filter_map(|i| node.child(i).and_then(child_body_start))
+        .next()
+        .unwrap_or(0)
 }
 
 fn record_def_item(

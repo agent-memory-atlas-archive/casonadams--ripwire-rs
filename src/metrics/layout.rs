@@ -110,9 +110,7 @@ fn extract_struct_layout_def(
     };
 
     let fields = if let Ok(bytes) = fs::read(&full_path) {
-        let start = (sym.sig_start_byte as usize).min(bytes.len());
-        let end = (sym.end_byte as usize).min(bytes.len());
-        let body = String::from_utf8_lossy(&bytes[start..end]);
+        let body = sym.source_text(&bytes).unwrap_or_default();
         parse_struct_fields(&body)
     } else {
         Vec::new()

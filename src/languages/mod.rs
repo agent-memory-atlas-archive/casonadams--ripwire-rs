@@ -280,6 +280,18 @@ pub(crate) fn find_enclosing_definition_node(
         ) {
             return Some(parent);
         }
+        if matches!(
+            parent.kind(),
+            "compound_statement"
+                | "statement_block"
+                | "block"
+                | "declaration_list"
+                | "field_declaration_list"
+                | "class_body"
+                | "ERROR"
+        ) {
+            return None;
+        }
         curr = parent;
     }
     None

@@ -121,6 +121,84 @@ fn build_body_term_masks(
     masks
 }
 
+fn compute_term_idf_weights(
+    ingest: &IngestResult,
+    interner: &Interner,
+    raw_terms: &[&str],
+) -> Vec<f64> {
+    if raw_terms.is_empty() {
+        return Vec::new();
+    }
+    let total = ingest
+        .symbols
+        .iter()
+        .filter(|s| s.is_code_symbol())
+        .count()
+        .max(1) as f64;
+    raw_terms
+        .iter()
+        .map(|&term| {
+            let df = ingest
+                .symbols
+                .iter()
+                .filter(|s| s.is_code_symbol() && symbol_matches_term(s, ingest, interner, term))
+                .count() as f64;
+            1.0 + ((total / (df + 1.0)).ln().max(0.0) * 0.5)
+        })
+        .collect()
+}
+
+struct SymbolMatchCtx<'a> {
+    name: &'a str,
+    scope: Option<&'a str>,
+    file_path: &'a str,
+    body_mask: u32,
+    terms: &'a [&'a str],
+    idf_weights: &'a [f64],
+    rank: f64,
+}
+
+fn score_symbol_match_with_idf(ctx: &SymbolMatchCtx<'_>) -> f64 {
+    let lower_name = ctx.name.to_ascii_lowercase();
+    let lower_scope = ctx.scope.map(str::to_ascii_lowercase);
+    let lower_path = ctx.file_path.to_ascii_lowercase();
+    let mut matched_cnt = 0usize;
+    let mut max_raw = 0.0f64;
+    let mut weighted_sum = 0.0f64;
+    for (i, &t) in ctx.terms.iter().enumerate() {
+        let base = score_single_term(&lower_name, lower_scope.as_deref(), &lower_path, t);
+        let body = if (ctx.body_mask & (1u32 << i.min(31))) != 0 {
+            6.0
+        } else {
+            0.0
+        };
+        let raw = base + body;
+        if raw > 0.0 {
+            matched_cnt += 1;
+            max_raw = max_raw.max(raw);
+            let idf = ctx.idf_weights.get(i).copied().unwrap_or(1.0);
+            weighted_sum += raw * idf;
+        }
+    }
+    if max_raw <= 6.0 {
+        return 0.0;
+    }
+    let synergy = (matched_cnt as f64).powi(3);
+    let query_wants_test = ctx.terms.iter().any(|t| {
+        let l = t.to_ascii_lowercase();
+        l.contains("test") || l.contains("spec")
+    });
+    let is_test = crate::gate::affected::is_test_or_bench_path(ctx.file_path)
+        || lower_name.starts_with("test_");
+    let non_test = if is_test && !query_wants_test {
+        0.05
+    } else {
+        1.0
+    };
+    weighted_sum * synergy * non_test * (1.0 + ctx.rank * 10.0)
+}
+
+#[cfg(test)]
 fn score_symbol_match_in_file(
     name: &str,
     scope: Option<&str>,
@@ -129,40 +207,15 @@ fn score_symbol_match_in_file(
     terms: &[&str],
     rank: f64,
 ) -> f64 {
-    let lower_name = name.to_ascii_lowercase();
-    let lower_scope = scope.map(|s| s.to_ascii_lowercase());
-    let lower_path = file_path.to_ascii_lowercase();
-    let scores: Vec<f64> = terms
-        .iter()
-        .enumerate()
-        .map(|(i, &t)| {
-            let base = score_single_term(&lower_name, lower_scope.as_deref(), &lower_path, t);
-            let body = if (body_mask & (1u32 << i.min(31))) != 0 {
-                6.0
-            } else {
-                0.0
-            };
-            base + body
-        })
-        .filter(|&s| s > 0.0)
-        .collect();
-    if !scores.iter().any(|&s| s > 6.0) {
-        return 0.0;
-    }
-    let term_score: f64 = scores.iter().sum();
-    let synergy = (scores.len() as f64).powi(3);
-    let query_wants_test = terms.iter().any(|t| {
-        let l = t.to_ascii_lowercase();
-        l.contains("test") || l.contains("spec")
-    });
-    let is_test =
-        crate::gate::affected::is_test_or_bench_path(file_path) || lower_name.starts_with("test_");
-    let non_test = if is_test && !query_wants_test {
-        0.05
-    } else {
-        1.0
-    };
-    term_score * synergy * non_test * (1.0 + rank * 10.0)
+    score_symbol_match_with_idf(&SymbolMatchCtx {
+        name,
+        scope,
+        file_path,
+        body_mask,
+        terms,
+        idf_weights: &[],
+        rank,
+    })
 }
 
 fn score_candidate_symbol(
@@ -172,23 +225,28 @@ fn score_candidate_symbol(
     ranks: &[f64],
     body_masks: &[u32],
     raw_terms: &[&str],
+    idf_weights: &[f64],
 ) -> f64 {
     use crate::domain::CorpusView;
     if !sym.is_code_symbol() {
         return 0.0;
     }
     let view = (ingest, interner);
-    let name = view.sym_name(sym);
-    let scope = view.sym_scope(sym);
-    let file_path = view.sym_path(sym);
-    let rank = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
-    let body_mask = body_masks.get(sym.id as usize).copied().unwrap_or(0);
     let kind_factor = if matches!(sym.kind, SymKind::Var | SymKind::Field) {
         0.2
     } else {
         1.0
     };
-    score_symbol_match_in_file(name, scope, file_path, body_mask, raw_terms, rank) * kind_factor
+    let ctx = SymbolMatchCtx {
+        name: view.sym_name(sym),
+        scope: view.sym_scope(sym),
+        file_path: view.sym_path(sym),
+        body_mask: body_masks.get(sym.id as usize).copied().unwrap_or(0),
+        terms: raw_terms,
+        idf_weights,
+        rank: ranks.get(sym.id as usize).copied().unwrap_or(0.0),
+    };
+    score_symbol_match_with_idf(&ctx) * kind_factor
 }
 
 fn extract_normalized_sig(
@@ -196,19 +254,7 @@ fn extract_normalized_sig(
     bytes: &[u8],
     fallback_name: &str,
 ) -> String {
-    let start = (sym.sig_start_byte as usize).min(bytes.len());
-    let end = (sym.sig_end_byte as usize).min(bytes.len());
-    if start >= end {
-        return fallback_name.to_string();
-    }
-    let raw = String::from_utf8_lossy(&bytes[start..end]);
-    let trimmed = raw.trim().trim_end_matches('{').trim();
-    let collapsed = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.is_empty() {
-        fallback_name.to_string()
-    } else {
-        collapsed
-    }
+    sym.extract_signature(bytes, fallback_name)
 }
 
 fn read_file_cached<'a>(
@@ -335,13 +381,10 @@ fn build_for_symbol_entry(
         "amp": in_deg.max(1),
         "score": (score * 100.0).round() / 100.0
     });
-    if idx < detail_count && !bytes.is_empty() {
-        let start = (sym.sig_start_byte as usize).min(bytes.len());
-        let end = (sym.end_byte as usize).min(bytes.len());
-        if start < end {
-            let body = String::from_utf8_lossy(&bytes[start..end]).to_string();
-            obj["body"] = Value::String(body);
-        }
+    if idx < detail_count
+        && let Some(body) = sym.source_text(bytes)
+    {
+        obj["body"] = Value::String(body.into_owned());
     }
     obj
 }
@@ -468,9 +511,18 @@ pub fn call_for_task_with_options(
     };
 
     let body_masks = build_body_term_masks(ingest, interner, &raw_terms);
+    let idf_weights = compute_term_idf_weights(ingest, interner, &raw_terms);
     let mut scored = Vec::new();
     for sym in &ingest.symbols {
-        let score = score_candidate_symbol(sym, ingest, interner, ranks, &body_masks, &raw_terms);
+        let score = score_candidate_symbol(
+            sym,
+            ingest,
+            interner,
+            ranks,
+            &body_masks,
+            &raw_terms,
+            &idf_weights,
+        );
         if score > 0.0 {
             scored.push((score, sym));
         }
@@ -503,10 +555,21 @@ pub fn call_for_task_with_options(
 
     let (route, confidence, margin_pct, coverage) =
         compute_for_route_metadata(task, &raw_terms, &scored, interner);
-    let est_tokens = (symbols_json.len() * 22 + detail_count * 120 + 180) as u64;
     let lego = collect_for_lego(ingest, interner, &scored[..limit]);
+    let compose = collect_for_compose(ingest, interner, &scored[..limit]);
+    let hops = collect_for_hops(ingest, interner, opts.graph, &scored[..limit]);
     let tree = collect_for_tree_rows(ingest, interner, &scored, limit);
     let docs = collect_for_doc_mentions(ingest, interner, &raw_terms);
+    let sig_bytes: usize = symbols_json
+        .iter()
+        .map(|s| {
+            s["sig"].as_str().map_or(0, str::len)
+                + s["body"].as_str().map_or(0, str::len)
+                + s["path"].as_str().map_or(0, str::len)
+                + 64
+        })
+        .sum();
+    let est_tokens = ((sig_bytes + 320) / 4).max(1) as u64;
     json!({
         "task": task,
         "root": opts.root,
@@ -519,6 +582,8 @@ pub fn call_for_task_with_options(
         "count": symbols_json.len(),
         "detail": detail_count,
         "lego": lego,
+        "compose": compose,
+        "hops": hops,
         "tree": tree,
         "docs": docs,
         "adaptive": adaptive_info.map(|(k, t, g)| json!({ "kept": k, "total": t, "gap": g }))
@@ -559,6 +624,72 @@ fn collect_for_lego(
         }));
     }
     out
+}
+
+fn collect_for_compose(
+    ingest: &IngestResult,
+    interner: &Interner,
+    ranked: &[(f64, &crate::domain::Symbol)],
+) -> Vec<Value> {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let ranked_files: std::collections::HashSet<u32> =
+        ranked.iter().map(|(_, s)| s.file_id).collect();
+    let mut out = Vec::new();
+    for sym in &ingest.symbols {
+        if sym.kind != SymKind::Field || !ranked_files.contains(&sym.file_id) {
+            continue;
+        }
+        let Some(owner) = view.sym_scope(sym) else {
+            continue;
+        };
+        out.push(json!({
+            "name": view.sym_name(sym),
+            "owner": owner,
+            "rel": "uses",
+        }));
+        if out.len() >= 32 {
+            break;
+        }
+    }
+    out
+}
+
+fn collect_for_hops(
+    ingest: &IngestResult,
+    interner: &Interner,
+    graph_opt: Option<&Graph>,
+    ranked: &[(f64, &crate::domain::Symbol)],
+) -> Vec<Value> {
+    use crate::domain::CorpusView;
+    let Some(graph) = graph_opt else {
+        return Vec::new();
+    };
+    let view = (ingest, interner);
+    let mut hops = Vec::new();
+    for &(_, sym) in ranked.iter().take(6) {
+        let callees: Vec<Value> = graph
+            .callees(sym.id)
+            .filter_map(|(cid, _)| ingest.sym(cid))
+            .map(|csym| {
+                json!({
+                    "name": view.sym_name(csym),
+                    "line": csym.line,
+                })
+            })
+            .collect();
+        if callees.is_empty() {
+            continue;
+        }
+        hops.push(json!({
+            "name": view.sym_name(sym),
+            "path": view.sym_path(sym),
+            "line": sym.line,
+            "total": callees.len(),
+            "calls": callees.into_iter().take(16).collect::<Vec<_>>(),
+        }));
+    }
+    hops
 }
 
 fn collect_for_tree_rows(
@@ -676,9 +807,7 @@ pub fn call_fetch_body_in_root(
         Err(e) => return json!({ "error": format!("cannot read file '{file_path}': {e}") }),
     };
 
-    let start = (sym.sig_start_byte as usize).min(bytes.len());
-    let end = (sym.end_byte as usize).min(bytes.len());
-    let body_str = String::from_utf8_lossy(&bytes[start..end]);
+    let body_str = sym.source_text(&bytes).unwrap_or_default();
     let lines: Vec<&str> = body_str.lines().collect();
     let total_lines = lines.len();
 
@@ -839,15 +968,7 @@ pub fn call_exemplar_in_root(
     let body = fs::read(&joined)
         .or_else(|_| fs::read(file_path))
         .ok()
-        .and_then(|bytes| {
-            let start = (sym.sig_start_byte as usize).min(bytes.len());
-            let end = (sym.end_byte as usize).min(bytes.len());
-            if start < end {
-                Some(String::from_utf8_lossy(&bytes[start..end]).to_string())
-            } else {
-                None
-            }
-        });
+        .and_then(|bytes| sym.source_text(&bytes).map(std::borrow::Cow::into_owned));
 
     json!({
         "role": role,
@@ -1317,8 +1438,21 @@ mod tests {
 
         val["lego"] = json!([]);
         assert!(!render(&val).contains("<lego"));
+        let mut cval = json!({
+            "task": "parse flags",
+            "symbols": [],
+            "compose": [{ "name": "graph", "owner": "NavContext", "rel": "uses" }],
+            "hops": [{ "name": "run", "path": "src/main.rs", "line": 10, "total": 1, "calls": [{ "name": "init", "line": 2 }] }]
+        });
+        let cstub = render(&cval);
+        assert!(cstub.contains("<compose total=\"1\" shown=\"0\" capped=\"1\""));
+        assert!(cstub.contains("<hops shown=\"1\" total=\"1\" capped=\"0\"><h l=\"10\" p=\"src/main.rs\" n=\"run\"><calls total=\"1\"><c n=\"init\" l=\"2\"/></calls></h></hops>"));
+        cval["sections"] = json!(["compose"]);
+        let cfull = render(&cval);
+        assert!(cfull.contains(
+            "<compose><field name=\"graph\" owner=\"NavContext\" rel=\"uses\"/></compose>"
+        ));
     }
-
     #[test]
     fn test_score_symbol_match() {
         let terms = ["search", "engine"];
@@ -1424,8 +1558,12 @@ mod tests {
         let reg = crate::ingest::LanguageRegistry::new().unwrap();
         let interner = Interner::new();
         let code = b"pub struct Widget {}\npub fn build() {}";
-        let ingest = crate::ingest::ingest_in_memory_files(
-            &[("src/lib.rs", crate::domain::Lang::Rust, code)],
+        let ts_code = b"export const materializeUrl = async (rawPath: string): Promise<string> => {\n  const x = rawPath.trim();\n  return x;\n};\n";
+        let mut ingest = crate::ingest::ingest_in_memory_files(
+            &[
+                ("src/lib.rs", crate::domain::Lang::Rust, code),
+                ("src/url.ts", crate::domain::Lang::TypeScript, ts_code),
+            ],
             &reg,
             &interner,
         );
@@ -1439,5 +1577,56 @@ mod tests {
         .unwrap();
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0]["text"], "Widget");
+
+        let arrow_sym = ingest
+            .symbols
+            .iter()
+            .find(|s| interner.resolve(&s.name) == "materializeUrl")
+            .expect("materializeUrl");
+        assert!(arrow_sym.has_body());
+        assert!(
+            !arrow_sym
+                .extract_signature(ts_code, "materializeUrl")
+                .contains("rawPath.trim()")
+        );
+
+        let next_id = ingest.symbols.len() as u32;
+        ingest.symbols.push(
+            crate::domain::Symbol::new(
+                next_id,
+                interner.intern("count"),
+                interner.intern("src/lib.rs::Widget::count"),
+                SymKind::Field,
+                crate::domain::Lang::Rust,
+                0,
+                1,
+            )
+            .with_scope(interner.intern("Widget")),
+        );
+        ingest.references.push(crate::domain::Reference::new(
+            0,
+            interner.intern("build"),
+            0,
+            1,
+            crate::domain::Lang::Rust,
+            RefRole::Call,
+        ));
+        let graph = crate::graph::Graph::build(&ingest, &interner);
+        let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
+        let res = call_for_task_with_options(
+            &ingest,
+            &interner,
+            &pr.ranks,
+            "Widget build",
+            ForTaskOptions {
+                root: ".",
+                graph: Some(&graph),
+                budget_tokens: None,
+                detail: Some(1),
+                adaptive: false,
+            },
+        );
+        assert!(!res["compose"].as_array().unwrap().is_empty());
+        assert!(!res["hops"].as_array().unwrap().is_empty());
     }
 }

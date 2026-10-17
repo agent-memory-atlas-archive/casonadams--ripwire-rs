@@ -37,6 +37,45 @@ fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) 
     )
 }
 
+fn write_for_inner_body<W: Write>(
+    out: &mut W,
+    val: &Value,
+    task: &str,
+    raw_task: &str,
+) -> io::Result<()> {
+    let mut bodies_to_show = Vec::new();
+    write!(out, "<sigs>")?;
+    if let Some(items) = val["symbols"].as_array() {
+        for (idx, it) in items.iter().enumerate() {
+            write_for_sig_row(out, idx, it, task)?;
+            let raw_name = it.str_or("name", "");
+            let b_str = it.str_any(&["body", "sig"], raw_name).to_string();
+            if bodies_to_show.is_empty() {
+                let kind = it.str_or("kind", "fn").to_string();
+                let line = it.u64_or("line", 0);
+                let path = escape_xml_str(it.str_or("path", ""));
+                let name = escape_xml_str(raw_name);
+                bodies_to_show.push((kind, line, path, name, b_str));
+            }
+        }
+    }
+    write!(out, "</sigs>")?;
+    write_for_lego_section(out, val, raw_task)?;
+    write_for_compose_section(out, val, raw_task)?;
+    write_for_tree_and_docs(out, val)?;
+    write!(out, "<tail total=\"0\" shown=\"0\" capped=\"0\"></tail>")?;
+    write_for_hops_section(out, val)?;
+    let n = bodies_to_show.len();
+    write!(out, "<bodies shown=\"{n}\" total=\"{n}\" capped=\"0\">")?;
+    for (k, l, p, name, b) in bodies_to_show {
+        write!(
+            out,
+            "<b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{name}\"><![CDATA[{b}]]></b>"
+        )?;
+    }
+    writeln!(out, "</bodies>")
+}
+
 pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let raw_task = val.str_or("task", "");
     let task = escape_xml_str(raw_task);
@@ -49,43 +88,17 @@ pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let confidence = escape_xml_str(val.str_or("confidence", "high"));
     let margin_pct = val.u64_or("margin_pct", 0);
     let coverage = val.u64_or("coverage", 100);
-    let sym_cnt = val["symbols"].as_array().map_or(0, Vec::len);
-    let est_tokens = val.u64_or("est_tokens", (80 + sym_cnt * 24) as u64);
     let bodies_cnt = val.u64_or("detail", 1).max(1);
+    let mut inner = Vec::with_capacity(4096);
+    write_for_inner_body(&mut inner, val, &task, raw_task)?;
+    let computed_tokens = ((inner.len() + 180) / 4).max(1) as u64;
+    let est_tokens = val
+        .u64_or("est_tokens", computed_tokens)
+        .max(computed_tokens);
     let attrs = format!(
         "task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" at=\"{at_stamp}\" schema=\"ripwire.for/v1\" bundle=\"auto\" bodies=\"{bodies_cnt}\" est_tokens=\"{est_tokens}\""
     );
-    write_xml_envelope(out, "ctx", &attrs, |out| {
-        let mut bodies_to_show = Vec::new();
-        write!(out, "<sigs>")?;
-        if let Some(items) = val["symbols"].as_array() {
-            for (idx, it) in items.iter().enumerate() {
-                write_for_sig_row(out, idx, it, &task)?;
-                let raw_name = it.str_or("name", "");
-                let b_str = it.str_any(&["body", "sig"], raw_name).to_string();
-                if bodies_to_show.is_empty() {
-                    let kind = it.str_or("kind", "fn").to_string();
-                    let line = it.u64_or("line", 0);
-                    let path = escape_xml_str(it.str_or("path", ""));
-                    let name = escape_xml_str(raw_name);
-                    bodies_to_show.push((kind, line, path, name, b_str));
-                }
-            }
-        }
-        write!(out, "</sigs>")?;
-        write_for_lego_section(out, val, raw_task)?;
-        write_for_tree_and_docs(out, val)?;
-        write!(out, "<tail total=\"0\" shown=\"0\" capped=\"0\"></tail>")?;
-        let n = bodies_to_show.len();
-        write!(out, "<bodies shown=\"{n}\" total=\"{n}\" capped=\"0\">")?;
-        for (k, l, p, name, b) in bodies_to_show {
-            write!(
-                out,
-                "<b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{name}\"><![CDATA[{b}]]></b>"
-            )?;
-        }
-        writeln!(out, "</bodies>")
-    })
+    write_xml_envelope(out, "ctx", &attrs, |out| out.write_all(&inner))
 }
 
 fn for_section_requested(val: &Value, name: &str) -> bool {
@@ -152,6 +165,65 @@ fn write_for_lego_section<W: Write>(out: &mut W, val: &Value, raw_task: &str) ->
         write!(out, "</iface>")?;
     }
     write!(out, "</lego>")
+}
+
+fn write_for_compose_section<W: Write>(out: &mut W, val: &Value, raw_task: &str) -> io::Result<()> {
+    let Some(fields) = val["compose"].as_array().filter(|a| !a.is_empty()) else {
+        return Ok(());
+    };
+    if !for_section_requested(val, "compose") {
+        let replay = format!(
+            "--for='{}' --sections=compose",
+            raw_task.replace('\'', "'\\''")
+        );
+        return write!(
+            out,
+            "<compose total=\"{}\" shown=\"0\" capped=\"1\" next=\"{}\"/>",
+            fields.len(),
+            replay.xml_escaped()
+        );
+    }
+    write!(out, "<compose>")?;
+    for f in fields {
+        write!(
+            out,
+            "<field name=\"{}\" owner=\"{}\" rel=\"{}\"/>",
+            f.str_or("name", "").xml_escaped(),
+            f.str_or("owner", "").xml_escaped(),
+            f.str_or("rel", "uses").xml_escaped()
+        )?;
+    }
+    write!(out, "</compose>")
+}
+
+fn write_for_hops_section<W: Write>(out: &mut W, val: &Value) -> io::Result<()> {
+    let Some(hops) = val["hops"].as_array().filter(|a| !a.is_empty()) else {
+        return Ok(());
+    };
+    let n = hops.len();
+    write!(out, "<hops shown=\"{n}\" total=\"{n}\" capped=\"0\">")?;
+    for h in hops {
+        let l = h.u64_or("line", 0);
+        let p = h.str_or("path", "").xml_escaped();
+        let name = h.str_or("name", "").xml_escaped();
+        let total = h.u64_or("total", 0);
+        write!(
+            out,
+            "<h l=\"{l}\" p=\"{p}\" n=\"{name}\"><calls total=\"{total}\">"
+        )?;
+        if let Some(calls) = h["calls"].as_array() {
+            for c in calls {
+                write!(
+                    out,
+                    "<c n=\"{}\" l=\"{}\"/>",
+                    c.str_or("name", "").xml_escaped(),
+                    c.u64_or("line", 0)
+                )?;
+            }
+        }
+        write!(out, "</calls></h>")?;
+    }
+    write!(out, "</hops>")
 }
 
 /// Serialize `grep` search result to Ripwire XML.
@@ -453,6 +525,22 @@ fn write_doc_drift_anchor<W: Write>(out: &mut W, file: &str, d: &Value) -> io::R
     )
 }
 
+fn format_doc_drift_header_counts(val: &Value) -> String {
+    let Some(clean) = val["clean_docs"].as_u64() else {
+        return String::new();
+    };
+    let dated = val.u64_or("dated_docs", 0);
+    let anchor_attrs = match val["anchors"].as_u64() {
+        Some(anchors) => {
+            let checked = val.u64_or("checked", 0);
+            let unchecked = val.u64_or("unchecked", anchors.saturating_sub(checked));
+            format!(" anchors=\"{anchors}\" checked=\"{checked}\" unchecked=\"{unchecked}\"")
+        }
+        None => String::new(),
+    };
+    format!(" clean=\"{clean}\" dated=\"{dated}\"{anchor_attrs}")
+}
+
 pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let drift = val["drift"].as_array();
     let count = drift.map_or(0, |d| d.len());
@@ -471,12 +559,7 @@ pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result
     let docs_cnt = val["docs_scanned"]
         .as_u64()
         .map_or(grouped.len(), |n| n as usize);
-    let extra_counts = if let Some(clean) = val["clean_docs"].as_u64() {
-        let dated = val.u64_or("dated_docs", 0);
-        format!(" clean=\"{clean}\" dated=\"{dated}\"")
-    } else {
-        String::new()
-    };
+    let extra_counts = format_doc_drift_header_counts(val);
     let attrs = format!(
         "schema=\"ripwire.doc-drift/v1\" root=\"{root}\" docs=\"{docs_cnt}\"{extra_counts} drift=\"{count}\""
     );

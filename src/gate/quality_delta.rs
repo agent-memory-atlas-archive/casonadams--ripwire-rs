@@ -833,10 +833,8 @@ fn check_source_and_clone_regressions(
         if is_changed_callable(sym, file_path, changed_files)
             && let Ok(bytes) =
                 std::fs::read(root_path.join(file_path)).or_else(|_| std::fs::read(file_path))
+            && let Some(body) = sym.source_text(&bytes)
         {
-            let start = (sym.sig_start_byte as usize).min(bytes.len());
-            let end = (sym.end_byte as usize).min(bytes.len());
-            let body = String::from_utf8_lossy(&bytes[start..end]);
             let sym_name = state.interner.resolve(&sym.name);
             let key = format!("{file_path}::{sym_name}");
             let is_new = !baseline.ccx_by_sym.contains_key(&key);
@@ -918,10 +916,8 @@ fn regression_content_id(state: &McpState, r: &QualityRegression) -> Option<u64>
             s.file_id as usize == file_id && state.interner.resolve(&s.name) == r.sym_name
         })?;
     let bytes = std::fs::read(Path::new(&state.root).join(&r.file_path)).ok()?;
-    let start = (sym.sig_start_byte as usize).min(bytes.len());
-    let end = (sym.end_byte as usize).min(bytes.len());
     Some(content_id(
-        &String::from_utf8_lossy(&bytes[start..end]),
+        &String::from_utf8_lossy(sym.source_bytes(&bytes)),
         &r.sym_name,
     ))
 }

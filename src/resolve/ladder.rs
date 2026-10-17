@@ -130,6 +130,22 @@ pub fn index_symbols_by_name(symbols: &[Symbol]) -> HashMap<Spur, Vec<NodeId>> {
 /// Tier 1: Same file (conf = 1.0)
 /// Tier 2: Same directory (conf = 0.5)
 /// Tier 3: Unique same-language global (conf = 0.2), else dropped.
+fn is_unique_global_group(cands: &[NodeId], symbols: &[Symbol]) -> bool {
+    let Some(&first) = cands.first() else {
+        return false;
+    };
+    let first_sym = &symbols[first as usize];
+    let first_file = first_sym.file_id;
+    let first_scope = first_sym.scope;
+    cands.iter().all(|&id| {
+        let sym = &symbols[id as usize];
+        sym.file_id == first_file
+            && (sym.scope == first_scope
+                || sym.scope == Some(first_sym.name)
+                || first_scope == Some(sym.name))
+    })
+}
+
 pub fn select_precedence_tier(
     cands: &[NodeId],
     caller_file_id: u32,
@@ -137,48 +153,25 @@ pub fn select_precedence_tier(
     symbols: &[Symbol],
     file_dirs: &[u32],
 ) -> Option<(Vec<NodeId>, f32)> {
-    if cands
+    let same_file: Vec<NodeId> = cands
         .iter()
-        .any(|&id| symbols[id as usize].file_id == caller_file_id)
-    {
-        let same_file: Vec<NodeId> = cands
-            .iter()
-            .copied()
-            .filter(|&id| symbols[id as usize].file_id == caller_file_id)
-            .collect();
+        .copied()
+        .filter(|&id| symbols[id as usize].file_id == caller_file_id)
+        .collect();
+    if !same_file.is_empty() {
         return Some((same_file, 1.0));
     }
 
-    if cands.iter().any(|&id| {
-        let fid = symbols[id as usize].file_id as usize;
-        file_dirs.get(fid).copied() == Some(caller_dir_id)
-    }) {
-        let same_dir: Vec<NodeId> = cands
-            .iter()
-            .copied()
-            .filter(|&id| {
-                let fid = symbols[id as usize].file_id as usize;
-                file_dirs.get(fid).copied() == Some(caller_dir_id)
-            })
-            .collect();
-        return Some((same_dir, 0.5));
+    let same_dir: Vec<NodeId> = cands
+        .iter()
+        .copied()
+        .filter(|&id| file_dirs.get(symbols[id as usize].file_id as usize) == Some(&caller_dir_id))
+        .collect();
+    if !same_dir.is_empty() {
+        return (same_dir.len() <= 4).then_some((same_dir, 0.5));
     }
 
-    if let Some(&first) = cands.first() {
-        let first_sym = &symbols[first as usize];
-        let first_file = first_sym.file_id;
-        let first_scope = first_sym.scope;
-        if cands.iter().all(|&id| {
-            let sym = &symbols[id as usize];
-            sym.file_id == first_file
-                && (sym.scope == first_scope
-                    || sym.scope == Some(first_sym.name)
-                    || first_scope == Some(sym.name))
-        }) {
-            return Some((cands.to_vec(), 0.2));
-        }
-    }
-    None
+    is_unique_global_group(cands, symbols).then(|| (cands.to_vec(), 0.2))
 }
 
 fn is_unpinned_std_member_blocked(
@@ -243,7 +236,10 @@ pub trait ResolutionLookup {
         if cands.is_empty() {
             return None;
         }
-        if let Some(q) = r.qualifier {
+        let target_scope = r
+            .qualifier
+            .or_else(|| symbols.get(r.from_symbol as usize).and_then(|cs| cs.scope));
+        if let Some(q) = target_scope {
             let mut qualified = CandBuffer::default();
             for &id in &cands {
                 if symbols[id as usize].scope == Some(q) {

@@ -388,4 +388,48 @@ mod tests {
         let res2 = resolve_all_references(&ingest, &interner);
         assert!(res2.edge_accumulators.contains_key(&(2, 0)));
     }
+
+    #[test]
+    fn test_same_dir_starburst_declined_above_cap() {
+        let interner = Interner::new();
+        let mut ingest = IngestResult::new();
+        let name = interner.intern("common_helper");
+        let canon = interner.intern("canon");
+        for fid in 0..6u32 {
+            ingest.files.push(FileInfo {
+                id: fid,
+                path: interner.intern(&format!("src/f{fid}.rs")),
+                lang: Lang::Rust,
+                line_count: 10,
+                byte_size: 100,
+            });
+            if fid == 0 {
+                ingest.symbols.push(Symbol::new(
+                    0,
+                    interner.intern("caller"),
+                    canon,
+                    SymKind::Function,
+                    Lang::Rust,
+                    0,
+                    1,
+                ));
+            } else {
+                ingest.symbols.push(Symbol::new(
+                    fid,
+                    name,
+                    canon,
+                    SymKind::Function,
+                    Lang::Rust,
+                    fid,
+                    2,
+                ));
+            }
+        }
+        ingest
+            .references
+            .push(Reference::new(0, name, 0, 3, Lang::Rust, RefRole::Call));
+        let res = resolve_all_references(&ingest, &interner);
+        assert!(res.edge_accumulators.is_empty());
+        assert_eq!(res.unresolved, 1);
+    }
 }

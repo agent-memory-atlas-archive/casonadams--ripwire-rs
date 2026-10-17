@@ -557,12 +557,13 @@ pub fn serialize_xml_with_ranks<W: Write>(
         counter.write_all(header_prefix)?;
         write!(
             counter,
-            " files={} symbols={} edges={} shown=\"{}\" ambiguous={} unresolved=0 -->",
+            " files={} symbols={} edges={} shown=\"{}\" ambiguous={} unresolved={} -->",
             ctx.ingest.file_count(),
             ctx.ingest.symbol_count(),
             ctx.graph.edge_count(),
             symbols_shown,
-            ambiguous
+            ambiguous,
+            ctx.graph.total_unresolved()
         )?;
         let est_tokens = (body_buf.len() + 1200) * 2 / 5;
         let data_sections_cut = ctx

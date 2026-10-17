@@ -98,31 +98,63 @@ fn render_locals_xml(
     out
 }
 
-/// Render XML for transitive dataflow slice.
-fn render_flow_xml(
-    sym_name: &str,
-    var_name: &str,
-    path_line: &str,
+struct FlowRenderCtx<'a> {
+    sym_name: &'a str,
+    var_name: &'a str,
+    path_line: &'a str,
+    kind_tag: &'a str,
+    lang_tag: &'a str,
+    root: &'a str,
     dir: SliceFlowDir,
     depth: u32,
-    steps: &[SliceStep],
-) -> String {
+    source_bytes: &'a [u8],
+}
+
+fn format_step_xml(s: &SliceStep, lines: &[&str]) -> String {
+    let line_text = s
+        .line
+        .checked_sub(1)
+        .and_then(|idx| lines.get(idx as usize))
+        .map(|l| l.trim())
+        .unwrap_or("");
+    let from_attrs = if s.from_line > 0 {
+        format!(" from=\"{}\" rd=\"{}\"", s.from_line, s.from_line)
+    } else {
+        String::new()
+    };
+    if line_text.is_empty() {
+        format!(
+            "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\"{from_attrs} />\n",
+            s.line, s.role, s.var_name, s.depth
+        )
+    } else {
+        format!(
+            "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\"{from_attrs}><![CDATA[{line_text}]]></s>\n",
+            s.line, s.role, s.var_name, s.depth
+        )
+    }
+}
+
+/// Render XML for transitive dataflow slice.
+fn render_flow_xml(ctx: &FlowRenderCtx<'_>, steps: &[SliceStep]) -> String {
+    let src_text = String::from_utf8_lossy(ctx.source_bytes);
+    let lines: Vec<&str> = src_text.lines().collect();
+    let defs_cnt = steps.iter().filter(|s| s.role.is_def()).count();
+    let uses_cnt = steps.iter().filter(|s| s.role.is_use()).count();
     let mut out = format!(
-        "<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" var=\"{var_name}\" p=\"{path_line}\" flow=\"{dir}\" depth=\"{depth}\" steps=\"{}\" counts=\"as-classified\">\n",
-        steps.len()
+        "<slice schema=\"ripwire.slice/v1\" sym=\"{}\" var=\"{}\" p=\"{}\" t=\"{}\" lang=\"{}\" defs=\"{defs_cnt}\" uses=\"{uses_cnt}\" flow=\"{}\" depth=\"{}\" steps=\"{}\" root=\"{}\" counts=\"as-classified\">\n",
+        ctx.sym_name,
+        ctx.var_name,
+        ctx.path_line,
+        ctx.kind_tag,
+        ctx.lang_tag,
+        ctx.dir,
+        ctx.depth,
+        steps.len(),
+        ctx.root
     );
     for s in steps {
-        if s.from_line > 0 {
-            out.push_str(&format!(
-                "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\" from=\"{}\" />\n",
-                s.line, s.role, s.var_name, s.depth, s.from_line
-            ));
-        } else {
-            out.push_str(&format!(
-                "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\" />\n",
-                s.line, s.role, s.var_name, s.depth
-            ));
-        }
+        out.push_str(&format_step_xml(s, &lines));
     }
     out.push_str("</slice>\n");
     out
@@ -303,9 +335,18 @@ fn execute_slice_with_root(
         }
         Some(var_name) => {
             let steps = compute_dataflow_slice(&all_occs, var_name, flow_dir, max_depth);
-            Ok(render_flow_xml(
-                sym_name, var_name, &path_line, flow_dir, max_depth, &steps,
-            ))
+            let ctx = FlowRenderCtx {
+                sym_name,
+                var_name,
+                path_line: &path_line,
+                kind_tag: chosen.kind.tag(),
+                lang_tag: chosen.lang.tag(),
+                root,
+                dir: flow_dir,
+                depth: max_depth,
+                source_bytes: &source_bytes,
+            };
+            Ok(render_flow_xml(&ctx, &steps))
         }
     }
 }
@@ -409,9 +450,13 @@ mod tests {
         )
         .unwrap();
         assert!(fwd_res.contains("flow=\"fwd\""));
-        assert!(fwd_res.contains("<s l=\"1\" k=\"param\" v=\"x\""));
-        assert!(fwd_res.contains("<s l=\"2\" k=\"read\" v=\"x\" d=\"1\" from=\"1\""));
-        assert!(fwd_res.contains("<s l=\"3\" k=\"read\" v=\"y\" d=\"2\" from=\"2\""));
-        assert!(fwd_res.contains("<s l=\"4\" k=\"read\" v=\"z\" d=\"3\" from=\"3\""));
+        assert!(fwd_res.contains(
+            "<s l=\"1\" k=\"param\" v=\"x\" d=\"0\"><![CDATA[fn compute(x: i32) -> i32 {]]></s>"
+        ));
+        assert!(fwd_res.contains("<s l=\"2\" k=\"read\" v=\"x\" d=\"1\" from=\"1\" rd=\"1\"><![CDATA[let y = x + 1;]]></s>"));
+        assert!(fwd_res.contains("<s l=\"3\" k=\"read\" v=\"y\" d=\"2\" from=\"2\" rd=\"2\"><![CDATA[let z = y * 2;]]></s>"));
+        assert!(fwd_res.contains(
+            "<s l=\"4\" k=\"read\" v=\"z\" d=\"3\" from=\"3\" rd=\"3\"><![CDATA[return z;]]></s>"
+        ));
     }
 }

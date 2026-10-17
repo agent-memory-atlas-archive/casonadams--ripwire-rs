@@ -408,6 +408,66 @@ impl Symbol {
     pub const fn end_line(&self) -> u32 {
         self.line.saturating_add(self.loc.saturating_sub(1))
     }
+
+    /// Return the raw byte slice `[sig_start_byte..end_byte]` clamped to `file_bytes`.
+    #[inline]
+    #[must_use]
+    pub fn source_bytes<'a>(&self, file_bytes: &'a [u8]) -> &'a [u8] {
+        let start = (self.sig_start_byte as usize).min(file_bytes.len());
+        let end = (self.end_byte as usize).min(file_bytes.len());
+        if start < end {
+            &file_bytes[start..end]
+        } else {
+            &[]
+        }
+    }
+
+    /// Return the UTF-8 source text `[sig_start_byte..end_byte]` if non-empty.
+    #[inline]
+    #[must_use]
+    pub fn source_text<'a>(&self, file_bytes: &'a [u8]) -> Option<std::borrow::Cow<'a, str>> {
+        let slice = self.source_bytes(file_bytes);
+        (!slice.is_empty()).then(|| String::from_utf8_lossy(slice))
+    }
+
+    /// Extract a single-line normalized declaration signature bounded before any body block.
+    #[must_use]
+    pub fn extract_signature(&self, file_bytes: &[u8], fallback_name: &str) -> String {
+        let start = (self.sig_start_byte as usize).min(file_bytes.len());
+        let end = (self.sig_end_byte as usize).min(file_bytes.len());
+        if start >= end {
+            return fallback_name.to_string();
+        }
+        let raw = String::from_utf8_lossy(&file_bytes[start..end]);
+        let header = truncate_at_declaration_body(&raw);
+        let collapsed = header.split_whitespace().collect::<Vec<_>>().join(" ");
+        if collapsed.is_empty() {
+            fallback_name.to_string()
+        } else if collapsed.len() > 320 {
+            let cut = collapsed.floor_char_boundary(320);
+            format!("{}...", collapsed[..cut].trim_end())
+        } else {
+            collapsed
+        }
+    }
+}
+
+fn truncate_at_declaration_body(raw: &str) -> &str {
+    let mut paren_depth = 0i32;
+    let mut bracket_depth = 0i32;
+    for (idx, b) in raw.bytes().enumerate() {
+        match b {
+            b'(' => paren_depth += 1,
+            b')' => paren_depth = (paren_depth - 1).max(0),
+            b'[' => bracket_depth += 1,
+            b']' => bracket_depth = (bracket_depth - 1).max(0),
+            b'{' | b';' if paren_depth == 0 && bracket_depth == 0 => {
+                return raw[..idx].trim();
+            }
+            _ => {}
+        }
+    }
+    raw.trim().trim_end_matches('{').trim()
 }
 
 /// Unresolved reference extracted from AST syntax.
@@ -783,5 +843,29 @@ mod tests {
             view.caller_site_locations(0, &[interner.intern("execute_turn")]),
             vec!["src/main.rs:8".to_string()]
         );
+    }
+
+    #[test]
+    fn test_symbol_extract_signature_and_source_text() {
+        let interner = Interner::new();
+        let mut sym = Symbol::new(
+            0,
+            interner.intern("resolveRefSpec"),
+            interner.intern("src/q.h::resolveRefSpec"),
+            SymKind::Function,
+            Lang::Cpp,
+            0,
+            1,
+        );
+        let src = b"inline RefSpec resolveRefSpec(const std::string& root, int a[2]) {\n    return {};\n}";
+        sym.sig_start_byte = 0;
+        sym.sig_end_byte = src.len() as u32;
+        sym.end_byte = src.len() as u32;
+        assert_eq!(
+            sym.extract_signature(src, "resolveRefSpec"),
+            "inline RefSpec resolveRefSpec(const std::string& root, int a[2])"
+        );
+        assert!(sym.source_text(src).unwrap().contains("return {};"));
+        assert_eq!(sym.extract_signature(b"", "fallback"), "fallback");
     }
 }

@@ -250,15 +250,22 @@ fn is_candidate_symbol_anchor(span: &str) -> Option<&str> {
     }
 }
 
+#[derive(Default, Clone, Copy)]
+struct DocAnchorCounts {
+    total: usize,
+    checked: usize,
+}
+
 fn collect_line_backtick_candidates<'a>(
     line: &'a str,
     doc_line: usize,
     sym_set: &std::collections::HashSet<&str>,
     resolving_lines: &mut Vec<usize>,
     pending_missing: &mut Vec<(usize, &'a str, bool)>,
-) {
+) -> DocAnchorCounts {
+    let mut counts = DocAnchorCounts::default();
     if sym_set.is_empty() {
-        return;
+        return counts;
     }
     let mut rest = line;
     while let Some(start) = rest.find('`') {
@@ -267,7 +274,9 @@ fn collect_line_backtick_candidates<'a>(
             break;
         };
         let span = &after_open[..end];
+        counts.total += 1;
         if let Some(sym) = is_candidate_symbol_anchor(span) {
+            counts.checked += 1;
             if sym_set.contains(sym) {
                 if resolving_lines.last().copied() != Some(doc_line) {
                     resolving_lines.push(doc_line);
@@ -278,6 +287,7 @@ fn collect_line_backtick_candidates<'a>(
         }
         rest = &after_open[end + 1..];
     }
+    counts
 }
 
 /// Execute `doc_drift` tool: verify checkable doc references.
@@ -330,10 +340,11 @@ fn scan_doc_text_for_drift(
     ingest: &IngestResult,
     interner: &Interner,
     drift_items: &mut Vec<Value>,
-) {
+) -> DocAnchorCounts {
     let mut in_code_fence = false;
     let mut resolving_lines = Vec::new();
     let mut pending_missing = Vec::new();
+    let mut counts = DocAnchorCounts::default();
     for (line_idx, line) in text.lines().enumerate() {
         let trimmed = line.trim_start();
         if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
@@ -349,18 +360,23 @@ fn scan_doc_text_for_drift(
             if let Some(item) = check_word_drift(
                 word, doc_path, doc_line, file_map, &line_syms, ingest, interner,
             ) {
+                counts.total += 1;
+                counts.checked += 1;
                 drift_items.push(item);
             }
         }
-        collect_line_backtick_candidates(
+        let line_counts = collect_line_backtick_candidates(
             line,
             doc_line,
             sym_set,
             &mut resolving_lines,
             &mut pending_missing,
         );
+        counts.total += line_counts.total;
+        counts.checked += line_counts.checked;
     }
     flush_corroborated_missing(doc_path, &resolving_lines, pending_missing, drift_items);
+    counts
 }
 
 pub fn call_doc_drift_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
@@ -495,6 +511,14 @@ fn filter_present_in_code_drift(
     });
 }
 
+#[derive(Default)]
+struct CorpusDocSummary {
+    docs_scanned: usize,
+    dated_docs: usize,
+    anchors: usize,
+    checked: usize,
+}
+
 fn scan_corpus_markdown_docs(
     root_path: &std::path::Path,
     ingest: &IngestResult,
@@ -502,12 +526,11 @@ fn scan_corpus_markdown_docs(
     file_map: &HashMap<&str, u32>,
     sym_set: &std::collections::HashSet<&str>,
     drift_items: &mut Vec<Value>,
-) -> (usize, usize) {
-    let mut docs_scanned = 0usize;
-    let mut dated_docs = 0usize;
+) -> CorpusDocSummary {
+    let mut summary = CorpusDocSummary::default();
     for file in &ingest.files {
         let doc_path = interner.resolve(&file.path);
-        if !doc_path.ends_with(".md") {
+        if file.lang != crate::domain::Lang::Markdown && !doc_path.ends_with(".md") {
             continue;
         }
         let Ok(text) =
@@ -515,11 +538,11 @@ fn scan_corpus_markdown_docs(
         else {
             continue;
         };
-        docs_scanned += 1;
+        summary.docs_scanned += 1;
         if is_dated_or_historical_doc(doc_path, &text) {
-            dated_docs += 1;
+            summary.dated_docs += 1;
         } else {
-            scan_doc_text_for_drift(
+            let c = scan_doc_text_for_drift(
                 &text,
                 doc_path,
                 file_map,
@@ -528,9 +551,11 @@ fn scan_corpus_markdown_docs(
                 interner,
                 drift_items,
             );
+            summary.anchors += c.total;
+            summary.checked += c.checked;
         }
     }
-    (docs_scanned, dated_docs)
+    summary
 }
 
 pub fn call_doc_drift_with_history(
@@ -547,7 +572,7 @@ pub fn call_doc_drift_with_history(
         .collect();
     let sym_set = build_known_code_ident_set(ingest, interner);
     let root_path = std::path::Path::new(root);
-    let (docs_scanned, dated_docs) = scan_corpus_markdown_docs(
+    let summary = scan_corpus_markdown_docs(
         root_path,
         ingest,
         interner,
@@ -566,15 +591,20 @@ pub fn call_doc_drift_with_history(
         .iter()
         .filter_map(|d| d["doc"].as_str())
         .collect();
-    let clean_docs = docs_scanned
-        .saturating_sub(dated_docs)
+    let clean_docs = summary
+        .docs_scanned
+        .saturating_sub(summary.dated_docs)
         .saturating_sub(drifted_docs.len());
+    let unchecked = summary.anchors.saturating_sub(summary.checked);
 
     json!({
         "root": root,
-        "docs_scanned": docs_scanned,
+        "docs_scanned": summary.docs_scanned,
         "clean_docs": clean_docs,
-        "dated_docs": dated_docs,
+        "dated_docs": summary.dated_docs,
+        "anchors": summary.anchors,
+        "checked": summary.checked,
+        "unchecked": unchecked,
         "drift_count": drift_items.len(),
         "drift": drift_items
     })

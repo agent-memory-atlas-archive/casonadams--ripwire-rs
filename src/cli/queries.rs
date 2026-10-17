@@ -713,14 +713,8 @@ pub fn extract_symbol_body<'a>(
     let name = &interner[sym.name];
     let rel_path = ingest.sym_file_path(sym, interner);
     let bytes = std::fs::read(root_path.join(rel_path)).ok()?;
-    let start = (sym.sig_start_byte as usize).min(bytes.len());
-    let end = (sym.end_byte as usize).min(bytes.len());
-    if start < end {
-        let body = String::from_utf8_lossy(&bytes[start..end]).to_string();
-        Some((sym, name, rel_path, body))
-    } else {
-        None
-    }
+    let body = sym.source_text(&bytes)?.into_owned();
+    Some((sym, name, rel_path, body))
 }
 
 fn skeletonize_body(body: &str) -> String {
