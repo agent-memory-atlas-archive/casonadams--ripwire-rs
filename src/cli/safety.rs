@@ -142,18 +142,8 @@ where
 {
     let commits_vec = crate::git::history::walk_repository_history_scoped(root, cutoff).ok();
     let commits = commits_vec.as_deref().unwrap_or(&[]);
-    let (ingest, graph, pr, interner) =
-        crate::cli::dispatch::load_repo_analysis_cached(root, None, false)?;
-    let state = crate::mcp::McpState {
-        root: root.to_string(),
-        ingest,
-        graph,
-        ranks: pr.ranks.clone(),
-        interner,
-        pr,
-        commits: None,
-        legend_sent: std::sync::atomic::AtomicBool::new(false),
-    };
+    let state = crate::mcp::McpState::load(root)
+        .ok_or_else(|| io::Error::other("failed to load repository"))?;
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = crate::serialize::XmlWriter::with_format(&mut stdout_lock, pretty, json_out);
     runner(commits, &state, &mut stdout)?;
@@ -244,6 +234,18 @@ pub fn get_working_tree_changed_files(root: &str) -> Vec<String> {
     Vec::new()
 }
 
+fn resolve_changed_or_spec_files(root: &str, files_spec: Option<&str>) -> Vec<String> {
+    match files_spec {
+        Some(f) => f
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(String::from)
+            .collect(),
+        None => get_working_tree_changed_files(root),
+    }
+}
+
 pub fn execute_test_gate_query<W: Write>(
     root: &str,
     files_spec: Option<&str>,
@@ -252,15 +254,7 @@ pub fn execute_test_gate_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<bool> {
-    let files = match files_spec {
-        Some(f) => f
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect(),
-        None => get_working_tree_changed_files(root),
-    };
+    let files = resolve_changed_or_spec_files(root, files_spec);
     let specs: Vec<&str> = files.iter().map(String::as_str).collect();
     let report = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
     let untested = report.reached_symbols.saturating_sub(report.seed_count);
@@ -296,15 +290,7 @@ pub fn execute_situ_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let files = match files_spec {
-        Some(f) => f
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect(),
-        None => get_working_tree_changed_files(root),
-    };
+    let files = resolve_changed_or_spec_files(root, files_spec);
     let commits = crate::git::history::walk_repository_history(root).ok();
     let val = crate::mcp::graph_tools::call_situational_awareness(
         ingest,
@@ -336,21 +322,21 @@ pub fn execute_safe_delete_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
-    if ids.is_empty() {
-        return Err(io::Error::other(format!(
+    use crate::domain::CorpusView;
+    use crate::navigate::SymbolLookup;
+    let view = (ingest, interner);
+    let sym = view.find_first_symbol(sym_name).ok_or_else(|| {
+        io::Error::other(format!(
             "ripwire: --safe-delete symbol not found: {sym_name}"
-        )));
-    }
-    let sym_id = ids[0];
-    let sym = &ingest[sym_id];
-    let sym_path = ingest.sym_file_path(sym, interner);
-    let def_loc = format!("{sym_path}:{}", sym.line);
+        ))
+    })?;
+    let sym_id = sym.id;
+    let def_loc = format!("{}:{}", view.sym_path(sym), sym.line);
     let callers: Vec<(&str, &str)> = graph
         .callers(sym_id)
         .filter_map(|(cid, _)| {
             let s = ingest.sym(cid)?;
-            Some((ingest.sym_file_path(s, interner), &interner[s.name]))
+            Some((view.sym_path(s), view.sym_name(s)))
         })
         .collect();
     let ranks = vec![0.0; ingest.symbols.len()];
