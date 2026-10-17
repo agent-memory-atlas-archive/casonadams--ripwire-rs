@@ -39,6 +39,21 @@ impl NavMode {
         }
     }
 }
+
+impl std::fmt::Display for NavMode {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.cli_flag())
+    }
+}
+
+impl std::str::FromStr for NavMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_batch_verb(s).ok_or_else(|| format!("unknown navigation mode: '{s}'"))
+    }
+}
 pub struct NavContext<'a> {
     pub ingest: &'a IngestResult,
     pub graph: &'a Graph,
@@ -1444,7 +1459,7 @@ fn run_batch_subquery_dedup<W: Write>(
     let a = arg.trim();
     let mut sub_buf = Vec::new();
     let verb_trimmed = verb.trim();
-    if let Some(mode) = NavMode::from_batch_verb(verb_trimmed) {
+    if let Ok(mode) = verb_trimmed.parse::<NavMode>() {
         let _ = execute_nav_symbol_query(a, mode, ingest, graph, &pr.ranks, interner, &mut sub_buf);
     } else if verb_trimmed == "grep" {
         let val = crate::mcp::retrieval::call_grep(ingest, interner, a, None);

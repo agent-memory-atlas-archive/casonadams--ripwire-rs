@@ -48,6 +48,20 @@ impl ColorBy {
     }
 }
 
+impl std::fmt::Display for ColorBy {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.mode_name())
+    }
+}
+
+impl std::str::FromStr for ColorBy {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_str_opt(s).ok_or_else(|| format!("invalid color-by mode: '{s}'"))
+    }
+}
 /// Palette of 12 distinct dark-theme-friendly community colors.
 pub const COMMUNITY_COLORS: &[&str] = &[
     "#29b6f6", "#ab47bc", "#26a69a", "#ffa726", "#ec407a", "#7e57c2", "#66bb6a", "#ff7043",

@@ -105,6 +105,13 @@ impl SymKind {
     }
 }
 
+impl std::fmt::Display for SymKind {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.tag())
+    }
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum RefRole {
@@ -126,6 +133,13 @@ impl RefRole {
             "call", "read", "write", "import", "extends", "macro", "type", "value", "through",
         ];
         TAGS[self as usize]
+    }
+}
+
+impl std::fmt::Display for RefRole {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.tag())
     }
 }
 
@@ -281,6 +295,13 @@ impl Lang {
     #[must_use]
     pub fn is_pair_dependency_capable(self, other: Self) -> bool {
         self.is_dependency_capable() && other.is_dependency_capable() && self.is_compatible(other)
+    }
+}
+
+impl std::fmt::Display for Lang {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.tag())
     }
 }
 

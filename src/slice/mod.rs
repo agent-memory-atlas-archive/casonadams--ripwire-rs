@@ -92,10 +92,7 @@ fn render_locals_xml(
         locals.len()
     );
     for (name, line, role) in locals {
-        out.push_str(&format!(
-            "  <v n=\"{name}\" l=\"{line}\" t=\"{}\" />\n",
-            role.as_str()
-        ));
+        out.push_str(&format!("  <v n=\"{name}\" l=\"{line}\" t=\"{role}\" />\n"));
     }
     out.push_str("</slice>\n");
     out
@@ -111,21 +108,19 @@ fn render_flow_xml(
     steps: &[SliceStep],
 ) -> String {
     let mut out = format!(
-        "<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" var=\"{var_name}\" p=\"{path_line}\" flow=\"{}\" depth=\"{depth}\" steps=\"{}\" counts=\"as-classified\">\n",
-        dir.as_str(),
+        "<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" var=\"{var_name}\" p=\"{path_line}\" flow=\"{dir}\" depth=\"{depth}\" steps=\"{}\" counts=\"as-classified\">\n",
         steps.len()
     );
     for s in steps {
-        let role_str = OccRole::as_str(s.role);
         if s.from_line > 0 {
             out.push_str(&format!(
-                "  <s l=\"{}\" k=\"{role_str}\" v=\"{}\" d=\"{}\" from=\"{}\" />\n",
-                s.line, s.var_name, s.depth, s.from_line
+                "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\" from=\"{}\" />\n",
+                s.line, s.role, s.var_name, s.depth, s.from_line
             ));
         } else {
             out.push_str(&format!(
-                "  <s l=\"{}\" k=\"{role_str}\" v=\"{}\" d=\"{}\" />\n",
-                s.line, s.var_name, s.depth
+                "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\" />\n",
+                s.line, s.role, s.var_name, s.depth
             ));
         }
     }
@@ -259,7 +254,7 @@ pub fn execute_slice_command_with_depth(
             std::fs::read(std::path::Path::new(root).join(rel)).ok()
         });
 
-    let flow_dir = SliceFlowDir::from_str_opt(flow_str).unwrap_or(SliceFlowDir::Fwd);
+    let flow_dir = flow_str.parse::<SliceFlowDir>().unwrap_or_default();
     match execute_slice(
         &ingest,
         &registry,

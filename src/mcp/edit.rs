@@ -15,6 +15,19 @@ pub enum EditOp {
     InsertAfter,
 }
 
+impl std::str::FromStr for EditOp {
+    type Err = String;
+
+    fn from_str(op_str: &str) -> Result<Self, Self::Err> {
+        match op_str {
+            "replace" | "replace_body" | "replace_symbol_body" => Ok(Self::ReplaceBody),
+            "insert_before" | "insert_before_symbol" | "before" => Ok(Self::InsertBefore),
+            "insert_after" | "insert_after_symbol" | "after" => Ok(Self::InsertAfter),
+            other => Err(format!("unsupported edit op '{other}'")),
+        }
+    }
+}
+
 fn check_symlink(path: &Path) -> Result<(), Value> {
     if let Ok(meta) = fs::symlink_metadata(path)
         && meta.file_type().is_symlink()
@@ -263,12 +276,7 @@ pub fn perform_atomic_edit_with_options(
 }
 
 fn parse_plan_edit_op(op_str: &str) -> Result<EditOp, String> {
-    match op_str {
-        "replace" | "replace_body" | "replace_symbol_body" => Ok(EditOp::ReplaceBody),
-        "insert_before" | "insert_before_symbol" | "before" => Ok(EditOp::InsertBefore),
-        "insert_after" | "insert_after_symbol" | "after" => Ok(EditOp::InsertAfter),
-        other => Err(format!("unsupported edit op '{other}'")),
-    }
+    op_str.parse()
 }
 
 fn run_single_plan_item(

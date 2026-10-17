@@ -37,6 +37,13 @@ impl OccRole {
     }
 }
 
+impl std::fmt::Display for OccRole {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// A single intra-procedural variable occurrence.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariableOcc {

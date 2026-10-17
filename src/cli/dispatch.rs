@@ -111,8 +111,7 @@ pub fn execute_html_export(
     out_file: Option<&str>,
     color_by_str: &str,
 ) -> io::Result<()> {
-    let color_by = crate::serialize::ColorBy::from_str_opt(color_by_str)
-        .unwrap_or(crate::serialize::ColorBy::Lang);
+    let color_by = color_by_str.parse().unwrap_or_default();
     let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
     if let Some(path) = out_file {
         let mut file = std::fs::File::create(path)?;

@@ -3,8 +3,9 @@ use std::collections::{HashSet, VecDeque};
 
 /// Direction of dataflow traversal.
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SliceFlowDir {
+    #[default]
     Fwd = 0,
     Back,
     Both,
@@ -25,6 +26,21 @@ impl SliceFlowDir {
     pub const fn as_str(self) -> &'static str {
         const DIRS: [&str; 3] = ["fwd", "back", "both"];
         DIRS[self as usize]
+    }
+}
+
+impl std::fmt::Display for SliceFlowDir {
+    #[inline]
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for SliceFlowDir {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_str_opt(s).ok_or_else(|| format!("invalid slice flow direction: '{s}'"))
     }
 }
 

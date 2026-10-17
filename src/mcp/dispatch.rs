@@ -276,8 +276,7 @@ pub fn call_quality_delta(state: &McpState, _args: &Value) -> Result<Value, Stri
 pub fn call_slice(state: &McpState, args: &Value) -> Result<Value, String> {
     let target = args.req_str_any(&["target", "symbol"])?;
     let flow_str = args.str_or("flow", "fwd");
-    let flow_dir = crate::slice::SliceFlowDir::from_str_opt(flow_str)
-        .unwrap_or(crate::slice::SliceFlowDir::Fwd);
+    let flow_dir = flow_str.parse().unwrap_or_default();
     let registry = LanguageRegistry::new().map_err(|e| e.to_string())?;
     let sym_query = target.split(':').next().unwrap_or(target);
     let custom_bytes = state

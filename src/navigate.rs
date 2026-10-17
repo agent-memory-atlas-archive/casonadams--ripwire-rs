@@ -1747,8 +1747,7 @@ impl crate::serialize::XmlReport for GraphQueryReport<'_> {
                 writeln!(
                     out,
                     "<s t=\"{}\" n=\"{n}\" p=\"{p}:{}\"/>",
-                    sym.kind.tag(),
-                    sym.line
+                    sym.kind, sym.line
                 )?;
             }
         }

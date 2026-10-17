@@ -632,7 +632,7 @@ pub fn serialize_expand_xml<W: Write>(
         writeln!(
             out,
             "  <b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\"><![CDATA[{body}]]></b>",
-            sym.kind.tag(),
+            sym.kind,
             sym.line,
             path.xml_escaped(),
             name.xml_escaped()
