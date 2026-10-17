@@ -204,9 +204,7 @@ fn read_slice_candidate_bytes(
     if let Some(b) = custom_source {
         return Ok(b.to_vec());
     }
-    let root_candidate = std::path::Path::new(root).join(file_path);
-    std::fs::read(&root_candidate)
-        .or_else(|_| std::fs::read(file_path))
+    crate::domain::read_rel_bytes(root, file_path)
         .map_err(|e| format!("cannot read file {file_path}: {e}"))
 }
 

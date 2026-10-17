@@ -611,9 +611,7 @@ pub fn run_lint_scan_in_root(
     for fi in &ingest.files {
         if !fi.lang.semantics().is_prose_document() {
             let p = interner.resolve(&fi.path);
-            if let Ok(content) =
-                std::fs::read_to_string(root_path.join(p)).or_else(|_| std::fs::read_to_string(p))
-            {
+            if let Ok(content) = crate::domain::read_rel_string(root_path, p) {
                 let syms = super::lint_rules::symbols_in_file(ingest, interner, fi.id);
                 scan_file_rules(p, &content, fi.lang, syms, &mut findings);
             }

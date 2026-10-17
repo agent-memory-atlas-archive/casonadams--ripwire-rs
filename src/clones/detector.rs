@@ -163,6 +163,20 @@ fn extract_file_candidates(
     out
 }
 
+fn load_clone_file_bytes(
+    file_path: &str,
+    sources: Option<&HashMap<String, Vec<u8>>>,
+    root: Option<&std::path::Path>,
+) -> Option<Vec<u8>> {
+    if let Some(map) = sources {
+        map.get(file_path).cloned()
+    } else if let Some(r) = root {
+        crate::domain::read_rel_bytes(r, file_path).ok()
+    } else {
+        std::fs::read(file_path).ok()
+    }
+}
+
 fn extract_candidate_bodies(
     ingest: &IngestResult,
     interner: &Interner,
@@ -175,11 +189,9 @@ fn extract_candidate_bodies(
     for sym in &ingest.symbols {
         if (sym.kind == SymKind::Function || sym.kind == SymKind::Method)
             && sym.end_byte > sym.sig_end_byte
+            && let Some(bucket) = symbols_by_file.get_mut(sym.file_id as usize)
         {
-            let fid = sym.file_id as usize;
-            if fid < symbols_by_file.len() {
-                symbols_by_file[fid].push(sym);
-            }
+            bucket.push(sym);
         }
     }
 
@@ -187,17 +199,10 @@ fn extract_candidate_bodies(
         .into_par_iter()
         .enumerate()
         .filter(|(_, syms)| !syms.is_empty())
-        .flat_map(|(fid, syms)| {
-            let file_info = ingest.files.get(fid)?;
-            let file_path = interner.resolve(&file_info.path);
-            let file_bytes = if let Some(map) = sources {
-                map.get(file_path).cloned()
-            } else if let Some(r) = root {
-                std::fs::read(r.join(file_path)).ok()
-            } else {
-                std::fs::read(file_path).ok()
-            }?;
-            Some(extract_file_candidates(&file_bytes, &syms, min_tokens))
+        .filter_map(|(fid, syms)| {
+            let fi = ingest.files.get(fid)?;
+            let bytes = load_clone_file_bytes(interner.resolve(&fi.path), sources, root)?;
+            Some(extract_file_candidates(&bytes, &syms, min_tokens))
         })
         .flatten()
         .collect()
@@ -506,12 +511,15 @@ fn format_clone_group_xml(
             g.members.len(),
         ));
     }
+    use crate::domain::CorpusView;
+    use crate::serialize::XmlEscapeExt;
+    let view = (ingest, interner);
     for &id in &g.members {
-        if let Some(sym) = ingest.symbols.get(id as usize) {
-            use crate::serialize::XmlEscapeExt;
-            let name = interner.resolve(&sym.name).xml_escaped();
-            let p = if let Some(fi) = ingest.files.get(sym.file_id as usize) {
-                format!("{}:{}", interner.resolve(&fi.path).xml_escaped(), sym.line)
+        if let Some(sym) = ingest.sym(id) {
+            let name = view.sym_name(sym).xml_escaped();
+            let fp = view.sym_path(sym);
+            let p = if !fp.is_empty() {
+                format!("{}:{}", fp.xml_escaped(), sym.line)
             } else {
                 format!("line:{}", sym.line)
             };

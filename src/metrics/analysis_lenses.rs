@@ -510,25 +510,18 @@ pub fn compute_comment_coherence_in_root(
     let mut file_cache: std::collections::HashMap<u32, Option<Vec<u8>>> =
         std::collections::HashMap::new();
 
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     for sym in &ingest.symbols {
         if sym.kind != SymKind::Function && sym.kind != SymKind::Method {
             continue;
         }
-        let file_path = ingest
-            .files
-            .get(sym.file_id as usize)
-            .map(|f| interner.resolve(&f.path))
-            .unwrap_or("");
-        let name = interner.resolve(&sym.name);
+        let file_path = view.sym_path(sym);
+        let name = view.sym_name(sym);
         let file_bytes = file_cache
             .entry(sym.file_id)
-            .or_insert_with(|| {
-                std::fs::read(root_path.join(file_path))
-                    .or_else(|_| std::fs::read(file_path))
-                    .ok()
-            })
+            .or_insert_with(|| crate::domain::read_rel_bytes(root_path, file_path).ok())
             .as_deref();
-
         if let Some(row) = measure_comment_coherence_row(sym, file_path, name, file_bytes) {
             documented += 1;
             rows.push(row);

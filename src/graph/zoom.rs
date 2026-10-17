@@ -219,16 +219,15 @@ pub fn serialize_zoom_xml<W: Write>(
 }
 
 fn node_dirs<'a>(ingest: &'a IngestResult, interner: &'a Interner, nodes: usize) -> Vec<&'a str> {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     (0..nodes)
         .map(|i| {
             ingest
-                .symbols
-                .get(i)
-                .and_then(|s| ingest.files.get(s.file_id as usize))
-                .map_or("", |f| {
-                    let p = interner.resolve(&f.path);
-                    p.rsplit_once('/').map_or(".", |(d, _)| d)
-                })
+                .sym(i as u32)
+                .map(|s| view.sym_path(s))
+                .filter(|p| !p.is_empty())
+                .map_or("", |p| p.rsplit_once('/').map_or(".", |(d, _)| d))
         })
         .collect()
 }

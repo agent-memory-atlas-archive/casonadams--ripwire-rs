@@ -823,19 +823,14 @@ fn check_source_and_clone_regressions(
     changed_files: &[String],
     regressions: &mut Vec<QualityRegression>,
 ) {
+    use crate::domain::CorpusView;
     let root_path = Path::new(root);
     for sym in &state.ingest.symbols {
-        let file_path = state
-            .ingest
-            .files
-            .get(sym.file_id as usize)
-            .map_or("", |f| state.interner.resolve(&f.path));
+        let file_path = state.sym_path(sym);
         if is_changed_callable(sym, file_path, changed_files)
-            && let Ok(bytes) =
-                std::fs::read(root_path.join(file_path)).or_else(|_| std::fs::read(file_path))
-            && let Some(body) = sym.source_text(&bytes)
+            && let Some(body) = state.read_sym_source(root, sym)
         {
-            let sym_name = state.interner.resolve(&sym.name);
+            let sym_name = state.sym_name(sym);
             let key = format!("{file_path}::{sym_name}");
             let is_new = !baseline.ccx_by_sym.contains_key(&key);
             check_body_text_regressions(sym, sym_name, file_path, &body, is_new, regressions);
