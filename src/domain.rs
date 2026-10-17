@@ -59,6 +59,24 @@ impl Interner {
     }
 }
 
+impl std::ops::Index<Spur> for Interner {
+    type Output = str;
+
+    #[inline]
+    fn index(&self, spur: Spur) -> &Self::Output {
+        self.resolve(&spur)
+    }
+}
+
+impl std::ops::Index<&Spur> for Interner {
+    type Output = str;
+
+    #[inline]
+    fn index(&self, spur: &Spur) -> &Self::Output {
+        self.resolve(spur)
+    }
+}
+
 /// Symbol kind corresponding to the terse XML attribute `t="..."`.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -409,8 +427,46 @@ impl IngestResult {
     pub fn file_count(&self) -> usize {
         self.files.len()
     }
+
+    #[inline]
+    #[must_use]
+    pub fn sym(&self, id: NodeId) -> Option<&Symbol> {
+        self.symbols.get(id as usize)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn file(&self, file_id: u32) -> Option<&FileInfo> {
+        self.files.get(file_id as usize)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn file_path<'a>(&self, file_id: u32, interner: &'a Interner) -> &'a str {
+        self.file(file_id).map_or("", |f| interner.resolve(&f.path))
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn sym_file_path<'a>(&self, sym: &Symbol, interner: &'a Interner) -> &'a str {
+        self.file_path(sym.file_id, interner)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn sym_name<'a>(&self, sym: &Symbol, interner: &'a Interner) -> &'a str {
+        interner.resolve(&sym.name)
+    }
 }
 
+impl std::ops::Index<NodeId> for IngestResult {
+    type Output = Symbol;
+
+    #[inline]
+    fn index(&self, id: NodeId) -> &Self::Output {
+        &self.symbols[id as usize]
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -436,6 +492,7 @@ mod tests {
         let s2 = interner.intern("bar");
         assert_eq!(s1, interner.intern("foo"));
         assert_eq!(interner.resolve(&s1), "foo");
-        assert_eq!(interner.resolve(&s2), "bar");
+        assert_eq!(&interner[s1], "foo");
+        assert_eq!(&interner[&s2], "bar");
     }
 }

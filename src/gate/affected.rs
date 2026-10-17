@@ -154,7 +154,7 @@ fn collect_module_scope_test_callers(
 ) {
     let mut visited_by_name: HashMap<lasso::Spur, (u32, crate::domain::Lang)> = HashMap::new();
     for (&nid, &hops) in node_hops {
-        if let Some(sym) = ingest.symbols.get(nid as usize) {
+        if let Some(sym) = ingest.sym(nid) {
             visited_by_name
                 .entry(sym.name)
                 .and_modify(|e| {
@@ -175,8 +175,8 @@ fn collect_module_scope_test_callers(
         if !sym_lang.is_compatible(r.lang) {
             continue;
         }
-        if let Some(f) = ingest.files.get(r.file_id as usize) {
-            let file_path = interner.resolve(&f.path);
+        if let Some(f) = ingest.file(r.file_id) {
+            let file_path = &interner[f.path];
             if is_test_path(file_path) {
                 let h = d + 1;
                 test_hops
@@ -206,11 +206,8 @@ fn traverse_reverse_callers(
     }
 
     while let Some((curr, hops)) = queue.pop_front() {
-        if let Some(sym) = ingest.symbols.get(curr as usize) {
-            let file_path = interner
-                .resolve(&ingest.files[sym.file_id as usize].path)
-                .to_string();
-
+        if let Some(sym) = ingest.sym(curr) {
+            let file_path = ingest.sym_file_path(sym, interner).to_string();
             if is_test_path(&file_path) && hops > 0 {
                 test_hops
                     .entry(file_path)

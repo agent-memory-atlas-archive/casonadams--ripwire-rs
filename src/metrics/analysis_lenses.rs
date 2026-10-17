@@ -48,7 +48,7 @@ fn build_context_ratio_row(
     let mut out_bytes = 0usize;
 
     for &(callee_id, _, _) in callees {
-        let callee = &ingest.symbols[callee_id as usize];
+        let callee = &ingest[callee_id];
         let c_bytes = estimate_symbol_bytes(callee);
         total_bytes += c_bytes;
         touched_files.insert(callee.file_id);
@@ -63,12 +63,8 @@ fn build_context_ratio_row(
     let rtok = ((total_bytes as f64) / 3.8).round().max(1.0) as usize;
     let rtok_out = ((out_bytes as f64) / 3.8).round() as usize;
     let read_ratio = (rtok_out as f64) / (rtok as f64);
-    let file_path = ingest
-        .files
-        .get(sym.file_id as usize)
-        .map(|f| interner.resolve(&f.path))
-        .unwrap_or("");
-    let name = interner.resolve(&sym.name);
+    let file_path = ingest.sym_file_path(sym, interner);
+    let name = &interner[sym.name];
 
     ContextRatioRow {
         path: file_path.to_string(),

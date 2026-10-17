@@ -50,9 +50,9 @@ pub fn compute_snapshot(
             continue;
         }
 
-        let name = interner.resolve(&sym.name);
-        let path = interner.resolve(&ingest.files[sym.file_id as usize].path);
-        let scope = sym.scope.map(|sc| interner.resolve(&sc));
+        let name = &interner[sym.name];
+        let path = ingest.sym_file_path(sym, interner);
+        let scope = sym.scope.map(|sc| &interner[sc]);
         let key = symbol_canonical_key(name, path, scope);
 
         snap.line_by_sym

@@ -51,8 +51,8 @@ pub fn call_callers(state: &McpState, args: &Value) -> Result<Value, String> {
             let callers = state
                 .graph
                 .callers(id)
-                .filter_map(|(cid, _)| state.ingest.symbols.get(cid as usize))
-                .map(|cs| state.interner.resolve(&cs.name))
+                .filter_map(|(cid, _)| state.ingest.sym(cid))
+                .map(|cs| &state.interner[cs.name])
                 .collect::<Vec<_>>();
             json!({ "symbol_id": id, "callers": callers })
         })
@@ -71,8 +71,8 @@ pub fn call_callees(state: &McpState, args: &Value) -> Result<Value, String> {
             let callees = state
                 .graph
                 .callees(id)
-                .filter_map(|(cid, _)| state.ingest.symbols.get(cid as usize))
-                .map(|cs| state.interner.resolve(&cs.name))
+                .filter_map(|(cid, _)| state.ingest.sym(cid))
+                .map(|cs| &state.interner[cs.name])
                 .collect::<Vec<_>>();
             json!({ "symbol_id": id, "callees": callees })
         })
@@ -185,11 +185,8 @@ pub fn call_edit_check(state: &McpState, args: &Value) -> Result<Value, String> 
         return Ok(json!({ "error": format!("symbol '{sym_name}' not found") }));
     };
 
-    let sym = &state.ingest.symbols[sym_id as usize];
-    let rel_path = state
-        .interner
-        .resolve(&state.ingest.files[sym.file_id as usize].path);
-
+    let sym = &state.ingest[sym_id];
+    let rel_path = state.ingest.sym_file_path(sym, &state.interner);
     let baseline = crate::gate::contract::load_head_symbol_contract(
         Path::new(&state.root),
         rel_path,

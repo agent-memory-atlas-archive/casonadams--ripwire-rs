@@ -45,9 +45,9 @@ fn matches_symbol_selector(
     interner: &Interner,
     selector: &str,
 ) -> bool {
-    let sym_name = interner.resolve(&sym.name);
-    let sym_scope = sym.scope.map(|sc| interner.resolve(&sc)).unwrap_or("");
-    let file_path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+    let sym_name = &interner[sym.name];
+    let sym_scope = sym.scope.map(|sc| &interner[sc]).unwrap_or("");
+    let file_path = ingest.sym_file_path(sym, interner);
 
     if let Some((scope, name)) = selector.split_once("::") {
         if let Some((file, sc)) = scope.split_once("::") {
@@ -99,10 +99,10 @@ pub fn get_symbol_nav_info(
     interner: &Interner,
     weight: f32,
 ) -> Option<SymbolNavInfo> {
-    let sym = ingest.symbols.get(id as usize)?;
-    let name = interner.resolve(&sym.name).to_string();
-    let file = ingest.files.get(sym.file_id as usize)?;
-    let path = interner.resolve(&file.path).to_string();
+    let sym = ingest.sym(id)?;
+    let name = interner[sym.name].to_string();
+    let file = ingest.file(sym.file_id)?;
+    let path = interner[file.path].to_string();
     let rank = ranks.get(id as usize).copied().unwrap_or(0.0);
 
     let tested = crate::gate::affected::is_test_path(&path);
@@ -128,14 +128,14 @@ fn seed_tested_nodes(
         std::collections::HashMap::new();
     for sym in &ingest.symbols {
         by_name.entry(sym.name).or_default().push(sym.id);
-        let path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        let path = ingest.sym_file_path(sym, interner);
         if crate::gate::affected::is_test_path(path) && !tested[sym.id as usize] {
             tested[sym.id as usize] = true;
             queue.push_back(sym.id);
         }
     }
     for r in &ingest.references {
-        let path = interner.resolve(&ingest.files[r.file_id as usize].path);
+        let path = ingest.file_path(r.file_id, interner);
         let Some(ids) = by_name
             .get(&r.callee_name)
             .filter(|_| crate::gate::affected::is_test_path(path))
@@ -277,13 +277,9 @@ fn create_impact_node(
     ranks: &[f64],
     interner: &Interner,
 ) -> Option<ImpactNode> {
-    let sym = ingest.symbols.get(curr as usize)?;
-    let name = interner.resolve(&sym.name).to_string();
-    let path = ingest
-        .files
-        .get(sym.file_id as usize)
-        .map(|f| interner.resolve(&f.path).to_string())
-        .unwrap_or_default();
+    let sym = ingest.sym(curr)?;
+    let name = interner[sym.name].to_string();
+    let path = ingest.sym_file_path(sym, interner).to_string();
     let rank = ranks.get(curr as usize).copied().unwrap_or(0.0);
 
     Some(ImpactNode {
@@ -323,11 +319,9 @@ fn select_impact_seeds(
         .iter()
         .copied()
         .filter(|&id| {
-            ingest
-                .symbols
-                .get(id as usize)
-                .and_then(|s| ingest.files.get(s.file_id as usize))
-                .is_none_or(|f| !crate::gate::affected::is_test_path(interner.resolve(&f.path)))
+            ingest.sym(id).is_none_or(|s| {
+                !crate::gate::affected::is_test_path(ingest.sym_file_path(s, interner))
+            })
         })
         .collect();
     if non_test.is_empty() {
@@ -1092,9 +1086,9 @@ fn write_pack_task_sigs_and_collect<'a, W: Write>(
     if syms.is_empty()
         && let Some(first_sym) = ingest.symbols.first()
     {
-        let n_raw = interner.resolve(&first_sym.name);
+        let n_raw = &interner[first_sym.name];
         let n_esc = n_raw.xml_escaped().to_string();
-        let p_raw = interner.resolve(&ingest.files[first_sym.file_id as usize].path);
+        let p_raw = ingest.sym_file_path(first_sym, interner);
         let p_esc = p_raw.xml_escaped().to_string();
         let l = first_sym.line;
         write!(
@@ -1747,11 +1741,9 @@ impl crate::serialize::XmlReport for GraphQueryReport<'_> {
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for &node_id in self.matched_nodes {
-            if let Some(sym) = self.ingest.symbols.get(node_id as usize) {
-                let n = self.interner.resolve(&sym.name);
-                let p = self
-                    .interner
-                    .resolve(&self.ingest.files[sym.file_id as usize].path);
+            if let Some(sym) = self.ingest.sym(node_id) {
+                let n = &self.interner[sym.name];
+                let p = self.ingest.sym_file_path(sym, self.interner);
                 writeln!(
                     out,
                     "<s t=\"{}\" n=\"{n}\" p=\"{p}:{}\"/>",

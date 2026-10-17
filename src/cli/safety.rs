@@ -351,16 +351,14 @@ pub fn execute_safe_delete_query<W: Write>(
         )));
     }
     let sym_id = ids[0];
-    let sym = &ingest.symbols[sym_id as usize];
-    let sym_path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+    let sym = &ingest[sym_id];
+    let sym_path = ingest.sym_file_path(sym, interner);
     let def_loc = format!("{sym_path}:{}", sym.line);
     let callers: Vec<(&str, &str)> = graph
         .callers(sym_id)
         .filter_map(|(cid, _)| {
-            let s = ingest.symbols.get(cid as usize)?;
-            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
-            let n = interner.resolve(&s.name);
-            Some((p, n))
+            let s = ingest.sym(cid)?;
+            Some((ingest.sym_file_path(s, interner), &interner[s.name]))
         })
         .collect();
     let ranks = vec![0.0; ingest.symbols.len()];
@@ -390,17 +388,17 @@ pub fn execute_exercises_query<W: Write>(
 ) -> io::Result<()> {
     let mut reached = Vec::new();
     for sym in &ingest.symbols {
-        let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        let p = ingest.sym_file_path(sym, interner);
         if !p.contains(test_path) {
             continue;
         }
         for (callee_id, _) in graph.callees(sym.id) {
-            let Some(target) = ingest.symbols.get(callee_id as usize) else {
+            let Some(target) = ingest.sym(callee_id) else {
                 continue;
             };
-            let tp = interner.resolve(&ingest.files[target.file_id as usize].path);
+            let tp = ingest.sym_file_path(target, interner);
             if !crate::gate::affected::is_test_path(tp) {
-                reached.push((tp, interner.resolve(&target.name)));
+                reached.push((tp, &interner[target.name]));
             }
         }
     }

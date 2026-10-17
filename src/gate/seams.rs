@@ -53,7 +53,7 @@ fn collect_tested_nodes(
     let mut queue = VecDeque::new();
 
     for sym in &ingest.symbols {
-        let path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        let path = ingest.sym_file_path(sym, interner);
         if is_test_path(path) {
             tested.insert(sym.id);
             queue.push_back(sym.id);
@@ -77,14 +77,14 @@ fn check_cross_module_edge(
     interner: &Interner,
     tested_nodes: &HashSet<NodeId>,
 ) -> Option<(String, String, bool, Option<SeamEdge>)> {
-    let from_file = interner.resolve(&ingest.files[sym.file_id as usize].path);
+    let from_file = ingest.sym_file_path(sym, interner);
     if is_test_path(from_file) {
         return None;
     }
     let from_dir = compute_directory(from_file);
 
-    let target_sym = ingest.symbols.get(target_id as usize)?;
-    let to_file = interner.resolve(&ingest.files[target_sym.file_id as usize].path);
+    let target_sym = ingest.sym(target_id)?;
+    let to_file = ingest.sym_file_path(target_sym, interner);
     if is_test_path(to_file) {
         return None;
     }
@@ -96,9 +96,9 @@ fn check_cross_module_edge(
     let is_untested = !tested_nodes.contains(&sym.id) || !tested_nodes.contains(&target_id);
     let seam_edge = if is_untested {
         Some(SeamEdge {
-            caller: interner.resolve(&sym.name).to_string(),
+            caller: interner[sym.name].to_string(),
             caller_path: from_file.to_string(),
-            callee: interner.resolve(&target_sym.name).to_string(),
+            callee: interner[target_sym.name].to_string(),
             callee_path: to_file.to_string(),
         })
     } else {

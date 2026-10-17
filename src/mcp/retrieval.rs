@@ -132,12 +132,9 @@ fn score_candidate_symbol(
     if sym.kind == SymKind::Section {
         return 0.0;
     }
-    let name = interner.resolve(&sym.name);
-    let scope = sym.scope.as_ref().map(|s| interner.resolve(s));
-    let file_path = ingest
-        .files
-        .get(sym.file_id as usize)
-        .map_or("", |f| interner.resolve(&f.path));
+    let name = &interner[sym.name];
+    let scope = sym.scope.as_ref().map(|s| &interner[s]);
+    let file_path = ingest.sym_file_path(sym, interner);
     let rank = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
     let body_mask = body_masks.get(sym.id as usize).copied().unwrap_or(0);
     let kind_factor = if matches!(sym.kind, SymKind::Var | SymKind::Field) {

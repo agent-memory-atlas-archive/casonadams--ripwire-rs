@@ -128,8 +128,8 @@ pub fn call_path_between(
 
     let path: Vec<&str> = path_ids
         .into_iter()
-        .filter_map(|id| ingest.symbols.get(id as usize))
-        .map(|sym| interner.resolve(&sym.name))
+        .filter_map(|id| ingest.sym(id))
+        .map(|sym| &interner[sym.name])
         .collect();
 
     json!({
@@ -148,17 +148,10 @@ pub fn call_uses(ingest: &IngestResult, interner: &Interner, symbol_name: &str) 
     let mut use_sites = Vec::new();
 
     for r in &ingest.references {
-        if interner.resolve(&r.callee_name) == symbol_name {
-            let file_path = ingest
-                .files
-                .get(r.file_id as usize)
-                .map(|f| interner.resolve(&f.path))
-                .unwrap_or("");
+        if &interner[r.callee_name] == symbol_name {
+            let file_path = ingest.file_path(r.file_id, interner);
             let enclosing = if r.from_symbol != crate::domain::NO_NODE {
-                ingest
-                    .symbols
-                    .get(r.from_symbol as usize)
-                    .map(|s| interner.resolve(&s.name))
+                ingest.sym(r.from_symbol).map(|s| &interner[s.name])
             } else {
                 None
             };

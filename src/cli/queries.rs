@@ -340,10 +340,8 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
     let mut verified_rows = String::new();
     if changed.is_empty() {
         if let Some(s) = ingest.symbols.first() {
-            let p = interner
-                .resolve(&ingest.files[s.file_id as usize].path)
-                .xml_escaped();
-            let sn = interner.resolve(&s.name).xml_escaped();
+            let p = ingest.sym_file_path(s, interner).xml_escaped();
+            let sn = interner[s.name].xml_escaped();
             verified_rows.push_str(&format!("<f p=\"{p}\"><s n=\"{sn}\"/></f>"));
         }
     } else {
@@ -352,10 +350,10 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
                 .symbols
                 .iter()
                 .find(|s| {
-                    let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+                    let p = ingest.sym_file_path(s, interner);
                     p == cf || cf.ends_with(p)
                 })
-                .map_or("main", |s| interner.resolve(&s.name));
+                .map_or("main", |s| &interner[s.name]);
             verified_rows.push_str(&format!(
                 "<f p=\"{}\"><s n=\"{}\"/></f>",
                 cf.xml_escaped(),
@@ -674,8 +672,8 @@ pub fn extract_symbol_body<'a>(
     interner: &'a Interner,
     root_path: &Path,
 ) -> Option<(&'a crate::domain::Symbol, &'a str, &'a str, String)> {
-    let name = interner.resolve(&sym.name);
-    let rel_path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+    let name = &interner[sym.name];
+    let rel_path = ingest.sym_file_path(sym, interner);
     let bytes = std::fs::read(root_path.join(rel_path)).ok()?;
     let start = (sym.sig_start_byte as usize).min(bytes.len());
     let end = (sym.end_byte as usize).min(bytes.len());
@@ -799,7 +797,7 @@ pub fn execute_pack_top_n_query<W: Write>(
         if count >= n {
             break;
         }
-        let rel_path = interner.resolve(&ingest.files[f as usize].path);
+        let rel_path = ingest.file_path(f, interner);
         let file_disk_path = root_path.join(rel_path);
         if let Ok(bytes) = std::fs::read(&file_disk_path) {
             let content = String::from_utf8_lossy(&bytes).to_string();
@@ -828,12 +826,12 @@ pub fn execute_tree_query<W: Write>(
 
     let mut file_symbols = Vec::new();
     for f in file_order {
-        let rel_path = interner.resolve(&ingest.files[f as usize].path);
+        let rel_path = ingest.file_path(f, interner);
         let bucket = &buckets[f as usize];
         let mut top3 = Vec::new();
         for &sym_id in bucket.iter().take(3) {
-            let sym = &ingest.symbols[sym_id as usize];
-            top3.push((sym.kind.tag(), interner.resolve(&sym.name)));
+            let sym = &ingest[sym_id];
+            top3.push((sym.kind.tag(), &interner[sym.name]));
         }
         file_symbols.push(crate::serialize::TreeFileSymbols {
             path: rel_path,
@@ -877,7 +875,7 @@ pub fn execute_dead_code_query<W: Write>(
         {
             continue;
         }
-        let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        let p = ingest.sym_file_path(sym, interner);
         if is_header_path(p) {
             continue;
         }
@@ -885,7 +883,7 @@ pub fn execute_dead_code_query<W: Write>(
             .entry(sym.file_id)
             .or_insert_with(|| std::fs::read(root_path.join(p)).unwrap_or_default());
         if sig_has_static_token(src, sym.sig_start_byte, sym.sig_end_byte) {
-            let n = interner.resolve(&sym.name);
+            let n = &interner[sym.name];
             dead.push((n, sym.kind.tag(), p, sym.line));
         }
     }
@@ -912,9 +910,9 @@ pub fn build_community_module<'a>(
     let mut top_dir = "";
     let mut top_label = "";
     for &nid in nodes {
-        if let Some(s) = ingest.symbols.get(nid as usize) {
-            let n = interner.resolve(&s.name);
-            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+        if let Some(s) = ingest.sym(nid) {
+            let n = &interner[s.name];
+            let p = ingest.sym_file_path(s, interner);
             if top_dir.is_empty() {
                 top_dir = p;
             }
@@ -1093,9 +1091,9 @@ pub fn execute_around_query<W: Write>(
     let mut result_syms = Vec::new();
 
     while let Some((curr, curr_d)) = queue.pop_front() {
-        if let Some(s) = ingest.symbols.get(curr as usize) {
-            let n = interner.resolve(&s.name);
-            let p = interner.resolve(&ingest.files[s.file_id as usize].path);
+        if let Some(s) = ingest.sym(curr) {
+            let n = &interner[s.name];
+            let p = ingest.sym_file_path(s, interner);
             result_syms.push((n, s.kind.tag(), p, s.line));
         }
         if curr_d < cfg.depth {

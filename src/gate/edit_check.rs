@@ -129,16 +129,14 @@ fn check_caller_compatibility(
     ingest: &IngestResult,
     interner: &Interner,
 ) -> CallerCheckResult {
-    let caller_sym = &ingest.symbols[caller_id as usize];
-    let caller_name = interner.resolve(&caller_sym.name).to_string();
-    let file_path = interner
-        .resolve(&ingest.files[caller_sym.file_id as usize].path)
-        .to_string();
+    let caller_sym = &ingest[caller_id];
+    let caller_name = interner[caller_sym.name].to_string();
+    let file_path = ingest.sym_file_path(caller_sym, interner).to_string();
 
     let mut sites = Vec::new();
     for r in &ingest.references {
         if r.from_symbol == caller_id && r.role == RefRole::Call {
-            let callee = interner.resolve(&r.callee_name);
+            let callee = &interner[r.callee_name];
             if callee == sym_name && r.arg_count_known && r.arg_count != target_params {
                 sites.push(IncompatibleCallSite {
                     line: r.line,
@@ -169,15 +167,9 @@ pub fn check_symbol_contract(
     graph: &Graph,
     interner: &Interner,
 ) -> Option<EditCheckReport> {
-    if focus_sym_id as usize >= ingest.symbols.len() {
-        return None;
-    }
-
-    let sym = &ingest.symbols[focus_sym_id as usize];
-    let sym_name = interner.resolve(&sym.name).to_string();
-    let file_path = interner
-        .resolve(&ingest.files[sym.file_id as usize].path)
-        .to_string();
+    let sym = ingest.sym(focus_sym_id)?;
+    let sym_name = interner[sym.name].to_string();
+    let file_path = ingest.sym_file_path(sym, interner).to_string();
 
     let is_public = match head_baseline {
         Some(base)

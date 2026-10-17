@@ -135,16 +135,16 @@ pub fn check_architecture_rules(
     let mut violations = Vec::new();
 
     for sym in &ingest.symbols {
-        let from_file = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        let from_file = ingest.sym_file_path(sym, interner);
         let Some(from_layer) = cfg.assign_layer(from_file) else {
             continue;
         };
 
         for (target_id, _) in graph.callees(sym.id) {
-            let Some(target) = ingest.symbols.get(target_id as usize) else {
+            let Some(target) = ingest.sym(target_id) else {
                 continue;
             };
-            let to_file = interner.resolve(&ingest.files[target.file_id as usize].path);
+            let to_file = ingest.sym_file_path(target, interner);
             let Some(to_layer) = cfg.assign_layer(to_file) else {
                 continue;
             };
@@ -152,12 +152,12 @@ pub fn check_architecture_rules(
             let from_ep = EdgeEndpoint {
                 file: from_file,
                 layer: from_layer,
-                sym: interner.resolve(&sym.name),
+                sym: &interner[sym.name],
             };
             let to_ep = EdgeEndpoint {
                 file: to_file,
                 layer: to_layer,
-                sym: interner.resolve(&target.name),
+                sym: &interner[target.name],
             };
             check_edge_violation(from_ep, to_ep, &cfg.rules, &mut violations);
         }
