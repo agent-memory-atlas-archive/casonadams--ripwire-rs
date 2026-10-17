@@ -227,11 +227,14 @@ impl crate::serialize::XmlReport for SkillScanReport {
     }
     fn write_body<W: io::Write>(&self, out: &mut W) -> io::Result<()> {
         for f in &self.findings {
-            let p_esc = crate::serialize::escape::escape_xml_str(&f.path);
+            use crate::serialize::XmlEscapeExt;
             writeln!(
                 out,
-                "  <f p=\"{p_esc}:{}\" rule=\"{}\" sev=\"{}\"/>",
-                f.line, f.rule, f.sev
+                "  <f p=\"{}:{}\" rule=\"{}\" sev=\"{}\"/>",
+                f.path.xml_escaped(),
+                f.line,
+                f.rule,
+                f.sev
             )?;
         }
         Ok(())

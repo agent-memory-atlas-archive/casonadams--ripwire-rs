@@ -166,7 +166,7 @@ impl crate::serialize::XmlReport for StructLayoutReport {
         "ripwire.layout/v1"
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let sym_esc = crate::serialize::escape::escape_xml_str(&self.sym);
+        use crate::serialize::XmlEscapeExt;
         let found = usize::from(self.found);
         let mirror = if self.defs.len() <= 1 {
             "single"
@@ -175,27 +175,31 @@ impl crate::serialize::XmlReport for StructLayoutReport {
         };
         write!(
             out,
-            " sym=\"{sym_esc}\" found=\"{found}\" defs=\"{}\" mirror=\"{mirror}\" asserts=\"0\" conflicts=\"0\"",
+            " sym=\"{}\" found=\"{found}\" defs=\"{}\" mirror=\"{mirror}\" asserts=\"0\" conflicts=\"0\"",
+            self.sym.xml_escaped(),
             self.defs.len()
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::XmlEscapeExt;
         for d in &self.defs {
-            let p_esc = crate::serialize::escape::escape_xml_str(&d.path);
             writeln!(
                 out,
-                "  <def p=\"{p_esc}\" l=\"{}\" agg=\"{}\" modeled=\"1\" fields=\"{}\">",
+                "  <def p=\"{}\" l=\"{}\" agg=\"{}\" modeled=\"1\" fields=\"{}\">",
+                d.path.xml_escaped(),
                 d.line,
                 d.agg_kind,
                 d.fields.len()
             )?;
             for f in &d.fields {
-                let n_esc = crate::serialize::escape::escape_xml_str(&f.name);
-                let ty_esc = crate::serialize::escape::escape_xml_str(&f.ty);
                 writeln!(
                     out,
-                    "    <f n=\"{n_esc}\" ty=\"{ty_esc}\" sz=\"{}\" al=\"{}\" off=\"{}\"/>",
-                    f.size, f.align, f.offset
+                    "    <f n=\"{}\" ty=\"{}\" sz=\"{}\" al=\"{}\" off=\"{}\"/>",
+                    f.name.xml_escaped(),
+                    f.ty.xml_escaped(),
+                    f.size,
+                    f.align,
+                    f.offset
                 )?;
             }
             writeln!(out, "  </def>")?;
@@ -282,22 +286,26 @@ impl crate::serialize::XmlReport for FieldAffinityReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::XmlEscapeExt;
         let shown = self.layout.defs.len().min(20);
         for d in self.layout.defs.iter().take(shown) {
-            let p_esc = crate::serialize::escape::escape_xml_str(&d.path);
-            let n_esc = crate::serialize::escape::escape_xml_str(&self.layout.sym);
-            writeln!(out, "  <s n=\"{n_esc}\" p=\"{p_esc}\">")?;
+            writeln!(
+                out,
+                "  <s n=\"{}\" p=\"{}\">",
+                self.layout.sym.xml_escaped(),
+                d.path.xml_escaped()
+            )?;
             for i in 0..d.fields.len() {
                 for j in (i + 1)..d.fields.len() {
                     let fa = &d.fields[i];
                     let fb = &d.fields[j];
                     let dist = fb.offset.saturating_sub(fa.offset);
                     let wt = ((64.0 - dist as f64).max(0.0)) / 64.0;
-                    let a_esc = crate::serialize::escape::escape_xml_str(&fa.name);
-                    let b_esc = crate::serialize::escape::escape_xml_str(&fb.name);
                     writeln!(
                         out,
-                        "    <pair a=\"{a_esc}\" b=\"{b_esc}\" dist=\"{dist}\" wt=\"{wt:.2}\"/>"
+                        "    <pair a=\"{}\" b=\"{}\" dist=\"{dist}\" wt=\"{wt:.2}\"/>",
+                        fa.name.xml_escaped(),
+                        fb.name.xml_escaped()
                     )?;
                 }
             }

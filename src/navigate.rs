@@ -1,5 +1,6 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
+use crate::serialize::XmlEscapeExt;
 use serde::Serialize;
 use std::collections::{BTreeSet, HashSet, VecDeque};
 use std::io::{self, Write};
@@ -678,8 +679,11 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
             write!(out, "<f via=\"import\" p=\"src/lib.rs\" lazy=\"0\"/>")
         } else {
             for p in importer_paths.into_iter().take(10) {
-                let p_esc = crate::serialize::escape::escape_xml_str(p);
-                write!(out, "<f via=\"import\" p=\"{p_esc}\" lazy=\"0\"/>")?;
+                write!(
+                    out,
+                    "<f via=\"import\" p=\"{}\" lazy=\"0\"/>",
+                    p.xml_escaped()
+                )?;
             }
             Ok(())
         }
@@ -1055,13 +1059,13 @@ fn write_pack_task_sigs_and_collect<'a, W: Write>(
     for (idx, it) in syms.iter().enumerate() {
         let raw_name = it["name"].as_str().unwrap_or("");
         let raw_path = it["path"].as_str().unwrap_or("");
-        let n_esc = crate::serialize::escape::escape_xml_str(raw_name).into_owned();
-        let p_esc = crate::serialize::escape::escape_xml_str(raw_path).into_owned();
+        let n_esc = raw_name.xml_escaped().to_string();
+        let p_esc = raw_path.xml_escaped().to_string();
         let l = it["line"].as_u64().unwrap_or(1);
         let cx = it["cx"].as_u64().unwrap_or(1);
         let ccx = it["ccx"].as_u64().unwrap_or(1);
         let in_deg = it["in"].as_u64().unwrap_or(0);
-        let sig = crate::serialize::escape::escape_xml_str(it["sig"].as_str().unwrap_or(raw_name));
+        let sig = it["sig"].as_str().unwrap_or(raw_name).xml_escaped();
         let r = idx + 1;
         write!(
             out,
@@ -1089,9 +1093,9 @@ fn write_pack_task_sigs_and_collect<'a, W: Write>(
         && let Some(first_sym) = ingest.symbols.first()
     {
         let n_raw = interner.resolve(&first_sym.name);
-        let n_esc = crate::serialize::escape::escape_xml_str(n_raw).into_owned();
+        let n_esc = n_raw.xml_escaped().to_string();
         let p_raw = interner.resolve(&ingest.files[first_sym.file_id as usize].path);
-        let p_esc = crate::serialize::escape::escape_xml_str(p_raw).into_owned();
+        let p_esc = p_raw.xml_escaped().to_string();
         let l = first_sym.line;
         write!(
             out,
@@ -1135,7 +1139,6 @@ pub fn execute_pack_task<W: Write>(
     );
     let empty = Vec::new();
     let syms = for_val["symbols"].as_array().unwrap_or(&empty);
-    let t_esc = crate::serialize::escape::escape_xml_str(task);
     let mut sigs_buf = Vec::new();
     let (bodies, changed_paths) =
         write_pack_task_sigs_and_collect(syms, ingest, interner, &mut sigs_buf)?;
@@ -1143,7 +1146,8 @@ pub fn execute_pack_task<W: Write>(
     let est_tokens = ((sigs_buf.len() + body_bytes + 400) / 4).max(120);
     write!(
         out,
-        "<!-- ripwire pack-task schema=ripwire.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire.pack-task/v1\" task=\"{t_esc}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"{est_tokens}\" budget_tokens=\"6000\"><sigs>",
+        "<!-- ripwire pack-task schema=ripwire.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire.pack-task/v1\" task=\"{}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"{est_tokens}\" budget_tokens=\"6000\"><sigs>",
+        task.xml_escaped()
     )?;
     out.write_all(&sigs_buf)?;
     write!(
@@ -1174,12 +1178,13 @@ pub fn execute_pack_task<W: Write>(
         top_caller_nodes.len()
     )?;
     for c in &top_caller_nodes {
-        let cn = crate::serialize::escape::escape_xml_str(&c.name);
-        let cp = crate::serialize::escape::escape_xml_str(&c.path);
         write!(
             out,
-            "<s t=\"{}\" n=\"{cn}\" p=\"{cp}:{}\"/>",
-            c.kind, c.line
+            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
+            c.kind,
+            c.name.xml_escaped(),
+            c.path.xml_escaped(),
+            c.line
         )?;
     }
     write!(out, "</callers>")?;
@@ -1191,8 +1196,12 @@ pub fn execute_pack_task<W: Write>(
         aff.tests.len()
     )?;
     for t in &aff.tests {
-        let tp = crate::serialize::escape::escape_xml_str(&t.path);
-        write!(out, "<t p=\"{tp}\" hops=\"{}\"/>", t.hops)?;
+        write!(
+            out,
+            "<t p=\"{}\" hops=\"{}\"/>",
+            t.path.xml_escaped(),
+            t.hops
+        )?;
     }
     writeln!(out, "</tests></ctx>")
 }
@@ -1730,10 +1739,10 @@ impl crate::serialize::XmlReport for GraphQueryReport<'_> {
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let count = self.matched_nodes.len();
-        let escaped_expr = crate::serialize::escape::escape_xml_str(self.expr);
         write!(
             out,
-            " expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\""
+            " expr=\"{}\" count=\"{count}\" shown=\"{count}\" capped=\"0\"",
+            self.expr.xml_escaped()
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {

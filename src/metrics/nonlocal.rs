@@ -110,12 +110,13 @@ impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
 }
 
 fn write_nonlocal_fn_row<W: Write>(f: &NonlocalFunction, out: &mut W) -> io::Result<()> {
-    let p_raw = format!("{}:{}", f.path, f.line);
-    let p_esc = crate::serialize::escape::escape_xml_str(&p_raw);
-    let n_esc = crate::serialize::escape::escape_xml_str(&f.sym_name);
+    use crate::serialize::XmlEscapeExt;
     writeln!(
         out,
-        "  <fn p=\"{p_esc}\" n=\"{n_esc}\" writes=\"{}\" reads=\"{}\" direct_writes=\"{}\" direct_reads=\"{}\" cells_total=\"{}\">",
+        "  <fn p=\"{}:{}\" n=\"{}\" writes=\"{}\" reads=\"{}\" direct_writes=\"{}\" direct_reads=\"{}\" cells_total=\"{}\">",
+        f.path.xml_escaped(),
+        f.line,
+        f.sym_name.xml_escaped(),
         f.writes,
         f.reads,
         f.writes,
@@ -124,12 +125,12 @@ fn write_nonlocal_fn_row<W: Write>(f: &NonlocalFunction, out: &mut W) -> io::Res
     )?;
     for c in &f.cells {
         let mode = if c.is_write { "w" } else { "r" };
-        let cell_n = crate::serialize::escape::escape_xml_str(&c.cell_name);
-        let cell_p_raw = format!("{}:{}", c.path, c.line);
-        let cell_p = crate::serialize::escape::escape_xml_str(&cell_p_raw);
         writeln!(
             out,
-            "    <cell n=\"{cell_n}\" p=\"{cell_p}\" dir=\"{mode}\"/>"
+            "    <cell n=\"{}\" p=\"{}:{}\" dir=\"{mode}\"/>",
+            c.cell_name.xml_escaped(),
+            c.path.xml_escaped(),
+            c.line
         )?;
     }
     writeln!(out, "  </fn>")

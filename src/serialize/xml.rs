@@ -1,7 +1,7 @@
 use crate::domain::{IngestResult, Interner, NodeId, Symbol};
 use crate::graph::Graph;
 use crate::rank::PageRankResult;
-use crate::serialize::escape::escape_xml_write;
+use crate::serialize::escape::{XmlEscapeExt, escape_xml_write};
 use std::io::{self, BufWriter, Write};
 
 pub const DEFAULT_STREAM_BUFFER_CAPACITY: usize = 64 * 1024;
@@ -203,7 +203,7 @@ fn write_callee_tag<W: Write>(w: &mut W, name: &str, is_split: bool) -> io::Resu
     write!(
         w,
         "<c n=\"{}\"{}>",
-        crate::serialize::escape::escape_xml_str(name),
+        name.xml_escaped(),
         if is_split { " prov=\"split\"/" } else { "/" }
     )
 }

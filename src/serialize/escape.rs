@@ -1,6 +1,6 @@
 use std::borrow::Cow;
+use std::fmt::{self, Write as _};
 use std::io::{self, Write};
-
 /// Replace C0 control characters with space, preserving tabs, newlines, and carriage returns.
 #[inline]
 #[must_use]
@@ -24,6 +24,24 @@ pub fn xml_control_entity(c: char) -> Option<&'static str> {
     }
 }
 
+/// Convert a character requiring XML escaping into its replacement string.
+#[inline]
+#[must_use]
+pub const fn xml_escaped_char(c: char) -> Option<&'static str> {
+    match c {
+        '&' => Some("&amp;"),
+        '<' => Some("&lt;"),
+        '>' => Some("&gt;"),
+        '"' => Some("&quot;"),
+        '\'' => Some("&apos;"),
+        '\t' => Some("&#9;"),
+        '\n' => Some("&#10;"),
+        '\r' => Some("&#13;"),
+        c if (c as u32) < 0x20 => Some(" "),
+        _ => None,
+    }
+}
+
 /// Check if a byte needs XML entity escaping or control character scrubbing.
 #[inline]
 #[must_use]
@@ -31,29 +49,47 @@ pub fn needs_escaping(c: u8) -> bool {
     matches!(c, b'&' | b'<' | b'>' | b'"' | b'\'' | 0..=0x1F)
 }
 
+/// Zero-allocation `Display` wrapper that streams XML-escaped characters to a formatter.
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct XmlEscaped<'a>(pub &'a str);
+
+impl fmt::Display for XmlEscaped<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.0.bytes().any(needs_escaping) {
+            return f.write_str(self.0);
+        }
+        for c in self.0.chars() {
+            match xml_escaped_char(c) {
+                Some(esc) => f.write_str(esc)?,
+                None => f.write_char(c)?,
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Extension trait for formatting string slices as XML-escaped values in `write!` / `format!`.
+pub trait XmlEscapeExt {
+    #[must_use]
+    fn xml_escaped(&self) -> XmlEscaped<'_>;
+}
+
+impl<T: AsRef<str> + ?Sized> XmlEscapeExt for T {
+    #[inline]
+    fn xml_escaped(&self) -> XmlEscaped<'_> {
+        XmlEscaped(self.as_ref())
+    }
+}
+
 /// Escape XML entities (&, <, >, ", ') and control characters into a Cow string.
 #[must_use]
 pub fn escape_xml_str(s: &str) -> Cow<'_, str> {
-    let bytes = s.as_bytes();
-    if !bytes.iter().any(|&b| needs_escaping(b)) {
+    if !s.bytes().any(needs_escaping) {
         return Cow::Borrowed(s);
     }
-
     let mut out = String::with_capacity(s.len() + 16);
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            '\'' => out.push_str("&apos;"),
-            '\t' => out.push_str("&#9;"),
-            '\n' => out.push_str("&#10;"),
-            '\r' => out.push_str("&#13;"),
-            c if (c as u32) < 0x20 => out.push(' '),
-            c => out.push(c),
-        }
-    }
+    let _ = write!(out, "{}", XmlEscaped(s));
     Cow::Owned(out)
 }
 
@@ -121,5 +157,9 @@ mod tests {
         let text = "line1\tline2\nline3\rline4\x01bell\x1f";
         let escaped = escape_xml_str(text);
         assert_eq!(escaped, "line1&#9;line2&#10;line3&#13;line4 bell ");
+        assert_eq!(
+            text.xml_escaped().to_string(),
+            "line1&#9;line2&#10;line3&#13;line4 bell "
+        );
     }
 }

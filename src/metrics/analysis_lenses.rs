@@ -1,5 +1,6 @@
 use crate::domain::{IngestResult, Interner, SymKind};
 use crate::graph::Graph;
+use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -150,12 +151,12 @@ impl crate::serialize::XmlReport for ContextRatioReport {
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let shown = self.rows.len().min(40);
         for r in self.rows.iter().take(shown) {
-            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
             writeln!(
                 w,
-                "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+                "  <s p=\"{}:{}\" n=\"{}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+                r.path.xml_escaped(),
                 r.line,
+                r.name.xml_escaped(),
                 r.kind,
                 r.sites,
                 r.ents,
@@ -169,10 +170,10 @@ impl crate::serialize::XmlReport for ContextRatioReport {
             )?;
         }
         for r in self.rows.iter().take(shown) {
-            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
             writeln!(
                 w,
-                "  <f p=\"{p_esc}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+                "  <f p=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+                r.path.xml_escaped(),
                 r.sites,
                 r.ents,
                 r.ents_out,
@@ -324,21 +325,26 @@ impl crate::serialize::XmlReport for EnsembleReport {
         let shown = self.rows.len().min(40);
         let f_shown = self.rows.len().min(20);
         for r in self.rows.iter().take(shown) {
-            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
             writeln!(
                 w,
-                "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"3\" fired=\"{}\" unavail=\"confusion\"/>",
-                r.line, r.fam, r.fired
+                "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"3\" fired=\"{}\" unavail=\"confusion\"/>",
+                r.path.xml_escaped(),
+                r.line,
+                r.name.xml_escaped(),
+                r.fam,
+                r.fired
             )?;
         }
         for r in self.rows.iter().take(f_shown) {
-            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
             writeln!(
                 w,
-                "  <f p=\"{p_esc}\" top=\"{n_esc}\" top_l=\"{}\" top_fam=\"{}\" union_fam=\"{}\" union=\"{}\" syms=\"1\"/>",
-                r.line, r.fam, r.fam, r.fired
+                "  <f p=\"{}\" top=\"{}\" top_l=\"{}\" top_fam=\"{}\" union_fam=\"{}\" union=\"{}\" syms=\"1\"/>",
+                r.path.xml_escaped(),
+                r.name.xml_escaped(),
+                r.line,
+                r.fam,
+                r.fam,
+                r.fired
             )?;
         }
         Ok(())
@@ -578,12 +584,19 @@ impl crate::serialize::XmlReport for CommentCoherenceReport {
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
         for r in self.rows.iter().take(40) {
-            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
             writeln!(
                 w,
-                "  <fn p=\"{p_esc}:{}\" n=\"{n_esc}\" c_coeff=\"{:.3}\" words=\"{}\" restate=\"{}\" cic=\"{:.3}\" c_terms=\"{}\" i_terms=\"{}\" shared=\"{}\"/>",
-                r.line, r.c_coeff, r.words, r.restate, r.cic, r.c_terms, r.i_terms, r.shared
+                "  <fn p=\"{}:{}\" n=\"{}\" c_coeff=\"{:.3}\" words=\"{}\" restate=\"{}\" cic=\"{:.3}\" c_terms=\"{}\" i_terms=\"{}\" shared=\"{}\"/>",
+                r.path.xml_escaped(),
+                r.line,
+                r.name.xml_escaped(),
+                r.c_coeff,
+                r.words,
+                r.restate,
+                r.cic,
+                r.c_terms,
+                r.i_terms,
+                r.shared
             )?;
         }
         Ok(())
@@ -651,10 +664,10 @@ pub fn serialize_naming_consistency_xml<W: Write>(
     } else {
         "naming-consistency"
     };
-    let root_esc = crate::serialize::escape::escape_xml_str(root);
     writeln!(
         out,
-        "<{tag} schema=\"{schema}\" root=\"{root_esc}\" symbols=\"{}\">",
+        "<{tag} schema=\"{schema}\" root=\"{}\" symbols=\"{}\">",
+        root.xml_escaped(),
         ingest.symbols.len()
     )?;
     for ((kind, style), count) in counts {
@@ -672,10 +685,10 @@ pub fn serialize_naming_calibration_xml<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let root_esc = crate::serialize::escape::escape_xml_str(root);
     writeln!(
         out,
-        "<naming-calibration schema=\"ripwire.naming-calibration/v1\" root=\"{root_esc}\" symbols=\"{}\">",
+        "<naming-calibration schema=\"ripwire.naming-calibration/v1\" root=\"{}\" symbols=\"{}\">",
+        root.xml_escaped(),
         ingest.symbols.len()
     )?;
     let mut style_totals: std::collections::BTreeMap<&'static str, usize> =

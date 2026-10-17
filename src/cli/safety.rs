@@ -1,7 +1,7 @@
 use super::args::TopSafetyArgs;
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
-use crate::serialize::ToXmlString;
+use crate::serialize::{ToXmlString, XmlEscapeExt};
 use std::io::{self, Write};
 use std::path::Path;
 #[derive(Default, Clone, Copy)]
@@ -699,12 +699,17 @@ pub fn print_cochange_partners<W: Write>(
 }
 
 fn format_copair_row(p: &crate::git::cochange::CoPair) -> String {
-    let a_esc = crate::serialize::escape::escape_xml_str(&p.file_a);
-    let b_esc = crate::serialize::escape::escape_xml_str(&p.file_b);
     let surp = usize::from(p.surprising);
     let mut row = format!(
-        "  <pair a=\"{a_esc}\" b=\"{b_esc}\" together=\"{}\" deg=\"{:.2}\" conf_ab=\"{:.2}\" conf_ba=\"{:.2}\" driver=\"{}\" recur=\"{}\" surprising=\"{surp}\"",
-        p.together, p.deg, p.conf_ab, p.conf_ba, p.driver, p.recur
+        "  <pair a=\"{}\" b=\"{}\" together=\"{}\" deg=\"{:.2}\" conf_ab=\"{:.2}\" conf_ba=\"{:.2}\" driver=\"{}\" recur=\"{}\" surprising=\"{surp}\"",
+        p.file_a.xml_escaped(),
+        p.file_b.xml_escaped(),
+        p.together,
+        p.deg,
+        p.conf_ab,
+        p.conf_ba,
+        p.driver,
+        p.recur
     );
     if !p.dep_capable {
         row.push_str(" dep_capable=\"0\"");
@@ -755,16 +760,16 @@ pub fn print_cochange_groups<W: Write>(
         "<cochange-groups schema=\"ripwire.cochange-groups/v1\" groups=\"{total}\" window=\"18mo@HEAD\" shown=\"{shown}\" capped=\"{capped}\" root=\"{root}\"{at_attr}>",
     )?;
     for g in groups.iter().take(shown) {
-        let core_esc = crate::serialize::escape::escape_xml_str(&g.core);
         let partners_joined = g
             .partners
             .iter()
-            .map(|p| crate::serialize::escape::escape_xml_str(p).into_owned())
+            .map(|p| p.xml_escaped().to_string())
             .collect::<Vec<_>>()
             .join(",");
         writeln!(
             out,
-            "  <group core=\"{core_esc}\" partners=\"{partners_joined}\" size=\"{}\" together=\"{}\" deg=\"{:.2}\"/>",
+            "  <group core=\"{}\" partners=\"{partners_joined}\" size=\"{}\" together=\"{}\" deg=\"{:.2}\"/>",
+            g.core.xml_escaped(),
             g.partners.len() + 1,
             g.max_together,
             g.max_deg

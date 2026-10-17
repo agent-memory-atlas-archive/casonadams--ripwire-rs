@@ -508,13 +508,10 @@ fn format_clone_group_xml(
     }
     for &id in &g.members {
         if let Some(sym) = ingest.symbols.get(id as usize) {
-            let name = crate::serialize::escape::escape_xml_str(interner.resolve(&sym.name));
+            use crate::serialize::XmlEscapeExt;
+            let name = interner.resolve(&sym.name).xml_escaped();
             let p = if let Some(fi) = ingest.files.get(sym.file_id as usize) {
-                format!(
-                    "{}:{}",
-                    crate::serialize::escape::escape_xml_str(interner.resolve(&fi.path)),
-                    sym.line
-                )
+                format!("{}:{}", interner.resolve(&fi.path).xml_escaped(), sym.line)
             } else {
                 format!("line:{}", sym.line)
             };

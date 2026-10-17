@@ -309,12 +309,16 @@ impl crate::serialize::XmlReport for QualityPanelReport {
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
         for r in self.rows.iter().take(40) {
-            let p_esc = crate::serialize::escape::escape_xml_str(&r.path);
-            let n_esc = crate::serialize::escape::escape_xml_str(&r.name);
+            use crate::serialize::XmlEscapeExt;
             writeln!(
                 w,
-                "  <s p=\"{p_esc}:{}\" n=\"{n_esc}\" fam=\"{}\" of=\"{}\" fired=\"{}\" unavail=\"confusion\"/>",
-                r.line, r.fam, r.of, r.fired
+                "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"{}\" fired=\"{}\" unavail=\"confusion\"/>",
+                r.path.xml_escaped(),
+                r.line,
+                r.name.xml_escaped(),
+                r.fam,
+                r.of,
+                r.fired
             )?;
         }
         Ok(())

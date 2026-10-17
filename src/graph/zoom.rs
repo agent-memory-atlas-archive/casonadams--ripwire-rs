@@ -1,7 +1,6 @@
 use super::Graph;
 use crate::domain::{IngestResult, Interner, NodeId};
-use crate::serialize::PageWindow;
-use crate::serialize::escape::escape_xml_str;
+use crate::serialize::{PageWindow, XmlEscapeExt};
 use std::collections::HashMap;
 use std::io::{self, Write};
 
@@ -137,11 +136,13 @@ pub fn build_zoom_tree(
 }
 
 fn write_module<W: Write>(m: &ZoomModule, out: &mut W) -> io::Result<()> {
-    let dir = escape_xml_str(&m.dir);
     write!(
         out,
-        "<module level=\"{}\" id=\"{}\" size=\"{}\" dir=\"{dir}\"",
-        m.level, m.id, m.size
+        "<module level=\"{}\" id=\"{}\" size=\"{}\" dir=\"{}\"",
+        m.level,
+        m.id,
+        m.size,
+        m.dir.xml_escaped()
     )?;
     if m.unprinted_children > 0 {
         write!(out, " children=\"{}\"", m.unprinted_children)?;

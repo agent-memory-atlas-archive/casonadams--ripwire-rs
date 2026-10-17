@@ -630,11 +630,13 @@ pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
         LINT_RULES.len()
     )?;
     for r in LINT_RULES {
-        let desc_esc = crate::serialize::escape::escape_xml_str(r.description);
         writeln!(
             out,
-            "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\" lang=\"all\" since=\"v0.1.0\">{desc_esc}</rule>",
-            r.name, r.severity, r.category
+            "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\" lang=\"all\" since=\"v0.1.0\">{}</rule>",
+            r.name,
+            r.severity,
+            r.category,
+            crate::serialize::XmlEscaped(r.description)
         )?;
     }
     writeln!(out, "</lintcatalog>")
@@ -687,13 +689,16 @@ impl crate::serialize::XmlReport for LintReport<'_> {
             )?;
         }
         for f in self.findings.iter().take(shown) {
-            let p_esc = crate::serialize::escape::escape_xml_str(&f.path);
-            let enc_esc = crate::serialize::escape::escape_xml_str(&f.enclosing);
-            let msg_esc = crate::serialize::escape::escape_xml_str(&f.message);
+            use crate::serialize::XmlEscapeExt;
             writeln!(
                 w,
-                "  <f rule=\"{}\" p=\"{p_esc}:{}\" sev=\"{}\" in=\"{enc_esc}\">{msg_esc}</f>",
-                f.rule, f.line, f.severity
+                "  <f rule=\"{}\" p=\"{}:{}\" sev=\"{}\" in=\"{}\">{}</f>",
+                f.rule,
+                f.path.xml_escaped(),
+                f.line,
+                f.severity,
+                f.enclosing.xml_escaped(),
+                f.message.xml_escaped()
             )?;
         }
         Ok(())

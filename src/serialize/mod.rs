@@ -22,7 +22,9 @@ pub use query_xml::{
 
 pub use html::{ColorBy, generate_call_graph_html, write_call_graph_html};
 
-pub use escape::{escape_xml_str, escape_xml_write, needs_escaping, xml_safe_byte};
+pub use escape::{
+    XmlEscapeExt, XmlEscaped, escape_xml_str, escape_xml_write, needs_escaping, xml_safe_byte,
+};
 pub use xml::{
     CountingWriter, DEFAULT_PACK_BUDGET_BYTES, DEFAULT_STREAM_BUFFER_CAPACITY, RootElementContext,
     SerializeOptions, StreamXmlContext, bucket_symbols_by_rank, serialize_xml,
@@ -149,12 +151,15 @@ pub trait XmlReport {
     fn write_xml_report<W: std::io::Write>(&self, root: &str, out: &mut W) -> std::io::Result<()> {
         let tag = self.schema_tag();
         let ver = self.schema_version();
-        let root_esc = escape_xml_str(root);
         if let Some(comment) = self.legend_comment() {
             writeln!(out, "<!-- {comment} -->")?;
         }
         if self.include_root_attr() {
-            write!(out, "<{tag} schema=\"{ver}\" root=\"{root_esc}\"")?;
+            write!(
+                out,
+                "<{tag} schema=\"{ver}\" root=\"{}\"",
+                root.xml_escaped()
+            )?;
         } else {
             write!(out, "<{tag} schema=\"{ver}\"")?;
         }

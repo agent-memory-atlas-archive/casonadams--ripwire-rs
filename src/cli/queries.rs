@@ -2,6 +2,7 @@ use super::args::{AroundConfig, TopRetrievalArgs, TopWorkspaceArgs};
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
 use crate::rank::PageRankResult;
+use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -335,21 +336,18 @@ fn resolve_git_branch_and_subject(root: &str) -> (String, String) {
 fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> String {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".into());
     let (branch, subject) = resolve_git_branch_and_subject(root);
-    let branch_esc = crate::serialize::escape::escape_xml_str(&branch);
-    let subj_esc = crate::serialize::escape::escape_xml_str(&subject);
     let changed = crate::cli::safety::get_working_tree_changed_files(root);
     let mut verified_rows = String::new();
     if changed.is_empty() {
         if let Some(s) = ingest.symbols.first() {
-            let p = crate::serialize::escape::escape_xml_str(
-                interner.resolve(&ingest.files[s.file_id as usize].path),
-            );
-            let sn = crate::serialize::escape::escape_xml_str(interner.resolve(&s.name));
+            let p = interner
+                .resolve(&ingest.files[s.file_id as usize].path)
+                .xml_escaped();
+            let sn = interner.resolve(&s.name).xml_escaped();
             verified_rows.push_str(&format!("<f p=\"{p}\"><s n=\"{sn}\"/></f>"));
         }
     } else {
         for cf in changed.iter().take(12) {
-            let cf_esc = crate::serialize::escape::escape_xml_str(cf);
             let sym = ingest
                 .symbols
                 .iter()
@@ -358,8 +356,11 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
                     p == cf || cf.ends_with(p)
                 })
                 .map_or("main", |s| interner.resolve(&s.name));
-            let ps_esc = crate::serialize::escape::escape_xml_str(sym);
-            verified_rows.push_str(&format!("<f p=\"{cf_esc}\"><s n=\"{ps_esc}\"/></f>"));
+            verified_rows.push_str(&format!(
+                "<f p=\"{}\"><s n=\"{}\"/></f>",
+                cf.xml_escaped(),
+                sym.xml_escaped()
+            ));
         }
     }
     let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, None);
@@ -373,10 +374,10 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
     let mut heur_rows = String::new();
     let mut heur_cnt = 0usize;
     for (p, deg) in partners.iter().take(5) {
-        let p_esc = crate::serialize::escape::escape_xml_str(p);
         let score = (*deg).min(1.0);
         heur_rows.push_str(&format!(
-            "<f p=\"{p_esc}\" score=\"{score:.2}\" why=\"cochange\"/>"
+            "<f p=\"{}\" score=\"{score:.2}\" why=\"cochange\"/>",
+            p.xml_escaped()
         ));
         heur_cnt += 1;
     }
@@ -386,16 +387,18 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
             .get(1)
             .or_else(|| ingest.files.first())
             .map_or(probe_path, |f| interner.resolve(&f.path));
-        let sf_esc = crate::serialize::escape::escape_xml_str(fallback);
         heur_rows.push_str(&format!(
-            "<f p=\"{sf_esc}\" score=\"1.00\" why=\"cochange\"/>"
+            "<f p=\"{}\" score=\"1.00\" why=\"cochange\"/>",
+            fallback.xml_escaped()
         ));
         heur_cnt = 1;
     }
     let ch_cnt = changed.len();
     let est_tokens = (verified_rows.len() + heur_rows.len() + 240) / 4;
     format!(
-        "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{branch_esc}\" subject=\"{subj_esc}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{}\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
+        "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{}\" subject=\"{}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{}\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
+        branch.xml_escaped(),
+        subject.xml_escaped(),
         partners.len().max(1)
     )
 }
@@ -405,7 +408,7 @@ fn execute_skipped_census_query<W: Write>(
     ingest: &IngestResult,
     out: &mut W,
 ) -> io::Result<()> {
-    let root_esc = crate::serialize::escape::escape_xml_str(root);
+    let root_esc = root.xml_escaped();
     let opts = crate::crawler::CrawlerOptions::default();
     let census = crate::crawler::scan_skipped_census(Path::new(root), &opts);
     let oversize_cnt = census.oversize.len();
@@ -422,24 +425,20 @@ fn execute_skipped_census_query<W: Write>(
         writeln!(
             out,
             "  <f p=\"{}\" why=\"oversize\" bytes=\"{bytes}\" ext=\"{}\"/>",
-            crate::serialize::escape::escape_xml_str(p),
-            crate::serialize::escape::escape_xml_str(ext)
+            p.xml_escaped(),
+            ext.xml_escaped()
         )?;
     }
     for (p, bytes, ext) in census.unsupported.iter().take(40) {
         writeln!(
             out,
             "  <f p=\"{}\" why=\"unsupported-ext\" bytes=\"{bytes}\" ext=\"{}\"/>",
-            crate::serialize::escape::escape_xml_str(p),
-            crate::serialize::escape::escape_xml_str(ext)
+            p.xml_escaped(),
+            ext.xml_escaped()
         )?;
     }
     for (ext, files) in census.unindexed_exts.iter().take(30) {
-        writeln!(
-            out,
-            "  <e x=\"{}\" files=\"{files}\"/>",
-            crate::serialize::escape::escape_xml_str(ext)
-        )?;
+        writeln!(out, "  <e x=\"{}\" files=\"{files}\"/>", ext.xml_escaped())?;
     }
     let mut lang_files: std::collections::BTreeMap<&'static str, (usize, usize)> =
         std::collections::BTreeMap::new();
@@ -466,23 +465,22 @@ fn execute_flip_or_plan_query<W: Write>(
 ) -> io::Result<bool> {
     if let Some(gate) = ws.flip.as_deref() {
         let val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
-        let gate_esc = crate::serialize::escape::escape_xml_str(gate);
-        let root_esc = crate::serialize::escape::escape_xml_str(root);
         writeln!(
             out,
-            "<flip schema=\"ripwire.flip/v1\" gate=\"{gate_esc}\" root=\"{root_esc}\">"
+            "<flip schema=\"ripwire.flip/v1\" gate=\"{}\" root=\"{}\">",
+            gate.xml_escaped(),
+            root.xml_escaped()
         )?;
         if let Some(arr) = val["flags"].as_array() {
             for f in arr {
                 let name = f["name"].as_str().unwrap_or("");
                 if name.contains(gate) {
-                    let p =
-                        crate::serialize::escape::escape_xml_str(f["path"].as_str().unwrap_or(""));
+                    let p = f["path"].as_str().unwrap_or("").xml_escaped();
                     let l = f["line"].as_u64().unwrap_or(1);
                     writeln!(
                         out,
                         "  <site p=\"{p}\" l=\"{l}\" gate=\"{}\"/>",
-                        crate::serialize::escape::escape_xml_str(name)
+                        name.xml_escaped()
                     )?;
                 }
             }
@@ -493,10 +491,10 @@ fn execute_flip_or_plan_query<W: Write>(
         let content = std::fs::read_to_string(plan_file).unwrap_or_default();
         let headings = content.lines().filter(|l| l.starts_with('#')).count();
         let tasks = content.lines().filter(|l| l.contains("- [")).count();
-        let f_esc = crate::serialize::escape::escape_xml_str(plan_file);
         writeln!(
             out,
-            "<plan-lint schema=\"ripwire.plan-lint/v1\" file=\"{f_esc}\" headings=\"{headings}\" tasks=\"{tasks}\" ok=\"{}\"/>",
+            "<plan-lint schema=\"ripwire.plan-lint/v1\" file=\"{}\" headings=\"{headings}\" tasks=\"{tasks}\" ok=\"{}\"/>",
+            plan_file.xml_escaped(),
             usize::from(headings > 0)
         )?;
         Ok(true)
@@ -522,7 +520,7 @@ fn execute_session_tools_query<W: Write>(
             .ok()
             .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
             .unwrap_or_else(|| "ripwire-rs".to_string());
-        let exe_esc = crate::serialize::escape::escape_xml_str(&exe_name);
+        let exe_esc = exe_name.xml_escaped();
         writeln!(
             out,
             "<!-- ripwire doctor schema=ripwire.doctor/v1: setup health: <c n= ok=> checks. -->\n<doctor schema=\"ripwire.doctor/v1\" checks=\"9\" passed=\"9\" at=\"{at_stamp}\" built_from=\"ripwire-rs\"><c n=\"binary-path\" ok=\"1\" self=\"{exe_esc}\" which=\"{exe_esc}\" on_path=\"1\" same_file=\"1\"/></doctor>"

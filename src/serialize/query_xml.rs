@@ -1,4 +1,4 @@
-use crate::serialize::escape::escape_xml_str;
+use crate::serialize::escape::{XmlEscapeExt, escape_xml_str};
 use serde_json::Value;
 use std::io::{self, Write};
 
@@ -19,8 +19,6 @@ where
 /// Serialize `for` task-lens ranking result to Ripwire XML.
 fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) -> io::Result<()> {
     let raw_name = it["name"].as_str().unwrap_or("");
-    let name = escape_xml_str(raw_name);
-    let path = escape_xml_str(it["path"].as_str().unwrap_or(""));
     let line = it["line"].as_u64().unwrap_or(0);
     let end_line = it["end_line"].as_u64().unwrap_or(line);
     let cx = it["cx"].as_u64().unwrap_or(0);
@@ -28,11 +26,13 @@ fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) 
     let in_deg = it["in"].as_u64().unwrap_or(0);
     let churn = it["churn"].as_u64().unwrap_or(1);
     let amp = it["amp"].as_u64().unwrap_or(1);
-    let sig = escape_xml_str(it["sig"].as_str().unwrap_or(raw_name));
     let r = idx + 1;
     write!(
         out,
-        "<d l=\"{line}\" e=\"{end_line}\" n=\"{name}\" p=\"{path}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" churn=\"{churn}\" amp=\"{amp}\" r=\"{r}\" next=\"--for={task} --limit=40\">{sig}</d>"
+        "<d l=\"{line}\" e=\"{end_line}\" n=\"{}\" p=\"{}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" churn=\"{churn}\" amp=\"{amp}\" r=\"{r}\" next=\"--for={task} --limit=40\">{}</d>",
+        raw_name.xml_escaped(),
+        it["path"].as_str().unwrap_or("").xml_escaped(),
+        it["sig"].as_str().unwrap_or(raw_name).xml_escaped()
     )
 }
 
@@ -108,11 +108,11 @@ fn write_for_lego_section<W: Write>(out: &mut W, val: &Value, raw_task: &str) ->
             "--for='{}' --sections=lego",
             raw_task.replace('\'', "'\\''")
         );
-        let next = escape_xml_str(&replay);
         return write!(
             out,
-            "<!-- lego total=N shown=0 capped=1: N interfaces with implementors in the ranked files, collapsed; next= restores them. --><lego total=\"{}\" shown=\"0\" capped=\"1\" next=\"{next}\"/>",
-            ifaces.len()
+            "<!-- lego total=N shown=0 capped=1: N interfaces with implementors in the ranked files, collapsed; next= restores them. --><lego total=\"{}\" shown=\"0\" capped=\"1\" next=\"{}\"/>",
+            ifaces.len(),
+            replay.xml_escaped()
         );
     }
     write!(out, "<lego>")?;
@@ -123,8 +123,8 @@ fn write_for_lego_section<W: Write>(out: &mut W, val: &Value, raw_task: &str) ->
         write!(
             out,
             "<iface n=\"{}\" p=\"{}:{}\" implementors=\"{}\">",
-            escape_xml_str(iface["name"].as_str().unwrap_or("")),
-            escape_xml_str(iface["path"].as_str().unwrap_or("")),
+            iface["name"].as_str().unwrap_or("").xml_escaped(),
+            iface["path"].as_str().unwrap_or("").xml_escaped(),
             iface["line"].as_u64().unwrap_or(0),
             impls.len()
         )?;
@@ -132,8 +132,8 @@ fn write_for_lego_section<W: Write>(out: &mut W, val: &Value, raw_task: &str) ->
             write!(
                 out,
                 "<impl n=\"{}\" p=\"{}:{}\"/>",
-                escape_xml_str(imp["name"].as_str().unwrap_or("")),
-                escape_xml_str(imp["path"].as_str().unwrap_or("")),
+                imp["name"].as_str().unwrap_or("").xml_escaped(),
+                imp["path"].as_str().unwrap_or("").xml_escaped(),
                 imp["line"].as_u64().unwrap_or(0)
             )?;
         }
@@ -212,18 +212,15 @@ fn write_grep_hit_row<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
     writeln!(out, "</f>")
 }
 
-fn write_grep_enc_rows<W: Write>(
-    out: &mut W,
-    enc_map: &std::collections::BTreeMap<String, (u64, u64)>,
-) -> io::Result<()> {
+fn write_grep_enc_rows<W: Write>(out: &mut W, enc_map: &GrepEncMap) -> io::Result<()> {
     if enc_map.is_empty() {
         return writeln!(out, "  <enc n=\"main\" callers=\"0\" cx=\"1\"/>");
     }
     for (e, &(callers, cx)) in enc_map {
-        let e_esc = escape_xml_str(e);
         writeln!(
             out,
-            "  <enc n=\"{e_esc}\" callers=\"{callers}\" cx=\"{cx}\"/>"
+            "  <enc n=\"{}\" callers=\"{callers}\" cx=\"{cx}\"/>",
+            e.xml_escaped()
         )?;
     }
     Ok(())
@@ -261,8 +258,7 @@ fn emit_whereis_fate<W: Write>(out: &mut W, fate: &Value, sym: &str) -> io::Resu
         row.push_str(&format!(" date=\"{d}\""));
     }
     if let Some(n) = fate.get("note").and_then(Value::as_str) {
-        let n_esc = escape_xml_str(n);
-        row.push_str(&format!(" note=\"{n_esc}\""));
+        row.push_str(&format!(" note=\"{}\"", n.xml_escaped()));
     }
     row.push_str("/>");
     writeln!(out, "{row}")
@@ -479,7 +475,7 @@ fn format_doc_drift_extra_attrs(d: &Value) -> String {
     let mut extra = String::new();
     for key in ["fate", "commit", "date", "subject"] {
         if let Some(v) = d[key].as_str() {
-            extra.push_str(&format!(" {key}=\"{}\"", escape_xml_str(v)));
+            extra.push_str(&format!(" {key}=\"{}\"", v.xml_escaped()));
         }
     }
     extra
@@ -653,9 +649,12 @@ pub fn serialize_connect_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
         }
         if let Some(edge_list) = edges {
             for e in edge_list {
-                let from = escape_xml_str(e["from"].as_str().unwrap_or(""));
-                let to = escape_xml_str(e["to"].as_str().unwrap_or(""));
-                writeln!(out, "  <e f=\"{from}\" t=\"{to}\"/>")?;
+                writeln!(
+                    out,
+                    "  <e f=\"{}\" t=\"{}\"/>",
+                    e["from"].as_str().unwrap_or("").xml_escaped(),
+                    e["to"].as_str().unwrap_or("").xml_escaped()
+                )?;
             }
         }
         if let Some(conn_list) = val
@@ -664,9 +663,12 @@ pub fn serialize_connect_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
             .and_then(Value::as_array)
         {
             for c in conn_list {
-                let from = escape_xml_str(c["from"].as_str().unwrap_or(""));
-                let to = escape_xml_str(c["to"].as_str().unwrap_or(""));
-                writeln!(out, "  <edge from=\"{from}\" to=\"{to}\"/>")?;
+                writeln!(
+                    out,
+                    "  <edge from=\"{}\" to=\"{}\"/>",
+                    c["from"].as_str().unwrap_or("").xml_escaped(),
+                    c["to"].as_str().unwrap_or("").xml_escaped()
+                )?;
             }
         }
         Ok(())
@@ -674,8 +676,11 @@ pub fn serialize_connect_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
 }
 
 fn write_path_step<W: Write>(step: &Value, out: &mut W) -> io::Result<()> {
-    let s = escape_xml_str(step.as_str().unwrap_or(""));
-    writeln!(out, "  <s t=\"fn\" n=\"{s}\"/>")
+    writeln!(
+        out,
+        "  <s t=\"fn\" n=\"{}\"/>",
+        step.as_str().unwrap_or("").xml_escaped()
+    )
 }
 
 /// Serialize `path_between` call path to Ripwire XML.
@@ -718,13 +723,13 @@ pub fn serialize_expand_xml<W: Write>(
         items.len()
     )?;
     for (sym, name, path, body) in items {
-        let kind = sym.kind.tag();
-        let line = sym.line;
-        let p_esc = escape_xml_str(path);
-        let n_esc = escape_xml_str(name);
         writeln!(
             out,
-            "  <b t=\"{kind}\" l=\"{line}\" p=\"{p_esc}\" n=\"{n_esc}\"><![CDATA[{body}]]></b>"
+            "  <b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\"><![CDATA[{body}]]></b>",
+            sym.kind.tag(),
+            sym.line,
+            path.xml_escaped(),
+            name.xml_escaped()
         )?;
     }
     writeln!(out, "</bodies></ctx>")
@@ -773,11 +778,14 @@ pub fn serialize_tree_xml<W: Write>(
         "<!-- ripwire tree schema=ripwire.tree/v1: each file with its top 3 symbols by rank, files by best symbol: <file p= symbols=> of <s t= n=>. -->\n<tree schema=\"ripwire.tree/v1\" files=\"{total_files}\" files_unlisted=\"0\"{page_attrs} pr_iters=\"{pr_iters}\" root=\"{root}\" shown_symbols=\"{total_shown}\" symbols_capped=\"{symbols_capped}\"{next_attr}>",
     )?;
     for f in shown_slice {
-        let p_esc = escape_xml_str(f.path);
-        write!(out, "<file p=\"{p_esc}\" symbols=\"{}\">", f.total_symbols)?;
+        write!(
+            out,
+            "<file p=\"{}\" symbols=\"{}\">",
+            f.path.xml_escaped(),
+            f.total_symbols
+        )?;
         for &(kind, name) in &f.top_symbols {
-            let n_esc = escape_xml_str(name);
-            write!(out, "<s t=\"{kind}\" n=\"{n_esc}\"/>")?;
+            write!(out, "<s t=\"{kind}\" n=\"{}\"/>", name.xml_escaped())?;
         }
         write!(out, "</file>")?;
     }
@@ -795,8 +803,7 @@ pub fn serialize_pack_top_n_xml<W: Write>(
         "<ctx schema=\"ripwire.pack-top-n/v1\" root=\"{root}\">"
     )?;
     for (path, body) in bodies {
-        let p_esc = escape_xml_str(path);
-        writeln!(out, "<src p=\"{p_esc}\">\n{body}\n</src>")?;
+        writeln!(out, "<src p=\"{}\">\n{body}\n</src>", path.xml_escaped())?;
     }
     writeln!(out, "</ctx>")
 }
@@ -848,7 +855,7 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
             format!(
                 " root=\"{}\" declined_calls=\"0\" run_first=\"{}\"",
                 self.root,
-                escape_xml_str(first_test)
+                first_test.xml_escaped()
             )
         } else {
             String::new()
@@ -864,7 +871,7 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
             let p_joined: Vec<String> = self
                 .tests
                 .iter()
-                .map(|t| escape_xml_str(&t.path).into_owned())
+                .map(|t| t.path.xml_escaped().to_string())
                 .collect();
             write!(
                 out,
@@ -928,23 +935,30 @@ impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
         } else {
             "uses-exist"
         };
-        let sym_esc = escape_xml_str(self.sym_name);
-        let loc_esc = escape_xml_str(self.def_loc);
         let c_len = self.callers.len();
         let shown = c_len.min(40);
         let capped = usize::from(shown < c_len);
         let dead_cand = usize::from(c_len == 0 && self.blast_radius == 0);
         write!(
             out,
-            " sym=\"{sym_esc}\" t=\"{}\" p=\"{loc_esc}\" defs=\"1\" callers=\"{c_len}\" callers_floor=\"1\" ambiguous_callers=\"0\" impact_reaches=\"{}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" {} root=\"{}\"",
-            self.kind_tag, self.blast_radius, self.blast_radius, self.gauge_attrs, self.root
+            " sym=\"{}\" t=\"{}\" p=\"{}\" defs=\"1\" callers=\"{c_len}\" callers_floor=\"1\" ambiguous_callers=\"0\" impact_reaches=\"{}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" {} root=\"{}\"",
+            self.sym_name.xml_escaped(),
+            self.kind_tag,
+            self.def_loc.xml_escaped(),
+            self.blast_radius,
+            self.blast_radius,
+            self.gauge_attrs,
+            self.root
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for &(p, n) in self.callers.iter().take(40) {
-            let p_esc = escape_xml_str(p);
-            let n_esc = escape_xml_str(n);
-            writeln!(out, "  <c n=\"{n_esc}\" p=\"{p_esc}\"/>")?;
+            writeln!(
+                out,
+                "  <c n=\"{}\" p=\"{}\"/>",
+                n.xml_escaped(),
+                p.xml_escaped()
+            )?;
         }
         Ok(())
     }
@@ -1004,14 +1018,21 @@ impl crate::serialize::XmlReport for ExercisesReport<'_> {
         "ripwire.exercises/v1"
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let test_esc = escape_xml_str(self.test_path);
-        write!(out, " test=\"{test_esc}\" count=\"{}\"", self.reached.len())
+        write!(
+            out,
+            " test=\"{}\" count=\"{}\"",
+            self.test_path.xml_escaped(),
+            self.reached.len()
+        )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for (p, n) in self.reached {
-            let p_esc = escape_xml_str(p);
-            let n_esc = escape_xml_str(n);
-            writeln!(out, "  <target p=\"{p_esc}\" n=\"{n_esc}\"/>")?;
+            writeln!(
+                out,
+                "  <target p=\"{}\" n=\"{}\"/>",
+                p.xml_escaped(),
+                n.xml_escaped()
+            )?;
         }
         Ok(())
     }
@@ -1079,11 +1100,11 @@ impl crate::serialize::XmlReport for DeadCodeReport<'_> {
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for (n, t, p, l) in self.items {
-            let n_esc = escape_xml_str(n);
-            let p_esc = escape_xml_str(p);
             writeln!(
                 out,
-                "  <d n=\"{n_esc}\" t=\"{t}\" p=\"{p_esc}\" l=\"{l}\"/>"
+                "  <d n=\"{}\" t=\"{t}\" p=\"{}\" l=\"{l}\"/>",
+                n.xml_escaped(),
+                p.xml_escaped()
             )?;
         }
         Ok(())
@@ -1167,31 +1188,32 @@ impl crate::serialize::XmlReport for CommunitiesReport<'_> {
         let shown_mods = self.modules.len().min(30);
         let shown_bridges = self.summary.bridges.len().min(12);
         for m in self.modules.iter().take(shown_mods) {
-            let dir_esc = escape_xml_str(m.dir);
-            let lbl_esc = escape_xml_str(m.label);
             let top_n = m.members.len().min(5);
             let m_capped = usize::from(top_n < m.size);
             writeln!(
                 out,
-                "  <community id=\"{}\" size=\"{}\" dir=\"{dir_esc}\" label=\"{lbl_esc}\" shown=\"{top_n}\" capped=\"{m_capped}\">",
-                m.id, m.size
+                "  <community id=\"{}\" size=\"{}\" dir=\"{}\" label=\"{}\" shown=\"{top_n}\" capped=\"{m_capped}\">",
+                m.id,
+                m.size,
+                m.dir.xml_escaped(),
+                m.label.xml_escaped()
             )?;
             for &(kind, name, path, line) in m.members.iter().take(top_n) {
-                let n_esc = escape_xml_str(name);
-                let p_esc = escape_xml_str(path);
                 writeln!(
                     out,
-                    "    <member t=\"{kind}\" n=\"{n_esc}\" p=\"{p_esc}:{line}\"/>"
+                    "    <member t=\"{kind}\" n=\"{}\" p=\"{}:{line}\"/>",
+                    name.xml_escaped(),
+                    path.xml_escaped()
                 )?;
             }
             writeln!(out, "  </community>")?;
         }
         for &(a, b, la, lb, edges) in self.summary.bridges.iter().take(shown_bridges) {
-            let la_esc = escape_xml_str(la);
-            let lb_esc = escape_xml_str(lb);
             writeln!(
                 out,
-                "  <bridge a=\"{a}\" b=\"{b}\" from_label=\"{la_esc}\" to_label=\"{lb_esc}\" edges=\"{edges}\"/>"
+                "  <bridge a=\"{a}\" b=\"{b}\" from_label=\"{}\" to_label=\"{}\" edges=\"{edges}\"/>",
+                la.xml_escaped(),
+                lb.xml_escaped()
             )?;
         }
         Ok(())
@@ -1242,13 +1264,14 @@ impl crate::serialize::XmlReport for AroundReport<'_> {
         )
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let t_esc = escape_xml_str(self.target);
         let est_tokens = 25 + self.symbols.len() * 14;
         let depth_trunc = usize::from(!self.symbols.is_empty());
         write!(
             out,
-            " of=\"{t_esc}\" depth=\"{}\" fanout=\"{}\" depth_truncated=\"{depth_trunc}\" est_tokens=\"{est_tokens}\"",
-            self.depth, self.fanout
+            " of=\"{}\" depth=\"{}\" fanout=\"{}\" depth_truncated=\"{depth_trunc}\" est_tokens=\"{est_tokens}\"",
+            self.target.xml_escaped(),
+            self.depth,
+            self.fanout
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -1264,11 +1287,13 @@ impl crate::serialize::XmlReport for AroundReport<'_> {
             write!(out, "<f p=\"src/lib.rs\"></f>")
         } else {
             for (path, list) in grouped {
-                let p_esc = escape_xml_str(path);
-                write!(out, "<f p=\"{p_esc}\">")?;
+                write!(out, "<f p=\"{}\">", path.xml_escaped())?;
                 for (name, kind) in list {
-                    let n_esc = escape_xml_str(name);
-                    write!(out, "<s t=\"{kind}\" n=\"{n_esc}\" k=\"1.0000\"/>")?;
+                    write!(
+                        out,
+                        "<s t=\"{kind}\" n=\"{}\" k=\"1.0000\"/>",
+                        name.xml_escaped()
+                    )?;
                 }
                 write!(out, "</f>")?;
             }
@@ -1335,10 +1360,10 @@ impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for (name, lang, refs) in self.externals.iter().take(100) {
-            let n_esc = escape_xml_str(name);
             writeln!(
                 out,
-                "  <x n=\"{n_esc}\" lang=\"{lang}\" refs=\"{refs}\" calls=\"{refs}\"/>"
+                "  <x n=\"{}\" lang=\"{lang}\" refs=\"{refs}\" calls=\"{refs}\"/>",
+                name.xml_escaped()
             )?;
         }
         Ok(())
@@ -1387,8 +1412,12 @@ fn write_deps_godfiles<W: Write>(out: &mut W, active: &[&DepsFileRow<'_>]) -> io
         "  <godfiles total=\"{god_total}\" shown=\"{god_shown}\" capped=\"{god_capped}\">"
     )?;
     for g in god.iter().take(god_shown) {
-        let p_esc = escape_xml_str(g.path);
-        writeln!(out, "    <f p=\"{p_esc}\" afferent=\"{}\"/>", g.afferent)?;
+        writeln!(
+            out,
+            "    <f p=\"{}\" afferent=\"{}\"/>",
+            g.path.xml_escaped(),
+            g.afferent
+        )?;
     }
     writeln!(out, "  </godfiles>")
 }
@@ -1404,15 +1433,15 @@ fn write_deps_cycles<W: Write>(out: &mut W, cycles: &[Vec<&str>]) -> io::Result<
         let cut_attr = if let (Some(&first), Some(&second)) = (cyc.first(), cyc.get(1)) {
             format!(
                 " cut=\"{} -&gt; {}\" cutrefs=\"1\"",
-                escape_xml_str(first),
-                escape_xml_str(second)
+                first.xml_escaped(),
+                second.xml_escaped()
             )
         } else {
             String::new()
         };
         write!(out, "    <cycle size=\"{sz}\" cost=\"{cost}\"{cut_attr}>")?;
         for &p in cyc.iter().take(12) {
-            write!(out, "<f p=\"{}\"/>", escape_xml_str(p))?;
+            write!(out, "<f p=\"{}\"/>", p.xml_escaped())?;
         }
         writeln!(out, "</cycle>")?;
     }
@@ -1420,7 +1449,7 @@ fn write_deps_cycles<W: Write>(out: &mut W, cycles: &[Vec<&str>]) -> io::Result<
 }
 
 fn write_deps_file_row<W: Write>(out: &mut W, row: &DepsFileRow<'_>) -> io::Result<()> {
-    let p_esc = escape_xml_str(row.path);
+    let p_esc = row.path.xml_escaped();
     let denom = row.efferent + row.afferent;
     let instab = if denom > 0 {
         row.efferent as f64 / denom as f64
@@ -1440,7 +1469,7 @@ fn write_deps_file_row<W: Write>(out: &mut W, row: &DepsFileRow<'_>) -> io::Resu
             row.includes, row.afferent, row.transitive
         )?;
         for &t in row.inc_targets.iter().take(40) {
-            write!(out, "<inc t=\"{}\"/>", escape_xml_str(t))?;
+            write!(out, "<inc t=\"{}\"/>", t.xml_escaped())?;
         }
         writeln!(out, "</f>")
     }
@@ -1503,8 +1532,8 @@ impl crate::serialize::XmlReport for DepsReport<'_> {
                 writeln!(
                     out,
                     "    <v from=\"{}\" to=\"{}\" gap=\"{gap:.2}\"/>",
-                    escape_xml_str(from),
-                    escape_xml_str(to)
+                    from.xml_escaped(),
+                    to.xml_escaped()
                 )?;
             }
             writeln!(out, "  </stabledeps>")?;
@@ -2076,8 +2105,11 @@ pub fn serialize_legend_dict_xml<W: Write>(out: &mut W) -> io::Result<()> {
         LEGEND_DICT_ENTRIES.len()
     )?;
     for &(cat, key, desc) in LEGEND_DICT_ENTRIES {
-        let desc_esc = escape_xml_str(desc);
-        writeln!(out, "  <entry cat=\"{cat}\" k=\"{key}\" v=\"{desc_esc}\"/>")?;
+        writeln!(
+            out,
+            "  <entry cat=\"{cat}\" k=\"{key}\" v=\"{}\"/>",
+            desc.xml_escaped()
+        )?;
     }
     writeln!(out, "</legend-dict>")
 }

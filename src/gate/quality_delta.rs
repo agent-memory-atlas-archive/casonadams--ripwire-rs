@@ -188,10 +188,11 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
         }
         let collapse = self.collapsed_stale_replay();
         let stale_attr = collapse.map_or_else(String::new, |replay| {
+            use crate::serialize::XmlEscapeExt;
             format!(
-                " stale_by_kind=\"{}\" stale_next=\"{}\"",
-                crate::serialize::escape::escape_xml_str(&stale_by_kind(&self.stale_acks)),
-                crate::serialize::escape::escape_xml_str(&format!("{replay} --show-stale"))
+                " stale_by_kind=\"{}\" stale_next=\"{} --show-stale\"",
+                stale_by_kind(&self.stale_acks).xml_escaped(),
+                replay.xml_escaped()
             )
         });
         let verdict_only = collapse.is_some()
