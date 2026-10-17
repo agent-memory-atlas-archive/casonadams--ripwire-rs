@@ -522,16 +522,49 @@ fn write_cli_root_open<W: Write>(
     w.write_all(b">")
 }
 
+fn compute_effective_map_ranks(
+    ctx: &StreamXmlContext<'_>,
+    options: &SerializeOptions,
+) -> Option<Vec<f64>> {
+    use crate::domain::CorpusView;
+    if options.map_diff_at.is_some()
+        || !ctx
+            .ingest
+            .symbols
+            .iter()
+            .any(|s| ctx.is_production_symbol(s))
+    {
+        return None;
+    }
+    Some(
+        ctx.ingest
+            .symbols
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let r = ctx.ranks.get(i).copied().unwrap_or(0.0);
+                if ctx.is_production_symbol(s) {
+                    r
+                } else {
+                    r * 0.05
+                }
+            })
+            .collect(),
+    )
+}
+
 /// Stream minified XML with custom ranks and budget enforcement.
 pub fn serialize_xml_with_ranks<W: Write>(
     ctx: &StreamXmlContext<'_>,
     writer: &mut W,
     options: &SerializeOptions,
 ) -> io::Result<()> {
+    let adjusted = compute_effective_map_ranks(ctx, options);
+    let bucket_ranks = adjusted.as_deref().unwrap_or(ctx.ranks);
     let (file_order, buckets) = bucket_symbols_by_rank(
         &ctx.ingest.symbols,
         ctx.ingest.files.len(),
-        ctx.ranks,
+        bucket_ranks,
         options.top_k,
     );
 

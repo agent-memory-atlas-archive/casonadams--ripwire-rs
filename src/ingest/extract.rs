@@ -138,6 +138,21 @@ fn extract_named_container_scope(
     find_positional_type_ident(parent, name_node, source_bytes)
 }
 
+fn extract_qualified_scope(
+    parent: tree_sitter::Node<'_>,
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+) -> Option<String> {
+    let scope_node = parent.child_by_field_name("scope")?;
+    if scope_node == name_node {
+        return None;
+    }
+    let text = scope_node.utf8_text(source_bytes).ok()?.trim();
+    let last = text.rsplit("::").next().unwrap_or(text);
+    let base = last.split('<').next().unwrap_or(last).trim();
+    (!base.is_empty()).then(|| base.to_string())
+}
+
 fn extract_node_scope(
     parent: tree_sitter::Node<'_>,
     name_node: tree_sitter::Node<'_>,
@@ -145,6 +160,7 @@ fn extract_node_scope(
 ) -> Option<String> {
     match parent.kind() {
         "impl_item" => extract_impl_scope(parent, source_bytes),
+        "qualified_identifier" => extract_qualified_scope(parent, name_node, source_bytes),
         "mod_item"
         | "trait_item"
         | "class_declaration"
@@ -204,8 +220,10 @@ fn extract_member_receiver_qualifier(
 
 fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
     let parent = name_node.parent()?;
-    if parent.kind() == "scoped_identifier"
-        && let Some(path_node) = parent.child_by_field_name("path")
+    if matches!(parent.kind(), "scoped_identifier" | "qualified_identifier")
+        && let Some(path_node) = parent
+            .child_by_field_name("path")
+            .or_else(|| parent.child_by_field_name("scope"))
         && let Ok(text) = path_node.utf8_text(source_bytes)
     {
         let last = text.rsplit("::").next().unwrap_or(text);
@@ -215,6 +233,41 @@ fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) ->
         }
     }
     extract_member_receiver_qualifier(parent, name_node, source_bytes)
+}
+
+fn split_top_level_qualified(raw: &str) -> (&str, Option<String>) {
+    let bytes = raw.as_bytes();
+    let mut angle_depth = 0u32;
+    let mut last_sep = None;
+    let mut i = 0usize;
+    while i + 1 < bytes.len() {
+        match bytes[i] {
+            b'<' => angle_depth += 1,
+            b'>' => angle_depth = angle_depth.saturating_sub(1),
+            b':' if bytes[i + 1] == b':' && angle_depth == 0 => {
+                last_sep = Some(i);
+                i += 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    let (qual, tail) = match last_sep {
+        Some(pos) => {
+            let prefix = &raw[..pos];
+            let last_q = prefix.rsplit("::").next().unwrap_or(prefix);
+            let clean_q = last_q.split('<').next().unwrap_or(last_q).trim();
+            let q_opt = (!clean_q.is_empty()).then(|| clean_q.to_string());
+            (q_opt, &raw[pos + 2..])
+        }
+        None => (None, raw),
+    };
+    let bare = if tail.starts_with("operator") {
+        tail.trim()
+    } else {
+        tail.split('<').next().unwrap_or(tail).trim()
+    };
+    (bare, qual)
 }
 
 fn count_arguments_in_list(child: tree_sitter::Node<'_>) -> u16 {
@@ -492,9 +545,10 @@ fn record_def_item(
     lang: Lang,
     defs: &mut Vec<RawDef>,
 ) {
-    let (Some(orig_name), Some((kind, sub, start, end, line))) = (&ext.name, ext.def) else {
+    let (Some(raw_name), Some((kind, sub, start, end, line))) = (&ext.name, ext.def) else {
         return;
     };
+    let (orig_name, inline_scope) = split_top_level_qualified(raw_name);
     let gate_ctx = crate::languages::DefCaptureGateContext {
         kind,
         sub,
@@ -509,10 +563,10 @@ fn record_def_item(
     {
         return;
     }
-    let scope = ext
-        .name_node
-        .and_then(|n| find_enclosing_scope(n, source_bytes));
-
+    let scope = inline_scope.or_else(|| {
+        ext.name_node
+            .and_then(|n| find_enclosing_scope(n, source_bytes))
+    });
     let (body_node, end) = lang.semantics().resolve_def_body_and_end(ext.def_node, end);
     let body_byte = body_node.map_or(0, find_def_body_start);
     let start_row = line.saturating_sub(1);
@@ -548,8 +602,13 @@ fn record_ref_item(
     lang: Lang,
     refs: &mut Vec<RawRef>,
 ) {
-    let (Some(name), Some((role, start, line))) = (&ext.name, ext.r#ref) else {
+    let (Some(raw_name), Some((role, start, line))) = (&ext.name, ext.r#ref) else {
         return;
+    };
+    let (name, inline_qual) = if role == RefRole::Import {
+        (raw_name.as_str(), None)
+    } else {
+        split_top_level_qualified(raw_name)
     };
     if lang.semantics().is_builtin_keyword(name)
         || (role == RefRole::Call && lang.semantics().should_ignore_call(ext.name_node, name))
@@ -557,12 +616,14 @@ fn record_ref_item(
         return;
     }
 
-    let qualifier = ext.name_node.and_then(|n| {
-        if role == RefRole::Extends {
-            find_enclosing_scope(n, source_bytes)
-        } else {
-            find_call_qualifier(n, source_bytes)
-        }
+    let qualifier = inline_qual.or_else(|| {
+        ext.name_node.and_then(|n| {
+            if role == RefRole::Extends {
+                find_enclosing_scope(n, source_bytes)
+            } else {
+                find_call_qualifier(n, source_bytes)
+            }
+        })
     });
     let (arg_count, arg_count_known) = ext
         .name_node
@@ -570,7 +631,7 @@ fn record_ref_item(
         .unwrap_or((0, false));
 
     refs.push(RawRef {
-        callee_name: name.clone(),
+        callee_name: name.to_string(),
         qualifier,
         line,
         start_byte: start,

@@ -338,7 +338,7 @@ fn symbol_prior_weight(
         w *= 0.4;
     }
     if has_prod && !view.is_production_symbol(s) {
-        w *= 0.15;
+        w *= 0.05;
     }
     w
 }

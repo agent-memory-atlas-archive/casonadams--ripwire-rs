@@ -640,6 +640,47 @@ pub trait CorpusView<'a> {
         sym.is_code_symbol() && !self.is_test_symbol(sym)
     }
 
+    /// Collect interned callee names directly invoked inside test or benchmark files.
+    #[must_use]
+    fn test_called_symbol_names(&self) -> std::collections::HashSet<Spur> {
+        self.ingest()
+            .references
+            .iter()
+            .filter(|r| {
+                matches!(r.role, RefRole::Call | RefRole::Macro)
+                    && crate::gate::affected::is_test_or_bench_path(self.file_path(r.file_id))
+            })
+            .map(|r| r.callee_name)
+            .collect()
+    }
+
+    /// Compute boolean bitmap of symbols transitively reached from any test symbol via `graph` call edges.
+    #[must_use]
+    fn compute_test_reachability(&self, graph: &crate::graph::Graph) -> Vec<bool> {
+        let ingest = self.ingest();
+        let n = ingest.symbols.len();
+        let mut reached = vec![false; n];
+        let mut queue = std::collections::VecDeque::new();
+        let test_called_names = self.test_called_symbol_names();
+        for sym in &ingest.symbols {
+            let idx = sym.id as usize;
+            if idx < n && (self.is_test_symbol(sym) || test_called_names.contains(&sym.name)) {
+                reached[idx] = true;
+                queue.push_back(sym.id);
+            }
+        }
+        while let Some(curr) = queue.pop_front() {
+            for (callee, _) in graph.callees(curr) {
+                let idx = callee as usize;
+                if idx < n && !reached[idx] {
+                    reached[idx] = true;
+                    queue.push_back(callee);
+                }
+            }
+        }
+        reached
+    }
+
     /// Build a fast `path -> file_id` lookup map over all indexed files.
     #[must_use]
     fn file_index_map(&self) -> std::collections::HashMap<&'a str, u32> {

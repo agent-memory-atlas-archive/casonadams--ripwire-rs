@@ -96,6 +96,29 @@ impl PageWindow {
     }
 }
 
+/// Extension trait for slicing collections with `PageWindow` disclosure metadata.
+pub trait PaginateSlice<T> {
+    fn paginate(
+        &self,
+        default_cap: usize,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> (PageWindow, &[T]);
+}
+
+impl<T> PaginateSlice<T> for [T] {
+    #[inline]
+    fn paginate(
+        &self,
+        default_cap: usize,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> (PageWindow, &[T]) {
+        let pw = PageWindow::compute(self.len(), default_cap, limit, offset);
+        (pw, &self[pw.begin..pw.end])
+    }
+}
+
 /// Trait for types that can be serialized as XML and converted to a string.
 pub trait ToXmlString {
     fn write_xml<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()>;
@@ -202,6 +225,14 @@ pub trait JsonValueExt {
     fn f64_any(&self, keys: &[&str], default: f64) -> f64;
     fn array_any(&self, keys: &[&str]) -> Option<&Vec<serde_json::Value>>;
     fn str_vec(&self, key: &str) -> Vec<String>;
+
+    fn paginate_items<'a, T>(&self, items: &'a [T], default_cap: usize) -> (PageWindow, &'a [T]) {
+        items.paginate(
+            default_cap,
+            self.opt_usize("limit"),
+            self.opt_usize("offset"),
+        )
+    }
 }
 
 impl JsonValueExt for serde_json::Value {

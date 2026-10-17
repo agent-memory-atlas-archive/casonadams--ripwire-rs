@@ -27,10 +27,15 @@ fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) 
     let in_deg = it.u64_or("in", 0);
     let churn = it.u64_or("churn", 1);
     let amp = it.u64_or("amp", 1);
+    let tested_attr = if it.u64_or("tested", 0) > 0 {
+        " tested=\"1\""
+    } else {
+        ""
+    };
     let r = idx + 1;
     write!(
         out,
-        "<d l=\"{line}\" e=\"{end_line}\" n=\"{}\" p=\"{}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" churn=\"{churn}\" amp=\"{amp}\" r=\"{r}\" next=\"--for={task} --limit=40\">{}</d>",
+        "<d l=\"{line}\" e=\"{end_line}\" n=\"{}\" p=\"{}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" churn=\"{churn}\" amp=\"{amp}\"{tested_attr} r=\"{r}\" next=\"--for={task} --limit=40\">{}</d>",
         raw_name.xml_escaped(),
         it.str_or("path", "").xml_escaped(),
         it.str_or("sig", raw_name).xml_escaped()
@@ -427,28 +432,33 @@ fn write_owner_entry<W: Write>(out: &mut W, f: &Value) -> io::Result<()> {
     )
 }
 
-fn emit_owner_items<W: Write>(out: &mut W, files: &[Value], detail: bool) -> io::Result<()> {
-    for f in files {
-        if !detail && f.u64_or("authors", 1) == 1 {
-            continue;
-        }
-        write_owner_entry(out, f)?;
-    }
-    Ok(())
+fn collect_owner_display_items(files: &[Value], detail: bool) -> Vec<&Value> {
+    files
+        .iter()
+        .filter(|f| detail || f.u64_or("authors", 1) > 1)
+        .collect()
 }
 
 /// Serialize `owners` authorship to Ripwire XML.
 pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let files = val.array_any(&["files", "ownership"]);
     let count = files.map_or(0, Vec::len);
+    let root = escape_xml_str(val.str_or("root", "."));
     let at_attr = match val.opt_str("at") {
         Some(at) if !at.is_empty() => format!(" at=\"{at}\""),
         _ => String::new(),
     };
     let detail = val.bool_or("detail", false);
     let uniform_count = files.map_or(0, |f| count_uniform_owners(f));
+    let display_items = files
+        .map(|f| collect_owner_display_items(f, detail))
+        .unwrap_or_default();
+    let (pw, page) = val.paginate_items(&display_items, 40);
+    let page_attrs = pw.xml_attrs();
 
-    let attrs = format!("schema=\"ripwire.owners/v1\" files=\"{count}\" root=\".\"{at_attr}");
+    let attrs = format!(
+        "schema=\"ripwire.owners/v1\" files=\"{count}\"{page_attrs} root=\"{root}\"{at_attr}"
+    );
     write_xml_envelope(out, "owners", &attrs, |out| {
         if !detail && uniform_count > 0 {
             writeln!(
@@ -456,14 +466,60 @@ pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()
                 "  <uniform authors=\"1\" bf=\"1\" share=\"1.00\" files=\"{uniform_count}\"/>"
             )?;
         }
-        if let Some(items) = files {
-            emit_owner_items(out, items, detail)?;
+        for f in page {
+            write_owner_entry(out, f)?;
         }
         Ok(())
     })
 }
 
 /// Serialize `flags` environment and compile gates to Ripwire XML.
+fn write_flag_gate_entry<W: Write>(out: &mut W, g: &Value) -> io::Result<()> {
+    let name = g.str_any(&["name", "flag"], "").xml_escaped();
+    let kind = g.str_or("kind", "compile");
+    let file = g.str_any(&["file", "path"], "").xml_escaped();
+    let line = g.u64_or("line", 0);
+    let def_attr = match g.opt_str("default").filter(|s| !s.is_empty()) {
+        Some(d) => format!(" default=\"{}\"", d.xml_escaped()),
+        None => String::new(),
+    };
+    let dark_attr = g
+        .get("dark")
+        .and_then(Value::as_u64)
+        .map_or_else(String::new, |d| format!(" dark=\"{d}\""));
+    let reg_attr = g
+        .get("regions")
+        .and_then(Value::as_u64)
+        .map_or_else(String::new, |r| format!(" regions=\"{r}\""));
+    let loc_attr = g
+        .get("loc")
+        .and_then(Value::as_u64)
+        .map_or_else(String::new, |l| format!(" loc=\"{l}\""));
+    let reads = g["reads"].as_array();
+    let reads_attr = g
+        .get("reads_count")
+        .and_then(Value::as_u64)
+        .or_else(|| reads.map(|r| r.len() as u64))
+        .map_or_else(String::new, |c| format!(" reads=\"{c}\""));
+    if let Some(read_list) = reads.filter(|r| !r.is_empty()) {
+        writeln!(
+            out,
+            "  <gate name=\"{name}\" kind=\"{kind}\"{def_attr}{dark_attr}{reg_attr}{loc_attr}{reads_attr} p=\"{file}\" l=\"{line}\">"
+        )?;
+        for r in read_list {
+            let rp = r.str_any(&["path", "file"], "").xml_escaped();
+            let rl = r.u64_or("line", 1);
+            writeln!(out, "    <read p=\"{rp}\" l=\"{rl}\"/>")?;
+        }
+        writeln!(out, "  </gate>")
+    } else {
+        writeln!(
+            out,
+            "  <gate name=\"{name}\" kind=\"{kind}\"{def_attr}{dark_attr}{reg_attr}{loc_attr}{reads_attr} p=\"{file}\" l=\"{line}\"/>"
+        )
+    }
+}
+
 pub fn serialize_flags_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let gates = val.array_any(&["gates", "flags"]);
     let count = gates.map_or(0, Vec::len);
@@ -472,29 +528,16 @@ pub fn serialize_flags_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()>
     let cmake = val.u64_or("cmake_count", 0);
     let env = val.u64_or("env_count", 0);
     let dark = val.u64_or("dark_gates", 0);
+    let empty = Vec::new();
+    let items = gates.unwrap_or(&empty);
+    let (pw, page) = val.paginate_items(items, 100);
+    let page_attrs = pw.xml_attrs();
     let attrs = format!(
-        "schema=\"ripwire.flags/v1\" files=\"{files}\" gates=\"{count}\" dark_gates=\"{dark}\" compile=\"{compile}\" cmake=\"{cmake}\" env=\"{env}\""
+        "schema=\"ripwire.flags/v1\" files=\"{files}\" gates=\"{count}\" dark_gates=\"{dark}\" compile=\"{compile}\" cmake=\"{cmake}\" env=\"{env}\"{page_attrs}"
     );
     write_xml_envelope(out, "flags", &attrs, |out| {
-        if let Some(items) = gates {
-            for g in items {
-                let name = g.str_any(&["name", "flag"], "").xml_escaped();
-                let kind = g.str_or("kind", "compile");
-                let file = g.str_any(&["file", "path"], "").xml_escaped();
-                let line = g.u64_or("line", 0);
-                let def_attr = match g.opt_str("default").filter(|s| !s.is_empty()) {
-                    Some(d) => format!(" default=\"{}\"", d.xml_escaped()),
-                    None => String::new(),
-                };
-                let dark_attr = g
-                    .get("dark")
-                    .and_then(Value::as_u64)
-                    .map_or_else(String::new, |d| format!(" dark=\"{d}\""));
-                writeln!(
-                    out,
-                    "  <gate name=\"{name}\" kind=\"{kind}\"{def_attr}{dark_attr} p=\"{file}\" l=\"{line}\"/>"
-                )?;
-            }
+        for g in page {
+            write_flag_gate_entry(out, g)?;
         }
         Ok(())
     })
@@ -560,11 +603,13 @@ pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result
         .as_u64()
         .map_or(grouped.len(), |n| n as usize);
     let extra_counts = format_doc_drift_header_counts(val);
+    let (pw, page) = val.paginate_items(&grouped, 40);
+    let page_attrs = pw.xml_attrs();
     let attrs = format!(
-        "schema=\"ripwire.doc-drift/v1\" root=\"{root}\" docs=\"{docs_cnt}\"{extra_counts} drift=\"{count}\""
+        "schema=\"ripwire.doc-drift/v1\" root=\"{root}\" docs=\"{docs_cnt}\"{extra_counts} drift=\"{count}\"{page_attrs}"
     );
     write_xml_envelope(out, "doc-drift", &attrs, |out| {
-        for (doc, list) in grouped {
+        for (doc, list) in page {
             let file = escape_xml_str(doc);
             writeln!(out, "  <doc p=\"{file}\" drift=\"{}\">", list.len())?;
             for d in list {
@@ -1099,6 +1144,8 @@ pub struct CommunitySummary<'a> {
 pub struct DeadCodeReport<'a> {
     pub items: &'a [(&'a str, &'static str, &'a str, u32)],
     pub gauges: crate::serialize::GraphGauges,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 impl crate::serialize::XmlReport for DeadCodeReport<'_> {
@@ -1113,6 +1160,10 @@ impl crate::serialize::XmlReport for DeadCodeReport<'_> {
             "ripwire dead-code schema=ripwire.dead-code/v1: internal-linkage functions with no caller found in the index: <d n= t= p= l=>.",
         )
     }
+    fn page_window(&self) -> Option<crate::serialize::PageWindow> {
+        use crate::serialize::PaginateSlice;
+        Some(self.items.paginate(40, self.limit, self.offset).0)
+    }
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
         Some(self.gauges)
     }
@@ -1124,7 +1175,9 @@ impl crate::serialize::XmlReport for DeadCodeReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for (n, t, p, l) in self.items {
+        use crate::serialize::PaginateSlice;
+        let (_, page) = self.items.paginate(40, self.limit, self.offset);
+        for (n, t, p, l) in page {
             writeln!(
                 out,
                 "  <d n=\"{}\" t=\"{t}\" p=\"{}\" l=\"{l}\"/>",
@@ -1142,12 +1195,14 @@ pub fn serialize_dead_code_xml<W: Write>(
     items: &[(&str, &'static str, &str, u32)],
     out: &mut W,
 ) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    DeadCodeReport {
+    serialize_dead_code_paged_xml(
+        root,
         items,
-        gauges: crate::serialize::GraphGauges::default(),
-    }
-    .write_xml_report(root, out)
+        crate::serialize::GraphGauges::default(),
+        None,
+        None,
+        out,
+    )
 }
 
 pub fn serialize_dead_code_with_gauge_xml<W: Write>(
@@ -1156,8 +1211,25 @@ pub fn serialize_dead_code_with_gauge_xml<W: Write>(
     gauges: crate::serialize::GraphGauges,
     out: &mut W,
 ) -> io::Result<()> {
+    serialize_dead_code_paged_xml(root, items, gauges, None, None, out)
+}
+
+pub fn serialize_dead_code_paged_xml<W: Write>(
+    root: &str,
+    items: &[(&str, &'static str, &str, u32)],
+    gauges: crate::serialize::GraphGauges,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    out: &mut W,
+) -> io::Result<()> {
     use crate::serialize::XmlReport;
-    DeadCodeReport { items, gauges }.write_xml_report(root, out)
+    DeadCodeReport {
+        items,
+        gauges,
+        limit,
+        offset,
+    }
+    .write_xml_report(root, out)
 }
 
 pub struct CommunitiesReport<'a> {
@@ -1468,8 +1540,9 @@ pub struct DepsReport<'a> {
     pub rows: Vec<DepsFileRow<'a>>,
     pub cycles: Vec<Vec<&'a str>>,
     pub violations: Vec<(&'a str, &'a str, f64)>,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
-
 fn write_deps_godfiles<W: Write>(out: &mut W, active: &[&DepsFileRow<'_>]) -> io::Result<()> {
     let mut god: Vec<&&DepsFileRow<'_>> = active.iter().filter(|d| d.afferent > 0).collect();
     god.sort_by(|a, b| b.afferent.cmp(&a.afferent).then_with(|| a.path.cmp(b.path)));
@@ -1562,7 +1635,12 @@ impl crate::serialize::XmlReport for DepsReport<'_> {
             .iter()
             .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
             .count();
-        Some(crate::serialize::PageWindow::compute(total, 40, None, None))
+        Some(crate::serialize::PageWindow::compute(
+            total,
+            40,
+            self.limit,
+            self.offset,
+        ))
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let total = self
@@ -1608,7 +1686,9 @@ impl crate::serialize::XmlReport for DepsReport<'_> {
             writeln!(out, "  </stabledeps>")?;
         }
         write_deps_cycles(out, &self.cycles)?;
-        for row in active.iter().take(40) {
+        use crate::serialize::PaginateSlice;
+        let (_, page) = active.paginate(40, self.limit, self.offset);
+        for row in page {
             write_deps_file_row(out, row)?;
         }
         Ok(())
@@ -1665,6 +1745,8 @@ pub fn serialize_deps_xml<W: Write>(
         rows,
         cycles: Vec::new(),
         violations: Vec::new(),
+        limit: None,
+        offset: None,
     };
     serialize_deps_report_xml(root, &rep, out)
 }

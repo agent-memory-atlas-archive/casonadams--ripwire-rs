@@ -169,6 +169,8 @@ pub struct GitMetricsFlags<'a> {
     pub since: Option<&'a str>,
     pub pretty: bool,
     pub json_out: bool,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 pub fn dispatch_git_metrics_command(
@@ -187,6 +189,8 @@ pub fn dispatch_git_metrics_command(
             since,
             pretty: false,
             json_out: false,
+            limit: None,
+            offset: None,
         },
     )
 }
@@ -203,17 +207,7 @@ pub fn dispatch_git_metrics_with_flags(
             cutoff,
             flags.pretty,
             flags.json_out,
-            |commits, state, out| {
-                execute_cochange_with_recur(
-                    probed,
-                    flags.since,
-                    flags.cochange_groups,
-                    flags.cochange_recur,
-                    commits,
-                    state,
-                    out,
-                )
-            },
+            |commits, state, out| execute_cochange_with_options(probed, flags, commits, state, out),
         ));
     }
     if flags.hotspots {
@@ -718,19 +712,30 @@ pub fn print_cochange_pairs<W: Write>(
     pairs: &[crate::git::cochange::CoPair],
     out: &mut W,
 ) -> io::Result<()> {
+    print_cochange_pairs_paged(root, pairs, None, None, out)
+}
+
+pub fn print_cochange_pairs_paged<W: Write>(
+    root: &str,
+    pairs: &[crate::git::cochange::CoPair],
+    limit: Option<usize>,
+    offset: Option<usize>,
+    out: &mut W,
+) -> io::Result<()> {
+    use crate::serialize::PaginateSlice;
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
     let at_attr = match at_stamp.is_empty() {
         false => format!(" at=\"{at_stamp}\""),
         true => String::new(),
     };
     let total = pairs.len();
-    let shown = total.min(30);
-    let capped = if total > 30 { 1 } else { 0 };
+    let (pw, page) = pairs.paginate(30, limit, offset);
+    let page_attrs = pw.xml_attrs();
     writeln!(
         out,
-        "<cochange schema=\"ripwire.cochange/v1\" pairs=\"{total}\" window=\"18mo@HEAD\" sub_windows=\"3\" shown=\"{shown}\" capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\" root=\"{root}\"{at_attr}>",
+        "<cochange schema=\"ripwire.cochange/v1\" pairs=\"{total}\" window=\"18mo@HEAD\" sub_windows=\"3\"{page_attrs} root=\"{root}\"{at_attr}>",
     )?;
-    for p in pairs.iter().take(shown) {
+    for p in page {
         writeln!(out, "{}", format_copair_row(p))?;
     }
     writeln!(out, "</cochange>")
@@ -741,6 +746,17 @@ pub fn print_cochange_groups<W: Write>(
     groups: &[crate::git::cochange::CoGroup],
     out: &mut W,
 ) -> io::Result<()> {
+    print_cochange_groups_paged(root, groups, None, None, out)
+}
+
+pub fn print_cochange_groups_paged<W: Write>(
+    root: &str,
+    groups: &[crate::git::cochange::CoGroup],
+    limit: Option<usize>,
+    offset: Option<usize>,
+    out: &mut W,
+) -> io::Result<()> {
+    use crate::serialize::PaginateSlice;
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
     let at_attr = if at_stamp.is_empty() {
         String::new()
@@ -748,13 +764,13 @@ pub fn print_cochange_groups<W: Write>(
         format!(" at=\"{at_stamp}\"")
     };
     let total = groups.len();
-    let shown = total.min(30);
-    let capped = usize::from(total > 30);
+    let (pw, page) = groups.paginate(30, limit, offset);
+    let page_attrs = pw.xml_attrs();
     writeln!(
         out,
-        "<cochange-groups schema=\"ripwire.cochange-groups/v1\" groups=\"{total}\" window=\"18mo@HEAD\" shown=\"{shown}\" capped=\"{capped}\" root=\"{root}\"{at_attr}>",
+        "<cochange-groups schema=\"ripwire.cochange-groups/v1\" groups=\"{total}\" window=\"18mo@HEAD\"{page_attrs} root=\"{root}\"{at_attr}>",
     )?;
-    for g in groups.iter().take(shown) {
+    for g in page {
         let partners_joined = g
             .partners
             .iter()
@@ -811,8 +827,29 @@ pub fn execute_cochange_with_recur<W: Write>(
     state: &crate::mcp::McpState,
     out: &mut W,
 ) -> io::Result<()> {
+    execute_cochange_with_options(
+        probed_file,
+        GitMetricsFlags {
+            since: since_str,
+            cochange_groups: groups_mode,
+            cochange_recur: min_recur,
+            ..Default::default()
+        },
+        commits,
+        state,
+        out,
+    )
+}
+
+pub fn execute_cochange_with_options<W: Write>(
+    probed_file: Option<&str>,
+    flags: GitMetricsFlags<'_>,
+    commits: &[crate::git::history::CommitInfo],
+    state: &crate::mcp::McpState,
+    out: &mut W,
+) -> io::Result<()> {
     let anchor_epoch = commits.first().map(|c| c.timestamp).unwrap_or(0);
-    let scope = crate::git::history::parse_since_scope(since_str, anchor_epoch);
+    let scope = crate::git::history::parse_since_scope(flags.since, anchor_epoch);
     let filtered = crate::git::history::filter_commits_by_scope(commits, &scope);
     let coupling = crate::git::cochange::StaticCouplingMap::build(
         &state.ingest,
@@ -832,7 +869,7 @@ pub fn execute_cochange_with_recur<W: Write>(
             Some(&state.interner),
             &opts,
         );
-        if let Some(mr) = min_recur {
+        if let Some(mr) = flags.cochange_recur {
             partners.retain(|p| p.recur >= mr);
         }
         print_cochange_partners(file, &partners, out)
@@ -844,14 +881,14 @@ pub fn execute_cochange_with_recur<W: Write>(
             Some(&state.interner),
             &opts,
         );
-        if let Some(mr) = min_recur {
+        if let Some(mr) = flags.cochange_recur {
             pairs.retain(|p| p.recur >= mr);
         }
-        if groups_mode {
+        if flags.cochange_groups {
             let groups = crate::git::cochange::cluster_cochange_groups(&pairs);
-            print_cochange_groups(&state.root, &groups, out)
+            print_cochange_groups_paged(&state.root, &groups, flags.limit, flags.offset, out)
         } else {
-            print_cochange_pairs(&state.root, &pairs, out)
+            print_cochange_pairs_paged(&state.root, &pairs, flags.limit, flags.offset, out)
         }
     }
 }

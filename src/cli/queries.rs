@@ -282,6 +282,7 @@ fn execute_doc_search_query<W: Write>(
     ingest: &IngestResult,
     interner: &Interner,
     with_history: bool,
+    page: Option<&dyn super::args::Paginated>,
     out: &mut W,
 ) -> io::Result<bool> {
     if let Some(sym) = ws.whereis.as_deref() {
@@ -296,16 +297,22 @@ fn execute_doc_search_query<W: Write>(
         crate::serialize::serialize_whereis_xml(&val, out)?;
         Ok(true)
     } else if ws.doc_drift {
-        let val = crate::mcp::doc_tools::call_doc_drift_with_history(
+        let mut val = crate::mcp::doc_tools::call_doc_drift_with_history(
             root,
             ingest,
             interner,
             with_history,
         );
+        if let Some(p) = page {
+            p.apply_pagination_to_json(&mut val);
+        }
         crate::serialize::serialize_doc_drift_xml(&val, out)?;
         Ok(true)
     } else if ws.flags {
-        let val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
+        let mut val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
+        if let Some(p) = page {
+            p.apply_pagination_to_json(&mut val);
+        }
         crate::serialize::serialize_flags_xml(&val, out)?;
         Ok(true)
     } else if let Some(sym) = ws.mentions.as_deref() {
@@ -694,7 +701,27 @@ pub fn execute_workspace_doc_query<W: Write>(
     with_history: bool,
     out: &mut W,
 ) -> io::Result<()> {
-    if execute_doc_search_query(ws, root, ingest, interner, with_history, out)? {
+    execute_workspace_doc_query_paged(
+        ws,
+        root,
+        ingest,
+        interner,
+        with_history,
+        &super::args::TopModifierArgs::default(),
+        out,
+    )
+}
+
+pub fn execute_workspace_doc_query_paged<W: Write>(
+    ws: &TopWorkspaceArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    with_history: bool,
+    page: &dyn super::args::Paginated,
+    out: &mut W,
+) -> io::Result<()> {
+    if execute_doc_search_query(ws, root, ingest, interner, with_history, Some(page), out)? {
         return Ok(());
     }
     if execute_session_tools_query(ws, root, ingest, interner, out)? {
@@ -897,6 +924,24 @@ pub fn execute_dead_code_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
+    execute_dead_code_query_paged(
+        root,
+        ingest,
+        graph,
+        interner,
+        &super::args::TopModifierArgs::default(),
+        out,
+    )
+}
+
+pub fn execute_dead_code_query_paged<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    page: &dyn super::args::Paginated,
+    out: &mut W,
+) -> io::Result<()> {
     let root_path = Path::new(root);
     let mut file_cache: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
     let mut dead = Vec::new();
@@ -924,10 +969,12 @@ pub fn execute_dead_code_query<W: Write>(
             .then_with(|| a.3.cmp(&b.3))
             .then_with(|| a.0.cmp(b.0))
     });
-    crate::serialize::query_xml::serialize_dead_code_with_gauge_xml(
+    crate::serialize::query_xml::serialize_dead_code_paged_xml(
         root,
         &dead,
         graph.gauges(),
+        page.limit_opt(),
+        page.offset_opt(),
         out,
     )
 }
@@ -1490,6 +1537,8 @@ pub fn compute_deps_report<'a>(
         rows,
         cycles,
         violations,
+        limit: None,
+        offset: None,
     }
 }
 
@@ -1500,7 +1549,27 @@ pub fn execute_deps_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let rep = compute_deps_report(ingest, graph, interner);
+    execute_deps_query_paged(
+        root,
+        ingest,
+        graph,
+        interner,
+        &super::args::TopModifierArgs::default(),
+        out,
+    )
+}
+
+pub fn execute_deps_query_paged<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    page: &dyn super::args::Paginated,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut rep = compute_deps_report(ingest, graph, interner);
+    rep.limit = page.limit_opt();
+    rep.offset = page.offset_opt();
     crate::serialize::serialize_deps_report_xml(root, &rep, out)
 }
 

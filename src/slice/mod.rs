@@ -80,15 +80,17 @@ fn list_span_locals(
 
 /// Render XML for sliceable locals inventory when no variable was given.
 fn render_locals_xml(
+    root: &str,
     sym_name: &str,
     path_line: &str,
-    kind_tag: &str,
-    lang_tag: &str,
+    symbol: &crate::domain::Symbol,
     locals: &[(String, u32, OccRole)],
 ) -> String {
-    let at_stamp = crate::git::history::compute_git_at_stamp(".").unwrap_or_else(|| "HEAD".into());
+    let kind_tag = symbol.kind.tag();
+    let lang_tag = symbol.lang.tag();
+    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".into());
     let mut out = format!(
-        "<!-- ripwire slice schema=ripwire.slice/v1: name-based def-use rows of one variable in one definition. -->\n<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" t=\"{kind_tag}\" lang=\"{lang_tag}\" vars=\"{}\" at=\"{at_stamp}\" root=\".\" counts=\"as-classified\">\n",
+        "<!-- ripwire slice schema=ripwire.slice/v1: name-based def-use rows of one variable in one definition. -->\n<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" t=\"{kind_tag}\" lang=\"{lang_tag}\" vars=\"{}\" at=\"{at_stamp}\" root=\"{root}\" counts=\"as-classified\">\n",
         locals.len()
     );
     for (name, line, role) in locals {
@@ -141,8 +143,10 @@ fn render_flow_xml(ctx: &FlowRenderCtx<'_>, steps: &[SliceStep]) -> String {
     let lines: Vec<&str> = src_text.lines().collect();
     let defs_cnt = steps.iter().filter(|s| s.role.is_def()).count();
     let uses_cnt = steps.iter().filter(|s| s.role.is_use()).count();
+    let at_stamp =
+        crate::git::history::compute_git_at_stamp(ctx.root).unwrap_or_else(|| "HEAD".into());
     let mut out = format!(
-        "<slice schema=\"ripwire.slice/v1\" sym=\"{}\" var=\"{}\" p=\"{}\" t=\"{}\" lang=\"{}\" defs=\"{defs_cnt}\" uses=\"{uses_cnt}\" flow=\"{}\" depth=\"{}\" steps=\"{}\" root=\"{}\" counts=\"as-classified\">\n",
+        "<slice schema=\"ripwire.slice/v1\" sym=\"{}\" var=\"{}\" p=\"{}\" t=\"{}\" lang=\"{}\" defs=\"{defs_cnt}\" uses=\"{uses_cnt}\" flow=\"{}\" depth=\"{}\" steps=\"{}\" at=\"{at_stamp}\" root=\"{}\" counts=\"as-classified\">\n",
         ctx.sym_name,
         ctx.var_name,
         ctx.path_line,
@@ -326,11 +330,7 @@ fn execute_slice_with_root(
                 &source_bytes,
             );
             Ok(render_locals_xml(
-                sym_name,
-                &path_line,
-                chosen.kind.tag(),
-                chosen.lang.tag(),
-                &locals,
+                root, sym_name, &path_line, chosen, &locals,
             ))
         }
         Some(var_name) => {

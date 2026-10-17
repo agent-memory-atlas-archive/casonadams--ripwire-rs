@@ -182,8 +182,11 @@ pub fn load_repo_analysis_with_options(
     no_cache: bool,
     opts: &crate::crawler::CrawlerOptions,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
-    let use_cache = !no_cache && *opts == crate::crawler::CrawlerOptions::default();
-    if use_cache && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path) {
+    let default_opts = *opts == crate::crawler::CrawlerOptions::default();
+    if !no_cache
+        && default_opts
+        && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path)
+    {
         return Ok(cached);
     }
     let files = crate::crawler::crawl_directory(root, opts);
@@ -193,7 +196,7 @@ pub fn load_repo_analysis_with_options(
     let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
     let graph = Graph::build(&ingest, &interner);
     let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
-    if use_cache {
+    if default_opts {
         let _ =
             crate::cache::save_cached_analysis(root, cache_path, (&ingest, &graph, &pr, &interner));
     }
@@ -304,6 +307,18 @@ impl<'a> crate::domain::CorpusView<'a> for ExecutionContext<'a> {
     #[inline]
     fn interner(&self) -> &'a Interner {
         self.interner
+    }
+}
+
+impl Paginated for ExecutionContext<'_> {
+    #[inline]
+    fn limit_opt(&self) -> Option<usize> {
+        self.cli.limit_opt()
+    }
+
+    #[inline]
+    fn offset_opt(&self) -> Option<usize> {
+        self.cli.offset_opt()
     }
 }
 
@@ -499,12 +514,13 @@ impl CliVerb for TopWorkspaceArgs {
                 out,
             )
         } else {
-            execute_workspace_doc_query(
+            execute_workspace_doc_query_paged(
                 self,
                 ctx.root,
                 ctx.ingest,
                 ctx.interner,
                 ctx.cli.with_history_flag(),
+                ctx.cli,
                 out,
             )
         }
@@ -531,6 +547,8 @@ fn execute_workspace_owners<W: Write>(ctx: &ExecutionContext<'_>, out: &mut W) -
         at_stamp.as_deref(),
         Some(&known_files),
     );
+    val["root"] = serde_json::Value::String(ctx.root.to_string());
+    ctx.apply_pagination_to_json(&mut val);
     if ctx.cli.detail_opt().is_some_and(|d| d > 0) {
         val["detail"] = serde_json::Value::Bool(true);
     }
@@ -634,42 +652,62 @@ fn execute_arch_rules_query<W: Write>(
     Ok(())
 }
 
+fn execute_arch_or_zoom_query<W: Write>(
+    arch_args: &TopArchitectureArgs,
+    ctx: &ExecutionContext<'_>,
+    out: &mut W,
+) -> Option<io::Result<()>> {
+    if arch_args.mermaid {
+        return Some(crate::graph::generate_mermaid_diagram(
+            ctx.ingest,
+            ctx.graph,
+            ctx.interner,
+            out,
+        ));
+    }
+    if let Some(rules_file) = arch_args.arch.as_deref() {
+        return Some(execute_arch_rules_query(
+            rules_file,
+            ctx.root,
+            ctx.ingest,
+            ctx.graph,
+            ctx.interner,
+            out,
+        ));
+    }
+    if let Some(depth) = arch_args.zoom {
+        let opts = crate::graph::zoom::ZoomOptions {
+            depth,
+            levels_shown: arch_args.zoom_levels,
+            limit: ctx.cli.modifiers.limit,
+            offset: ctx.cli.modifiers.offset,
+        };
+        return Some(crate::graph::zoom::execute_zoom_query(
+            ctx.ingest,
+            ctx.graph,
+            ctx.interner,
+            ctx.pr.iterations,
+            opts,
+            out,
+        ));
+    }
+    None
+}
+
 impl CliVerb for TopArchitectureArgs {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
-        if self.mermaid {
-            return crate::graph::generate_mermaid_diagram(
-                ctx.ingest,
-                ctx.graph,
-                ctx.interner,
-                out,
-            );
+        if let Some(res) = execute_arch_or_zoom_query(self, ctx, out) {
+            return res;
         }
-        if let Some(rules_file) = self.arch.as_deref() {
-            execute_arch_rules_query(
-                rules_file,
+        if self.dead_code {
+            execute_dead_code_query_paged(
                 ctx.root,
                 ctx.ingest,
                 ctx.graph,
                 ctx.interner,
+                ctx.cli,
                 out,
             )
-        } else if let Some(depth) = self.zoom {
-            let opts = crate::graph::zoom::ZoomOptions {
-                depth,
-                levels_shown: self.zoom_levels,
-                limit: ctx.cli.modifiers.limit,
-                offset: ctx.cli.modifiers.offset,
-            };
-            crate::graph::zoom::execute_zoom_query(
-                ctx.ingest,
-                ctx.graph,
-                ctx.interner,
-                ctx.pr.iterations,
-                opts,
-                out,
-            )
-        } else if self.dead_code {
-            execute_dead_code_query(ctx.root, ctx.ingest, ctx.graph, ctx.interner, out)
         } else if self.communities || self.community.is_some() {
             execute_communities_query(
                 ctx.root,
@@ -688,7 +726,7 @@ impl CliVerb for TopArchitectureArgs {
         } else if self.external_surface {
             execute_external_surface_query(ctx.root, ctx.ingest, ctx.interner, out)
         } else if self.deps {
-            execute_deps_query(ctx.root, ctx.ingest, ctx.graph, ctx.interner, out)
+            execute_deps_query_paged(ctx.root, ctx.ingest, ctx.graph, ctx.interner, ctx.cli, out)
         } else {
             let _ = self.execute_lens(ctx, out)?;
             Ok(())
@@ -940,6 +978,8 @@ fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             since: cli.since.as_deref(),
             pretty: cli.is_pretty_out(),
             json_out: cli.is_json_out(),
+            limit: cli.limit_opt(),
+            offset: cli.offset_opt(),
         },
     ) {
         return Some(res);

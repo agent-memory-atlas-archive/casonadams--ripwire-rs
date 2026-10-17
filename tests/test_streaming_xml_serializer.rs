@@ -426,6 +426,8 @@ fn test_query_xml_architecture_family() {
         ],
         cycles: vec![vec!["src/a.rs", "src/b.rs"]],
         violations: vec![("src/a.rs", "src/b.rs", 0.25)],
+        limit: None,
+        offset: None,
     };
     ripwire_rs::serialize::serialize_deps_report_xml(".", &deps_rep, &mut buf).unwrap();
     let deps_xml = String::from_utf8_lossy(&buf);

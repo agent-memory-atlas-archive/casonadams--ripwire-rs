@@ -677,6 +677,22 @@ fn find_ifndef_default(lines: &[&str], idx: usize, name: &str) -> Option<(String
     Some(("0".to_string(), true))
 }
 
+fn measure_preproc_region_loc(lines: &[&str], start_idx: usize) -> usize {
+    let mut depth = 1usize;
+    for (offset, &line) in lines.iter().skip(start_idx + 1).enumerate() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("#if") {
+            depth += 1;
+        } else if trimmed.starts_with("#endif") {
+            depth -= 1;
+            if depth == 0 {
+                return offset;
+            }
+        }
+    }
+    0
+}
+
 fn extract_compile_guard_with_default(
     lines: &[&str],
     idx: usize,
@@ -712,12 +728,94 @@ fn extract_cmake_option(line: &str, path: &str) -> Option<(String, String, bool)
 }
 
 #[derive(Default)]
+struct GateEntry {
+    name: String,
+    kind: &'static str,
+    default_val: String,
+    is_dark: bool,
+    file: String,
+    line: usize,
+    regions: usize,
+    loc: usize,
+    reads: Vec<(String, usize)>,
+}
+
+#[derive(Default)]
 struct FlagsScanTally {
-    flags: Vec<Value>,
-    compile_count: usize,
-    cmake_count: usize,
-    env_count: usize,
-    dark_gates: usize,
+    by_key: std::collections::BTreeMap<(String, &'static str), GateEntry>,
+}
+
+impl FlagsScanTally {
+    fn record_compile(
+        &mut self,
+        name: String,
+        def_val: String,
+        is_dark: bool,
+        path: &str,
+        line: usize,
+        reg_loc: usize,
+    ) {
+        let entry = self
+            .by_key
+            .entry((name.clone(), "compile"))
+            .or_insert_with(|| GateEntry {
+                name,
+                kind: "compile",
+                default_val: def_val.clone(),
+                is_dark,
+                file: path.to_string(),
+                line,
+                regions: 0,
+                loc: 0,
+                reads: Vec::new(),
+            });
+        entry.regions += 1;
+        entry.loc += reg_loc;
+        entry.reads.push((path.to_string(), line));
+    }
+
+    fn record_cmake(
+        &mut self,
+        name: String,
+        def_val: String,
+        is_dark: bool,
+        path: &str,
+        line: usize,
+    ) {
+        let entry = self
+            .by_key
+            .entry((name.clone(), "cmake"))
+            .or_insert_with(|| GateEntry {
+                name,
+                kind: "cmake",
+                default_val: def_val,
+                is_dark,
+                file: path.to_string(),
+                line,
+                regions: 0,
+                loc: 0,
+                reads: Vec::new(),
+            });
+        entry.reads.push((path.to_string(), line));
+    }
+
+    fn record_env(&mut self, name: String, path: &str, line: usize) {
+        let entry = self
+            .by_key
+            .entry((name.clone(), "env"))
+            .or_insert_with(|| GateEntry {
+                name,
+                kind: "env",
+                default_val: "unset".to_string(),
+                is_dark: true,
+                file: path.to_string(),
+                line,
+                regions: 0,
+                loc: 0,
+                reads: Vec::new(),
+            });
+        entry.reads.push((path.to_string(), line));
+    }
 }
 
 fn scan_file_flags(root_path: &std::path::Path, path: &str, tally: &mut FlagsScanTally) {
@@ -728,44 +826,12 @@ fn scan_file_flags(root_path: &std::path::Path, path: &str, tally: &mut FlagsSca
     let lines: Vec<&str> = text.lines().collect();
     for (idx, &line) in lines.iter().enumerate() {
         if let Some((guard, def_val, is_dark)) = extract_compile_guard_with_default(&lines, idx) {
-            tally.compile_count += 1;
-            tally.dark_gates += usize::from(is_dark);
-            tally.flags.push(json!({
-                "name": guard,
-                "flag": guard,
-                "kind": "compile",
-                "default": def_val,
-                "dark": usize::from(is_dark),
-                "file": path,
-                "path": path,
-                "line": idx + 1
-            }));
+            let reg_loc = measure_preproc_region_loc(&lines, idx);
+            tally.record_compile(guard, def_val, is_dark, path, idx + 1, reg_loc);
         } else if let Some((opt, def_val, is_dark)) = extract_cmake_option(line, path) {
-            tally.cmake_count += 1;
-            tally.dark_gates += usize::from(is_dark);
-            tally.flags.push(json!({
-                "name": opt,
-                "flag": opt,
-                "kind": "cmake",
-                "default": def_val,
-                "dark": usize::from(is_dark),
-                "file": path,
-                "path": path,
-                "line": idx + 1
-            }));
+            tally.record_cmake(opt, def_val, is_dark, path, idx + 1);
         } else if let Some(env_var) = extract_env_identifier(line) {
-            tally.env_count += 1;
-            tally.dark_gates += 1;
-            tally.flags.push(json!({
-                "name": env_var,
-                "flag": env_var,
-                "kind": "env",
-                "default": "",
-                "dark": 1,
-                "file": path,
-                "path": path,
-                "line": idx + 1
-            }));
+            tally.record_env(env_var, path, idx + 1);
         }
     }
 }
@@ -791,16 +857,49 @@ pub fn call_flags_in_root(root: &str, ingest: &IngestResult, interner: &Interner
         }
     }
 
+    let mut flags = Vec::with_capacity(tally.by_key.len());
+    let mut compile_count = 0usize;
+    let mut cmake_count = 0usize;
+    let mut env_count = 0usize;
+    let mut dark_gates = 0usize;
+    for entry in tally.by_key.into_values() {
+        match entry.kind {
+            "compile" => compile_count += 1,
+            "cmake" => cmake_count += 1,
+            _ => env_count += 1,
+        }
+        dark_gates += usize::from(entry.is_dark);
+        let reads_json: Vec<Value> = entry
+            .reads
+            .iter()
+            .map(|(p, l)| json!({ "path": p, "line": l }))
+            .collect();
+        flags.push(json!({
+            "name": entry.name,
+            "flag": entry.name,
+            "kind": entry.kind,
+            "default": entry.default_val,
+            "dark": usize::from(entry.is_dark),
+            "regions": entry.regions,
+            "loc": entry.loc,
+            "reads_count": entry.reads.len(),
+            "reads": reads_json,
+            "file": entry.file,
+            "path": entry.file,
+            "line": entry.line
+        }));
+    }
+
     json!({
         "root": root,
         "files": ingest.files.len(),
-        "flags_count": tally.flags.len(),
-        "compile_count": tally.compile_count,
-        "cmake_count": tally.cmake_count,
-        "env_count": tally.env_count,
-        "dark_gates": tally.dark_gates,
-        "gates": tally.flags.clone(),
-        "flags": tally.flags
+        "flags_count": flags.len(),
+        "compile_count": compile_count,
+        "cmake_count": cmake_count,
+        "env_count": env_count,
+        "dark_gates": dark_gates,
+        "gates": flags.clone(),
+        "flags": flags
     })
 }
 /// Execute `owners` tool: git commit author ownership per file.

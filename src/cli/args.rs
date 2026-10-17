@@ -898,6 +898,27 @@ pub trait Paginated {
             self.offset_opt(),
         )
     }
+
+    fn paginate_slice<'a, T>(
+        &self,
+        items: &'a [T],
+        default_cap: usize,
+    ) -> (crate::serialize::PageWindow, &'a [T])
+    where
+        Self: Sized,
+    {
+        use crate::serialize::PaginateSlice;
+        items.paginate(default_cap, self.limit_opt(), self.offset_opt())
+    }
+
+    fn apply_pagination_to_json(&self, val: &mut serde_json::Value) {
+        if let Some(lim) = self.limit_opt() {
+            val["limit"] = serde_json::Value::from(lim as u64);
+        }
+        if let Some(off) = self.offset_opt() {
+            val["offset"] = serde_json::Value::from(off as u64);
+        }
+    }
 }
 
 /// Capability trait for extracting token, byte, top-k, and detail budgets from CLI options.

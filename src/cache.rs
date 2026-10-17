@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
-const CACHE_VERSION: u32 = 13;
+const CACHE_VERSION: u32 = 14;
 
 /// Serialized binary cache payload for fast warm repository queries.
 #[derive(Serialize, Deserialize)]
@@ -22,14 +22,29 @@ pub struct CachePayload {
 
 /// Compute a fast cache validation key from git HEAD (or mtime metadata).
 #[must_use]
+fn current_binary_stamp() -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    if let Ok(exe) = std::env::current_exe()
+        && let Ok(meta) = fs::metadata(exe)
+    {
+        if let Ok(mtime) = meta.modified() {
+            mtime.hash(&mut hasher);
+        }
+        meta.len().hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 pub fn compute_cache_key(root: &str) -> String {
+    let bin_stamp = current_binary_stamp();
     let path = Path::new(root);
     if let Ok(repo) = gix::open(path)
         && let Ok(head) = repo.head_commit()
     {
-        return format!("{}-{}", env!("CARGO_PKG_VERSION"), head.id());
+        return format!("{}-{bin_stamp:x}-{}", env!("CARGO_PKG_VERSION"), head.id());
     }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    bin_stamp.hash(&mut hasher);
     root.hash(&mut hasher);
     if let Ok(meta) = fs::metadata(path) {
         if let Ok(mtime) = meta.modified() {

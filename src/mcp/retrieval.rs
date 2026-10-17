@@ -358,11 +358,13 @@ fn build_for_symbol_entry(
     idx: usize,
     score: f64,
     sym: &crate::domain::Symbol,
-    path: &str,
-    name: &str,
+    view: &dyn crate::domain::CorpusView<'_>,
+    is_tested: bool,
     opts: ForTaskOptions<'_>,
     file_cache: &mut std::collections::HashMap<u32, Vec<u8>>,
 ) -> Value {
+    let name = view.sym_name(sym);
+    let path = view.sym_path(sym);
     let detail_count = opts.detail.unwrap_or(0);
     let bytes = read_file_cached(opts.root, path, sym.file_id, file_cache);
     let sig = extract_normalized_sig(sym, bytes, name);
@@ -379,6 +381,7 @@ fn build_for_symbol_entry(
         "ccx": sym.ccx,
         "in": in_deg,
         "amp": in_deg.max(1),
+        "tested": u8::from(is_tested),
         "score": (score * 100.0).round() / 100.0
     });
     if idx < detail_count
@@ -540,19 +543,20 @@ pub fn call_for_task_with_options(
     }
     let detail_count = opts.detail.unwrap_or(0).min(limit);
     let mut file_cache = std::collections::HashMap::new();
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let tested_bitmap = opts.graph.map(|g| view.compute_test_reachability(g));
     let symbols_json: Vec<Value> = scored[..limit]
         .iter()
         .enumerate()
         .map(|(idx, (score, sym))| {
-            let name = interner.resolve(&sym.name);
-            let path = ingest
-                .files
-                .get(sym.file_id as usize)
-                .map_or("", |f| interner.resolve(&f.path));
-            build_for_symbol_entry(idx, *score, sym, path, name, opts, &mut file_cache)
+            let is_tested = tested_bitmap
+                .as_ref()
+                .and_then(|bm| bm.get(sym.id as usize).copied())
+                .unwrap_or_else(|| view.is_test_symbol(sym));
+            build_for_symbol_entry(idx, *score, sym, &view, is_tested, opts, &mut file_cache)
         })
         .collect();
-
     let (route, confidence, margin_pct, coverage) =
         compute_for_route_metadata(task, &raw_terms, &scored, interner);
     let lego = collect_for_lego(ingest, interner, &scored[..limit]);
