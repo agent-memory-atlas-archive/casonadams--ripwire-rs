@@ -77,8 +77,7 @@ fn load_gate_state(root: &str, is_delta: bool) -> io::Result<crate::mcp::McpStat
     let mut state = state_opt.ok_or_else(|| io::Error::other("failed to load repository"))?;
     if is_delta && !get_working_tree_changed_files(root).is_empty() {
         let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 1);
-        state.commits =
-            crate::git::history::walk_repository_history_scoped(Path::new(root), cutoff).ok();
+        state.commits = crate::git::history::walk_repository_history_scoped(root, cutoff).ok();
     }
     Ok(state)
 }
@@ -141,8 +140,7 @@ where
         &mut crate::serialize::XmlWriter<'_, io::StdoutLock<'_>>,
     ) -> io::Result<()>,
 {
-    let path = Path::new(root);
-    let commits_vec = crate::git::history::walk_repository_history_scoped(path, cutoff).ok();
+    let commits_vec = crate::git::history::walk_repository_history_scoped(root, cutoff).ok();
     let commits = commits_vec.as_deref().unwrap_or(&[]);
     let (ingest, graph, pr, interner) =
         crate::cli::dispatch::load_repo_analysis_cached(root, None, false)?;
@@ -313,7 +311,7 @@ pub fn execute_situ_query<W: Write>(
             .collect(),
         None => get_working_tree_changed_files(root),
     };
-    let commits = crate::git::history::walk_repository_history(Path::new(root)).ok();
+    let commits = crate::git::history::walk_repository_history(root).ok();
     let val = crate::mcp::graph_tools::call_situational_awareness(
         ingest,
         graph,
@@ -406,9 +404,8 @@ pub fn execute_exercises_query<W: Write>(
 }
 
 fn validate_merge_scout_branches(root: &str, branches: &str) -> bool {
-    let repo_path = std::path::Path::new(root);
     for branch in branches.split(',').map(str::trim).filter(|b| !b.is_empty()) {
-        let ref_exists = if let Ok(repo) = gix::open(repo_path) {
+        let ref_exists = if let Ok(repo) = gix::open(root) {
             repo.rev_parse_single(branch).is_ok() || repo.find_reference(branch).is_ok()
         } else {
             false
@@ -874,14 +871,10 @@ pub fn execute_edit_check_with<W: Write>(
     let rel_path = state
         .interner
         .resolve(&state.ingest.files[sym.file_id as usize].path);
-    let head_contract = crate::gate::contract::load_head_symbol_contract(
-        Path::new(&state.root),
-        rel_path,
-        sym_name,
-        sym.lang,
-    )
-    .ok()
-    .flatten();
+    let head_contract =
+        crate::gate::contract::load_head_symbol_contract(&state.root, rel_path, sym_name, sym.lang)
+            .ok()
+            .flatten();
 
     if let Some(mut report) = crate::gate::edit_check::check_symbol_contract(
         sym_id,

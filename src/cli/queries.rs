@@ -307,7 +307,7 @@ fn execute_note_append<W: Write>(root: &str, note: &str, out: &mut W) -> io::Res
 }
 
 fn resolve_git_branch_and_subject(root: &str) -> (String, String) {
-    let Ok(repo) = gix::open(Path::new(root)) else {
+    let Ok(repo) = gix::open(root) else {
         return ("main".to_string(), "head".to_string());
     };
     let branch = repo
@@ -408,7 +408,7 @@ fn execute_skipped_census_query<W: Write>(
 ) -> io::Result<()> {
     let root_esc = root.xml_escaped();
     let opts = crate::crawler::CrawlerOptions::default();
-    let census = crate::crawler::scan_skipped_census(Path::new(root), &opts);
+    let census = crate::crawler::scan_skipped_census(root, &opts);
     let oversize_cnt = census.oversize.len();
     let excluded_cnt = census.excluded.len();
     let unsupported_cnt = census.unsupported.len();

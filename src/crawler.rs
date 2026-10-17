@@ -107,7 +107,8 @@ fn process_crawl_entry(
     Some(file)
 }
 
-pub fn crawl_directory(root: &Path, options: &CrawlerOptions) -> Vec<CrawledFile> {
+pub fn crawl_directory<P: AsRef<Path>>(root: P, options: &CrawlerOptions) -> Vec<CrawledFile> {
+    let root = root.as_ref();
     let mut files = Vec::new();
     for entry in build_walker(root, options).flatten() {
         if let Some(file) = process_crawl_entry(&entry, root, options) {
@@ -131,8 +132,8 @@ fn is_entry_denylisted(name: &str, is_dir: bool, custom_excludes: &[String]) -> 
 
 /// Check if a path component is in the default or custom denylist.
 #[must_use]
-pub fn is_path_denylisted(path: &Path, custom_excludes: &[String]) -> bool {
-    path.components().any(|c| {
+pub fn is_path_denylisted<P: AsRef<Path>>(path: P, custom_excludes: &[String]) -> bool {
+    path.as_ref().components().any(|c| {
         c.as_os_str().to_str().is_some_and(|name| {
             DENYLIST_DIRS.contains(&name)
                 || name.starts_with("cmake-build-")
@@ -204,7 +205,7 @@ fn classify_skipped_entry(
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if is_path_denylisted(Path::new(&rel_path), &options.custom_excludes) {
+    if is_path_denylisted(&rel_path, &options.custom_excludes) {
         census.excluded.push((rel_path, size, ext));
         return;
     }
@@ -220,7 +221,8 @@ fn classify_skipped_entry(
 }
 
 #[must_use]
-pub fn scan_skipped_census(root: &Path, options: &CrawlerOptions) -> SkippedCensus {
+pub fn scan_skipped_census<P: AsRef<Path>>(root: P, options: &CrawlerOptions) -> SkippedCensus {
+    let root = root.as_ref();
     let mut census = SkippedCensus::default();
     let mut ext_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
     for entry in build_walker(root, options).flatten() {

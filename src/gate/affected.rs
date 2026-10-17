@@ -63,8 +63,8 @@ impl crate::serialize::XmlReport for AffectedReport {
 
 /// Check if a path corresponds to a test file by directory convention or filename.
 #[must_use]
-pub fn is_test_path(path: &str) -> bool {
-    let p = Path::new(path);
+pub fn is_test_path<P: AsRef<Path>>(path: P) -> bool {
+    let p = path.as_ref();
     for component in p.components() {
         if let Some(s) = component.as_os_str().to_str() {
             let lower = s.to_ascii_lowercase();

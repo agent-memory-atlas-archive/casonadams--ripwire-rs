@@ -558,13 +558,13 @@ fn merge_snapshot_entries(dst: &mut QualitySnapshot, src: QualitySnapshot) {
     dst.public_api.extend(src.public_api);
 }
 
-fn read_changed_head_blobs(
-    root_path: &Path,
+fn read_changed_head_blobs<P: AsRef<Path>>(
+    root_path: P,
     state: &McpState,
     changed_set: &std::collections::HashSet<&str>,
 ) -> Vec<(String, crate::domain::Lang, Vec<u8>)> {
     let mut head_files = Vec::new();
-    let Ok(repo) = gix::open(root_path) else {
+    let Ok(repo) = gix::open(root_path.as_ref()) else {
         return head_files;
     };
     let Ok(head) = repo.head_commit() else {
@@ -601,7 +601,7 @@ fn load_head_baseline_incremental(
     for cf in &changed_set {
         remove_file_entries_from_snapshot(&mut snap, cf);
     }
-    let head_files = read_changed_head_blobs(Path::new(root), state, &changed_set);
+    let head_files = read_changed_head_blobs(root, state, &changed_set);
     if head_files.is_empty() {
         return snap;
     }

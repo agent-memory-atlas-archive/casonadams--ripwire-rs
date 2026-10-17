@@ -125,13 +125,13 @@ fn parse_head_signature_match(
 }
 
 /// Load a symbol's contract from the git HEAD commit.
-pub fn load_head_symbol_contract(
-    repo_path: &Path,
+pub fn load_head_symbol_contract<P: AsRef<Path>>(
+    repo_path: P,
     rel_path: &str,
     sym_name: &str,
     lang: Lang,
 ) -> Result<Option<SignatureContract>, String> {
-    let Some(bytes) = read_head_blob_bytes(repo_path, rel_path) else {
+    let Some(bytes) = read_head_blob_bytes(repo_path.as_ref(), rel_path) else {
         return Ok(None);
     };
 

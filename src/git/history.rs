@@ -468,15 +468,18 @@ fn try_git_log_cli(repo_path: &Path, cutoff_timestamp: Option<i64>) -> Option<Ve
     Some(strip_subdir_prefix(commits, prefix.as_deref()))
 }
 
-pub fn walk_repository_history(repo_path: &Path) -> Result<Vec<CommitInfo>, GitHistoryError> {
-    walk_repository_history_scoped(repo_path, None)
+pub fn walk_repository_history<P: AsRef<Path>>(
+    repo_path: P,
+) -> Result<Vec<CommitInfo>, GitHistoryError> {
+    walk_repository_history_scoped(repo_path.as_ref(), None)
 }
 
 /// Walk git commit history with an optional cutoff timestamp.
-pub fn walk_repository_history_scoped(
-    repo_path: &Path,
+pub fn walk_repository_history_scoped<P: AsRef<Path>>(
+    repo_path: P,
     cutoff_timestamp: Option<i64>,
 ) -> Result<Vec<CommitInfo>, GitHistoryError> {
+    let repo_path = repo_path.as_ref();
     if let Some(commits) = try_git_log_cli(repo_path, cutoff_timestamp)
         && !commits.is_empty()
     {
@@ -498,8 +501,8 @@ pub fn walk_repository_history_scoped(
 
 /// Full hex id of the repository's HEAD commit, or `None` outside a git repository.
 #[must_use]
-pub fn resolve_head_sha(root: &str) -> Option<String> {
-    let repo = gix::discover(Path::new(root)).ok()?;
+pub fn resolve_head_sha<P: AsRef<Path>>(root: P) -> Option<String> {
+    let repo = gix::discover(root.as_ref()).ok()?;
     let head = repo.head_commit().ok()?;
     Some(head.id().to_string())
 }
@@ -614,7 +617,7 @@ mod tests {
 
     #[test]
     fn test_walk_repository_history_nonexistent() {
-        let res = walk_repository_history(Path::new("/nonexistent_ripwire_path_test"));
+        let res = walk_repository_history("/nonexistent_ripwire_path_test");
         assert!(res.is_err());
         let err = res.unwrap_err();
         assert!(format!("{err}").contains("failed to open repository"));

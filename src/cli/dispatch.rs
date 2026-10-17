@@ -167,7 +167,7 @@ pub fn load_repo_analysis_with_options(
     if use_cache && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path) {
         return Ok(cached);
     }
-    let files = crate::crawler::crawl_directory(Path::new(root), opts);
+    let files = crate::crawler::crawl_directory(root, opts);
     let registry =
         crate::ingest::LanguageRegistry::new().map_err(|e| io::Error::other(e.to_string()))?;
     let interner = Interner::new();
@@ -482,8 +482,7 @@ pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 
 fn execute_workspace_owners<W: Write>(ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
     let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 12);
-    let commits =
-        crate::git::history::walk_repository_history_scoped(Path::new(ctx.root), cutoff).ok();
+    let commits = crate::git::history::walk_repository_history_scoped(ctx.root, cutoff).ok();
     let at_stamp = crate::git::history::compute_git_at_stamp(ctx.root);
     let known_files: std::collections::HashSet<String> = ctx
         .ingest

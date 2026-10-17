@@ -104,8 +104,7 @@ pub fn compute_pr_context_in_root(
     base_ref: &str,
 ) -> PrContextReport {
     let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, Some(graph));
-    let commits = crate::git::history::walk_repository_history(std::path::Path::new(root))
-        .unwrap_or_default();
+    let commits = crate::git::history::walk_repository_history(root).unwrap_or_default();
     let files: Vec<PrFileContext> = changed_files
         .iter()
         .map(|f| build_single_pr_file_context(f, ingest, graph, interner, &coupling, &commits))

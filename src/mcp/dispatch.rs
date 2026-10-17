@@ -132,8 +132,7 @@ fn resolve_state_commits(state: &McpState, months: u32) -> Vec<crate::git::histo
         return commits.clone();
     }
     let cutoff = crate::git::history::resolve_cutoff_timestamp(None, months);
-    crate::git::history::walk_repository_history_scoped(Path::new(&state.root), cutoff)
-        .unwrap_or_default()
+    crate::git::history::walk_repository_history_scoped(&state.root, cutoff).unwrap_or_default()
 }
 
 pub fn call_cochange(state: &McpState, args: &Value) -> Result<Value, String> {
@@ -185,14 +184,10 @@ pub fn call_edit_check(state: &McpState, args: &Value) -> Result<Value, String> 
 
     let sym = &state.ingest[sym_id];
     let rel_path = state.ingest.sym_file_path(sym, &state.interner);
-    let baseline = crate::gate::contract::load_head_symbol_contract(
-        Path::new(&state.root),
-        rel_path,
-        sym_name,
-        sym.lang,
-    )
-    .ok()
-    .flatten();
+    let baseline =
+        crate::gate::contract::load_head_symbol_contract(&state.root, rel_path, sym_name, sym.lang)
+            .ok()
+            .flatten();
 
     let rep = crate::gate::edit_check::check_symbol_contract(
         sym_id,
