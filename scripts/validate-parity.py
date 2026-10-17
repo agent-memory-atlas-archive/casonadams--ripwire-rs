@@ -217,7 +217,6 @@ def build_command_list(merge_ref, target_file, target_sym, second_sym):
         ("--mermaid", "Mermaid diagram generation"),
         ("--zoom", "Hierarchical Louvain clustering"),
         ("--html", "Interactive HTML visualizer export"),
-        ("wrap claude", "Agent integration recipe"),
         (f"--whereis={target_sym}", "Symbol cross-ref locator"),
         ("--flags", "Dark-content gate harvest"),
         ("--stray-content", "Cross-branch divergent content"),
@@ -335,8 +334,6 @@ def check_non_xml_parity(cmd, out_rw, out_rip):
         return None if "flowchart" in out_rw else "missing flowchart"
     if "--html" in cmd:
         return None if ("<!DOCTYPE html>" in out_rw and "const NODES" in out_rw) else "missing html"
-    if cmd.startswith("wrap"):
-        return None if ("claude mcp add" in out_rw and "claude mcp add" in out_rip) else "missing wrap"
     if "--situ" in cmd:
         return None if "situational-awareness" in out_rw else "missing situ"
     if "--plan-lanes" in cmd:
@@ -347,8 +344,6 @@ def check_non_xml_parity(cmd, out_rw, out_rip):
 def run_one_check(rw_bin, rip_bin, repo, cmd):
     if cmd == "-v":
         c_rw, c_rip = [rw_bin, "-v"], [rip_bin, "-v"]
-    elif cmd.startswith("wrap"):
-        c_rw, c_rip = [rw_bin] + cmd.split(), [rip_bin] + cmd.split()
     else:
         args = shlex.split(cmd)
         c_rw, c_rip = [rw_bin, repo] + args, [rip_bin, repo] + args
@@ -356,7 +351,7 @@ def run_one_check(rw_bin, rip_bin, repo, cmd):
     try:
         p_rip = subprocess.run(c_rip, capture_output=True, text=True, timeout=4)
     except subprocess.TimeoutExpired:
-        is_text = cmd in ("-v", "--mermaid", "--html", "--situ") or cmd.startswith("wrap") or "--plan-lanes" in cmd
+        is_text = cmd in ("-v", "--mermaid", "--html", "--situ") or "--plan-lanes" in cmd
         if is_text:
             return None if p_rw.stdout.strip() else "empty text output"
         root_rw, err_rw = parse_xml_dom(p_rw.stdout)
@@ -375,7 +370,7 @@ def run_one_check(rw_bin, rip_bin, repo, cmd):
             return f"exit code mismatch: rw={p_rw.returncode} vs rip={p_rip.returncode}"
     if p_rw.returncode != 0 and not p_rip.stdout.strip():
         return None
-    is_text = cmd in ("-v", "--mermaid", "--html", "--situ") or cmd.startswith("wrap") or "--plan-lanes" in cmd
+    is_text = cmd in ("-v", "--mermaid", "--html", "--situ") or "--plan-lanes" in cmd
     if is_text:
         return check_non_xml_parity(cmd, p_rw.stdout, p_rip.stdout)
     return check_xml_parity(cmd, p_rw.stdout, p_rip.stdout)

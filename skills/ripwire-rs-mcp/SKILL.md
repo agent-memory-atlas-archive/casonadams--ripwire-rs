@@ -1,8 +1,8 @@
 ---
 name: ripwire-rs-mcp
 description: >
-  Configure ripwire-rs as a stdio Model Context Protocol (MCP) server. Generate client recipes
-  with `ripwire-rs wrap <agent>` and diagnose MCP tool health with `ripwire-rs --doctor`.
+  Configure ripwire-rs as a stdio Model Context Protocol (MCP) server and diagnose MCP tool
+  health with `ripwire-rs --doctor`.
 allowed-tools: Bash, Read
 ---
 
@@ -12,9 +12,8 @@ You are an MCP (Model Context Protocol) integration specialist. Your goal is to 
 
 <investigate_before_configuring>
 Before configuring MCP:
-1. Generate copy-paste setup recipe for your agent: `ripwire-rs wrap <agent>`
-2. Audit active server diagnostics: `ripwire-rs <dir> --doctor`
-3. Verify available tools: check tools/list via stdio JSON-RPC.
+1. Audit active server diagnostics: `ripwire-rs <dir> --doctor`
+2. Verify available tools: check tools/list via stdio JSON-RPC.
 </investigate_before_configuring>
 
 <instructions>
@@ -52,33 +51,22 @@ writes) detailed below and in full in [`mcp-reference.md`](mcp-reference.md).
 
 The server exposes **33 MCP verbs**: 17 read verbs (incl. `rank_by`/`fetch_body`/`flags`/`slice`), 13 flagship-reflex
 verbs (`affected`/`connect`/`explore`/`from_trace`/`edit_check` and the cross-branch pair `whereis`/`stray_content`) and
-3 edit verbs — `ripwire-rs wrap codex --force` prints the live count.
+3 edit verbs.
 
-## Wiring — `ripwire-rs wrap <agent>` prints the recipe
+## Wiring — Starting the stdio MCP server
 
+```json
+{
+  "mcpServers": {
+    "ripwire-rs": {
+      "command": "ripwire-rs",
+      "args": ["mcp"]
+    }
+  }
+}
 ```
-ripwire-rs wrap claude      # → claude mcp add ripwire -- ripwire-rs mcp
-ripwire-rs wrap cursor      # → JSON mcpServers stanza for .cursor/mcp.json (also: windsurf, gemini)
-ripwire-rs wrap codex       # → TOML stanza for ~/.codex/config.toml
-ripwire-rs wrap opencode    # → CLI first (AGENTS.md is read automatically); its config key is "mcp", NOT mcpServers
-ripwire-rs wrap aider       # → no MCP: ripwire-rs . --for="<task>" > .ripwire-rs-map.txt; aider --read .ripwire-rs-map.txt
-ripwire-rs wrap --all       # → auto-detect installed agents, emit each one's config in one run
-```
 
-`wrap` never edits config itself — it prints; you review and run. Before printing it security-scans
-`./skills` and `.agents/skills`: a CRITICAL finding blocks the recipe (exit 1) unless you pass
-`--force`; WARNs print and continue. Bare `ripwire-rs wrap` lists the supported agents.
-
-### Audit the active Codex surface
-
-Run `ripwire-rs <repo> --doctor --agent=codex` after install/update or when Codex appears to be using a stale
-binary, missing a skill, skipping the advisory CLI-first hooks, or starting the wrong MCP executable. This
-extends the ordinary six-check doctor with four read-only checks over the LIVE environment: PATH binary
-agreement, exact parity between the installed skills and `.ripwire-rs-manifest-v1`, executability of all three
-Codex hook roles, and the configured `mcp_servers.ripwire` command plus `--mcp` argument. Failing rows give
-the exact installer/wrap repair command. The report deliberately emits no config contents or full shell
-commands, so it is safe to paste for diagnosis; `--agent=codex` alone refuses because it modifies doctor.
-
+Run `ripwire-rs <repo> --doctor` to verify binary PATH agreement, grammar compilation, cache health, and git reachability.
 ### "no project root" / "memory limit reached" / `_memory_stop`
 
 `$HOME`, `/` and system directories are never a project root over MCP — not as the launch directory and not as
@@ -249,15 +237,14 @@ outside it — `path outside workspace; start the server on that root or pass an
 Read verbs stay unrestricted at any `path`. A bare `ripwire-rs mcp` with no startup root is unchanged: every
 verb still requires its own `path`.
 
-<example title="Adding ripwire-rs to Claude Code">
-Good: Run `ripwire-rs wrap claude` and execute the printed command `claude mcp add ripwire -- ripwire-rs --mcp`.
-Bad: Manually editing config files with incorrect paths or unsupported flags.
+<example title="Configuring ripwire-rs MCP server">
+Good: Register `ripwire-rs` with `"command": "ripwire-rs", "args": ["mcp"]` in your MCP client config and verify with `ripwire-rs <dir> --doctor`.
+Bad: Manually hardcoding fragile temporary paths or unsupported flags.
 </example>
 </instructions>
 
 <output_format>
 ### MCP Configuration
-- **Agent Target**: [Claude / Cursor / Codex / OpenCode / Omp]
 - **Transport Mode**: [Stdio JSON-RPC 2.0]
 - **Configuration Stanza**: [Exact JSON / TOML / CLI snippet]
 - **Health Status**: [Diagnostic verification result]

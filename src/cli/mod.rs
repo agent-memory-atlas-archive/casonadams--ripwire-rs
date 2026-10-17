@@ -3,14 +3,12 @@ pub mod dispatch;
 pub mod queries;
 pub mod safety;
 pub mod stream;
-pub mod wrap;
 
 pub use args::*;
 pub use dispatch::*;
 pub use queries::*;
 pub use safety::*;
 pub use stream::*;
-pub use wrap::*;
 #[cfg(test)]
 mod tests {
     use super::*;

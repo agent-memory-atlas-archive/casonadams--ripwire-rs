@@ -77,7 +77,6 @@ signature-through-closing-brace or nothing).
 ```
 ripwire-rs mcp --mcp-tools=core              # 8 tools: explore batch from_trace impact uses fetch_body edit_check quality_delta
 ripwire-rs mcp --mcp-tools=core,grep,slice   # names and profiles union
-ripwire-rs wrap claude --mcp-tools=core        # the printed recipe carries the flag
 ```
 
 - **Why.** An eager-loading client pays for every listed schema at session start: `tools/list` is 46,368 B for
@@ -86,8 +85,7 @@ ripwire-rs wrap claude --mcp-tools=core        # the printed recipe carries the 
   unlisted tool is a `-32602` error naming the restart that enables it (and the `batch` sub-query that answers it now,
   when `batch` is listed and serves that verb). `batch` keeps serving its own sub-verbs either way.
 - **Validated.** An unknown name (with its near miss and the valid names), a name given twice, or an empty name
-  exits 1 before the server starts. `wrap` writes the flag for claude, cursor, windsurf, gemini and opencode; for
-  codex, openclaw and hermes it prints a NOTE to add it by hand.
+  exits 1 before the server starts.
 
 ## Remote transport — `--listen` reference {#remote-transport}
 

@@ -54,9 +54,6 @@ ripwire-rs \- high-throughput agent context router and deterministic static anal
 .br
 .B ripwire-rs skills
 [\fIDIR\fR]
-.br
-.B ripwire-rs wrap
-\fIAGENT\fR
 \fBripwire-rs\fR is a high-throughput context router and deterministic static analysis engine designed for AI coding agents, developer CLI workflows, and automated CI/CD safety gates. It is a Rust port and rewrite of \fBredhat-et/ripwire\fR, originally authored by David Brewster.
 .PP
 It indexes codebases across 36 programming languages using multi-threaded parallel Tree-Sitter grammar queries, extracts language-agnostic embedded SQL table lineage from application string literals without extra flags, builds a resolved workspace call graph with multi-tier scoping precedence, executes Personalized PageRank over compressed sparse row (CSR) transpose matrices with dangling node mass redistribution, and streams dense, token-budgeted XML representations to stdout.
@@ -495,9 +492,6 @@ Launch native Model Context Protocol (MCP) JSON-RPC 2.0 server over standard inp
 .TP
 .B ripwire-rs skills \fR[\fIDIR\fR]
 Install and manage 17 ripwire-rs agent skills into the cross-agent discovery directory (default: \fI~/.agents/skills\fR).
-.TP
-.B ripwire-rs wrap \fIAGENT\fR
-Print copy-paste integration recipe to configure coding agents (\fBclaude\fR, \fBcursor\fR, \fBcodex\fR, \fBwindsurf\fR, \fBgemini\fR, \fBopencode\fR, \fBaider\fR).
 .SH SYMBOL SELECTOR SYNTAX
 When querying symbols via \fB\-\-callers\fR, \fB\-\-callees\fR, \fB\-\-impact\fR, \fB\-\-uses\fR, \fB\-\-expand\fR, or \fB\-\-edit\-check\fR, \fBripwire-rs\fR accepts several selector formats:
 .TP

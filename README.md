@@ -99,7 +99,7 @@ Builds release binary and automatically installs manual pages (`man ripwire-rs`)
 
 ## MCP Server Configuration
 
-Register `ripwire-rs` with any MCP-compatible coding agent (Claude Desktop, OpenCode, Cursor, Omp):
+Register `ripwire-rs` with any MCP-compatible client or coding agent:
 
 ```json
 {

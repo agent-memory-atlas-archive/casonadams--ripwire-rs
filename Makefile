@@ -106,7 +106,7 @@ upstream-parity: build-release ## Run upstream regression.sh against target/rele
 REPO ?= .
 
 .PHONY: parity
-parity: build-release ## Validate 1:1 input/output parity with upstream ripwire across 67 commands on REPO (default: REPO=.)
+parity: build-release ## Validate 1:1 input/output parity with upstream ripwire across 66 commands on REPO (default: REPO=.)
 	@./scripts/validate-parity.sh "$(REPO)"
 
 .PHONY: validate

@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 pub const DEFAULT_MAX_FILE_SIZE: u64 = 4 * 1024 * 1024;
 pub const DENYLIST_DIRS: &[&str] = &[
     ".git",
-    ".claude",
     ".hg",
     ".svn",
     "node_modules",

@@ -16,13 +16,13 @@ a deterministic, PageRank-ranked map. The discipline is one line: **map before y
 ## Why this isn't just about cost — it's about accuracy
 
 This is the load-bearing fact, not a nice-to-have: **less context is more accurate, not just cheaper.**
-- Code-repair accuracy **collapses with context size**: Claude 3.5 Sonnet went **29% → 3%** on LongSWE-Bench
+- Code-repair accuracy **collapses with context size**: models went **29% → 3%** on LongSWE-Bench
   as context grew 32K → 256K tokens (LongCodeBench, arXiv:2505.07897). A newer, independent result agrees:
   with localization held constant, compressed source reached the same editing accuracy at roughly 3.7×
   fewer tokens than whole-file context (arXiv:2607.09691).
 - A **~300-token** focused prompt **beat** a **~113K-token** full-file dump on the same task (Chroma
   context-rot study, 2025) — more context didn't just cost more, it made the model worse.
-- Position matters: actionable content at the END of a long input measured **up to +30%** (Anthropic) — the
+- Position matters: actionable content at the END of a long input measured **up to +30%** — the
   evidence behind `--order=important-last` (formerly `--most-important-last`, still a working alias)
   for large maps.
 - On the public Loc-Bench benchmark (n=560), `--for`'s focused bundle put the right file in the top-10
@@ -75,8 +75,7 @@ the table below is what you reach for *instead*.
 
 The tell that you need this is linguistic, not architectural: if you just thought *"let me search the
 codebase"*, *"let me read that file"*, or *"let me look at a few files first"*, that sentence is the
-trigger. The same prohibitions ship in the always-loaded `ripwire-rs wrap` primer (`src/wrap.h`), so an agent
-that never opens this file still meets them.
+trigger.
 
 ## The reflex
 Before you open more than ~2 files to answer a question, run the cheapest verb that answers it — THEN read
@@ -102,7 +101,7 @@ only the files it surfaces.
 | SEVERAL lookups a task needs at once, in one shot | `--batch=FILE` (`-`=stdin): newline `verb:arg` sub-queries (`for`/`grep`/`impact`/`uses`/`callers`/`callees`/`mentions`/…) answered in ONE deduped `<batch>` — the deterministic one-turn context sweep. Identical payloads collapse to `<dup-of q="i"/>` so a symbol surfaced by two sub-queries is emitted once. The MCP `batch` verb is the round-trip-saving form for agents. |
 | the WHOLE orientation for a task, budgeted, in ONE call | `--pack-task="<task in words>"` — assembles the usual 3-5 call dance (`--for` ranking → top-K full bodies → their 1-hop callers → their field notes → `tests_to_run`) under ONE deterministic budget (default 6K tokens; `--token-budget=N` overrides), in a FIXED section order. Each section truncates rank-adaptively and the header REPORTS every truncation (no silent caps); a tiny budget degrades to ranking-only. Reach for it as the first move on a new task instead of firing `--for` then `--expand` then `--callers` then `--affected` yourself — one call, one budget, one round-trip. |
 | the same task about to FAN OUT to N parallel agents | `--pack-task="<task>" --partition=N` (N=2..16) — one call returns a shared common core plus N per-agent slices carved along the call graph's communities, instead of N agents each re-deriving the same orientation. `--token-budget` becomes ONE AGENT's budget (core + its slice); each `<bundle>` is handed to one agent verbatim. Check `overlap_max` / `split` / `partitions` vs `requested` on the wrapper before trusting the split — a task whose surface sits in one module is not partitionable and says so. |
-| the same fan-out, but you need to know which lanes would COLLIDE or which Codex model should take each lane | `--plan-lanes=N --task="<goal>"`, or `--plan-lanes --brief=FILE` with one line per lane — a deterministic JSON plan: per-lane claimed symbols/files, predicted `conflicts` (same claim key on two lanes), `same_file_risk`, `contract_touch` (a claim inside another lane's blast radius — NOT a merge conflict), `landing_order`, per-lane `tests_to_run`, and `execution` (current Codex model, reasoning effort, rule, exact structural signals and caveats). `--partition` splits the work; this predicts the collisions BEFORE a line is written. Read `warnings[]` first, then treat `execution` as advisory: `basis=structural-only` cannot see task semantics, runtime behavior or security sensitivity. Prefer `--brief` when your task has enumerable parts — the auto-carve balances the RANKING and can leave a part in no lane. |
+| the same fan-out, but you need to know which lanes would COLLIDE or which agent lane should take each slice | `--plan-lanes=N --task="<goal>"`, or `--plan-lanes --brief=FILE` with one line per lane — a deterministic JSON plan: per-lane claimed symbols/files, predicted `conflicts` (same claim key on two lanes), `same_file_risk`, `contract_touch` (a claim inside another lane's blast radius — NOT a merge conflict), `landing_order`, per-lane `tests_to_run`, and `execution` (reasoning effort, rule, exact structural signals and caveats). `--partition` splits the work; this predicts the collisions BEFORE a line is written. Read `warnings[]` first, then treat `execution` as advisory: `basis=structural-only` cannot see task semantics, runtime behavior or security sensitivity. Prefer `--brief` when your task has enumerable parts — the auto-carve balances the RANKING and can leave a part in no lane. |
 | a SCRIPT/CI step parsing the output, not an agent reading it | `--json` — the same content as the XML, machine-parseable (keys mirror the XML attr names 1:1), for the default map, `--for`, `--pack-task`, `--callers`/`--callees`/`--impact`, `--quality-delta`, `--test-gate`. Every other verb refuses loudly (stderr + exit 1) rather than silently falling back to XML. Pipe it straight to `jq`: `ripwire-rs . --quality-delta --json \| jq '.regressions'`. |
 | a VISUAL of the bundle's own anchor neighborhood | `--with-graph` (with `--for`/`--pack-task`) — appends a small `<graph fmt="mermaid">` block (top-8 ranked anchors + their 1-hop call edges) right before `</ctx>`. It's PURE ADD — more tokens on top of the sigs you already paid for — so only reach for it when the calling agent actually renders mermaid (a multimodal/diagram-aware reader); a text-only reader gets no benefit from the extra bytes. Off by default. |
 

@@ -4,7 +4,7 @@
 
 ## Client Registration
 
-### Claude Desktop / OpenCode / Omp (`claude_desktop_config.json`)
+### Standard MCP Configuration (`mcp.json`)
 
 ```json
 {

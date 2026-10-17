@@ -94,9 +94,7 @@ Match the **default you were about to use**, not a moment:
 
 The discipline behind this row set is **ripwire-rs-orient**'s companion `map-before-you-read.md`; it is worth entering even mid-task, because
 less context is measurably MORE accurate, not merely cheaper (29% → 3% code-repair accuracy as context
-grew 32K → 256K, LongCodeBench). If a `ripwire-rs wrap` primer or the opt-in `skills/install.sh --hook`
-nudge is installed, these same substitutions arrive without anyone loading this file — that is the point:
-a rule an agent must remember to look up is a rule that loses to a habit.
+grew 32K → 256K, LongCodeBench).
 
 ## The legend: compact by default, full when a definition needs its reasoning
 
@@ -156,10 +154,7 @@ The always-loaded ripwire primer trains the READ verbs (`--for`/`--recall`/`--ca
 
 `ripwire-rs --help` lists every flag on one line; `--help=--FLAG` prints one flag in full and `--help=all` the whole catalog. Every skill re-verifies its commands against the shipped binary.
 
-**Installing these skills:** `bash skills/install.sh` symlinks every `ripwire-*` skill into the Claude
-skill home (its codex mode targets `${AGENTS_HOME:-~/.agents}/skills`; `--codex-legacy` retains
-`${CODEX_HOME:-~/.codex}/skills`) and prunes dangling links from removed skills. Add `--hook` explicitly
-for the advisory nudge (`--codex --hook` for Codex).
+**Installing these skills:** `ripwire-rs --add-skills` installs every `ripwire-rs-*` skill and active manifest into `${AGENTS_HOME:-~/.agents}/skills` (or a custom directory passed via `--add-skills=DIR`).
 
 <example title="Routing when landing on an unfamiliar codebase">
 Input: "I just cloned this repo, how do I get an overview of the main architecture?"

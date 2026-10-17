@@ -47,11 +47,10 @@ exfiltration/path-traversal rules), and the offending text verbatim.
 
 **Scan a whole directory:**
 ```
-ripwire-rs --scan-skills=DIR          # bare form also scans repo-local, Claude, and Codex skill homes
+ripwire-rs --scan-skills=DIR          # bare form scans ./skills or ~/.agents/skills
 ```
 Recursively scans every `.md`, reports the same per-finding lines. Run this before adopting an entire skills
-folder, and as a periodic check on installed ones. (`ripwire-rs wrap <agent>` runs this scan automatically at
-adoption time and refuses to emit the recipe on a CRITICAL finding unless `--force`.)
+folder, and as a periodic check on installed ones.
 
 **Exit codes:** `0` = clean · `1` = WARN (review before installing) · `2` = CRITICAL (do not install). The
 exit code for a directory scan is the worst severity found. A CRITICAL exit is a hard block.
@@ -65,7 +64,7 @@ the security semantics of an MCP stanza. Retrieval is automated; the semantic de
 **Step 1 — locate and read the config** with ripwire or the shell + Read tool:
 ```
 ripwire-rs <dir> --grep-in=any --grep='"command"' --grep-context=6 --legend=compact
-ls <dir>/.mcp.json ~/.claude/mcp.json ~/.cursor/mcp.json 2>/dev/null
+ls <dir>/.mcp.json 2>/dev/null
 find <dir> -maxdepth 3 \( -name ".mcp.json" -o -name "mcp*.json" \) 2>/dev/null
 ```
 Read each file, then scan every `"command"` / `"args"` / `"env"` stanza.

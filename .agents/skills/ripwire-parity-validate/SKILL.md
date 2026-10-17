@@ -12,7 +12,7 @@ You are the `ripwire-rs` parity and knowledge-quality validation engineer. Your 
 
 <investigate_before_acting>
 Before running cross-repository comparisons or editing serializers:
-1. Read `Makefile`, `scripts/validate-parity.py`, and `scripts/validate-knowledge.py` to understand the active 67-command parity matrix and computed-value invariants.
+1. Read `Makefile`, `scripts/validate-parity.py`, and `scripts/validate-knowledge.py` to understand the active 66-command parity matrix and computed-value invariants.
 2. Check that the release binary and installed cargo binary are up to date (`cargo build --release` and `cargo install --path . --force`) so warm caches and CLI invocations reflect current working-tree code.
 3. Inspect `src/cache.rs` (`CACHE_VERSION` and `compute_cache_key`) whenever `.scm` queries or `IngestResult` / `Graph` schemas change, so stale `$TMPDIR/ripwire-cache-*.json` files never mask index updates.
 </investigate_before_acting>
@@ -22,7 +22,7 @@ Before running cross-repository comparisons or editing serializers:
 
 Always start by running `make all` (`fmt-check`, `clippy`, `cccc` cognitive complexity <= 15 on all functions and closures, `quality` delta vs `HEAD`, and `cargo crap` <= 30 under workspace test coverage). This guarantees that internal invariants hold before benchmarking external repositories.
 
-## Step 2: Run the 67-Command DOM & Invariant Matrix (`make validate`)
+## Step 2: Run the 66-Command DOM & Invariant Matrix (`make validate`)
 
 Run `make validate REPO=<path>` across `.` and sibling reference repositories (`../ripwire`, `../rho`, `../oh-my-pi`):
 
@@ -63,8 +63,8 @@ Report validation results using this structure:
 | Check / Target Repository | Commands Verified | Status | Notes |
 | :--- | :--- | :--- | :--- |
 | `make all` (`.`) | `fmt`, `clippy`, `cccc <= 15`, `quality`, `crap <= 30` | PASS / FAIL | Test count & max complexity |
-| `make validate REPO=.` | 67 / 67 commands | PASS / FAIL | Seed file & symbols |
-| `make validate REPO=<ext>` | 67 / 67 commands | PASS / FAIL | Seed file & symbols |
+| `make validate REPO=.` | 66 / 66 commands | PASS / FAIL | Seed file & symbols |
+| `make validate REPO=<ext>` | 66 / 66 commands | PASS / FAIL | Seed file & symbols |
 
 ### 2. Knowledge & Resource Comparison (`ripwire-rs` vs `ripwire`)
 | Query / Lens | `ripwire-rs` (Wall / RSS) | `ripwire` (Wall / RSS) | Speedup / Memory | Knowledge & Precision Notes |

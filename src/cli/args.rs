@@ -783,22 +783,8 @@ pub enum Commands {
     Mcp(McpArgs),
     /// Manage and install ripwire-rs agent skills
     Skills(SkillsArgs),
-    /// Print copy-paste integration recipe for coding agents
-    Wrap(WrapArgs),
 }
 
-#[derive(Args, Debug, Default, PartialEq)]
-pub struct WrapArgs {
-    /// Agent name (claude, cursor, codex, windsurf, gemini, opencode, openclaw, hermes, aider)
-    #[arg(value_name = "AGENT")]
-    pub agent: String,
-    /// Force recipe generation even with warnings
-    #[arg(long = "force")]
-    pub force: bool,
-    /// Only include specific MCP tools
-    #[arg(long = "mcp-tools")]
-    pub mcp_tools: Option<String>,
-}
 #[derive(Args, Debug, Default, PartialEq)]
 pub struct OrientArgs {
     /// Target repository path

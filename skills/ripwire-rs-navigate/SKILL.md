@@ -189,8 +189,8 @@ When you need to understand a specific function/class/concept in full (its body,
    them when that attribute is present; `unserved_total=` is the true count). (No `<doc>` block
    here; SYM's own doc-comment is in the CDATA body if it sits inside the definition — otherwise read the
    source lines just above `l=`.)
-   About to Edit what you just expanded? If your edit tool needs a fresh native Read of the file first
-   (true of Claude Code's Edit; other harnesses may differ), the served body doesn't satisfy that — but the
+   About to Edit what you just expanded? If your edit tool needs a fresh native Read of the file first,
+   the served body doesn't satisfy that — but the
    read doesn't need to start at line 1: Read at `l=`, not the whole file. Same for a `--for` hit before
    you've expanded it — its `<d>` row carries `l=` too. Over MCP, skip the Read requirement altogether —
    see ripwire-rs-mcp's edit verbs.

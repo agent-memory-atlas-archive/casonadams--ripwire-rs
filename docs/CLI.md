@@ -357,7 +357,6 @@ ripwire-rs . --eval-stray
 - `ripwire-rs slice [PATH] <SYM:VAR> [--flow <fwd|back|both>]`: Intra-procedural slicing.
 - `ripwire-rs mcp [PATH]`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
 - `ripwire-rs [PATH] --lsp`: Launch stdio JSON-RPC Language Server Protocol (LSP) server bridge.
-- `ripwire-rs wrap <AGENT>`: Generate agent integration recipe (`claude`, `cursor`, `codex`, `windsurf`, `gemini`, `opencode`, `aider`).
 - `ripwire-rs [PATH] [--cache <PATH>] [--no-cache]`: Persistent binary on-disk caching in TMPDIR (or custom path) for sub-second repeat queries.
 - `make bench [REPO=<PATH>]`: Multi-metric performance and resident set size (RSS) benchmark against C++ `ripwire`.
 - `make bench-pipeline`: Native in-memory Cargo micro-benchmarks (`cargo bench --bench bench_pipeline`).
