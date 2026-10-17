@@ -555,80 +555,6 @@ pub static SYMBOL_LINT_RULES: &[&dyn SymbolLintRule] = &[
     &NamingCaseRule,
 ];
 
-const LINE_LINT_PATTERNS: &[(&str, &str, &str, &str)] = &[
-    ("goto ", "goto", "warn", "goto statement"),
-    (
-        "strcpy(",
-        "unsafe-c-fn",
-        "error",
-        "unbounded C string call strcpy",
-    ),
-    (
-        "strcat(",
-        "unsafe-c-fn",
-        "error",
-        "unbounded C string call strcat",
-    ),
-    (
-        "sprintf(",
-        "unsafe-c-fn",
-        "error",
-        "unbounded C string call sprintf",
-    ),
-    ("MD5(", "weak-crypto", "error", "weak hash MD5"),
-    ("SHA1(", "weak-crypto", "error", "weak hash SHA1"),
-    (
-        "typedef struct ",
-        "typedef-over-using",
-        "info",
-        "C-style typedef struct",
-    ),
-    ("catch {}", "empty-catch", "warn", "empty catch block"),
-    ("catch (...) {}", "empty-catch", "warn", "empty catch block"),
-    (
-        "std::map<",
-        "cache-node-container",
-        "info",
-        "node-based container std::map",
-    ),
-    (
-        "std::list<",
-        "cache-node-container",
-        "info",
-        "node-based container std::list",
-    ),
-    (
-        "std::set<",
-        "cache-node-container",
-        "info",
-        "node-based container std::set",
-    ),
-    (
-        "std::vector<std::unique_ptr<",
-        "cache-vector-of-indirect",
-        "info",
-        "vector of unique_ptr",
-    ),
-    (
-        "std::vector<std::shared_ptr<",
-        "cache-vector-of-indirect",
-        "info",
-        "vector of shared_ptr",
-    ),
-    (
-        "_mm_prefetch(",
-        "cache-manual-prefetch",
-        "info",
-        "manual prefetch intrinsic",
-    ),
-    (
-        "__builtin_prefetch(",
-        "cache-manual-prefetch",
-        "info",
-        "manual prefetch intrinsic",
-    ),
-];
-
 /// Scan the workspace for AST code smells across all symbols.
 #[must_use]
 pub fn run_lint_scan(
@@ -639,27 +565,17 @@ pub fn run_lint_scan(
     run_lint_scan_in_root(".", ingest, graph, interner)
 }
 
-/// Match the line rules against code bytes only, so comments and string literals never fire.
-fn scan_file_line_patterns(
+pub fn scan_file_rules(
     path: &str,
-    content: &str,
+    raw_content: &str,
     lang: crate::domain::Lang,
+    syms: Vec<super::lint_rules::SymSpan<'_>>,
     findings: &mut Vec<LintFinding>,
 ) {
-    let masked = super::source_mask::mask_source(content, lang);
-    for (idx, line) in masked.code.lines().enumerate() {
-        for &(needle, rule, sev, msg) in LINE_LINT_PATTERNS {
-            if line.contains(needle) {
-                findings.push(LintFinding {
-                    rule: rule.to_string(),
-                    message: msg.to_string(),
-                    path: path.to_string(),
-                    line: (idx + 1) as u32,
-                    severity: sev.to_string(),
-                    enclosing: "file".to_string(),
-                });
-            }
-        }
+    let masked = super::source_mask::mask_source(raw_content, lang);
+    let ctx = super::lint_rules::FileLintContext::new(path, lang, raw_content, &masked.code, syms);
+    for rule in super::lint_rules::FILE_LINT_RULES {
+        rule.check_file(&ctx, findings);
     }
 }
 
@@ -698,7 +614,8 @@ pub fn run_lint_scan_in_root(
             if let Ok(content) =
                 std::fs::read_to_string(root_path.join(p)).or_else(|_| std::fs::read_to_string(p))
             {
-                scan_file_line_patterns(p, &content, fi.lang, &mut findings);
+                let syms = super::lint_rules::symbols_in_file(ingest, interner, fi.id);
+                scan_file_rules(p, &content, fi.lang, syms, &mut findings);
             }
         }
     }
@@ -850,13 +767,178 @@ mod tests {
     use crate::domain::Lang;
 
     #[test]
+    fn test_every_catalog_rule_is_backed_by_a_trait_evaluator() {
+        let mut trait_names: Vec<&str> = SYMBOL_LINT_RULES
+            .iter()
+            .map(|r| r.desc().name)
+            .chain(
+                crate::metrics::lint_rules::FILE_LINT_RULES
+                    .iter()
+                    .map(|r| r.desc().name),
+            )
+            .collect();
+        let mut catalog_names: Vec<&str> = LINT_RULES.iter().map(|r| r.name).collect();
+        assert_eq!(trait_names.len(), catalog_names.len());
+        trait_names.sort_unstable();
+        catalog_names.sort_unstable();
+        assert_eq!(trait_names, catalog_names);
+    }
+
+    #[test]
     fn test_line_patterns_ignore_literals_and_comments_and_keep_line_numbers() {
         let src =
             "const char* s = \"strcpy(\"; // goto done\n/* std::map<int,int> */\nstrcpy(dst, s);\n";
         let mut findings = Vec::new();
-        scan_file_line_patterns("src/a.c", src, Lang::C, &mut findings);
+        scan_file_rules("src/a.c", src, Lang::C, Vec::new(), &mut findings);
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule, "unsafe-c-fn");
         assert_eq!(findings[0].line, 3);
+        assert_eq!(findings[0].enclosing, "<top>");
+    }
+
+    #[test]
+    fn test_file_lint_rules_fire_across_categories() {
+        let cpp_src = "\
+typedef struct Foo { int x; } Foo;\n\
+void work(std::shared_ptr<int> sp) {\n\
+    int a = (int)y;\n\
+    if ((a)) ;\n\
+    if (a = 1) { return; }\n\
+    if (strcmp(s, t)) { return 42; }\n\
+    a = a;\n\
+    int oct = 0755;\n\
+    int rev = 1[arr];\n\
+    int tern = a ? b : c ? d : e;\n\
+    int crem = a++ + 1;\n\
+    a = 1, b = 2;\n\
+    std::vector<int*> raw;\n\
+    std::vector<std::unique_ptr<int>> ind;\n\
+    std::map<int, int> mp;\n\
+    for (int i = 0; i < 10; ++i) {\n\
+        int* p = new int(1);\n\
+        n = n->next;\n\
+        int g = arr[idx[i]];\n\
+    }\n\
+    do {\n\
+        _mm_prefetch(p, 0);\n\
+    } while (0);\n\
+    try { MD5(buf); } catch {}\n\
+    goto done;\n\
+    a = 99;\n\
+done:\n\
+    return;\n\
+}\n";
+        let interner = Interner::new();
+        let mut sym = crate::domain::Symbol::new(
+            0,
+            interner.intern("work"),
+            interner.intern("src/a.cpp::work"),
+            SymKind::Function,
+            Lang::Cpp,
+            0,
+            2,
+        );
+        sym.loc = 25;
+        sym.sig_start_byte = 35;
+        sym.sig_end_byte = 70;
+        sym.end_byte = cpp_src.len() as u32;
+        let mut findings = Vec::new();
+        scan_file_rules(
+            "src/a.cpp",
+            cpp_src,
+            Lang::Cpp,
+            vec![(&sym, "work")],
+            &mut findings,
+        );
+        let fired: std::collections::HashSet<&str> =
+            findings.iter().map(|f| f.rule.as_str()).collect();
+        for expected in [
+            "typedef-over-using",
+            "c-style-cast",
+            "redundant-parens",
+            "suspicious-semicolon",
+            "atom-assign-as-value",
+            "atom-implicit-predicate",
+            "self-assign",
+            "atom-octal-literal",
+            "atom-reversed-subscript",
+            "atom-nested-ternary",
+            "atom-embedded-crement",
+            "atom-comma-operator",
+            "cache-vector-of-raw-ptr",
+            "cache-vector-of-indirect",
+            "cache-node-container",
+            "cache-heap-alloc-in-loop",
+            "cache-pointer-chase-loop",
+            "cache-gather-subscript",
+            "cache-shared-ptr-by-value",
+            "do-while",
+            "cache-manual-prefetch",
+            "weak-crypto",
+            "empty-catch",
+            "goto",
+            "unreachable-code",
+            "inconsistent-return",
+            "magic-number",
+        ] {
+            assert!(fired.contains(expected), "missing rule {expected}");
+        }
+    }
+
+    #[test]
+    fn test_naming_file_lint_rules() {
+        let rs_src =
+            "fn is_ready() -> u32 { 1 }\nfn set_mode() -> u32 { 1 }\nfn handle_data() {\n}\n";
+        let interner = Interner::new();
+        let mk = |id, name: &str, line, loc, s0, s1, end| {
+            let mut s = crate::domain::Symbol::new(
+                id,
+                interner.intern(name),
+                interner.intern(name),
+                SymKind::Function,
+                Lang::Rust,
+                0,
+                line,
+            );
+            s.loc = loc;
+            s.sig_start_byte = s0;
+            s.sig_end_byte = s1;
+            s.end_byte = end;
+            s
+        };
+        let s1 = mk(0, "is_ready", 1, 1, 0, 20, 26);
+        let s2 = mk(1, "set_mode", 2, 1, 27, 47, 53);
+        let s3 = mk(2, "handle_data", 3, 25, 54, 70, 75);
+        let s4 = mk(3, "step1", 4, 1, 0, 0, 0);
+        let s5 = mk(4, "step2", 5, 1, 0, 0, 0);
+        let s6 = mk(5, "parse_node", 6, 1, 0, 0, 0);
+        let s7 = mk(6, "parse_mode", 7, 1, 0, 0, 0);
+        let mut findings = Vec::new();
+        scan_file_rules(
+            "src/a.rs",
+            rs_src,
+            Lang::Rust,
+            vec![
+                (&s1, "is_ready"),
+                (&s2, "set_mode"),
+                (&s3, "handle_data"),
+                (&s4, "step1"),
+                (&s5, "step2"),
+                (&s6, "parse_node"),
+                (&s7, "parse_mode"),
+            ],
+            &mut findings,
+        );
+        let fired: std::collections::HashSet<&str> =
+            findings.iter().map(|f| f.rule.as_str()).collect();
+        for expected in [
+            "naming-predicate",
+            "naming-setter",
+            "naming-uninformative",
+            "naming-series",
+            "naming-confusable",
+        ] {
+            assert!(fired.contains(expected), "missing rule {expected}");
+        }
     }
 }

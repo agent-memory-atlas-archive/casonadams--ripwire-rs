@@ -5,6 +5,7 @@ pub mod eval;
 pub mod hotspots;
 pub mod layout;
 pub mod lint;
+pub mod lint_rules;
 pub mod nonlocal;
 pub mod quality_panel;
 pub mod readability;
