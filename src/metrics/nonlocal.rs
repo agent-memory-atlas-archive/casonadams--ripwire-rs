@@ -31,13 +31,15 @@ fn collect_sym_cells(
     graph: &Graph,
     interner: &Interner,
 ) -> Vec<StateCellAccess> {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     let mut cells = Vec::new();
     for (target_id, _) in graph.callees(sym_id) {
-        if let Some(target) = ingest.symbols.get(target_id as usize)
+        if let Some(target) = ingest.sym(target_id)
             && (target.kind == SymKind::Var || target.kind == SymKind::Field)
         {
             cells.push(StateCellAccess {
-                cell_name: interner.resolve(&target.name).to_string(),
+                cell_name: view.sym_name(target).to_string(),
                 path: file_path.to_string(),
                 line: target.line,
                 is_write: false,
@@ -52,16 +54,18 @@ pub fn find_nonlocal_state(
     graph: &Graph,
     interner: &Interner,
 ) -> Vec<NonlocalFunction> {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     let mut out = Vec::new();
     for sym in &ingest.symbols {
         if sym.kind != SymKind::Function && sym.kind != SymKind::Method {
             continue;
         }
-        let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
+        let p = view.sym_path(sym);
         let cells = collect_sym_cells(sym.id, p, ingest, graph, interner);
         if !cells.is_empty() {
             out.push(NonlocalFunction {
-                sym_name: interner.resolve(&sym.name).to_string(),
+                sym_name: view.sym_name(sym).to_string(),
                 path: p.to_string(),
                 line: sym.line,
                 writes: 0,

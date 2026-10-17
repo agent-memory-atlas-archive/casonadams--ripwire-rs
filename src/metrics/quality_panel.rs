@@ -159,20 +159,15 @@ fn collect_nonlocal_state_info(
     usize,
     usize,
 ) {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     let nonlocal = crate::metrics::nonlocal::find_nonlocal_state(ingest, graph, interner);
     let cells = nonlocal.len();
     let mut state_files = std::collections::HashSet::new();
     let mut state_syms = std::collections::HashSet::new();
     for f in &nonlocal {
         state_files.insert(f.path.as_str());
-        if let Some(s) = ingest.symbols.iter().find(|s| {
-            interner.resolve(&s.name) == f.sym_name
-                && ingest
-                    .files
-                    .get(s.file_id as usize)
-                    .map(|fi| interner.resolve(&fi.path))
-                    == Some(&f.path)
-        }) {
+        if let Some(s) = view.find_symbol_with_hint(&f.sym_name, Some(&f.path)) {
             state_syms.insert(s.id);
         }
     }

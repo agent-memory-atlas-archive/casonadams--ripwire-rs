@@ -69,6 +69,7 @@ impl crate::serialize::XmlReport for HotspotsReport {
     }
 }
 
+#[derive(Default)]
 struct FileSymbolStats {
     ccx_sum: u32,
     worst_name: String,
@@ -77,29 +78,20 @@ struct FileSymbolStats {
 }
 
 fn aggregate_file_symbols(ingest: &IngestResult, interner: &Interner) -> Vec<FileSymbolStats> {
-    let mut stats = Vec::with_capacity(ingest.files.len());
-    for f in &ingest.files {
-        let mut ccx_sum = 0u32;
-        let mut worst_name = String::new();
-        let mut worst_ccx = 0u32;
-        let mut worst_line = 0u32;
-
-        for s in &ingest.symbols {
-            if s.file_id == f.id {
-                ccx_sum = ccx_sum.saturating_add(s.ccx);
-                if s.ccx > worst_ccx || worst_name.is_empty() {
-                    worst_ccx = s.ccx;
-                    worst_name = interner.resolve(&s.name).to_string();
-                    worst_line = s.line;
-                }
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let mut stats: Vec<FileSymbolStats> = (0..ingest.files.len())
+        .map(|_| FileSymbolStats::default())
+        .collect();
+    for s in &ingest.symbols {
+        if let Some(st) = stats.get_mut(s.file_id as usize) {
+            st.ccx_sum = st.ccx_sum.saturating_add(s.ccx);
+            if s.ccx > st.worst_ccx || st.worst_name.is_empty() {
+                st.worst_ccx = s.ccx;
+                st.worst_name = view.sym_name(s).to_string();
+                st.worst_line = s.line;
             }
         }
-        stats.push(FileSymbolStats {
-            ccx_sum,
-            worst_name,
-            worst_ccx,
-            worst_line,
-        });
     }
     stats
 }
