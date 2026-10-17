@@ -123,6 +123,15 @@ impl LanguageSemantics for DartLanguage {
     fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
         is_dart_std_qualifier_name(qualifier)
     }
+
+    fn resolve_import_target(
+        &self,
+        importer_path: &str,
+        raw_target: &str,
+        file_index: &std::collections::HashMap<&str, u32>,
+    ) -> Option<u32> {
+        resolve_dart_import_target(importer_path, raw_target, file_index)
+    }
 }
 
 impl LanguageSemantics for ElixirLanguage {
@@ -392,6 +401,45 @@ fn is_dart_std_qualifier_name(name: &str) -> bool {
             | "File"
             | "Directory"
     )
+}
+
+fn resolve_dart_package_import(
+    importer_path: &str,
+    pkg_spec: &str,
+    file_index: &std::collections::HashMap<&str, u32>,
+) -> Option<u32> {
+    let (pkg, subpath) = pkg_spec.split_once('/')?;
+    if let Some((top_dir, _)) = importer_path.split_once('/') {
+        let ws_cand = format!("{top_dir}/{pkg}/lib/{subpath}");
+        if let Some(id) = super::probe_with_suffixes(&ws_cand, file_index, &[".dart"]) {
+            return Some(id);
+        }
+    }
+    for cand in [
+        format!("packages/{pkg}/lib/{subpath}"),
+        format!("{pkg}/lib/{subpath}"),
+        format!("lib/{subpath}"),
+    ] {
+        if let Some(id) = super::probe_with_suffixes(&cand, file_index, &[".dart"]) {
+            return Some(id);
+        }
+    }
+    None
+}
+
+fn resolve_dart_import_target(
+    importer_path: &str,
+    raw_target: &str,
+    file_index: &std::collections::HashMap<&str, u32>,
+) -> Option<u32> {
+    let clean = super::strip_import_quotes(raw_target);
+    if clean.is_empty() || clean.starts_with("dart:") {
+        return None;
+    }
+    if let Some(pkg_spec) = clean.strip_prefix("package:") {
+        return resolve_dart_package_import(importer_path, pkg_spec, file_index);
+    }
+    super::resolve_relative_or_exact(importer_path, clean, file_index, &[".dart"])
 }
 
 fn is_beam_std_member_name(name: &str) -> bool {

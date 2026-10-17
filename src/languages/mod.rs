@@ -441,7 +441,7 @@ mod tests {
         assert_eq!(
             ts_sem.resolve_import_target(
                 "packages/agent/src/index.ts",
-                "'@oh-my-pi/pi-utils'",
+                "'@acme/acme-utils'",
                 &file_index
             ),
             Some(1)
@@ -449,7 +449,7 @@ mod tests {
         assert_eq!(
             ts_sem.resolve_import_target(
                 "packages/agent/src/index.ts",
-                "\"@oh-my-pi/utils/logger.js\"",
+                "\"@acme/utils/logger.js\"",
                 &file_index
             ),
             Some(2)
@@ -600,5 +600,33 @@ mod tests {
             .map(|r| interner.resolve(&r.callee_name))
             .collect();
         assert_eq!(extends_refs, vec!["BaseDb"]);
+        let mut dart_idx = HashMap::new();
+        dart_idx.insert("packages/core/lib/src/logger.dart", 10);
+        dart_idx.insert("packages/api/lib/src/db.dart", 11);
+        let dart_sem = Lang::Dart.semantics();
+        assert_eq!(
+            dart_sem.resolve_import_target(
+                "packages/api/lib/src/service.dart",
+                "'package:core/src/logger.dart'",
+                &dart_idx
+            ),
+            Some(10)
+        );
+        assert_eq!(
+            dart_sem.resolve_import_target(
+                "packages/api/lib/src/service.dart",
+                "'./db.dart'",
+                &dart_idx
+            ),
+            Some(11)
+        );
+        assert_eq!(
+            dart_sem.resolve_import_target(
+                "packages/api/lib/src/service.dart",
+                "'dart:convert'",
+                &dart_idx
+            ),
+            None
+        );
     }
 }

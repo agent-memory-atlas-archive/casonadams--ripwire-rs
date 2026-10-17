@@ -713,6 +713,35 @@ pub trait CorpusView<'a> {
             .collect()
     }
 
+    /// True if reference `r` targets `query` (either bare symbol/scope name or `Scope::member` / `Scope.member`).
+    #[must_use]
+    fn reference_matches_query(&self, r: &Reference, query: &str) -> bool {
+        let interner = self.interner();
+        if let Some((qual_part, leaf_part)) = split_scope_and_member(query) {
+            if interner.resolve(&r.callee_name) != leaf_part {
+                return false;
+            }
+            let qual_matches = r
+                .qualifier
+                .is_some_and(|q| interner.resolve(&q) == qual_part);
+            let caller_sc_matches = self
+                .ingest()
+                .sym(r.from_symbol)
+                .and_then(|s| s.scope)
+                .is_some_and(|sc| interner.resolve(&sc) == qual_part);
+            let unique_def_sc_matches = r.qualifier.is_none()
+                && self
+                    .ingest()
+                    .symbols
+                    .iter()
+                    .filter(|s| s.name == r.callee_name)
+                    .all(|s| s.scope.is_some_and(|sc| interner.resolve(&sc) == qual_part));
+            return qual_matches || caller_sc_matches || unique_def_sc_matches;
+        }
+        interner.resolve(&r.callee_name) == query
+            || r.qualifier.is_some_and(|q| interner.resolve(&q) == query)
+    }
+
     /// Resolve sorted, deduplicated file paths that import any file defining `seed_ids` or reference the target symbols.
     #[must_use]
     fn resolve_symbol_importers(&self, seed_ids: &[NodeId]) -> Vec<&'a str> {
@@ -749,6 +778,13 @@ pub trait CorpusView<'a> {
         }
         importers.into_iter().collect()
     }
+}
+
+fn split_scope_and_member(query: &str) -> Option<(&str, &str)> {
+    query
+        .rsplit_once("::")
+        .or_else(|| query.rsplit_once('.'))
+        .filter(|(q, m)| !q.is_empty() && !m.is_empty())
 }
 
 fn is_ref_importing_seed(
@@ -884,6 +920,12 @@ mod tests {
             view.caller_site_locations(0, &[interner.intern("execute_turn")]),
             vec!["src/main.rs:8".to_string()]
         );
+        let qual_ref = Reference::new(0, interner.intern("lock"), 1, 9, Lang::Rust, RefRole::Call)
+            .with_qualifier(interner.intern("TokenVault"));
+        assert!(view.reference_matches_query(&qual_ref, "TokenVault"));
+        assert!(view.reference_matches_query(&qual_ref, "TokenVault::lock"));
+        assert!(view.reference_matches_query(&qual_ref, "TokenVault.lock"));
+        assert!(!view.reference_matches_query(&qual_ref, "OtherVault::lock"));
     }
 
     #[test]

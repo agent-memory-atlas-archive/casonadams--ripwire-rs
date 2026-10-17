@@ -671,7 +671,7 @@ impl<'a> ImpactReport<'a> {
     fn effective_importers(&self) -> BTreeSet<&'a str> {
         let mut set: BTreeSet<&'a str> = self.importers.iter().copied().collect();
         for n in self.nodes {
-            if !n.path.is_empty() {
+            if n.hops <= 1 && !n.path.is_empty() {
                 set.insert(&n.path);
             }
         }
@@ -904,21 +904,15 @@ pub fn serialize_uses_with_gauge_xml<W: Write>(
     gauge_attrs: &str,
     out: &mut W,
 ) -> io::Result<()> {
+    use crate::domain::CorpusView;
     use crate::serialize::XmlReport;
+    let view = (ingest, interner);
     let mut sites = Vec::new();
     for r in &ingest.references {
-        if interner.resolve(&r.callee_name) == sym_name {
-            let file_path = ingest
-                .files
-                .get(r.file_id as usize)
-                .map(|f| interner.resolve(&f.path))
-                .unwrap_or("");
+        if view.reference_matches_query(r, sym_name) {
+            let file_path = view.file_path(r.file_id);
             let enclosing = if r.from_symbol != crate::domain::NO_NODE {
-                ingest
-                    .symbols
-                    .get(r.from_symbol as usize)
-                    .map(|s| interner.resolve(&s.name))
-                    .unwrap_or("")
+                ingest.sym(r.from_symbol).map_or("", |s| view.sym_name(s))
             } else {
                 ""
             };

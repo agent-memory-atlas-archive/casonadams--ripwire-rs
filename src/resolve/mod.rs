@@ -462,13 +462,13 @@ mod tests {
         };
         let has_name = interner.intern("has");
         let is_arr_name = interner.intern("isArray");
-        let idx_scope = interner.intern("ReviewAnchorIndex");
+        let idx_scope = interner.intern("SpanIndex");
         let arr_qual = interner.intern("Array");
 
         let anchor_has = Symbol::new(
             0,
             has_name,
-            interner.intern("src/index.ts::ReviewAnchorIndex::has"),
+            interner.intern("src/index.ts::SpanIndex::has"),
             SymKind::Method,
             Lang::TypeScript,
             0,
@@ -486,8 +486,8 @@ mod tests {
         );
         let typed_caller = Symbol::new(
             2,
-            interner.intern("checkAnchors"),
-            interner.intern("src/caller_with_type.ts::checkAnchors"),
+            interner.intern("verifySpans"),
+            interner.intern("src/caller_with_type.ts::verifySpans"),
             SymKind::Function,
             Lang::TypeScript,
             1,
@@ -495,8 +495,8 @@ mod tests {
         );
         let untyped_caller = Symbol::new(
             3,
-            interner.intern("isNoise"),
-            interner.intern("src/unrelated_set_user.ts::isNoise"),
+            interner.intern("isIgnoredPath"),
+            interner.intern("src/unrelated_set_user.ts::isIgnoredPath"),
             SymKind::Function,
             Lang::TypeScript,
             2,

@@ -305,7 +305,7 @@ fn resolve_workspace_package(clean: &str, file_index: &HashMap<&str, u32>) -> Op
         Some((p, sub)) => (p, Some(sub)),
         None => (without_scope, None),
     };
-    let short_pkg = pkg.strip_prefix("pi-").unwrap_or(pkg);
+    let short_pkg = pkg.split_once('-').map_or(pkg, |(_, rest)| rest);
     for cand_pkg in [pkg, short_pkg] {
         let base = match subpath {
             Some(sub) => format!("packages/{cand_pkg}/src/{sub}"),

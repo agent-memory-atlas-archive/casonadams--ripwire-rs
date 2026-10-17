@@ -1083,13 +1083,55 @@ fn resolve_implementor_symbol<'a>(
     })
 }
 
+fn collect_interface_methods(
+    ingest: &IngestResult,
+    interner: &Interner,
+    iface_file_id: Option<u32>,
+    interface_name: &str,
+) -> Vec<Value> {
+    let Some(fid) = iface_file_id else {
+        return Vec::new();
+    };
+    ingest
+        .symbols
+        .iter()
+        .filter(|s| {
+            s.file_id == fid
+                && s.kind == SymKind::Method
+                && s.scope
+                    .is_some_and(|sc| interner.resolve(&sc) == interface_name)
+        })
+        .map(|s| {
+            json!({
+                "name": interner.resolve(&s.name),
+                "line": s.line,
+                "params": s.params
+            })
+        })
+        .collect()
+}
+
 pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &str) -> Value {
-    let iface_sym = ingest.symbols.iter().find(|s| {
-        interner.resolve(&s.name) == interface_name
-            && (s.kind == SymKind::Interface
-                || s.kind == SymKind::Class
-                || s.kind == SymKind::Struct)
-    });
+    let iface_defs: Vec<&crate::domain::Symbol> = ingest
+        .symbols
+        .iter()
+        .filter(|s| {
+            interner.resolve(&s.name) == interface_name
+                && (s.kind == SymKind::Interface
+                    || s.kind == SymKind::Class
+                    || s.kind == SymKind::Struct)
+        })
+        .collect();
+    let iface_sym = iface_defs.first().copied();
+    let iface_path = iface_sym
+        .and_then(|s| ingest.files.get(s.file_id as usize))
+        .map_or("", |f| interner.resolve(&f.path));
+    let methods = collect_interface_methods(
+        ingest,
+        interner,
+        iface_sym.map(|s| s.file_id),
+        interface_name,
+    );
 
     let mut implementors = Vec::new();
     let mut seen_impls = std::collections::HashSet::new();
@@ -1117,6 +1159,9 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
     json!({
         "interface": interface_name,
         "defined": iface_sym.is_some(),
+        "defs": iface_defs.len().max(usize::from(iface_sym.is_some())),
+        "path": iface_path,
+        "methods": methods,
         "implementors": implementors,
         "count": implementors.len()
     })
@@ -1708,27 +1753,27 @@ mod tests {
     #[test]
     fn test_camel_case_and_derivational_stem_scoring() {
         assert_eq!(
-            normalize_camel_case_lower("discoverAndLoadMCPTools"),
-            "discover_and_load_mcp_tools"
+            normalize_camel_case_lower("discoverAndLoadASTNodes"),
+            "discover_and_load_ast_nodes"
         );
         assert_eq!(stem_query_term("discovery"), "discover");
         assert_eq!(stem_query_term("validation"), "valid");
         assert_eq!(stem_query_term("resolution"), "resolv");
 
         let s_discover = score_symbol_match_in_file(
-            "discoverAndLoadMCPTools",
+            "discoverAndLoadASTNodes",
             None,
-            "packages/coding-agent/src/mcp/loader.ts",
+            "packages/core/src/ast/loader.ts",
             0b11111,
-            &["mcp", "tool", "cache", "server", "discovery"],
+            &["ast", "node", "cache", "tree", "discovery"],
             0.001,
         );
         let s_reload = score_symbol_match_in_file(
-            "reloadServers",
+            "reloadTrees",
             None,
-            "packages/coding-agent/src/modes/controllers/mcp-command-controller.ts",
+            "packages/core/src/controllers/tree-controller.ts",
             0b11111,
-            &["mcp", "tool", "cache", "server", "discovery"],
+            &["ast", "node", "cache", "tree", "discovery"],
             0.001,
         );
         assert!(s_discover > s_reload);

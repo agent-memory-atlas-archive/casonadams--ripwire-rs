@@ -1776,10 +1776,27 @@ pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io:
     let iface = val.str_or("interface", "");
     let empty = Vec::new();
     let impls = val["implementors"].as_array().unwrap_or(&empty);
+    let methods = val["methods"].as_array().unwrap_or(&empty);
+    let defs = val.u64_or("defs", 1).max(1);
+    let p_attr = val
+        .opt_str("path")
+        .filter(|p| !p.is_empty())
+        .map_or_else(String::new, |p| format!(" p=\"{}\"", p.xml_escaped()));
+    let m_attr = if methods.is_empty() {
+        String::new()
+    } else {
+        format!(" methods=\"{}\"", methods.len())
+    };
     let mut buf = format!(
-        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego><iface n=\"{iface}\" defs=\"1\" implementors=\"{}\">\n",
+        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{}\">\n",
         impls.len()
     );
+    for m in methods {
+        let mn = m.str_or("name", "").xml_escaped();
+        let ml = m.u64_or("line", 0);
+        let mp = m.u64_or("params", 0);
+        buf.push_str(&format!("  <m n=\"{mn}\" l=\"{ml}\" params=\"{mp}\"/>\n"));
+    }
     for it in impls {
         let n = it.str_or("name", "");
         let p = it.str_or("path", "");
