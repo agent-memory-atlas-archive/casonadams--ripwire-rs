@@ -163,6 +163,14 @@ fn is_js_builtin_qualifier_name(name: &str) -> bool {
             | "window"
             | "document"
             | "globalThis"
+            | "fs"
+            | "path"
+            | "os"
+            | "url"
+            | "util"
+            | "child_process"
+            | "Bun"
+            | "Deno"
     )
 }
 

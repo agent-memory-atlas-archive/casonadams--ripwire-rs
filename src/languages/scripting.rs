@@ -42,45 +42,12 @@ impl LanguageSemantics for PythonLanguage {
     }
 
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
-        matches!(
-            name,
-            "append"
-                | "extend"
-                | "insert"
-                | "remove"
-                | "pop"
-                | "clear"
-                | "index"
-                | "count"
-                | "sort"
-                | "reverse"
-                | "copy"
-                | "get"
-                | "keys"
-                | "values"
-                | "items"
-                | "update"
-                | "setdefault"
-                | "split"
-                | "rsplit"
-                | "splitlines"
-                | "join"
-                | "strip"
-                | "lstrip"
-                | "rstrip"
-                | "replace"
-                | "find"
-                | "rfind"
-                | "startswith"
-                | "endswith"
-                | "lower"
-                | "upper"
-                | "format"
-                | "encode"
-                | "decode"
-        )
+        is_python_std_member_name(name)
     }
 
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_python_std_qualifier_name(qualifier)
+    }
     fn resolve_import_target(
         &self,
         importer_path: &str,
@@ -125,6 +92,14 @@ impl LanguageSemantics for RubyLanguage {
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
     }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_ruby_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_ruby_std_qualifier_name(qualifier)
+    }
 }
 
 impl LanguageSemantics for LuaLanguage {
@@ -146,6 +121,14 @@ impl LanguageSemantics for LuaLanguage {
 
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_lua_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_lua_std_qualifier_name(qualifier)
     }
 }
 
@@ -207,4 +190,282 @@ impl LanguageSemantics for GDScriptLanguage {
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
     }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_gdscript_std_member_name(name)
+    }
+}
+
+fn is_python_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "append"
+            | "extend"
+            | "insert"
+            | "remove"
+            | "pop"
+            | "clear"
+            | "index"
+            | "count"
+            | "sort"
+            | "reverse"
+            | "copy"
+            | "get"
+            | "keys"
+            | "values"
+            | "items"
+            | "update"
+            | "setdefault"
+            | "split"
+            | "rsplit"
+            | "splitlines"
+            | "join"
+            | "strip"
+            | "lstrip"
+            | "rstrip"
+            | "replace"
+            | "find"
+            | "rfind"
+            | "startswith"
+            | "endswith"
+            | "lower"
+            | "upper"
+            | "format"
+            | "encode"
+            | "decode"
+            | "read"
+            | "write"
+            | "readline"
+            | "readlines"
+            | "close"
+            | "flush"
+            | "add"
+            | "discard"
+            | "loads"
+            | "dumps"
+            | "load"
+            | "dump"
+            | "match"
+            | "search"
+            | "sub"
+            | "findall"
+            | "compile"
+            | "exists"
+            | "is_file"
+            | "is_dir"
+            | "mkdir"
+            | "unlink"
+            | "resolve"
+            | "info"
+            | "debug"
+            | "warning"
+            | "error"
+            | "exception"
+    )
+}
+
+fn is_python_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "os" | "sys"
+            | "re"
+            | "json"
+            | "math"
+            | "time"
+            | "datetime"
+            | "pathlib"
+            | "Path"
+            | "itertools"
+            | "functools"
+            | "collections"
+            | "subprocess"
+            | "logging"
+            | "typing"
+            | "shutil"
+            | "tempfile"
+            | "hashlib"
+            | "base64"
+            | "urllib"
+            | "asyncio"
+            | "pytest"
+            | "unittest"
+            | "dict"
+            | "list"
+            | "set"
+            | "str"
+            | "bytes"
+    )
+}
+
+fn is_ruby_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "new"
+            | "each"
+            | "map"
+            | "select"
+            | "reject"
+            | "find"
+            | "detect"
+            | "collect"
+            | "inject"
+            | "reduce"
+            | "flat_map"
+            | "compact"
+            | "flatten"
+            | "uniq"
+            | "sort"
+            | "sort_by"
+            | "reverse"
+            | "first"
+            | "last"
+            | "take"
+            | "drop"
+            | "count"
+            | "length"
+            | "size"
+            | "empty?"
+            | "include?"
+            | "any?"
+            | "all?"
+            | "none?"
+            | "nil?"
+            | "to_s"
+            | "to_i"
+            | "to_f"
+            | "to_a"
+            | "to_h"
+            | "to_sym"
+            | "to_json"
+            | "inspect"
+            | "freeze"
+            | "dup"
+            | "clone"
+            | "keys"
+            | "values"
+            | "fetch"
+            | "delete"
+            | "merge"
+            | "slice"
+            | "strip"
+            | "chomp"
+            | "gsub"
+            | "sub"
+            | "split"
+            | "join"
+            | "downcase"
+            | "upcase"
+            | "start_with?"
+            | "end_with?"
+            | "match"
+            | "match?"
+    )
+}
+
+fn is_ruby_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "File"
+            | "Dir"
+            | "IO"
+            | "JSON"
+            | "YAML"
+            | "Time"
+            | "Date"
+            | "DateTime"
+            | "Regexp"
+            | "Kernel"
+            | "Object"
+            | "Array"
+            | "Hash"
+            | "String"
+            | "Integer"
+            | "Float"
+            | "Symbol"
+            | "Proc"
+            | "Thread"
+            | "Mutex"
+            | "ENV"
+            | "Math"
+            | "URI"
+    )
+}
+
+fn is_lua_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "insert"
+            | "remove"
+            | "concat"
+            | "sort"
+            | "unpack"
+            | "pack"
+            | "sub"
+            | "find"
+            | "match"
+            | "gmatch"
+            | "gsub"
+            | "rep"
+            | "reverse"
+            | "lower"
+            | "upper"
+            | "len"
+            | "byte"
+            | "char"
+            | "format"
+            | "floor"
+            | "ceil"
+            | "max"
+            | "min"
+            | "abs"
+            | "sqrt"
+            | "open"
+            | "close"
+            | "read"
+            | "write"
+            | "lines"
+            | "flush"
+    )
+}
+
+fn is_lua_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "table"
+            | "string"
+            | "math"
+            | "io"
+            | "os"
+            | "coroutine"
+            | "package"
+            | "debug"
+            | "utf8"
+            | "bit"
+            | "vim"
+    )
+}
+
+fn is_gdscript_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "append"
+            | "erase"
+            | "find"
+            | "has"
+            | "is_empty"
+            | "size"
+            | "clear"
+            | "duplicate"
+            | "keys"
+            | "values"
+            | "get"
+            | "set"
+            | "get_node"
+            | "add_child"
+            | "remove_child"
+            | "queue_free"
+            | "instantiate"
+            | "connect"
+            | "emit_signal"
+    )
 }

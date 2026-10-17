@@ -135,8 +135,77 @@ fn is_cpp_std_member(name: &str) -> bool {
 fn is_cpp_std_qualifier(name: &str) -> bool {
     matches!(
         name,
-        "std" | "boost" | "chrono" | "filesystem" | "fs" | "ranges" | "views" | "this_thread"
+        "std"
+            | "boost"
+            | "chrono"
+            | "filesystem"
+            | "fs"
+            | "ranges"
+            | "views"
+            | "this_thread"
+            | "metal"
     )
+}
+
+fn is_objc_foundation_member(name: &str) -> bool {
+    is_cpp_std_member(name)
+        || matches!(
+            name,
+            "alloc"
+                | "init"
+                | "new"
+                | "copy"
+                | "mutableCopy"
+                | "description"
+                | "hash"
+                | "isEqual"
+                | "count"
+                | "objectForKey"
+                | "setObject"
+                | "addObject"
+                | "removeObject"
+                | "removeAllObjects"
+                | "containsObject"
+                | "firstObject"
+                | "lastObject"
+                | "stringWithFormat"
+                | "UTF8String"
+                | "length"
+                | "boolValue"
+                | "intValue"
+                | "integerValue"
+                | "doubleValue"
+        )
+}
+
+fn is_objc_foundation_qualifier(name: &str) -> bool {
+    is_cpp_std_qualifier(name)
+        || matches!(
+            name,
+            "NSObject"
+                | "NSString"
+                | "NSMutableString"
+                | "NSArray"
+                | "NSMutableArray"
+                | "NSDictionary"
+                | "NSMutableDictionary"
+                | "NSSet"
+                | "NSMutableSet"
+                | "NSNumber"
+                | "NSData"
+                | "NSMutableData"
+                | "NSURL"
+                | "NSURLRequest"
+                | "NSURLSession"
+                | "NSFileManager"
+                | "NSBundle"
+                | "NSThread"
+                | "NSNotificationCenter"
+                | "NSUserDefaults"
+                | "NSDate"
+                | "NSError"
+                | "NSJSONSerialization"
+        )
 }
 
 fn is_semicolonless_macro_line(line: &[u8]) -> Option<(usize, usize)> {
@@ -592,6 +661,30 @@ impl LanguageSemantics for MetalLanguage {
         DialectGroup::CFamily
     }
 
+    fn is_builtin_keyword(&self, name: &str) -> bool {
+        is_c_family_keyword(name)
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_cpp_std_member(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_cpp_std_qualifier(qualifier)
+    }
+
+    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        is_c_family_def_allowed(ctx, true)
+    }
+
+    fn resolve_def_body_and_end<'a>(
+        &self,
+        def_node: Option<tree_sitter::Node<'a>>,
+        default_end: usize,
+    ) -> (Option<tree_sitter::Node<'a>>, usize) {
+        resolve_c_family_def_body_and_end(def_node, default_end)
+    }
+
     fn resolve_import_target(
         &self,
         importer_path: &str,
@@ -613,6 +706,18 @@ impl LanguageSemantics for ObjCLanguage {
 
     fn supports_c_layout(&self) -> bool {
         true
+    }
+
+    fn is_builtin_keyword(&self, name: &str) -> bool {
+        is_c_family_keyword(name)
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_objc_foundation_member(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_objc_foundation_qualifier(qualifier)
     }
 
     fn resolve_import_target(

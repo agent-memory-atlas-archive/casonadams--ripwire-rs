@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::{Lang, SymKind};
 
 pub struct GoLanguage;
@@ -44,6 +44,14 @@ impl LanguageSemantics for GoLanguage {
             return false;
         };
         text.chars().next().is_some_and(|c| c.is_uppercase())
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_go_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_go_std_qualifier_name(qualifier)
     }
 }
 
@@ -92,8 +100,28 @@ impl LanguageSemantics for DartLanguage {
         (Some(dn), default_end)
     }
 
+    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        !(ctx.kind == SymKind::Function
+            && ctx
+                .def_node
+                .and_then(|dn| dn.parent())
+                .is_some_and(|p| p.kind() == "method_signature"))
+    }
+
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
+    }
+
+    fn should_ignore_call(&self, _name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {
+        matches!(name, "print" | "identical" | "jsonEncode" | "jsonDecode")
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_dart_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_dart_std_qualifier_name(qualifier)
     }
 }
 
@@ -139,6 +167,14 @@ impl LanguageSemantics for ElixirLanguage {
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
     }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_beam_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_beam_std_qualifier_name(qualifier)
+    }
 }
 
 impl LanguageSemantics for ErlangLanguage {
@@ -148,6 +184,14 @@ impl LanguageSemantics for ErlangLanguage {
 
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Beam
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_beam_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_beam_std_qualifier_name(qualifier)
     }
 }
 
@@ -159,6 +203,14 @@ impl LanguageSemantics for ZigLanguage {
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Isolated(Lang::Zig)
     }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_zig_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_zig_std_qualifier_name(qualifier)
+    }
 }
 
 impl LanguageSemantics for SolidityLanguage {
@@ -169,4 +221,357 @@ impl LanguageSemantics for SolidityLanguage {
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Isolated(Lang::Solidity)
     }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_solidity_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_solidity_std_qualifier_name(qualifier)
+    }
+}
+
+fn is_go_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Error"
+            | "String"
+            | "Read"
+            | "Write"
+            | "Close"
+            | "Flush"
+            | "Seek"
+            | "Lock"
+            | "Unlock"
+            | "RLock"
+            | "RUnlock"
+            | "Add"
+            | "Done"
+            | "Wait"
+            | "Load"
+            | "Store"
+            | "Swap"
+            | "CompareAndSwap"
+            | "Context"
+            | "Deadline"
+            | "Err"
+            | "Value"
+            | "Len"
+            | "Less"
+            | "MarshalJSON"
+            | "UnmarshalJSON"
+            | "Scan"
+    )
+}
+
+fn is_go_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "fmt"
+            | "os"
+            | "io"
+            | "strings"
+            | "bytes"
+            | "strconv"
+            | "time"
+            | "context"
+            | "sync"
+            | "atomic"
+            | "errors"
+            | "filepath"
+            | "path"
+            | "http"
+            | "url"
+            | "json"
+            | "xml"
+            | "sort"
+            | "slices"
+            | "maps"
+            | "math"
+            | "rand"
+            | "reflect"
+            | "regexp"
+            | "bufio"
+            | "log"
+            | "slog"
+            | "testing"
+            | "exec"
+            | "syscall"
+            | "runtime"
+            | "binary"
+            | "hex"
+            | "base64"
+            | "sha256"
+            | "tls"
+            | "net"
+            | "sql"
+    )
+}
+
+fn is_dart_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "add"
+            | "addAll"
+            | "remove"
+            | "clear"
+            | "contains"
+            | "containsKey"
+            | "map"
+            | "where"
+            | "expand"
+            | "forEach"
+            | "fold"
+            | "reduce"
+            | "toList"
+            | "toSet"
+            | "join"
+            | "split"
+            | "trim"
+            | "substring"
+            | "replaceAll"
+            | "startsWith"
+            | "endsWith"
+            | "toLowerCase"
+            | "toUpperCase"
+            | "toString"
+            | "compareTo"
+            | "then"
+            | "catchError"
+            | "whenComplete"
+            | "isAfter"
+            | "isBefore"
+            | "isAtSameMomentAs"
+            | "difference"
+            | "toUtc"
+            | "toLocal"
+            | "toIso8601String"
+            | "firstWhere"
+            | "singleWhere"
+            | "any"
+            | "every"
+            | "take"
+            | "skip"
+            | "cast"
+            | "asMap"
+            | "putIfAbsent"
+            | "update"
+            | "removeWhere"
+            | "wait"
+            | "value"
+            | "error"
+            | "delayed"
+            | "decode"
+            | "encode"
+    )
+}
+
+fn is_dart_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Future"
+            | "Stream"
+            | "List"
+            | "Map"
+            | "Set"
+            | "Iterable"
+            | "String"
+            | "int"
+            | "double"
+            | "num"
+            | "bool"
+            | "DateTime"
+            | "Duration"
+            | "Uri"
+            | "RegExp"
+            | "JsonCodec"
+            | "json"
+            | "utf8"
+            | "math"
+            | "Platform"
+            | "File"
+            | "Directory"
+    )
+}
+
+fn is_beam_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "get"
+            | "put"
+            | "delete"
+            | "fetch"
+            | "fetch!"
+            | "merge"
+            | "keys"
+            | "values"
+            | "has_key?"
+            | "new"
+            | "to_list"
+            | "from_struct"
+            | "update"
+            | "update!"
+            | "pop"
+            | "take"
+            | "drop"
+            | "split"
+            | "map"
+            | "each"
+            | "filter"
+            | "reject"
+            | "reduce"
+            | "find"
+            | "any?"
+            | "all?"
+            | "member?"
+            | "count"
+            | "empty?"
+            | "concat"
+            | "flat_map"
+            | "join"
+            | "sort"
+            | "reverse"
+            | "uniq"
+            | "at"
+            | "first"
+            | "last"
+            | "trim"
+            | "downcase"
+            | "upcase"
+            | "replace"
+            | "starts_with?"
+            | "ends_with?"
+            | "contains?"
+            | "inspect"
+            | "puts"
+            | "info"
+            | "debug"
+            | "warn"
+            | "warning"
+            | "error"
+    )
+}
+
+fn is_beam_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Enum"
+            | "Map"
+            | "Keyword"
+            | "List"
+            | "String"
+            | "Integer"
+            | "Float"
+            | "Tuple"
+            | "MapSet"
+            | "Stream"
+            | "File"
+            | "Path"
+            | "IO"
+            | "Process"
+            | "Task"
+            | "Agent"
+            | "GenServer"
+            | "Supervisor"
+            | "Application"
+            | "Logger"
+            | "Kernel"
+            | "System"
+            | "DateTime"
+            | "NaiveDateTime"
+            | "Date"
+            | "Time"
+            | "URI"
+            | "Regex"
+            | "Base"
+            | "Jason"
+            | "ets"
+            | "erlang"
+            | "lists"
+            | "maps"
+            | "proplists"
+            | "binary"
+            | "io"
+            | "file"
+            | "timer"
+    )
+}
+
+fn is_zig_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "init"
+            | "deinit"
+            | "alloc"
+            | "free"
+            | "create"
+            | "destroy"
+            | "dupe"
+            | "append"
+            | "appendSlice"
+            | "pop"
+            | "clearRetainingCapacity"
+            | "clearAndFree"
+            | "toOwnedSlice"
+            | "get"
+            | "put"
+            | "remove"
+            | "contains"
+            | "iterator"
+            | "next"
+            | "format"
+            | "print"
+            | "read"
+            | "write"
+            | "close"
+    )
+}
+
+fn is_zig_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "std"
+            | "mem"
+            | "fs"
+            | "io"
+            | "os"
+            | "posix"
+            | "fmt"
+            | "math"
+            | "debug"
+            | "testing"
+            | "heap"
+            | "time"
+            | "Thread"
+            | "ArrayList"
+            | "StringHashMap"
+            | "AutoHashMap"
+    )
+}
+
+fn is_solidity_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "push"
+            | "pop"
+            | "transfer"
+            | "send"
+            | "call"
+            | "delegatecall"
+            | "staticcall"
+            | "encode"
+            | "encodePacked"
+            | "encodeWithSelector"
+            | "encodeWithSignature"
+            | "encodeCall"
+            | "decode"
+            | "concat"
+    )
+}
+
+fn is_solidity_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "abi" | "msg" | "block" | "tx" | "address" | "string" | "bytes"
+    )
 }

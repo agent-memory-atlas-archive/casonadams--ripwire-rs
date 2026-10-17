@@ -41,6 +41,13 @@ impl LanguageSemantics for JavaLanguage {
     ) -> bool {
         kind.is_callable() && !super::is_non_entrypoint_path(rel_path) && sym_name == "main"
     }
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_jvm_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_jvm_std_qualifier_name(qualifier)
+    }
 }
 
 impl LanguageSemantics for KotlinLanguage {
@@ -59,6 +66,14 @@ impl LanguageSemantics for KotlinLanguage {
     fn visibility_mode(&self) -> VisibilityMode {
         VisibilityMode::ExplicitModifier
     }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_jvm_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_jvm_std_qualifier_name(qualifier)
+    }
 }
 
 impl LanguageSemantics for ScalaLanguage {
@@ -68,6 +83,14 @@ impl LanguageSemantics for ScalaLanguage {
 
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Jvm
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_jvm_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_jvm_std_qualifier_name(qualifier)
     }
 }
 
@@ -99,6 +122,14 @@ impl LanguageSemantics for CSharpLanguage {
             && !super::is_non_entrypoint_path(rel_path)
             && (sym_name == "main" || sym_name == "Main")
     }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_csharp_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_csharp_std_qualifier_name(qualifier)
+    }
 }
 
 impl LanguageSemantics for SwiftLanguage {
@@ -116,6 +147,14 @@ impl LanguageSemantics for SwiftLanguage {
 
     fn visibility_mode(&self) -> VisibilityMode {
         VisibilityMode::ExplicitModifier
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_swift_std_member_name(name)
+    }
+
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        is_swift_std_qualifier_name(qualifier)
     }
 }
 
@@ -139,4 +178,244 @@ impl LanguageSemantics for PhpLanguage {
     fn visibility_mode(&self) -> VisibilityMode {
         VisibilityMode::ExplicitModifier
     }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_php_std_member_name(name)
+    }
+}
+
+fn is_jvm_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "get"
+            | "set"
+            | "put"
+            | "remove"
+            | "add"
+            | "addAll"
+            | "clear"
+            | "contains"
+            | "containsKey"
+            | "size"
+            | "isEmpty"
+            | "iterator"
+            | "stream"
+            | "map"
+            | "filter"
+            | "flatMap"
+            | "forEach"
+            | "collect"
+            | "toList"
+            | "toArray"
+            | "orElse"
+            | "orElseGet"
+            | "orElseThrow"
+            | "isPresent"
+            | "equals"
+            | "hashCode"
+            | "toString"
+            | "compareTo"
+            | "length"
+            | "charAt"
+            | "substring"
+            | "split"
+            | "trim"
+            | "replace"
+            | "startsWith"
+            | "endsWith"
+            | "toLowerCase"
+            | "toUpperCase"
+            | "format"
+            | "valueOf"
+            | "parseInt"
+            | "parseLong"
+            | "append"
+    )
+}
+
+fn is_jvm_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "System"
+            | "Math"
+            | "String"
+            | "Integer"
+            | "Long"
+            | "Double"
+            | "Boolean"
+            | "Objects"
+            | "Collections"
+            | "Arrays"
+            | "Optional"
+            | "Stream"
+            | "Collectors"
+            | "List"
+            | "Map"
+            | "Set"
+            | "Files"
+            | "Paths"
+            | "Path"
+            | "UUID"
+            | "Instant"
+            | "Duration"
+            | "LocalDate"
+            | "LocalDateTime"
+            | "CompletableFuture"
+            | "Thread"
+            | "Executors"
+            | "LoggerFactory"
+    )
+}
+
+fn is_csharp_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Add"
+            | "AddRange"
+            | "Remove"
+            | "Clear"
+            | "Contains"
+            | "ContainsKey"
+            | "TryGetValue"
+            | "ToArray"
+            | "ToList"
+            | "ToDictionary"
+            | "ToHashSet"
+            | "Select"
+            | "Where"
+            | "FirstOrDefault"
+            | "SingleOrDefault"
+            | "Any"
+            | "All"
+            | "Count"
+            | "ToString"
+            | "Equals"
+            | "GetHashCode"
+            | "GetType"
+            | "Substring"
+            | "Split"
+            | "Trim"
+            | "Replace"
+            | "StartsWith"
+            | "EndsWith"
+            | "ToLower"
+            | "ToUpper"
+            | "Format"
+            | "Parse"
+            | "TryParse"
+            | "Append"
+            | "Dispose"
+            | "ConfigureAwait"
+    )
+}
+
+fn is_csharp_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Console"
+            | "Math"
+            | "String"
+            | "Int32"
+            | "Int64"
+            | "Double"
+            | "Boolean"
+            | "Guid"
+            | "DateTime"
+            | "DateTimeOffset"
+            | "TimeSpan"
+            | "Task"
+            | "Enumerable"
+            | "Array"
+            | "Convert"
+            | "Environment"
+            | "File"
+            | "Directory"
+            | "Path"
+            | "JsonSerializer"
+            | "Regex"
+            | "Interlocked"
+            | "GC"
+    )
+}
+
+fn is_swift_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "append"
+            | "insert"
+            | "remove"
+            | "removeAll"
+            | "contains"
+            | "map"
+            | "compactMap"
+            | "flatMap"
+            | "filter"
+            | "reduce"
+            | "forEach"
+            | "first"
+            | "last"
+            | "sorted"
+            | "reversed"
+            | "split"
+            | "joined"
+            | "lowercased"
+            | "uppercased"
+            | "hasPrefix"
+            | "hasSuffix"
+    )
+}
+
+fn is_swift_std_qualifier_name(name: &str) -> bool {
+    matches!(
+        name,
+        "String"
+            | "Int"
+            | "Double"
+            | "Bool"
+            | "Array"
+            | "Dictionary"
+            | "Set"
+            | "Date"
+            | "URL"
+            | "Data"
+            | "UUID"
+            | "FileManager"
+            | "UserDefaults"
+            | "NotificationCenter"
+            | "DispatchQueue"
+            | "Task"
+            | "MainActor"
+            | "JSONEncoder"
+            | "JSONDecoder"
+    )
+}
+
+fn is_php_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "count"
+            | "sizeof"
+            | "in_array"
+            | "array_map"
+            | "array_filter"
+            | "array_merge"
+            | "array_keys"
+            | "array_values"
+            | "array_push"
+            | "array_pop"
+            | "array_shift"
+            | "array_slice"
+            | "implode"
+            | "explode"
+            | "trim"
+            | "strlen"
+            | "strpos"
+            | "substr"
+            | "str_replace"
+            | "strtolower"
+            | "strtoupper"
+            | "sprintf"
+            | "json_encode"
+            | "json_decode"
+    )
 }

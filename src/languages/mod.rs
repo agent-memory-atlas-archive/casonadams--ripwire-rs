@@ -522,4 +522,83 @@ mod tests {
             "docs/build_docs.py"
         ));
     }
+
+    #[test]
+    fn test_all_language_std_members_and_qualifiers() {
+        let cases = [
+            (Lang::Python, "loads", "json"),
+            (Lang::Ruby, "to_s", "JSON"),
+            (Lang::Lua, "insert", "table"),
+            (Lang::Java, "toList", "Collections"),
+            (Lang::Kotlin, "toList", "Collections"),
+            (Lang::Scala, "toList", "Collections"),
+            (Lang::CSharp, "ToList", "Enumerable"),
+            (Lang::Swift, "append", "DispatchQueue"),
+            (Lang::Go, "Read", "fmt"),
+            (Lang::Dart, "toList", "Future"),
+            (Lang::Elixir, "map", "Enum"),
+            (Lang::Erlang, "map", "lists"),
+            (Lang::Zig, "deinit", "std"),
+            (Lang::Solidity, "encode", "abi"),
+            (Lang::Metal, "size", "metal"),
+            (Lang::ObjC, "objectForKey", "NSDictionary"),
+        ];
+        for (lang, member, qual) in cases {
+            let sem = lang.semantics();
+            assert!(sem.is_std_or_builtin_member(member), "lang={lang:?}");
+            assert!(sem.is_std_or_builtin_qualifier(qual), "lang={lang:?}");
+        }
+        assert!(
+            Lang::GDScript
+                .semantics()
+                .is_std_or_builtin_member("queue_free")
+        );
+        assert!(
+            Lang::Php
+                .semantics()
+                .is_std_or_builtin_member("json_encode")
+        );
+        assert!(Lang::Metal.semantics().is_builtin_keyword("static_cast"));
+        assert!(Lang::ObjC.semantics().is_builtin_keyword("static_cast"));
+
+        let reg = crate::ingest::LanguageRegistry::new().unwrap();
+        let interner = crate::domain::Interner::new();
+        let files = [
+            (
+                "pkg/a.go",
+                Lang::Go,
+                b"package pkg\nfunc Println(s string) {}\n" as &[u8],
+            ),
+            (
+                "pkg/b.go",
+                Lang::Go,
+                b"package pkg\nimport \"fmt\"\nfunc run() { fmt.Println(\"hi\") }\n" as &[u8],
+            ),
+        ];
+        let ingest = crate::ingest::ingest_in_memory_files(&files, &reg, &interner);
+        let res = crate::resolve::resolve_all_references(&ingest, &interner);
+        assert!(res.edge_accumulators.is_empty());
+
+        let dart_files = [(
+            "lib/db.dart",
+            Lang::Dart,
+            b"class Db extends common.BaseDb {\n  static List<String> allCols() => [];\n  void run() { Db.allCols(); print('x'); }\n}\n"
+                as &[u8],
+        )];
+        let dart_ingest = crate::ingest::ingest_in_memory_files(&dart_files, &reg, &interner);
+        let all_cols_defs: Vec<_> = dart_ingest
+            .symbols
+            .iter()
+            .filter(|s| interner.resolve(&s.name) == "allCols")
+            .collect();
+        assert_eq!(all_cols_defs.len(), 1);
+        assert_eq!(all_cols_defs[0].kind, SymKind::Method);
+        let extends_refs: Vec<_> = dart_ingest
+            .references
+            .iter()
+            .filter(|r| r.role == crate::domain::RefRole::Extends)
+            .map(|r| interner.resolve(&r.callee_name))
+            .collect();
+        assert_eq!(extends_refs, vec!["BaseDb"]);
+    }
 }

@@ -187,25 +187,58 @@ fn find_enclosing_scope(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -
     None
 }
 
-fn extract_member_receiver_qualifier(
-    parent: tree_sitter::Node<'_>,
-    name_node: tree_sitter::Node<'_>,
-    source_bytes: &[u8],
-) -> Option<String> {
-    if !matches!(
-        parent.kind(),
+fn is_member_receiver_parent(kind: &str) -> bool {
+    matches!(
+        kind,
         "field_expression"
             | "member_expression"
             | "attribute"
             | "navigation_expression"
             | "method_invocation"
+            | "selector_expression"
+            | "call"
+            | "dot_index_expression"
+            | "method_index_expression"
+            | "unconditional_assignable_selector"
+            | "conditional_assignable_selector"
+    )
+}
+
+fn find_member_receiver_node(parent: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    if matches!(
+        parent.kind(),
+        "unconditional_assignable_selector" | "conditional_assignable_selector"
     ) {
+        return parent.parent().and_then(|sel| sel.prev_named_sibling());
+    }
+    for field in [
+        "argument", "object", "value", "operand", "receiver", "table",
+    ] {
+        if let Some(n) = parent.child_by_field_name(field) {
+            return Some(n);
+        }
+    }
+    None
+}
+
+fn is_pascal_type_ident(text: &str) -> bool {
+    let is_screaming_const =
+        text.len() >= 2 && text.contains('_') && !text.bytes().any(|b| b.is_ascii_lowercase());
+    text.bytes().next().is_some_and(|b| b.is_ascii_uppercase())
+        && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && !is_screaming_const
+}
+
+fn extract_member_receiver_qualifier(
+    parent: tree_sitter::Node<'_>,
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+    lang: Lang,
+) -> Option<String> {
+    if !is_member_receiver_parent(parent.kind()) {
         return None;
     }
-    let recv = parent
-        .child_by_field_name("argument")
-        .or_else(|| parent.child_by_field_name("object"))
-        .or_else(|| parent.child_by_field_name("value"))?;
+    let recv = find_member_receiver_node(parent)?;
     if recv == name_node {
         return None;
     }
@@ -213,15 +246,15 @@ fn extract_member_receiver_qualifier(
     if matches!(text, "self" | "this" | "Self") {
         return find_enclosing_scope(name_node, source_bytes);
     }
-    let is_screaming_const =
-        text.len() >= 2 && text.contains('_') && !text.bytes().any(|b| b.is_ascii_lowercase());
-    let is_type_ident = text.bytes().next().is_some_and(|b| b.is_ascii_uppercase())
-        && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
-        && !is_screaming_const;
-    is_type_ident.then(|| text.to_string())
+    let keep = is_pascal_type_ident(text) || lang.semantics().is_std_or_builtin_qualifier(text);
+    keep.then(|| text.to_string())
 }
 
-fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
+fn find_call_qualifier(
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+    lang: Lang,
+) -> Option<String> {
     let parent = name_node.parent()?;
     if matches!(parent.kind(), "scoped_identifier" | "qualified_identifier")
         && let Some(path_node) = parent
@@ -235,7 +268,7 @@ fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) ->
             return Some(base.to_string());
         }
     }
-    extract_member_receiver_qualifier(parent, name_node, source_bytes)
+    extract_member_receiver_qualifier(parent, name_node, source_bytes, lang)
 }
 
 fn split_top_level_qualified(raw: &str) -> (&str, Option<String>) {
@@ -613,7 +646,13 @@ fn record_ref_item(
     } else {
         split_top_level_qualified(raw_name)
     };
-    if lang.semantics().is_builtin_keyword(name)
+    let is_pkg_prefix_extends = role == RefRole::Extends
+        && ext
+            .name_node
+            .and_then(|n| n.next_sibling())
+            .is_some_and(|s| s.kind() == ".");
+    if is_pkg_prefix_extends
+        || lang.semantics().is_builtin_keyword(name)
         || (role == RefRole::Call && lang.semantics().should_ignore_call(ext.name_node, name))
     {
         return;
@@ -624,7 +663,7 @@ fn record_ref_item(
             if role == RefRole::Extends {
                 find_enclosing_scope(n, source_bytes)
             } else {
-                find_call_qualifier(n, source_bytes)
+                find_call_qualifier(n, source_bytes, lang)
             }
         })
     });
