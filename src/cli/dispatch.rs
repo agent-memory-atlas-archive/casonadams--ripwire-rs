@@ -336,7 +336,12 @@ impl CliVerb for TopDetailArgs {
         } else if self.nonlocal_state {
             let funcs =
                 crate::metrics::nonlocal::find_nonlocal_state(ctx.ingest, ctx.graph, ctx.interner);
-            crate::metrics::nonlocal::serialize_nonlocal_state_xml(ctx.root, &funcs, out)
+            crate::metrics::nonlocal::serialize_nonlocal_state_with_gauge_xml(
+                ctx.root,
+                &funcs,
+                ctx.graph.gauges(),
+                out,
+            )
         } else {
             execute_detail_extended(
                 ctx.cli,

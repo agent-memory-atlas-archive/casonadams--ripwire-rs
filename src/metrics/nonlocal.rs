@@ -73,39 +73,81 @@ pub fn find_nonlocal_state(
     out
 }
 
+pub struct NonlocalStateReport<'a> {
+    pub funcs: &'a [NonlocalFunction],
+    pub gauges: crate::serialize::GraphGauges,
+}
+
+impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "nonlocal_state"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.nonlocal-state/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire nonlocal-state schema=ripwire.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches.",
+        )
+    }
+    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
+        Some(self.gauges)
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let count = self.funcs.len();
+        let cells_count: usize = self.funcs.iter().map(|f| f.cells.len()).sum();
+        write!(
+            out,
+            " cells=\"{cells_count}\" functions=\"{count}\" shown=\"{count}\" capped=\"0\" unanalyzed_langs=\"\" unanalyzed_files=\"0\""
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for f in self.funcs {
+            let p_raw = format!("{}:{}", f.path, f.line);
+            let p_esc = crate::serialize::escape::escape_xml_str(&p_raw);
+            let n_esc = crate::serialize::escape::escape_xml_str(&f.sym_name);
+            let total_c = f.cells.len();
+            writeln!(
+                out,
+                "  <fn p=\"{p_esc}\" n=\"{n_esc}\" writes=\"{}\" reads=\"{}\" direct_writes=\"{}\" direct_reads=\"{}\" cells_total=\"{total_c}\">",
+                f.writes, f.reads, f.writes, f.reads
+            )?;
+            for c in &f.cells {
+                let mode = if c.is_write { "w" } else { "r" };
+                let cell_n = crate::serialize::escape::escape_xml_str(&c.cell_name);
+                let cell_p_raw = format!("{}:{}", c.path, c.line);
+                let cell_p = crate::serialize::escape::escape_xml_str(&cell_p_raw);
+                writeln!(
+                    out,
+                    "    <cell n=\"{cell_n}\" p=\"{cell_p}\" dir=\"{mode}\"/>",
+                )?;
+            }
+            writeln!(out, "  </fn>")?;
+        }
+        Ok(())
+    }
+}
+
 /// Serialize nonlocal state report to canonical XML format.
 pub fn serialize_nonlocal_state_xml<W: Write>(
     root: &str,
     funcs: &[NonlocalFunction],
     out: &mut W,
 ) -> io::Result<()> {
-    let count = funcs.len();
-    let cells_count: usize = funcs.iter().map(|f| f.cells.len()).sum();
-    writeln!(
-        out,
-        "<!-- ripwire nonlocal-state schema=ripwire.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches. -->\n<nonlocal_state schema=\"ripwire.nonlocal-state/v1\" cells=\"{cells_count}\" functions=\"{count}\" shown=\"{count}\" capped=\"0\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" unanalyzed_langs=\"\" unanalyzed_files=\"0\" root=\"{root}\">",
-    )?;
-    for f in funcs {
-        let p_raw = format!("{}:{}", f.path, f.line);
-        let p_esc = crate::serialize::escape::escape_xml_str(&p_raw);
-        let n_esc = crate::serialize::escape::escape_xml_str(&f.sym_name);
-        let total_c = f.cells.len();
-        writeln!(
-            out,
-            "  <fn p=\"{p_esc}\" n=\"{n_esc}\" writes=\"{}\" reads=\"{}\" direct_writes=\"{}\" direct_reads=\"{}\" cells_total=\"{total_c}\">",
-            f.writes, f.reads, f.writes, f.reads
-        )?;
-        for c in &f.cells {
-            let mode = if c.is_write { "w" } else { "r" };
-            let cell_n = crate::serialize::escape::escape_xml_str(&c.cell_name);
-            let cell_p_raw = format!("{}:{}", c.path, c.line);
-            let cell_p = crate::serialize::escape::escape_xml_str(&cell_p_raw);
-            writeln!(
-                out,
-                "    <cell n=\"{cell_n}\" p=\"{cell_p}\" dir=\"{mode}\"/>",
-            )?;
-        }
-        writeln!(out, "  </fn>")?;
+    use crate::serialize::XmlReport;
+    NonlocalStateReport {
+        funcs,
+        gauges: crate::serialize::GraphGauges::default(),
     }
-    writeln!(out, "</nonlocal_state>")
+    .write_xml_report(root, out)
+}
+
+pub fn serialize_nonlocal_state_with_gauge_xml<W: Write>(
+    root: &str,
+    funcs: &[NonlocalFunction],
+    gauges: crate::serialize::GraphGauges,
+    out: &mut W,
+) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    NonlocalStateReport { funcs, gauges }.write_xml_report(root, out)
 }

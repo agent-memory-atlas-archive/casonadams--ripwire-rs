@@ -31,20 +31,38 @@ pub struct EditCheckReport {
     pub total_callers: usize,
     pub incompatible_callers: usize,
     pub callers: Vec<CallerCheckResult>,
+    pub gauges: crate::serialize::GraphGauges,
 }
 
-impl crate::serialize::ToXmlString for EditCheckReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        writeln!(
+impl crate::serialize::XmlReport for EditCheckReport {
+    fn schema_tag(&self) -> &'static str {
+        "edit-check"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.edit-check/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some("ripwire edit-check schema=ripwire.edit-check/v1: sym='s contract NOW vs HEAD.")
+    }
+    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
+        Some(self.gauges)
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        write!(
             out,
-            "<!-- ripwire edit-check schema=ripwire.edit-check/v1: sym='s contract NOW vs HEAD. -->\n<edit-check schema=\"ripwire.edit-check/v1\" sym=\"{}\" t=\"fn\" p=\"{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"HEAD\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\".\" next=\"--test-gate={}\" est_tokens=\"400\">",
+            " sym=\"{}\" t=\"fn\" p=\"{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"HEAD\" root=\".\" next=\"--test-gate={}\" est_tokens=\"400\"",
             self.symbol_name,
             self.file_path,
             self.status,
             self.total_callers,
             self.incompatible_callers,
             self.file_path
-        )?;
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for c in &self.callers {
             let incomp_attr = if c.is_incompatible {
                 " incompatible=\"1\""
@@ -73,7 +91,14 @@ impl crate::serialize::ToXmlString for EditCheckReport {
                 writeln!(out, "  </c>")?;
             }
         }
-        writeln!(out, "</edit-check>")
+        Ok(())
+    }
+}
+
+impl crate::serialize::ToXmlString for EditCheckReport {
+    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::XmlReport;
+        self.render_envelope(out)
     }
 }
 
@@ -178,6 +203,7 @@ pub fn check_symbol_contract(
         total_callers,
         incompatible_callers,
         callers,
+        gauges: graph.gauges(),
     })
 }
 

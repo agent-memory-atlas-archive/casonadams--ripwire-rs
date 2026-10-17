@@ -110,6 +110,10 @@ pub struct Graph {
     pub out_weights: Vec<f32>,
     pub out_split: Vec<bool>,
     pub amb_out: Vec<u32>,
+    #[serde(default)]
+    pub unresolved: usize,
+    #[serde(default)]
+    pub unindexed: usize,
 }
 
 impl Graph {
@@ -172,6 +176,35 @@ impl Graph {
     pub fn total_ambiguous(&self) -> usize {
         self.amb_out.iter().map(|&x| x as usize).sum()
     }
+
+    #[must_use]
+    pub fn total_unresolved(&self) -> usize {
+        self.unresolved
+    }
+
+    #[must_use]
+    pub fn total_unindexed(&self) -> usize {
+        self.unindexed
+    }
+    #[must_use]
+    pub fn gauges(&self) -> crate::serialize::GraphGauges {
+        crate::serialize::GraphGauges {
+            ambiguous: self.total_ambiguous(),
+            unresolved: self.total_unresolved(),
+            unindexed: self.total_unindexed(),
+        }
+    }
+
+    #[must_use]
+    pub fn xml_gauge_attrs(&self) -> String {
+        format!(
+            "graph_ambiguous=\"{}\" graph_unresolved=\"{}\" graph_unindexed=\"{}\" counts_floor=\"1\"",
+            self.total_ambiguous(),
+            self.total_unresolved(),
+            self.total_unindexed()
+        )
+    }
+
     #[must_use]
     pub fn page_rank(&self, config: &PageRankConfig) -> PageRankResult {
         let teleport = uniform_teleport(self.node_count());
@@ -196,7 +229,24 @@ impl Graph {
     #[must_use]
     pub fn build(ingest: &IngestResult, interner: &Interner) -> Self {
         let resolution = resolve_all_references(ingest, interner);
-        Self::from_resolution(ingest.symbols.len(), resolution)
+        let mut sym_files = vec![false; ingest.files.len()];
+        for s in &ingest.symbols {
+            if let Some(slot) = sym_files.get_mut(s.file_id as usize) {
+                *slot = true;
+            }
+        }
+        let unindexed = ingest
+            .files
+            .iter()
+            .enumerate()
+            .filter(|&(i, f)| {
+                !f.lang.semantics().is_prose_document()
+                    && !sym_files.get(i).copied().unwrap_or(false)
+            })
+            .count();
+        let mut g = Self::from_resolution(ingest.symbols.len(), resolution);
+        g.unindexed = unindexed;
+        g
     }
 
     #[must_use]
@@ -225,6 +275,8 @@ impl Graph {
             out_weights: out.weights,
             out_split: out.split,
             amb_out: resolution.amb_out,
+            unresolved: resolution.unresolved,
+            unindexed: 0,
         }
     }
 }

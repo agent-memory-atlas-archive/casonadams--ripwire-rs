@@ -153,31 +153,68 @@ fn write_module<W: Write>(m: &ZoomModule, out: &mut W) -> io::Result<()> {
     writeln!(out, "</module>")
 }
 
+pub struct ZoomReport<'a> {
+    pub tree: &'a ZoomTree,
+    pub window: PageWindow,
+    pub pr_iters: u32,
+    pub gauges: crate::serialize::GraphGauges,
+}
+
+impl crate::serialize::XmlReport for ZoomReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "zoom"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.zoom/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire zoom schema=ripwire.zoom/v1: nested Louvain module hierarchy: <module level= id= size= dir=>; level 0 is the finest partition; levels_shown= of levels= are printed from the top; symbols= = isolated= + size= of all top_modules=. children=K: K child modules below the levels_shown= cut, unprinted. id= is the module's lowest member node id; dir= its most common directory. pr_iters=N: PageRank iterations.",
+        )
+    }
+    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
+        Some(self.gauges)
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        write!(
+            out,
+            " levels=\"{}\" levels_shown=\"{}\" top_modules=\"{}\" symbols=\"{}\" isolated=\"{}\"{} pr_iters=\"{}\"",
+            self.tree.levels,
+            self.tree.levels_shown,
+            self.tree.top.len(),
+            self.tree.symbols,
+            self.tree.isolated,
+            self.window.xml_attrs(),
+            self.pr_iters
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for m in &self.tree.top[self.window.begin..self.window.end] {
+            write_module(m, out)?;
+        }
+        Ok(())
+    }
+}
+
 /// Serialize a zoom tree with its top-module window.
 pub fn serialize_zoom_xml<W: Write>(
     tree: &ZoomTree,
     window: &PageWindow,
     pr_iters: u32,
+    gauges: crate::serialize::GraphGauges,
     out: &mut W,
 ) -> io::Result<()> {
-    writeln!(
-        out,
-        "<!-- ripwire zoom schema=ripwire.zoom/v1: nested Louvain module hierarchy: <module level= id= size= dir=>; level 0 is the finest partition; levels_shown= of levels= are printed from the top; symbols= = isolated= + size= of all top_modules=. children=K: K child modules below the levels_shown= cut, unprinted. id= is the module's lowest member node id; dir= its most common directory. pr_iters=N: PageRank iterations. -->"
-    )?;
-    writeln!(
-        out,
-        "<zoom schema=\"ripwire.zoom/v1\" levels=\"{}\" levels_shown=\"{}\" top_modules=\"{}\" symbols=\"{}\" isolated=\"{}\"{} pr_iters=\"{pr_iters}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
-        tree.levels,
-        tree.levels_shown,
-        tree.top.len(),
-        tree.symbols,
-        tree.isolated,
-        window.xml_attrs()
-    )?;
-    for m in &tree.top[window.begin..window.end] {
-        write_module(m, out)?;
+    use crate::serialize::XmlReport;
+    ZoomReport {
+        tree,
+        window: *window,
+        pr_iters,
+        gauges,
     }
-    writeln!(out, "</zoom>")
+    .render_envelope(out)
 }
 
 fn node_dirs<'a>(ingest: &'a IngestResult, interner: &'a Interner, nodes: usize) -> Vec<&'a str> {
@@ -211,7 +248,7 @@ pub fn execute_zoom_query<W: Write>(
     let dirs = node_dirs(ingest, interner, graph.node_count());
     let tree = build_zoom_tree(&hierarchy, &dirs, opts.levels_shown);
     let window = PageWindow::compute(tree.top.len(), ZOOM_TOP_MODULE_CAP, opts.limit, opts.offset);
-    serialize_zoom_xml(&tree, &window, pr_iters, out)
+    serialize_zoom_xml(&tree, &window, pr_iters, graph.gauges(), out)
 }
 
 #[cfg(test)]
@@ -268,7 +305,14 @@ mod tests {
         let tree = build_zoom_tree(&hier, &dirs, None);
         let window = PageWindow::compute(tree.top.len(), ZOOM_TOP_MODULE_CAP, None, None);
         let mut out = Vec::new();
-        serialize_zoom_xml(&tree, &window, 7, &mut out).unwrap();
+        serialize_zoom_xml(
+            &tree,
+            &window,
+            7,
+            crate::serialize::GraphGauges::default(),
+            &mut out,
+        )
+        .unwrap();
         let xml = String::from_utf8(out).unwrap();
         assert!(xml.contains("levels=\"3\" levels_shown=\"2\" top_modules=\"1\" symbols=\"9\" isolated=\"1\" shown=\"1\" capped=\"0\" pr_iters=\"7\""));
         assert!(xml.contains("<module level=\"2\" id=\"0\" size=\"8\" dir=\"src/a\"><module level=\"1\" id=\"0\" size=\"4\" dir=\"src/a\" children=\"2\">"));

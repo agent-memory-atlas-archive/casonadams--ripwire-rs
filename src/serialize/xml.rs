@@ -475,7 +475,7 @@ pub fn serialize_xml_with_ranks<W: Write>(
             converged: ctx.pr_converged,
             rank_by: options.rank_by.as_deref(),
             ambiguous,
-            unresolved: 0,
+            unresolved: ctx.graph.total_unresolved(),
             schema: None,
         };
         write_root_open(&mut counter, &root_ctx)?;

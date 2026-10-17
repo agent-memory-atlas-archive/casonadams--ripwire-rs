@@ -31,6 +31,8 @@ pub struct SeamsReport {
     pub test_files_count: usize,
     pub seam_pairs_count: usize,
     pub groups: Vec<SeamGroup>,
+    pub pr_iters: u32,
+    pub gauges: crate::serialize::GraphGauges,
 }
 
 fn compute_directory(path: &str) -> String {
@@ -188,6 +190,11 @@ pub fn find_integration_seams(
         test_files_count: test_files.len(),
         seam_pairs_count: groups.len(),
         groups,
+        pr_iters: graph
+            .page_rank(&crate::rank::PageRankConfig::default())
+            .iterations
+            .max(1),
+        gauges: graph.gauges(),
     }
 }
 
@@ -209,10 +216,16 @@ impl crate::serialize::XmlReport for SeamsReport {
             None,
         ))
     }
+    fn pr_iters(&self) -> Option<u32> {
+        Some(self.pr_iters)
+    }
+    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
+        Some(self.gauges)
+    }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         write!(
             w,
-            " modules=\"{}\" bridges=\"{}\" untested=\"{}\" doc_links=\"0\" test_files=\"{}\" seam_pairs=\"{}\" pr_iters=\"44\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+            " modules=\"{}\" bridges=\"{}\" untested=\"{}\" doc_links=\"0\" test_files=\"{}\" seam_pairs=\"{}\"",
             self.modules_count,
             self.bridges_count,
             self.untested_count,

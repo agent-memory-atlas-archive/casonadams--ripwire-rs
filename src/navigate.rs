@@ -21,6 +21,8 @@ pub struct NavNeighborhood {
     pub target: SymbolNavInfo,
     pub callers: Vec<SymbolNavInfo>,
     pub callees: Vec<SymbolNavInfo>,
+    #[serde(skip)]
+    pub gauge_attrs: String,
 }
 
 /// Transitive reachability impact node with hop distance.
@@ -209,6 +211,7 @@ pub fn navigate_1hop(
         target,
         callers,
         callees,
+        gauge_attrs: graph.xml_gauge_attrs(),
     })
 }
 
@@ -262,6 +265,7 @@ pub fn navigate_1hop_multi(
         target,
         callers,
         callees,
+        gauge_attrs: graph.xml_gauge_attrs(),
     })
 }
 
@@ -361,6 +365,7 @@ fn write_nav_items<W: Write>(
     of: &str,
     items: &[SymbolNavInfo],
     next_flag: &'static str,
+    gauge_attrs: &str,
     out: &mut W,
 ) -> io::Result<()> {
     let count = items.len();
@@ -378,7 +383,7 @@ fn write_nav_items<W: Write>(
     };
     write!(
         out,
-        "<!-- ripwire {tag} schema=ripwire.{tag}/v1: 1-hop {tag} of of=. -->\n<{tag} schema=\"ripwire.{tag}/v1\" of=\"{of}\" defs=\"1\" count=\"{count}\" root=\"{root}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{page_attrs} graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" next=\"{next_flag}={of}\">",
+        "<!-- ripwire {tag} schema=ripwire.{tag}/v1: 1-hop {tag} of of=. -->\n<{tag} schema=\"ripwire.{tag}/v1\" of=\"{of}\" defs=\"1\" count=\"{count}\" root=\"{root}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{page_attrs} {gauge_attrs} next=\"{next_flag}={of}\">",
     )?;
     for it in items.iter().take(shown) {
         let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
@@ -410,7 +415,33 @@ pub fn serialize_callers_in_root_xml<W: Write>(
     callers: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    write_nav_items("callers", root, sym_name, callers, "--uses", out)
+    write_nav_items(
+        "callers",
+        root,
+        sym_name,
+        callers,
+        "--uses",
+        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        out,
+    )
+}
+
+pub fn serialize_callers_with_gauge_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    callers: &[SymbolNavInfo],
+    gauge_attrs: &str,
+    out: &mut W,
+) -> io::Result<()> {
+    write_nav_items(
+        "callers",
+        root,
+        sym_name,
+        callers,
+        "--uses",
+        gauge_attrs,
+        out,
+    )
 }
 
 /// Serialize direct callees to Ripwire-compatible XML.
@@ -428,7 +459,33 @@ pub fn serialize_callees_in_root_xml<W: Write>(
     callees: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    write_nav_items("callees", root, sym_name, callees, "--expand", out)
+    write_nav_items(
+        "callees",
+        root,
+        sym_name,
+        callees,
+        "--expand",
+        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        out,
+    )
+}
+
+pub fn serialize_callees_with_gauge_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    callees: &[SymbolNavInfo],
+    gauge_attrs: &str,
+    out: &mut W,
+) -> io::Result<()> {
+    write_nav_items(
+        "callees",
+        root,
+        sym_name,
+        callees,
+        "--expand",
+        gauge_attrs,
+        out,
+    )
 }
 
 /// Serialize transitive impact blast radius to Ripwire-compatible XML.
@@ -444,6 +501,24 @@ pub fn serialize_impact_in_root_xml<W: Write>(
     root: &str,
     sym_name: &str,
     nodes: &[ImpactNode],
+    out: &mut W,
+) -> io::Result<()> {
+    serialize_impact_with_gauge_xml(
+        root,
+        sym_name,
+        nodes,
+        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        1,
+        out,
+    )
+}
+
+pub fn serialize_impact_with_gauge_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    nodes: &[ImpactNode],
+    gauge_attrs: &str,
+    pr_iters: u32,
     out: &mut W,
 ) -> io::Result<()> {
     let reaches = nodes.len();
@@ -473,7 +548,8 @@ pub fn serialize_impact_in_root_xml<W: Write>(
     let imp_capped = usize::from(imp_shown < imp_total);
     write!(
         out,
-        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" by_depth=\"{by_depth}\" importers=\"{imp_total}\" shown_importers=\"{imp_shown}\" importers_capped=\"{imp_capped}\" radius_tested=\"{radius_tested}\" radius_untested=\"{radius_untested}\" root=\"{root}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" pr_iters=\"44\" next=\"--safe-delete={sym_name}\">",
+        "<!-- ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=. -->\n<impact schema=\"ripwire.impact/v1\" of=\"{sym_name}\" defs=\"1\" reaches=\"{reaches}\" by_depth=\"{by_depth}\" importers=\"{imp_total}\" shown_importers=\"{imp_shown}\" importers_capped=\"{imp_capped}\" radius_tested=\"{radius_tested}\" radius_untested=\"{radius_untested}\" root=\"{root}\" shown=\"{shown}\" capped=\"{capped}\" {gauge_attrs} pr_iters=\"{}\" next=\"--safe-delete={sym_name}\">",
+        pr_iters.max(1)
     )?;
     for n in nodes.iter().take(shown) {
         write!(
@@ -542,6 +618,24 @@ pub fn serialize_uses_in_root_xml<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
+    serialize_uses_with_gauge_xml(
+        root,
+        sym_name,
+        ingest,
+        interner,
+        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        out,
+    )
+}
+
+pub fn serialize_uses_with_gauge_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    gauge_attrs: &str,
+    out: &mut W,
+) -> io::Result<()> {
     let mut sites = Vec::new();
     for r in &ingest.references {
         if interner.resolve(&r.callee_name) == sym_name {
@@ -567,7 +661,7 @@ pub fn serialize_uses_in_root_xml<W: Write>(
     let page_attrs = format_nav_page_attrs(shown, total);
     writeln!(
         out,
-        "<!-- ripwire uses schema=ripwire.uses/v1: resolvable use-sites of of=. -->\n<uses schema=\"ripwire.uses/v1\" of=\"{sym_name}\" defs=\"1\" external=\"0\" count=\"{total}\" root=\"{root}\"{page_attrs} graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
+        "<!-- ripwire uses schema=ripwire.uses/v1: resolvable use-sites of of=. -->\n<uses schema=\"ripwire.uses/v1\" of=\"{sym_name}\" defs=\"1\" external=\"0\" count=\"{total}\" root=\"{root}\"{page_attrs} {gauge_attrs}>",
     )?;
     for (role, file, line, enc) in sites.into_iter().take(shown) {
         if enc.is_empty() {
@@ -726,9 +820,10 @@ pub fn evaluate_verify_claim<W: Write>(
         "confirmed"
     };
 
+    let gauge_attrs = graph.xml_gauge_attrs();
     writeln!(
         out,
-        "<!-- ripwire verify schema=ripwire.verify/v1: ONE structured claim, verdict=confirmed|refuted|unknown. -->\n<verify schema=\"ripwire.verify/v1\" claim=\"{claim}\" shape=\"calls\" verdict=\"{verdict}\" from_defs=\"{from_defs}\" to_defs=\"{to_defs}\" root=\".\" limit=\"call-graph-floor\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" shown=\"0\" capped=\"0\"></verify>"
+        "<!-- ripwire verify schema=ripwire.verify/v1: ONE structured claim, verdict=confirmed|refuted|unknown. -->\n<verify schema=\"ripwire.verify/v1\" claim=\"{claim}\" shape=\"calls\" verdict=\"{verdict}\" from_defs=\"{from_defs}\" to_defs=\"{to_defs}\" root=\".\" limit=\"call-graph-floor\" {gauge_attrs} shown=\"0\" capped=\"0\"></verify>"
     )
 }
 
@@ -1415,11 +1510,15 @@ pub fn execute_graph_query_expr<W: Write>(
         .unwrap_or_else(|| GraphExpr::Name(expr.to_string()));
     let matched_nodes = evaluate_graph_expr(&parsed, ingest, graph, interner);
     let count = matched_nodes.len();
-    let amb = graph.total_ambiguous();
+    let gauge_attrs = graph.xml_gauge_attrs();
+    let pr_iters = graph
+        .page_rank(&crate::rank::PageRankConfig::default())
+        .iterations
+        .max(1);
     let escaped_expr = crate::serialize::escape::escape_xml_str(expr);
     writeln!(
         out,
-        "<!-- ripwire graph-query schema=ripwire.graph-query/v1: graph-query expression over the symbol graph. -->\n<query schema=\"ripwire.graph-query/v1\" expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\" graph_ambiguous=\"{amb}\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\" pr_iters=\"44\">"
+        "<!-- ripwire graph-query schema=ripwire.graph-query/v1: graph-query expression over the symbol graph. -->\n<query schema=\"ripwire.graph-query/v1\" expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\" {gauge_attrs} root=\"{root}\" pr_iters=\"{pr_iters}\">"
     )?;
     for node_id in matched_nodes {
         if let Some(sym) = ingest.symbols.get(node_id as usize) {

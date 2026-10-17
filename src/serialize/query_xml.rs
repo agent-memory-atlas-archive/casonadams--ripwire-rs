@@ -800,6 +800,22 @@ pub fn serialize_test_gate_xml<W: Write>(
     untested: usize,
     out: &mut W,
 ) -> io::Result<()> {
+    serialize_test_gate_with_gauge_xml(
+        root,
+        tests,
+        untested,
+        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        out,
+    )
+}
+
+pub fn serialize_test_gate_with_gauge_xml<W: Write>(
+    root: &str,
+    tests: &[crate::gate::affected::AffectedTest],
+    untested: usize,
+    gauge_attrs: &str,
+    out: &mut W,
+) -> io::Result<()> {
     let t_len = tests.len();
     let dirty = t_len > 0 || untested > 0;
     let changed = if dirty { 1 } else { 0 };
@@ -815,7 +831,7 @@ pub fn serialize_test_gate_xml<W: Write>(
         String::new()
     };
     let mut buf = format!(
-        "<!-- ripwire test-gate schema=ripwire.test-gate/v1: tests + untested blast radius. -->\n<test-gate schema=\"ripwire.test-gate/v1\" changed=\"{changed}\" impacted=\"{untested}\" tests=\"{t_len}\" untested=\"{untested}\" untested_modscope=\"0\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{untested}\" untested_capped=\"0\" script_gates_unmodelled=\"0\" script_gates_registered=\"0\" script_gates_mapped=\"0\" script_gates_unresolved_dynamic=\"0\" ccx_bar=\"15\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" at=\"HEAD\"{extra_attrs} next=\"--situ\">",
+        "<!-- ripwire test-gate schema=ripwire.test-gate/v1: tests + untested blast radius. -->\n<test-gate schema=\"ripwire.test-gate/v1\" changed=\"{changed}\" impacted=\"{untested}\" tests=\"{t_len}\" untested=\"{untested}\" untested_modscope=\"0\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{untested}\" untested_capped=\"0\" script_gates_unmodelled=\"0\" script_gates_registered=\"0\" script_gates_mapped=\"0\" script_gates_unresolved_dynamic=\"0\" ccx_bar=\"15\" {gauge_attrs} at=\"HEAD\"{extra_attrs} next=\"--situ\">",
     );
     if !tests.is_empty() {
         let p_joined: Vec<String> = tests
@@ -862,6 +878,29 @@ pub fn serialize_safe_delete_at_xml<W: Write>(
     blast_radius: usize,
     out: &mut W,
 ) -> io::Result<()> {
+    serialize_safe_delete_with_gauge_xml(
+        root,
+        sym_name,
+        kind_tag,
+        def_loc,
+        callers,
+        blast_radius,
+        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        out,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn serialize_safe_delete_with_gauge_xml<W: Write>(
+    root: &str,
+    sym_name: &str,
+    kind_tag: &str,
+    def_loc: &str,
+    callers: &[(&str, &str)],
+    blast_radius: usize,
+    gauge_attrs: &str,
+    out: &mut W,
+) -> io::Result<()> {
     let risk = if callers.is_empty() && blast_radius == 0 {
         "low"
     } else {
@@ -875,7 +914,7 @@ pub fn serialize_safe_delete_at_xml<W: Write>(
     let dead_cand = usize::from(c_len == 0 && blast_radius == 0);
     writeln!(
         out,
-        "<!-- ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=. -->\n<safe-delete schema=\"ripwire.safe-delete/v1\" sym=\"{sym_esc}\" t=\"{kind_tag}\" p=\"{loc_esc}\" defs=\"1\" callers=\"{c_len}\" callers_floor=\"1\" ambiguous_callers=\"0\" impact_reaches=\"{blast_radius}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{blast_radius}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\" root=\"{root}\">",
+        "<!-- ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=. -->\n<safe-delete schema=\"ripwire.safe-delete/v1\" sym=\"{sym_esc}\" t=\"{kind_tag}\" p=\"{loc_esc}\" defs=\"1\" callers=\"{c_len}\" callers_floor=\"1\" ambiguous_callers=\"0\" impact_reaches=\"{blast_radius}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{blast_radius}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" {gauge_attrs} root=\"{root}\">",
     )?;
     for (p, n) in callers.iter().take(shown) {
         let p_esc = escape_xml_str(p);
@@ -924,7 +963,48 @@ pub struct CommunitySummary<'a> {
     pub connected_singletons: usize,
     pub symbols: usize,
     pub pr_iters: u32,
+    pub gauges: crate::serialize::GraphGauges,
     pub bridges: Vec<(u32, u32, &'a str, &'a str, usize)>,
+}
+
+pub struct DeadCodeReport<'a> {
+    pub items: &'a [(&'a str, &'static str, &'a str, u32)],
+    pub gauges: crate::serialize::GraphGauges,
+}
+
+impl crate::serialize::XmlReport for DeadCodeReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "dead-code"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.dead-code/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire dead-code schema=ripwire.dead-code/v1: internal-linkage functions with no caller found in the index: <d n= t= p= l=>.",
+        )
+    }
+    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
+        Some(self.gauges)
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        write!(
+            out,
+            " count=\"{}\" evidence=\"internal-linkage+zero-callers\" register-macro-excluded=\"0\"",
+            self.items.len()
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for (n, t, p, l) in self.items {
+            let n_esc = escape_xml_str(n);
+            let p_esc = escape_xml_str(p);
+            writeln!(
+                out,
+                "  <d n=\"{n_esc}\" t=\"{t}\" p=\"{p_esc}\" l=\"{l}\"/>"
+            )?;
+        }
+        Ok(())
+    }
 }
 
 /// Serialize `--dead-code` candidates to Ripwire XML.
@@ -933,20 +1013,106 @@ pub fn serialize_dead_code_xml<W: Write>(
     items: &[(&str, &'static str, &str, u32)],
     out: &mut W,
 ) -> io::Result<()> {
-    writeln!(
-        out,
-        "<!-- ripwire dead-code schema=ripwire.dead-code/v1: internal-linkage functions with no caller found in the index: <d n= t= p= l=>. -->\n<dead-code schema=\"ripwire.dead-code/v1\" count=\"{}\" evidence=\"internal-linkage+zero-callers\" register-macro-excluded=\"0\" root=\"{root}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
-        items.len()
-    )?;
-    for (n, t, p, l) in items {
-        let n_esc = escape_xml_str(n);
-        let p_esc = escape_xml_str(p);
-        writeln!(
-            out,
-            "  <d n=\"{n_esc}\" t=\"{t}\" p=\"{p_esc}\" l=\"{l}\"/>"
-        )?;
+    use crate::serialize::XmlReport;
+    DeadCodeReport {
+        items,
+        gauges: crate::serialize::GraphGauges::default(),
     }
-    writeln!(out, "</dead-code>")
+    .write_xml_report(root, out)
+}
+
+pub fn serialize_dead_code_with_gauge_xml<W: Write>(
+    root: &str,
+    items: &[(&str, &'static str, &str, u32)],
+    gauges: crate::serialize::GraphGauges,
+    out: &mut W,
+) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    DeadCodeReport { items, gauges }.write_xml_report(root, out)
+}
+
+pub struct CommunitiesReport<'a> {
+    pub modules: &'a [CommunityModule<'a>],
+    pub summary: &'a CommunitySummary<'a>,
+}
+
+impl crate::serialize::XmlReport for CommunitiesReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "communities"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.communities/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire communities schema=ripwire.communities/v1: call-graph modules (Louvain): <community id= size= dir= label=> of <member t= n= p=>.",
+        )
+    }
+    fn pr_iters(&self) -> Option<u32> {
+        Some(self.summary.pr_iters.max(1))
+    }
+    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
+        Some(self.summary.gauges)
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let total_mods = self.modules.len();
+        let shown_mods = total_mods.min(30);
+        let mods_capped = usize::from(shown_mods < total_mods);
+        let total_bridges = self.summary.bridges.len();
+        let shown_bridges = total_bridges.min(12);
+        let bridges_capped = usize::from(shown_bridges < total_bridges);
+        let page_attrs = if mods_capped == 1 {
+            format!(
+                " total=\"{total_mods}\" has_more=\"1\" next_offset=\"{shown_mods}\" offset=\"0\" limit=\"0\""
+            )
+        } else {
+            String::new()
+        };
+        write!(
+            out,
+            " drill=\"--community=ID\" modules=\"{total_mods}\" shown_modules=\"{shown_mods}\" modules_capped=\"{mods_capped}\" bridges=\"{total_bridges}\" shown_bridges=\"{shown_bridges}\" bridges_capped=\"{bridges_capped}\" isolated=\"{}\" isolated_decl=\"{}\" isolated_header=\"{}\" isolated_source=\"{}\" isolated_doc=\"{}\" connected_singletons=\"{}\" symbols=\"{}\"{page_attrs}",
+            self.summary.isolated,
+            self.summary.isolated_decl,
+            self.summary.isolated_header,
+            self.summary.isolated_source,
+            self.summary.isolated_doc,
+            self.summary.connected_singletons,
+            self.summary.symbols,
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let shown_mods = self.modules.len().min(30);
+        let shown_bridges = self.summary.bridges.len().min(12);
+        for m in self.modules.iter().take(shown_mods) {
+            let dir_esc = escape_xml_str(m.dir);
+            let lbl_esc = escape_xml_str(m.label);
+            let top_n = m.members.len().min(5);
+            let m_capped = usize::from(top_n < m.size);
+            writeln!(
+                out,
+                "  <community id=\"{}\" size=\"{}\" dir=\"{dir_esc}\" label=\"{lbl_esc}\" shown=\"{top_n}\" capped=\"{m_capped}\">",
+                m.id, m.size
+            )?;
+            for &(kind, name, path, line) in m.members.iter().take(top_n) {
+                let n_esc = escape_xml_str(name);
+                let p_esc = escape_xml_str(path);
+                writeln!(
+                    out,
+                    "    <member t=\"{kind}\" n=\"{n_esc}\" p=\"{p_esc}:{line}\"/>"
+                )?;
+            }
+            writeln!(out, "  </community>")?;
+        }
+        for &(a, b, la, lb, edges) in self.summary.bridges.iter().take(shown_bridges) {
+            let la_esc = escape_xml_str(la);
+            let lb_esc = escape_xml_str(lb);
+            writeln!(
+                out,
+                "  <bridge a=\"{a}\" b=\"{b}\" from_label=\"{la_esc}\" to_label=\"{lb_esc}\" edges=\"{edges}\"/>"
+            )?;
+        }
+        Ok(())
+    }
 }
 
 /// Serialize `--communities` to Ripwire XML.
@@ -957,7 +1123,7 @@ pub fn serialize_communities_xml<W: Write>(
 ) -> io::Result<()> {
     let default_sum = CommunitySummary {
         symbols: modules.iter().map(|m| m.size).sum(),
-        pr_iters: 44,
+        pr_iters: 1,
         ..Default::default()
     };
     serialize_communities_with_summary_xml(root, modules, &default_sum, out)
@@ -969,60 +1135,8 @@ pub fn serialize_communities_with_summary_xml<W: Write>(
     summary: &CommunitySummary<'_>,
     out: &mut W,
 ) -> io::Result<()> {
-    let total_mods = modules.len();
-    let shown_mods = total_mods.min(30);
-    let mods_capped = usize::from(shown_mods < total_mods);
-    let total_bridges = summary.bridges.len();
-    let shown_bridges = total_bridges.min(12);
-    let bridges_capped = usize::from(shown_bridges < total_bridges);
-    let page_attrs = if mods_capped == 1 {
-        format!(
-            " total=\"{total_mods}\" has_more=\"1\" next_offset=\"{shown_mods}\" offset=\"0\" limit=\"0\""
-        )
-    } else {
-        String::new()
-    };
-    let pr_iters = summary.pr_iters.max(1);
-    writeln!(
-        out,
-        "<!-- ripwire communities schema=ripwire.communities/v1: call-graph modules (Louvain): <community id= size= dir= label=> of <member t= n= p=>. -->\n<communities schema=\"ripwire.communities/v1\" drill=\"--community=ID\" modules=\"{total_mods}\" shown_modules=\"{shown_mods}\" modules_capped=\"{mods_capped}\" bridges=\"{total_bridges}\" shown_bridges=\"{shown_bridges}\" bridges_capped=\"{bridges_capped}\" isolated=\"{}\" isolated_decl=\"{}\" isolated_header=\"{}\" isolated_source=\"{}\" isolated_doc=\"{}\" connected_singletons=\"{}\" symbols=\"{}\"{page_attrs} pr_iters=\"{pr_iters}\" root=\"{root}\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\">",
-        summary.isolated,
-        summary.isolated_decl,
-        summary.isolated_header,
-        summary.isolated_source,
-        summary.isolated_doc,
-        summary.connected_singletons,
-        summary.symbols,
-    )?;
-    for m in modules.iter().take(shown_mods) {
-        let dir_esc = escape_xml_str(m.dir);
-        let lbl_esc = escape_xml_str(m.label);
-        let top_n = m.members.len().min(5);
-        let m_capped = usize::from(top_n < m.size);
-        writeln!(
-            out,
-            "  <community id=\"{}\" size=\"{}\" dir=\"{dir_esc}\" label=\"{lbl_esc}\" shown=\"{top_n}\" capped=\"{m_capped}\">",
-            m.id, m.size
-        )?;
-        for &(kind, name, path, line) in m.members.iter().take(top_n) {
-            let n_esc = escape_xml_str(name);
-            let p_esc = escape_xml_str(path);
-            writeln!(
-                out,
-                "    <member t=\"{kind}\" n=\"{n_esc}\" p=\"{p_esc}:{line}\"/>"
-            )?;
-        }
-        writeln!(out, "  </community>")?;
-    }
-    for &(a, b, la, lb, edges) in summary.bridges.iter().take(shown_bridges) {
-        let la_esc = escape_xml_str(la);
-        let lb_esc = escape_xml_str(lb);
-        writeln!(
-            out,
-            "  <bridge a=\"{a}\" b=\"{b}\" from_label=\"{la_esc}\" to_label=\"{lb_esc}\" edges=\"{edges}\"/>"
-        )?;
-    }
-    writeln!(out, "</communities>")
+    use crate::serialize::XmlReport;
+    CommunitiesReport { modules, summary }.write_xml_report(root, out)
 }
 
 /// Serialize `--around` ego graph to Ripwire XML.

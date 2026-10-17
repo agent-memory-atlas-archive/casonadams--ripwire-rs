@@ -20,9 +20,26 @@ pub struct EdgeAcc {
 pub struct ResolutionResult {
     pub edge_accumulators: HashMap<(NodeId, NodeId), EdgeAcc>,
     pub amb_out: Vec<u32>,
+    pub unresolved: usize,
 }
 
 /// Resolve all call references from an ingestion result into edge accumulators and ambiguity metrics.
+fn record_resolved_ref(
+    resolved: ResolvedRef,
+    edge_accumulators: &mut HashMap<(NodeId, NodeId), EdgeAcc>,
+    amb_out: &mut [u32],
+) {
+    if resolved.is_ambiguous {
+        amb_out[resolved.from as usize] += 1;
+    }
+    for to in resolved.targets {
+        let acc = edge_accumulators.entry((resolved.from, to)).or_default();
+        acc.conf_sum += resolved.conf_per_target;
+        acc.n_ref += 1;
+        acc.is_split |= resolved.is_ambiguous;
+    }
+}
+
 #[must_use]
 pub fn resolve_reference_chunk(
     chunk: &[Reference],
@@ -30,31 +47,25 @@ pub fn resolve_reference_chunk(
     file_dirs: &[u32],
     by_name: &HashMap<Spur, Vec<NodeId>>,
     num_symbols: usize,
-) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>) {
+) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize) {
     let mut edge_accumulators: HashMap<(NodeId, NodeId), EdgeAcc> = HashMap::new();
     let mut amb_out = vec![0u32; num_symbols];
-
+    let mut unresolved = 0usize;
     for r in chunk {
         if let Some(resolved) = resolve_call_reference(r, symbols, file_dirs, by_name) {
-            if resolved.is_ambiguous {
-                amb_out[resolved.from as usize] += 1;
-            }
-            for to in resolved.targets {
-                let acc = edge_accumulators.entry((resolved.from, to)).or_default();
-                acc.conf_sum += resolved.conf_per_target;
-                acc.n_ref += 1;
-                acc.is_split |= resolved.is_ambiguous;
-            }
+            record_resolved_ref(resolved, &mut edge_accumulators, &mut amb_out);
+        } else if r.from_symbol != crate::domain::NO_NODE {
+            unresolved += 1;
         }
     }
 
-    (edge_accumulators, amb_out)
+    (edge_accumulators, amb_out, unresolved)
 }
 
 pub fn merge_resolutions(
-    mut a: (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>),
-    b: (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>),
-) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>) {
+    mut a: (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize),
+    b: (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize),
+) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize) {
     for (k, acc_b) in b.0 {
         let acc_a = a.0.entry(k).or_default();
         acc_a.conf_sum += acc_b.conf_sum;
@@ -64,6 +75,7 @@ pub fn merge_resolutions(
     for (i, val) in b.1.into_iter().enumerate() {
         a.1[i] += val;
     }
+    a.2 += b.2;
     a
 }
 
@@ -72,7 +84,7 @@ pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> Res
     let by_name = index_symbols_by_name(&ingest.symbols);
     let num_symbols = ingest.symbols.len();
 
-    let (edge_accumulators, amb_out) = if ingest.references.len() < 256 {
+    let (edge_accumulators, amb_out, unresolved) = if ingest.references.len() < 256 {
         resolve_reference_chunk(
             &ingest.references,
             &ingest.symbols,
@@ -88,7 +100,7 @@ pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> Res
                 resolve_reference_chunk(chunk, &ingest.symbols, &file_dirs, &by_name, num_symbols)
             })
             .reduce(
-                || (HashMap::new(), vec![0u32; num_symbols]),
+                || (HashMap::new(), vec![0u32; num_symbols], 0usize),
                 merge_resolutions,
             )
     };
@@ -96,6 +108,7 @@ pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> Res
     ResolutionResult {
         edge_accumulators,
         amb_out,
+        unresolved,
     }
 }
 

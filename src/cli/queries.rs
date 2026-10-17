@@ -29,12 +29,20 @@ pub fn serialize_1hop_mode<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     match mode {
-        NavMode::Callers => {
-            crate::navigate::serialize_callers_in_root_xml(root, sym, &nav.callers, out)
-        }
-        NavMode::Callees => {
-            crate::navigate::serialize_callees_in_root_xml(root, sym, &nav.callees, out)
-        }
+        NavMode::Callers => crate::navigate::serialize_callers_with_gauge_xml(
+            root,
+            sym,
+            &nav.callers,
+            &nav.gauge_attrs,
+            out,
+        ),
+        NavMode::Callees => crate::navigate::serialize_callees_with_gauge_xml(
+            root,
+            sym,
+            &nav.callees,
+            &nav.gauge_attrs,
+            out,
+        ),
         NavMode::FindSymbol => crate::navigate::serialize_find_symbol_xml(nav, out),
         _ => Ok(()),
     }
@@ -78,10 +86,16 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
             "ripwire: {flag} symbol not found: {sym}"
         )));
     }
+    let gauge_attrs = ctx.graph.xml_gauge_attrs();
     match mode {
-        NavMode::Uses => {
-            crate::navigate::serialize_uses_in_root_xml(root, sym, ctx.ingest, ctx.interner, out)
-        }
+        NavMode::Uses => crate::navigate::serialize_uses_with_gauge_xml(
+            root,
+            sym,
+            ctx.ingest,
+            ctx.interner,
+            &gauge_attrs,
+            out,
+        ),
         NavMode::Impact => {
             let impact = crate::navigate::transitive_impact_multi(
                 &ids,
@@ -91,7 +105,18 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
                 ctx.interner,
                 None,
             );
-            crate::navigate::serialize_impact_in_root_xml(root, sym, &impact, out)
+            let pr_iters = ctx
+                .graph
+                .page_rank(&crate::rank::PageRankConfig::default())
+                .iterations;
+            crate::navigate::serialize_impact_with_gauge_xml(
+                root,
+                sym,
+                &impact,
+                &gauge_attrs,
+                pr_iters,
+                out,
+            )
         }
         NavMode::Callers | NavMode::Callees | NavMode::FindSymbol => {
             if let Some(nav) = crate::navigate::navigate_1hop_multi(
@@ -853,7 +878,12 @@ pub fn execute_dead_code_query<W: Write>(
             .then_with(|| a.3.cmp(&b.3))
             .then_with(|| a.0.cmp(b.0))
     });
-    crate::serialize::serialize_dead_code_xml(root, &dead, out)
+    crate::serialize::query_xml::serialize_dead_code_with_gauge_xml(
+        root,
+        &dead,
+        graph.gauges(),
+        out,
+    )
 }
 
 pub fn build_community_module<'a>(
@@ -950,10 +980,15 @@ fn compute_community_summary<'a>(
         .values()
         .filter(|n| n.len() == 1 && (graph.in_degree(n[0]) > 0 || graph.out_degree(n[0]) > 0))
         .count();
+    let pr_iters = graph
+        .page_rank(&crate::rank::PageRankConfig::default())
+        .iterations
+        .max(1);
     let mut sum = crate::serialize::CommunitySummary {
         symbols: ingest.symbols.len(),
         connected_singletons,
-        pr_iters: 44,
+        pr_iters,
+        gauges: graph.gauges(),
         ..Default::default()
     };
     tally_isolated_symbols(ingest, graph, &mut sum);

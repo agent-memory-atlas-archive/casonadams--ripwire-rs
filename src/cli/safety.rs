@@ -269,7 +269,13 @@ pub fn execute_test_gate_query<W: Write>(
     let specs: Vec<&str> = files.iter().map(String::as_str).collect();
     let report = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
     let untested = report.reached_symbols.saturating_sub(report.seed_count);
-    crate::serialize::serialize_test_gate_xml(root, &report.tests, untested, out)?;
+    crate::serialize::query_xml::serialize_test_gate_with_gauge_xml(
+        root,
+        &report.tests,
+        untested,
+        &graph.xml_gauge_attrs(),
+        out,
+    )?;
     Ok(report.seed_count > 0 && (!report.tests.is_empty() || untested > 0))
 }
 
@@ -357,13 +363,14 @@ pub fn execute_safe_delete_query<W: Write>(
     let ranks = vec![0.0; ingest.symbols.len()];
     let blast_radius =
         crate::navigate::transitive_impact(sym_id, ingest, graph, &ranks, interner, Some(32)).len();
-    crate::serialize::query_xml::serialize_safe_delete_at_xml(
+    crate::serialize::query_xml::serialize_safe_delete_with_gauge_xml(
         root,
         sym_name,
         sym.kind.tag(),
         &def_loc,
         &callers,
         blast_radius,
+        &graph.xml_gauge_attrs(),
         out,
     )
 }

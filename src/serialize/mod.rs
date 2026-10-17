@@ -105,6 +105,14 @@ pub trait ToXmlString {
     }
 }
 
+/// Resolver gauge counts (`graph_ambiguous=`, `graph_unresolved=`, `graph_unindexed=`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct GraphGauges {
+    pub ambiguous: usize,
+    pub unresolved: usize,
+    pub unindexed: usize,
+}
+
 /// Unified XML envelope trait for structured Ripwire reports.
 pub trait XmlReport {
     fn schema_tag(&self) -> &'static str;
@@ -119,6 +127,12 @@ pub trait XmlReport {
         None
     }
     fn page_window(&self) -> Option<PageWindow> {
+        None
+    }
+    fn pr_iters(&self) -> Option<u32> {
+        None
+    }
+    fn graph_gauges(&self) -> Option<GraphGauges> {
         None
     }
     fn write_extra_attrs<W: std::io::Write>(&self, _out: &mut W) -> std::io::Result<()> {
@@ -141,7 +155,17 @@ pub trait XmlReport {
         if let Some(pw) = self.page_window() {
             out.write_all(pw.xml_attrs().as_bytes())?;
         }
+        if let Some(iters) = self.pr_iters() {
+            write!(out, " pr_iters=\"{}\"", iters.max(1))?;
+        }
         self.write_extra_attrs(out)?;
+        if let Some(g) = self.graph_gauges() {
+            write!(
+                out,
+                " graph_ambiguous=\"{}\" graph_unresolved=\"{}\" graph_unindexed=\"{}\" counts_floor=\"1\"",
+                g.ambiguous, g.unresolved, g.unindexed
+            )?;
+        }
         writeln!(out, ">")?;
         self.write_body(out)?;
         writeln!(out, "</{tag}>")

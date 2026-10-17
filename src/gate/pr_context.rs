@@ -23,6 +23,7 @@ pub struct PrContextReport {
     pub base_ref: String,
     pub files_count: usize,
     pub files: Vec<PrFileContext>,
+    pub gauges: crate::serialize::GraphGauges,
 }
 
 fn build_single_pr_file_context(
@@ -114,6 +115,7 @@ pub fn compute_pr_context_in_root(
         base_ref: base_ref.to_string(),
         files_count: files.len(),
         files,
+        gauges: graph.gauges(),
     }
 }
 
@@ -165,11 +167,14 @@ impl crate::serialize::XmlReport for PrContextReport {
             "ripwire pr-context schema=ripwire.pr-context/v1: review bundle per changed file vs base=.",
         )
     }
+    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
+        Some(self.gauges)
+    }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let est_tokens = 180 + self.files.len() * 140;
         write!(
             w,
-            " base=\"{}\" direction=\"worktree-since-head\" files=\"{}\" skipped_mode_only=\"0\" budget_tokens=\"8000\" est_tokens=\"{est_tokens}\" trim_level=\"0\" truncated=\"none\" budget_default=\"1\" at=\"HEAD\" graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+            " base=\"{}\" direction=\"worktree-since-head\" files=\"{}\" skipped_mode_only=\"0\" budget_tokens=\"8000\" est_tokens=\"{est_tokens}\" trim_level=\"0\" truncated=\"none\" budget_default=\"1\" at=\"HEAD\"",
             self.base_ref, self.files_count
         )
     }
@@ -215,6 +220,7 @@ mod tests {
                 authors_count: 1,
                 bus_factor: 1,
             }],
+            gauges: crate::serialize::GraphGauges::default(),
         };
         let mut out = Vec::new();
         serialize_pr_context_xml(&report, &mut out).expect("serialize should succeed");
