@@ -116,6 +116,12 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
     let ids = crate::navigate::find_symbols_by_name(sym, ctx.ingest, ctx.interner);
     if ids.is_empty() {
         let flag = mode.cli_flag();
+        if let Some(near) = crate::navigate::find_nearest_symbol_name(sym, ctx.ingest, ctx.interner)
+        {
+            return Err(io::Error::other(format!(
+                "ripwire: {flag} symbol not found: {sym} (did you mean '{near}'?)"
+            )));
+        }
         return Err(io::Error::other(format!(
             "ripwire: {flag} symbol not found: {sym}"
         )));
@@ -430,9 +436,11 @@ fn execute_skipped_census_query<W: Write>(
     let total_skipped = oversize_cnt + excluded_cnt + unsupported_cnt;
     writeln!(
         out,
-        "<ctx schema=\"ripwire.skipped/v1\" root=\"{root_esc}\"><skipped schema=\"ripwire.skipped/v1\" root=\"{root_esc}\" indexed=\"{}\" oversize=\"{oversize_cnt}\" excluded=\"{excluded_cnt}\" unsupported_ext=\"{unsupported_cnt}\" max_file_size=\"{}\" count=\"{total_skipped}\">",
+        "<ctx schema=\"ripwire.skipped/v1\" root=\"{root_esc}\"><skipped schema=\"ripwire.skipped/v1\" root=\"{root_esc}\" indexed=\"{}\" oversize=\"{oversize_cnt}\" excluded=\"{excluded_cnt}\" unsupported_ext=\"{unsupported_cnt}\" max_file_size=\"{}\" json_ceiling=\"{}\" yaml_ceiling=\"{}\" count=\"{total_skipped}\">",
         ingest.files.len(),
-        opts.max_file_size
+        opts.max_file_size,
+        crate::crawler::DEFAULT_JSON_CEILING,
+        crate::crawler::DEFAULT_YAML_CEILING
     )?;
     for (p, bytes, ext) in census.oversize.iter().take(40) {
         writeln!(

@@ -3,6 +3,8 @@ use ignore::WalkBuilder;
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_MAX_FILE_SIZE: u64 = 4 * 1024 * 1024;
+pub const DEFAULT_JSON_CEILING: u64 = 256 * 1024;
+pub const DEFAULT_YAML_CEILING: u64 = 512 * 1024;
 pub const DENYLIST_DIRS: &[&str] = &[
     ".git",
     ".hg",
@@ -164,7 +166,8 @@ pub fn evaluate_candidate(
         return None;
     }
     let lang = resolve_path_lang(path);
-    if lang == Lang::Unknown || byte_size == 0 || byte_size > options.max_file_size || is_binary {
+    let ceiling = lang.semantics().max_file_size(options.max_file_size);
+    if lang == Lang::Unknown || byte_size == 0 || byte_size > ceiling || is_binary {
         return None;
     }
     Some(CrawledFile {
@@ -215,7 +218,7 @@ fn classify_skipped_entry(
             *ext_counts.entry(ext.clone()).or_default() += 1;
         }
         census.unsupported.push((rel_path, size, ext));
-    } else if size > options.max_file_size {
+    } else if size > lang.semantics().max_file_size(options.max_file_size) {
         census.oversize.push((rel_path, size, ext));
     }
 }
@@ -289,5 +292,12 @@ mod tests {
         let defaults = CrawlerOptions::default();
         assert!(evaluate_candidate("tests/test_cli.rs", 10, false, &defaults).is_some());
         assert!(evaluate_candidate("src/lib.rs", 101, false, &defaults).is_some());
+        assert!(evaluate_candidate("data.json", DEFAULT_JSON_CEILING, false, &defaults).is_some());
+        assert!(
+            evaluate_candidate("data.json", DEFAULT_JSON_CEILING + 1, false, &defaults).is_none()
+        );
+        assert!(
+            evaluate_candidate("config.yaml", DEFAULT_YAML_CEILING + 1, false, &defaults).is_none()
+        );
     }
 }

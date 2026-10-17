@@ -392,9 +392,17 @@ pub fn serialize_flags_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()>
                 let kind = g.str_or("kind", "compile");
                 let file = g.str_any(&["file", "path"], "").xml_escaped();
                 let line = g.u64_or("line", 0);
+                let def_attr = match g.opt_str("default").filter(|s| !s.is_empty()) {
+                    Some(d) => format!(" default=\"{}\"", d.xml_escaped()),
+                    None => String::new(),
+                };
+                let dark_attr = g
+                    .get("dark")
+                    .and_then(Value::as_u64)
+                    .map_or_else(String::new, |d| format!(" dark=\"{d}\""));
                 writeln!(
                     out,
-                    "  <gate name=\"{name}\" kind=\"{kind}\" p=\"{file}\" l=\"{line}\"/>"
+                    "  <gate name=\"{name}\" kind=\"{kind}\"{def_attr}{dark_attr} p=\"{file}\" l=\"{line}\"/>"
                 )?;
             }
         }

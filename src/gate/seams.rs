@@ -97,9 +97,9 @@ fn check_cross_module_edge(
     let seam_edge = if is_untested {
         Some(SeamEdge {
             caller: interner[sym.name].to_string(),
-            caller_path: from_file.to_string(),
+            caller_path: format!("{from_file}:{}", sym.line),
             callee: interner[target_sym.name].to_string(),
-            callee_path: to_file.to_string(),
+            callee_path: format!("{to_file}:{}", target_sym.line),
         })
     } else {
         None
@@ -182,7 +182,13 @@ pub fn find_integration_seams(
             edges,
         });
     }
-
+    groups.sort_by(|a, b| {
+        b.edges
+            .len()
+            .cmp(&a.edges.len())
+            .then_with(|| a.from_dir.cmp(&b.from_dir))
+            .then_with(|| a.to_dir.cmp(&b.to_dir))
+    });
     SeamsReport {
         modules_count: all_modules.len(),
         bridges_count,

@@ -280,9 +280,14 @@ impl crate::serialize::XmlReport for QualityPanelReport {
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
         let ccut = if self.cfiles > 0 { 40 } else { 0 };
+        let unavail_attrs = if self.cfiles == 0 {
+            " unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\""
+        } else {
+            ""
+        };
         write!(
             w,
-            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"{}\" sscope=\"{}\" cells=\"{}\" tested_scope=\"{}\" deep_untested=\"{}\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
+            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\"{unavail_attrs} bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"{}\" sscope=\"{}\" cells=\"{}\" tested_scope=\"{}\" deep_untested=\"{}\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
             self.preset,
             self.cut,
             self.eligible,
@@ -308,11 +313,16 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let unavail_row_attr = if self.cfiles == 0 {
+            " unavail=\"confusion\""
+        } else {
+            ""
+        };
         for r in self.rows.iter().take(40) {
             use crate::serialize::XmlEscapeExt;
             writeln!(
                 w,
-                "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"{}\" fired=\"{}\" unavail=\"confusion\"/>",
+                "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"{}\" fired=\"{}\"{unavail_row_attr}/>",
                 r.path.xml_escaped(),
                 r.line,
                 r.name.xml_escaped(),

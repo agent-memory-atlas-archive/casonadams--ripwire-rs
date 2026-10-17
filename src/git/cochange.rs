@@ -468,8 +468,10 @@ where
         }
     }
     pairs.sort_by(|a, b| {
-        b.together
-            .cmp(&a.together)
+        b.surprising
+            .cmp(&a.surprising)
+            .then_with(|| b.dep_capable.cmp(&a.dep_capable))
+            .then_with(|| b.together.cmp(&a.together))
             .then_with(|| {
                 b.deg
                     .partial_cmp(&a.deg)

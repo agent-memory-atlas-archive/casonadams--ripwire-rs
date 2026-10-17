@@ -34,6 +34,17 @@ pub enum VisibilityMode {
     DefaultPublic,
 }
 
+/// Context passed to `LanguageSemantics::is_def_capture_allowed` to filter raw query captures.
+#[derive(Clone, Copy)]
+pub struct DefCaptureGateContext<'a> {
+    pub kind: SymKind,
+    pub sub: Option<&'static str>,
+    pub name: &'a str,
+    pub name_node: Option<tree_sitter::Node<'a>>,
+    pub def_node: Option<tree_sitter::Node<'a>>,
+    pub source_bytes: &'a [u8],
+}
+
 /// Unified trait encapsulating all language-specific syntax, AST, visibility, and resolution rules.
 pub trait LanguageSemantics: Sync {
     /// Short canonical tag used in XML output (`"rs"`, `"ts"`, etc.).
@@ -87,6 +98,11 @@ pub trait LanguageSemantics: Sync {
         VisibilityMode::DefaultPublic
     }
 
+    /// Maximum byte size allowed for indexing a file of this language.
+    fn max_file_size(&self, default_max: u64) -> u64 {
+        default_max
+    }
+
     /// Optional custom file parser override (used by Markdown, YAML nesting guard, and Astro frontmatter).
     fn parse_file_override(
         &self,
@@ -137,6 +153,10 @@ pub trait LanguageSemantics: Sync {
         self.is_builtin_keyword(name)
     }
 
+    /// True if a captured definition satisfies language-specific structural/naming gates.
+    fn is_def_capture_allowed(&self, _ctx: &DefCaptureGateContext<'_>) -> bool {
+        true
+    }
     /// True if a symbol name is public by language naming convention.
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_')

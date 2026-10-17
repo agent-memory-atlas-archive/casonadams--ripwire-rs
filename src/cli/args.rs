@@ -907,6 +907,22 @@ pub trait Budgeted {
     fn max_tokens_opt(&self) -> Option<usize>;
     fn top_k_opt(&self) -> Option<usize>;
     fn detail_opt(&self) -> Option<usize>;
+
+    fn effective_budget_bytes(&self) -> Option<usize> {
+        if self.top_k_opt().is_some()
+            && self.pack_budget_opt().is_none()
+            && self.token_budget_opt().is_none()
+            && self.max_tokens_opt().is_none()
+        {
+            None
+        } else {
+            super::dispatch::compute_effective_budget(
+                self.pack_budget_opt(),
+                self.token_budget_opt(),
+                self.max_tokens_opt(),
+            )
+        }
+    }
 }
 
 /// Capability trait for git history scope modifiers (`--with-history`, `--since`).
@@ -921,8 +937,20 @@ pub trait OutputDialect {
     fn is_pretty_out(&self) -> bool;
     fn is_legend_none(&self) -> bool;
     fn target_root(&self) -> &str;
-}
 
+    fn wrap_xml_writer<'a, W: std::io::Write>(
+        &self,
+        inner: &'a mut W,
+        force_plain: bool,
+    ) -> crate::serialize::XmlWriter<'a, W> {
+        crate::serialize::XmlWriter::with_options(
+            inner,
+            self.is_pretty_out() || force_plain,
+            self.is_json_out() && !force_plain,
+            self.is_legend_none() && !force_plain,
+        )
+    }
+}
 impl Paginated for TopModifierArgs {
     fn limit_opt(&self) -> Option<usize> {
         self.limit

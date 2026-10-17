@@ -227,6 +227,23 @@ fn flush_corroborated_missing(
     }
 }
 
+fn is_dated_or_historical_doc(doc_path: &str, text: &str) -> bool {
+    let lower = doc_path.to_ascii_lowercase();
+    if lower.ends_with("changelog.md") || lower.contains("/changelog") {
+        return true;
+    }
+    text.lines().take(15).any(|l| {
+        let bytes = l.as_bytes();
+        bytes.windows(10).any(|w| {
+            w[0..4].iter().all(u8::is_ascii_digit)
+                && w[4] == b'-'
+                && w[5..7].iter().all(u8::is_ascii_digit)
+                && w[7] == b'-'
+                && w[8..10].iter().all(u8::is_ascii_digit)
+        })
+    })
+}
+
 fn scan_doc_text_for_drift(
     text: &str,
     doc_path: &str,
@@ -415,6 +432,7 @@ pub fn call_doc_drift_with_history(
         if doc_path.ends_with(".md")
             && let Ok(text) = fs::read_to_string(root_path.join(doc_path))
                 .or_else(|_| fs::read_to_string(doc_path))
+            && !is_dated_or_historical_doc(doc_path, &text)
         {
             scan_doc_text_for_drift(&text, doc_path, &file_map, &sym_set, &mut drift_items);
         }
@@ -467,88 +485,125 @@ fn extract_env_identifier(line: &str) -> Option<String> {
 
 fn extract_compile_guard(line: &str) -> Option<String> {
     let trimmed = line.trim();
-    if let Some(rest) = trimmed.strip_prefix("#ifndef ") {
-        let name: String = rest
-            .split_whitespace()
-            .next()?
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if !name.is_empty() {
-            return Some(name);
-        }
-    }
-    if let Some(rest) = trimmed.strip_prefix("#ifdef ") {
-        let name: String = rest
-            .split_whitespace()
-            .next()?
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if !name.is_empty() {
-            return Some(name);
+    for prefix in ["#ifndef ", "#ifdef "] {
+        if let Some(rest) = trimmed.strip_prefix(prefix) {
+            let name: String = rest
+                .split_whitespace()
+                .next()?
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty()
+                && !name.ends_with("_H")
+                && !name.ends_with("_HPP")
+                && !name.ends_with("_INCLUDED")
+            {
+                return Some(name);
+            }
         }
     }
     None
 }
 
-fn extract_cmake_option(line: &str, path: &str) -> Option<String> {
+fn find_ifndef_default(lines: &[&str], idx: usize, name: &str) -> Option<(String, bool)> {
+    for &next_line in lines.iter().skip(idx + 1).take(3) {
+        if let Some(def_rest) = next_line.trim().strip_prefix("#define ") {
+            let mut parts = def_rest.split_whitespace();
+            if parts.next() == Some(name) {
+                let val = parts.next()?;
+                let dark = val == "0" || val.eq_ignore_ascii_case("false");
+                return Some((val.to_string(), dark));
+            }
+        }
+    }
+    Some(("0".to_string(), true))
+}
+
+fn extract_compile_guard_with_default(
+    lines: &[&str],
+    idx: usize,
+) -> Option<(String, String, bool)> {
+    let name = extract_compile_guard(lines[idx])?;
+    let (val, dark) = if lines[idx].trim().starts_with("#ifndef ") {
+        find_ifndef_default(lines, idx, &name)?
+    } else {
+        ("0".to_string(), true)
+    };
+    Some((name, val, dark))
+}
+
+fn extract_cmake_option(line: &str, path: &str) -> Option<(String, String, bool)> {
     if !path.ends_with(".cmake") && !path.ends_with("CMakeLists.txt") {
         return None;
     }
-    let trimmed = line.trim();
-    if let Some(rest) = trimmed.strip_prefix("option(") {
-        let name: String = rest
-            .trim_start()
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if !name.is_empty() {
-            return Some(name);
-        }
+    let rest = line.trim().strip_prefix("option(")?;
+    let inner = rest.trim_end_matches(')').trim();
+    let name: String = inner
+        .chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    if name.is_empty() {
+        return None;
     }
-    None
+    let is_on = inner
+        .split_whitespace()
+        .last()
+        .is_some_and(|t| t.eq_ignore_ascii_case("ON"));
+    let def_val = if is_on { "ON" } else { "OFF" };
+    Some((name, def_val.to_string(), !is_on))
 }
 
-fn scan_file_flags(
-    root_path: &std::path::Path,
-    path: &str,
-    flags: &mut Vec<Value>,
-    compile_count: &mut usize,
-    cmake_count: &mut usize,
-    env_count: &mut usize,
-) {
+#[derive(Default)]
+struct FlagsScanTally {
+    flags: Vec<Value>,
+    compile_count: usize,
+    cmake_count: usize,
+    env_count: usize,
+    dark_gates: usize,
+}
+
+fn scan_file_flags(root_path: &std::path::Path, path: &str, tally: &mut FlagsScanTally) {
     let Ok(text) = fs::read_to_string(root_path.join(path)).or_else(|_| fs::read_to_string(path))
     else {
         return;
     };
-    for (idx, line) in text.lines().enumerate() {
-        if let Some(guard) = extract_compile_guard(line) {
-            *compile_count += 1;
-            flags.push(json!({
+    let lines: Vec<&str> = text.lines().collect();
+    for (idx, &line) in lines.iter().enumerate() {
+        if let Some((guard, def_val, is_dark)) = extract_compile_guard_with_default(&lines, idx) {
+            tally.compile_count += 1;
+            tally.dark_gates += usize::from(is_dark);
+            tally.flags.push(json!({
                 "name": guard,
                 "flag": guard,
                 "kind": "compile",
+                "default": def_val,
+                "dark": usize::from(is_dark),
                 "file": path,
                 "path": path,
                 "line": idx + 1
             }));
-        } else if let Some(opt) = extract_cmake_option(line, path) {
-            *cmake_count += 1;
-            flags.push(json!({
+        } else if let Some((opt, def_val, is_dark)) = extract_cmake_option(line, path) {
+            tally.cmake_count += 1;
+            tally.dark_gates += usize::from(is_dark);
+            tally.flags.push(json!({
                 "name": opt,
                 "flag": opt,
                 "kind": "cmake",
+                "default": def_val,
+                "dark": usize::from(is_dark),
                 "file": path,
                 "path": path,
                 "line": idx + 1
             }));
         } else if let Some(env_var) = extract_env_identifier(line) {
-            *env_count += 1;
-            flags.push(json!({
+            tally.env_count += 1;
+            tally.dark_gates += 1;
+            tally.flags.push(json!({
                 "name": env_var,
                 "flag": env_var,
                 "kind": "env",
+                "default": "",
+                "dark": 1,
                 "file": path,
                 "path": path,
                 "line": idx + 1
@@ -564,39 +619,32 @@ pub fn call_flags(ingest: &IngestResult, interner: &Interner) -> Value {
 
 pub fn call_flags_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
     let root_path = std::path::Path::new(root);
-    let mut flags = Vec::new();
-    let mut compile_count = 0usize;
-    let mut cmake_count = 0usize;
-    let mut env_count = 0usize;
+    let mut tally = FlagsScanTally::default();
 
     for file in &ingest.files {
         if !file.lang.semantics().is_prose_document() {
             let path = interner.resolve(&file.path);
-            scan_file_flags(
-                root_path,
-                path,
-                &mut flags,
-                &mut compile_count,
-                &mut cmake_count,
-                &mut env_count,
-            );
+            scan_file_flags(root_path, path, &mut tally);
+        }
+    }
+    for cmake_rel in ["CMakeLists.txt", "cmake/options.cmake"] {
+        if root_path.join(cmake_rel).is_file() {
+            scan_file_flags(root_path, cmake_rel, &mut tally);
         }
     }
 
-    let dark_gates = compile_count + cmake_count;
     json!({
         "root": root,
         "files": ingest.files.len(),
-        "flags_count": flags.len(),
-        "compile_count": compile_count,
-        "cmake_count": cmake_count,
-        "env_count": env_count,
-        "dark_gates": dark_gates,
-        "gates": flags.clone(),
-        "flags": flags
+        "flags_count": tally.flags.len(),
+        "compile_count": tally.compile_count,
+        "cmake_count": tally.cmake_count,
+        "env_count": tally.env_count,
+        "dark_gates": tally.dark_gates,
+        "gates": tally.flags.clone(),
+        "flags": tally.flags
     })
 }
-
 /// Execute `owners` tool: git commit author ownership per file.
 fn record_commit_authors(
     file_authors: &mut HashMap<String, HashMap<String, f64>>,
@@ -1303,10 +1351,25 @@ mod tests {
             Some("OTHER_FLAG".into())
         );
         assert_eq!(extract_compile_guard("#include <stdio.h>"), None);
-
+        assert_eq!(extract_compile_guard("#ifndef MY_HEADER_H"), None);
+        let lines = ["#ifndef DARK_GATE", "#define DARK_GATE 0", "int x;"];
+        assert_eq!(
+            extract_compile_guard_with_default(&lines, 0),
+            Some(("DARK_GATE".into(), "0".into(), true))
+        );
+        let lit_lines = ["#ifndef LIT_GATE", "#define LIT_GATE 1"];
+        assert_eq!(
+            extract_compile_guard_with_default(&lit_lines, 0),
+            Some(("LIT_GATE".into(), "1".into(), false))
+        );
+        let ifdef_lines = ["#ifdef SOME_FEATURE"];
+        assert_eq!(
+            extract_compile_guard_with_default(&ifdef_lines, 0),
+            Some(("SOME_FEATURE".into(), "0".into(), true))
+        );
         assert_eq!(
             extract_cmake_option("option(ENABLE_TESTS \"doc\" ON)", "CMakeLists.txt"),
-            Some("ENABLE_TESTS".into())
+            Some(("ENABLE_TESTS".into(), "ON".into(), false))
         );
         assert_eq!(
             extract_cmake_option("option(ENABLE_TESTS \"doc\" ON)", "main.rs"),

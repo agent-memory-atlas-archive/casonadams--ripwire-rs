@@ -49,6 +49,10 @@ impl LanguageSemantics for JsonLanguage {
     fn supports_embedded_sql(&self) -> bool {
         false
     }
+
+    fn max_file_size(&self, default_max: u64) -> u64 {
+        default_max.min(crate::crawler::DEFAULT_JSON_CEILING)
+    }
 }
 
 impl LanguageSemantics for TomlLanguage {
@@ -74,6 +78,10 @@ impl LanguageSemantics for TomlLanguage {
 
     fn supports_slice(&self) -> bool {
         false
+    }
+
+    fn max_file_size(&self, default_max: u64) -> u64 {
+        default_max.min(crate::crawler::DEFAULT_YAML_CEILING)
     }
 }
 
@@ -104,6 +112,10 @@ impl LanguageSemantics for YamlLanguage {
 
     fn supports_embedded_sql(&self) -> bool {
         false
+    }
+
+    fn max_file_size(&self, default_max: u64) -> u64 {
+        default_max.min(crate::crawler::DEFAULT_YAML_CEILING)
     }
 
     fn parse_file_override(

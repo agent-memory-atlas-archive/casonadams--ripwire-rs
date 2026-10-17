@@ -90,6 +90,70 @@ pub fn find_symbols_by_name(name: &str, ingest: &IngestResult, interner: &Intern
         .collect()
 }
 
+/// Compute bounded Levenshtein edit distance between two ASCII strings.
+#[must_use]
+pub fn edit_distance_bounded(a: &str, b: &str, max_dist: usize) -> Option<usize> {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    if a_bytes.len().abs_diff(b_bytes.len()) > max_dist {
+        return None;
+    }
+    let mut prev: Vec<usize> = (0..=b_bytes.len()).collect();
+    let mut curr = vec![0; b_bytes.len() + 1];
+    for (i, &ca) in a_bytes.iter().enumerate() {
+        curr[0] = i + 1;
+        let mut row_min = curr[0];
+        for (j, &cb) in b_bytes.iter().enumerate() {
+            let cost = usize::from(!ca.eq_ignore_ascii_case(&cb));
+            curr[j + 1] = (prev[j + 1] + 1).min(curr[j] + 1).min(prev[j] + cost);
+            row_min = row_min.min(curr[j + 1]);
+        }
+        if row_min > max_dist {
+            return None;
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+    let d = prev[b_bytes.len()];
+    (d <= max_dist).then_some(d)
+}
+
+/// Find the closest symbol name in the index within edit distance <= 3.
+#[must_use]
+pub fn find_nearest_symbol_name<'a>(
+    query: &str,
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+) -> Option<&'a str> {
+    let target = query
+        .rsplit("::")
+        .next()
+        .unwrap_or(query)
+        .rsplit(':')
+        .next()
+        .unwrap_or(query)
+        .rsplit('.')
+        .next()
+        .unwrap_or(query);
+    if target.len() < 3 {
+        return None;
+    }
+    let max_dist = (target.len() / 3).clamp(1, 3);
+    let mut best: Option<(usize, &'a str)> = None;
+    for sym in &ingest.symbols {
+        if sym.kind == crate::domain::SymKind::Section {
+            continue;
+        }
+        let cand = &interner[sym.name];
+        if let Some(d) = edit_distance_bounded(target, cand, max_dist)
+            && d > 0
+            && best.is_none_or(|(bd, bn)| d < bd || (d == bd && cand < bn))
+        {
+            best = Some((d, cand));
+        }
+    }
+    best.map(|(_, name)| name)
+}
+
 /// Build `SymbolNavInfo` for a node.
 #[must_use]
 pub fn get_symbol_nav_info(
@@ -337,10 +401,10 @@ fn enqueue_impact_callers(
     visited: &mut HashSet<NodeId>,
     queue: &mut VecDeque<(NodeId, u32)>,
 ) {
-    if depth >= 1 && graph.in_degree(curr) > 64 {
+    if depth >= 1 && graph.in_degree(curr) > 512 {
         return;
     }
-    let min_weight = if depth == 0 { 0.2 } else { 0.35 };
+    let min_weight = if depth == 0 { 0.1 } else { 0.2 };
     for (caller_id, weight) in graph.callers(curr) {
         if weight >= min_weight && visited.insert(caller_id) {
             queue.push_back((caller_id, depth + 1));

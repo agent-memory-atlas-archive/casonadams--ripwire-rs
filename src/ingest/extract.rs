@@ -59,14 +59,17 @@ pub fn classify_capture(name: &str) -> Option<Capture> {
             "cjsexport" => (SymKind::Function, Some("cjsexport")),
             "method" => (SymKind::Method, None),
             "protomethod" => (SymKind::Method, Some("protomethod")),
-            "class" | "object" | "specialization" => (SymKind::Class, None),
+            "class" | "object" => (SymKind::Class, None),
+            "specialization" => (SymKind::Class, Some("specialization")),
             "struct" => (SymKind::Struct, None),
             "interface" => (SymKind::Interface, None),
-            "type" | "var" | "constant" | "attribute" | "property" | "enummember" => {
-                (SymKind::Var, None)
-            }
-            "macro" | "testmacroblock" => (SymKind::Macro, None),
-            "module" | "section" | "yamlkey" => (SymKind::Section, None),
+            "constant" => (SymKind::Var, Some("constant")),
+            "enummember" => (SymKind::Var, Some("enummember")),
+            "type" | "var" | "attribute" | "property" => (SymKind::Var, None),
+            "macro" => (SymKind::Macro, None),
+            "testmacroblock" => (SymKind::Macro, Some("testmacroblock")),
+            "yamlkey" => (SymKind::Section, Some("yamlkey")),
+            "module" | "section" => (SymKind::Section, None),
             "field" => (SymKind::Field, None),
             _ => return None,
         };
@@ -148,7 +151,9 @@ fn extract_node_scope(
         | "abstract_class_declaration"
         | "interface_declaration"
         | "class_definition"
+        | "class_specifier"
         | "struct_specifier"
+        | "namespace_definition"
         | "object_declaration"
         | "companion_object" => extract_named_container_scope(parent, name_node, source_bytes),
         _ => None,
@@ -438,8 +443,17 @@ fn record_def_item(
     let (Some(orig_name), Some((kind, sub, start, end, line))) = (&ext.name, ext.def) else {
         return;
     };
+    let gate_ctx = crate::languages::DefCaptureGateContext {
+        kind,
+        sub,
+        name: orig_name,
+        name_node: ext.name_node,
+        def_node: ext.def_node,
+        source_bytes,
+    };
     if lang.semantics().is_builtin_keyword(orig_name)
         || !is_gated_def_allowed(sub, ext.name_node, source_bytes)
+        || !lang.semantics().is_def_capture_allowed(&gate_ctx)
     {
         return;
     }

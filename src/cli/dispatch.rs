@@ -253,12 +253,7 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
                 }
             }
         }
-        let mut stdout = crate::serialize::XmlWriter::with_options(
-            &mut stdout_lock,
-            cli.modifiers.is_pretty(),
-            cli.modifiers.is_json(),
-            cli.legend.eq_ignore_ascii_case("none"),
-        );
+        let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
         let nav_ctx = NavContext {
             ingest: &ingest,
             graph: &graph,
@@ -319,12 +314,7 @@ pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::R
         };
         let plain = verb.force_plain_markdown();
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout = crate::serialize::XmlWriter::with_options(
-            &mut stdout_lock,
-            cli.is_pretty_out() || plain,
-            cli.is_json_out() && !plain,
-            cli.is_legend_none() && !plain,
-        );
+        let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, plain);
         verb.execute_verb(&ctx, &mut stdout)?;
         stdout.flush()
     })())
@@ -760,12 +750,7 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         return Some((|| {
             let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
             let mut stdout_lock = io::stdout().lock();
-            let mut stdout = crate::serialize::XmlWriter::with_options(
-                &mut stdout_lock,
-                cli.modifiers.is_pretty(),
-                cli.modifiers.is_json(),
-                cli.legend.eq_ignore_ascii_case("none"),
-            );
+            let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
             execute_batch_file(root, file, &ingest, &graph, &pr, &interner, &mut stdout)?;
             stdout.flush()
         })());
@@ -779,16 +764,11 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 }
 
 pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io::Result<()> {
-    let emit_legend = !cli.legend.eq_ignore_ascii_case("none");
+    let emit_legend = !cli.is_legend_none();
     let legend_full = cli.legend.eq_ignore_ascii_case("full");
     let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
     let mut stdout_lock = io::stdout().lock();
-    let mut stdout = crate::serialize::XmlWriter::with_options(
-        &mut stdout_lock,
-        cli.modifiers.is_pretty(),
-        cli.modifiers.is_json(),
-        cli.legend.eq_ignore_ascii_case("none"),
-    );
+    let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
     let args = RankedStreamArgs {
         root,
         rank_by: &cli.rank_by,
@@ -908,8 +888,8 @@ fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             cochange_recur: cli.safety.cochange_recur,
             hotspots: cli.hotspots,
             since: cli.since.as_deref(),
-            pretty: cli.modifiers.is_pretty(),
-            json_out: cli.modifiers.is_json(),
+            pretty: cli.is_pretty_out(),
+            json_out: cli.is_json_out(),
         },
     ) {
         return Some(res);
@@ -998,15 +978,7 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
         );
     }
 
-    let budget = if cli.top_k.is_some()
-        && cli.pack_budget.is_none()
-        && cli.token_budget.is_none()
-        && cli.max_tokens.is_none()
-    {
-        None
-    } else {
-        compute_effective_budget(cli.pack_budget, cli.token_budget, cli.max_tokens)
-    };
+    let budget = cli.effective_budget_bytes();
     match &cli.command {
         Some(cmd) => dispatch_subcommand(cmd),
         None => dispatch_default_run(&cli, root, budget),
