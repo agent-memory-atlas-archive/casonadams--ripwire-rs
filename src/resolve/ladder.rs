@@ -181,22 +181,153 @@ pub fn select_precedence_tier(
     None
 }
 
-/// Resolve a single reference according to the precedence ladder.
-#[must_use]
-fn is_candidate_compatible(sym: &Symbol, r: &Reference) -> bool {
-    if sym.lang.semantics().is_table_read_write_target()
-        && matches!(r.role, RefRole::Read | RefRole::Write)
-    {
-        return true;
+fn is_unpinned_std_member_blocked(
+    r: &Reference,
+    sym: &Symbol,
+    caller_scope: Option<Spur>,
+    callee_str: &str,
+) -> bool {
+    if r.qualifier.is_some() || !sym.lang.semantics().is_std_or_builtin_member(callee_str) {
+        return false;
     }
-    let arity_ok = !r.arg_count_known
-        || r.arg_count <= sym.params
-        || (sym.params == 0
-            && !matches!(
-                sym.kind,
-                crate::domain::SymKind::Function | crate::domain::SymKind::Method
-            ));
-    sym.lang.is_compatible(r.lang) && arity_ok
+    match sym.kind {
+        crate::domain::SymKind::Field | crate::domain::SymKind::Var => true,
+        crate::domain::SymKind::Method => sym.scope.is_none() || caller_scope != sym.scope,
+        crate::domain::SymKind::Function => sym.file_id != r.file_id,
+        _ => false,
+    }
+}
+
+/// Trait encapsulating symbol table and directory context for call resolution.
+pub trait ResolutionLookup {
+    fn symbols(&self) -> &[Symbol];
+    fn file_dirs(&self) -> &[u32];
+    fn by_name(&self) -> &HashMap<Spur, Vec<NodeId>>;
+    fn interner(&self) -> Option<&Interner> {
+        None
+    }
+
+    #[must_use]
+    fn is_compatible_target(&self, r: &Reference, sym: &Symbol) -> bool {
+        if sym.lang.semantics().is_table_read_write_target()
+            && matches!(r.role, RefRole::Read | RefRole::Write)
+        {
+            return true;
+        }
+        if let Some(interner) = self.interner() {
+            let callee_str = interner.try_resolve(&r.callee_name).unwrap_or("");
+            let caller_scope = self
+                .symbols()
+                .get(r.from_symbol as usize)
+                .and_then(|cs| cs.scope);
+            if is_unpinned_std_member_blocked(r, sym, caller_scope, callee_str) {
+                return false;
+            }
+        }
+        let arity_ok = sym.kind == crate::domain::SymKind::Macro
+            || !r.arg_count_known
+            || r.arg_count <= sym.params
+            || (sym.params == 0 && !sym.is_callable());
+        sym.lang.is_compatible(r.lang) && arity_ok
+    }
+
+    #[must_use]
+    fn filter_ref_candidates(&self, all_cands: &[NodeId], r: &Reference) -> Option<CandBuffer> {
+        let symbols = self.symbols();
+        let mut cands = CandBuffer::default();
+        for &id in all_cands {
+            if self.is_compatible_target(r, &symbols[id as usize]) {
+                cands.push(id);
+            }
+        }
+        if cands.is_empty() {
+            return None;
+        }
+        if let Some(q) = r.qualifier {
+            let mut qualified = CandBuffer::default();
+            for &id in &cands {
+                if symbols[id as usize].scope == Some(q) {
+                    qualified.push(id);
+                }
+            }
+            if !qualified.is_empty() {
+                cands = qualified;
+            }
+        }
+        Some(cands)
+    }
+
+    #[must_use]
+    fn resolve_ref(&self, r: &Reference) -> Option<ResolvedRef> {
+        if r.from_symbol == NO_NODE
+            || !matches!(
+                r.role,
+                RefRole::Call | RefRole::Macro | RefRole::Read | RefRole::Write
+            )
+        {
+            return None;
+        }
+        let all_cands = self.by_name().get(&r.callee_name)?;
+        let cands = self.filter_ref_candidates(all_cands, r)?;
+        let caller_file_id = r.file_id;
+        let caller_dir_id = self
+            .file_dirs()
+            .get(caller_file_id as usize)
+            .copied()
+            .unwrap_or(u32::MAX);
+        let (tier, conf) = select_precedence_tier(
+            &cands,
+            caller_file_id,
+            caller_dir_id,
+            self.symbols(),
+            self.file_dirs(),
+        )?;
+        let real_targets: Vec<NodeId> = tier
+            .into_iter()
+            .filter(|&target| target != r.from_symbol)
+            .collect();
+        if real_targets.is_empty() {
+            return None;
+        }
+        let is_ambiguous = real_targets.len() > 1;
+        let conf_per_target = conf / (real_targets.len() as f32);
+        Some(ResolvedRef {
+            from: r.from_symbol,
+            targets: real_targets,
+            conf_per_target,
+            is_ambiguous,
+        })
+    }
+}
+
+/// Concrete lookup context bundling symbol tables, directory mapping, and optional interner.
+pub struct ResolutionContext<'a> {
+    pub symbols: &'a [Symbol],
+    pub file_dirs: &'a [u32],
+    pub by_name: &'a HashMap<Spur, Vec<NodeId>>,
+    pub interner: Option<&'a Interner>,
+}
+
+impl ResolutionLookup for ResolutionContext<'_> {
+    #[inline]
+    fn symbols(&self) -> &[Symbol] {
+        self.symbols
+    }
+
+    #[inline]
+    fn file_dirs(&self) -> &[u32] {
+        self.file_dirs
+    }
+
+    #[inline]
+    fn by_name(&self) -> &HashMap<Spur, Vec<NodeId>> {
+        self.by_name
+    }
+
+    #[inline]
+    fn interner(&self) -> Option<&Interner> {
+        self.interner
+    }
 }
 
 pub fn filter_candidates(
@@ -204,29 +335,14 @@ pub fn filter_candidates(
     r: &Reference,
     symbols: &[Symbol],
 ) -> Option<CandBuffer> {
-    let mut cands = CandBuffer::default();
-    for &id in all_cands {
-        if is_candidate_compatible(&symbols[id as usize], r) {
-            cands.push(id);
-        }
-    }
-    if cands.is_empty() {
-        return None;
-    }
-
-    if let Some(q) = r.qualifier {
-        let mut qualified = CandBuffer::default();
-        for &id in &cands {
-            if symbols[id as usize].scope == Some(q) {
-                qualified.push(id);
-            }
-        }
-        if !qualified.is_empty() {
-            cands = qualified;
-        }
-    }
-
-    Some(cands)
+    let empty_map = HashMap::new();
+    let ctx = ResolutionContext {
+        symbols,
+        file_dirs: &[],
+        by_name: &empty_map,
+        interner: None,
+    };
+    ctx.filter_ref_candidates(all_cands, r)
 }
 
 pub fn resolve_call_reference(
@@ -235,35 +351,11 @@ pub fn resolve_call_reference(
     file_dirs: &[u32],
     by_name: &HashMap<Spur, Vec<NodeId>>,
 ) -> Option<ResolvedRef> {
-    if r.from_symbol == NO_NODE || !matches!(r.role, RefRole::Call | RefRole::Read | RefRole::Write)
-    {
-        return None;
-    }
-    let all_cands = by_name.get(&r.callee_name)?;
-    let cands = filter_candidates(all_cands, r, symbols)?;
-
-    let caller_file_id = r.file_id;
-    let caller_dir_id = file_dirs
-        .get(caller_file_id as usize)
-        .copied()
-        .unwrap_or(u32::MAX);
-    let (tier, conf) =
-        select_precedence_tier(&cands, caller_file_id, caller_dir_id, symbols, file_dirs)?;
-
-    let real_targets: Vec<NodeId> = tier
-        .into_iter()
-        .filter(|&target| target != r.from_symbol)
-        .collect();
-    if real_targets.is_empty() {
-        return None;
-    }
-
-    let is_ambiguous = real_targets.len() > 1;
-    let conf_per_target = conf / (real_targets.len() as f32);
-    Some(ResolvedRef {
-        from: r.from_symbol,
-        targets: real_targets,
-        conf_per_target,
-        is_ambiguous,
-    })
+    let ctx = ResolutionContext {
+        symbols,
+        file_dirs,
+        by_name,
+        interner: None,
+    };
+    ctx.resolve_ref(r)
 }

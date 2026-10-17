@@ -41,18 +41,16 @@ fn record_resolved_ref(
 }
 
 #[must_use]
-pub fn resolve_reference_chunk(
+pub fn resolve_reference_chunk_with_context<L: ResolutionLookup>(
     chunk: &[Reference],
-    symbols: &[Symbol],
-    file_dirs: &[u32],
-    by_name: &HashMap<Spur, Vec<NodeId>>,
+    lookup: &L,
     num_symbols: usize,
 ) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize) {
     let mut edge_accumulators: HashMap<(NodeId, NodeId), EdgeAcc> = HashMap::new();
     let mut amb_out = vec![0u32; num_symbols];
     let mut unresolved = 0usize;
     for r in chunk {
-        if let Some(resolved) = resolve_call_reference(r, symbols, file_dirs, by_name) {
+        if let Some(resolved) = lookup.resolve_ref(r) {
             record_resolved_ref(resolved, &mut edge_accumulators, &mut amb_out);
         } else if r.from_symbol != crate::domain::NO_NODE {
             unresolved += 1;
@@ -60,6 +58,23 @@ pub fn resolve_reference_chunk(
     }
 
     (edge_accumulators, amb_out, unresolved)
+}
+
+#[must_use]
+pub fn resolve_reference_chunk(
+    chunk: &[Reference],
+    symbols: &[Symbol],
+    file_dirs: &[u32],
+    by_name: &HashMap<Spur, Vec<NodeId>>,
+    num_symbols: usize,
+) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize) {
+    let ctx = ResolutionContext {
+        symbols,
+        file_dirs,
+        by_name,
+        interner: None,
+    };
+    resolve_reference_chunk_with_context(chunk, &ctx, num_symbols)
 }
 
 pub fn merge_resolutions(
@@ -83,28 +98,25 @@ pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> Res
     let file_dirs = compute_file_dirs(&ingest.files, interner);
     let by_name = index_symbols_by_name(&ingest.symbols);
     let num_symbols = ingest.symbols.len();
+    let ctx = ResolutionContext {
+        symbols: &ingest.symbols,
+        file_dirs: &file_dirs,
+        by_name: &by_name,
+        interner: Some(interner),
+    };
 
     let (edge_accumulators, amb_out, unresolved) = if ingest.references.len() < 256 {
-        resolve_reference_chunk(
-            &ingest.references,
-            &ingest.symbols,
-            &file_dirs,
-            &by_name,
-            num_symbols,
-        )
+        resolve_reference_chunk_with_context(&ingest.references, &ctx, num_symbols)
     } else {
         ingest
             .references
             .par_chunks(512)
-            .map(|chunk| {
-                resolve_reference_chunk(chunk, &ingest.symbols, &file_dirs, &by_name, num_symbols)
-            })
+            .map(|chunk| resolve_reference_chunk_with_context(chunk, &ctx, num_symbols))
             .reduce(
                 || (HashMap::new(), vec![0u32; num_symbols], 0usize),
                 merge_resolutions,
             )
     };
-
     ResolutionResult {
         edge_accumulators,
         amb_out,
@@ -308,5 +320,72 @@ mod tests {
         let res = resolve_all_references(&ingest, &interner);
         assert!(res.edge_accumulators.is_empty());
         assert_eq!(res.amb_out[0], 0);
+    }
+
+    #[test]
+    fn test_std_member_gate_declines_unpinned_cross_class_calls() {
+        let interner = Interner::new();
+        let f0 = FileInfo {
+            id: 0,
+            path: interner.intern("src/lib.rs"),
+            lang: Lang::Rust,
+            line_count: 20,
+            byte_size: 200,
+        };
+        let len_name = interner.intern("len");
+        let buf_scope = interner.intern("CandBuffer");
+        let other_scope = interner.intern("Other");
+        let buf_len = Symbol::new(
+            0,
+            len_name,
+            interner.intern("src/lib.rs::CandBuffer::len"),
+            SymKind::Method,
+            Lang::Rust,
+            0,
+            1,
+        )
+        .with_scope(buf_scope);
+        let same_scope_caller = Symbol::new(
+            1,
+            interner.intern("push"),
+            interner.intern("src/lib.rs::CandBuffer::push"),
+            SymKind::Method,
+            Lang::Rust,
+            0,
+            5,
+        )
+        .with_scope(buf_scope);
+        let unrelated_caller = Symbol::new(
+            2,
+            interner.intern("work"),
+            interner.intern("src/lib.rs::Other::work"),
+            SymKind::Method,
+            Lang::Rust,
+            0,
+            10,
+        )
+        .with_scope(other_scope);
+
+        let call_same_scope = Reference::new(1, len_name, 0, 6, Lang::Rust, RefRole::Call);
+        let call_unpinned = Reference::new(2, len_name, 0, 11, Lang::Rust, RefRole::Call);
+        let call_qualified =
+            Reference::new(2, len_name, 0, 12, Lang::Rust, RefRole::Call).with_qualifier(buf_scope);
+
+        let mut ingest = IngestResult::new();
+        ingest.files.push(f0);
+        ingest
+            .symbols
+            .extend_from_slice(&[buf_len, same_scope_caller, unrelated_caller]);
+        ingest
+            .references
+            .extend_from_slice(&[call_same_scope, call_unpinned]);
+
+        let res = resolve_all_references(&ingest, &interner);
+        assert!(res.edge_accumulators.contains_key(&(1, 0)));
+        assert!(!res.edge_accumulators.contains_key(&(2, 0)));
+
+        ingest.references.push(call_qualified);
+        let res2 = resolve_all_references(&ingest, &interner);
+        assert!(res2.edge_accumulators.contains_key(&(2, 0)));
     }
 }

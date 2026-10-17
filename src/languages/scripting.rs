@@ -41,6 +41,46 @@ impl LanguageSemantics for PythonLanguage {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
     }
 
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        matches!(
+            name,
+            "append"
+                | "extend"
+                | "insert"
+                | "remove"
+                | "pop"
+                | "clear"
+                | "index"
+                | "count"
+                | "sort"
+                | "reverse"
+                | "copy"
+                | "get"
+                | "keys"
+                | "values"
+                | "items"
+                | "update"
+                | "setdefault"
+                | "split"
+                | "rsplit"
+                | "splitlines"
+                | "join"
+                | "strip"
+                | "lstrip"
+                | "rstrip"
+                | "replace"
+                | "find"
+                | "rfind"
+                | "startswith"
+                | "endswith"
+                | "lower"
+                | "upper"
+                | "format"
+                | "encode"
+                | "decode"
+        )
+    }
+
     fn resolve_import_target(
         &self,
         importer_path: &str,

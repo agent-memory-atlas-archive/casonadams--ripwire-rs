@@ -45,6 +45,125 @@ fn is_c_family_keyword(name: &str) -> bool {
     )
 }
 
+const CPP_STD_MEMBER_NAMES: &[&str] = &[
+    "append",
+    "append_range",
+    "assign",
+    "assign_range",
+    "at",
+    "back",
+    "before_begin",
+    "begin",
+    "bucket_count",
+    "c_str",
+    "capacity",
+    "cbefore_begin",
+    "cbegin",
+    "cend",
+    "clear",
+    "contains",
+    "crbegin",
+    "crend",
+    "data",
+    "emplace",
+    "emplace_after",
+    "emplace_back",
+    "emplace_front",
+    "emplace_hint",
+    "empty",
+    "end",
+    "ends_with",
+    "equal_range",
+    "erase",
+    "erase_after",
+    "find",
+    "find_first_not_of",
+    "find_first_of",
+    "find_last_not_of",
+    "find_last_of",
+    "front",
+    "get_allocator",
+    "has_value",
+    "hash_function",
+    "insert",
+    "insert_after",
+    "insert_or_assign",
+    "insert_range",
+    "insert_range_after",
+    "key_comp",
+    "key_eq",
+    "length",
+    "load_factor",
+    "lower_bound",
+    "max_bucket_count",
+    "max_load_factor",
+    "max_size",
+    "owner_before",
+    "pop_back",
+    "pop_front",
+    "prepend_range",
+    "push_back",
+    "push_front",
+    "rbegin",
+    "rehash",
+    "remove_prefix",
+    "remove_suffix",
+    "rend",
+    "reserve",
+    "resize",
+    "resize_and_overwrite",
+    "rfind",
+    "shrink_to_fit",
+    "size",
+    "size_bytes",
+    "starts_with",
+    "string",
+    "subspan",
+    "substr",
+    "to_string",
+    "try_emplace",
+    "upper_bound",
+    "use_count",
+    "value_comp",
+    "value_or",
+];
+
+fn is_cpp_std_member(name: &str) -> bool {
+    CPP_STD_MEMBER_NAMES.binary_search(&name).is_ok()
+}
+
+fn is_semicolonless_macro_line(line: &[u8]) -> Option<(usize, usize)> {
+    let start = line.iter().position(|&b| b != b' ' && b != b'\t')?;
+    let trimmed_end = line
+        .iter()
+        .rposition(|&b| !matches!(b, b' ' | b'\t' | b'\r' | b'\n'))?
+        + 1;
+    let slice = &line[start..trimmed_end];
+    if slice.first() == Some(&b'#') || !slice.ends_with(b")") {
+        return None;
+    }
+    let open_pos = slice.iter().position(|&b| b == b'(')?;
+    let macro_name = std::str::from_utf8(&slice[..open_pos]).ok()?.trim();
+    if !is_screaming_snake(macro_name) {
+        return None;
+    }
+    Some((start, trimmed_end))
+}
+
+fn blank_c_family_macro_lines(source_bytes: &[u8]) -> Option<Vec<u8>> {
+    let mut out = source_bytes.to_vec();
+    let mut changed = false;
+    let mut offset = 0usize;
+    for line in source_bytes.split_inclusive(|&b| b == b'\n') {
+        if let Some((s, e)) = is_semicolonless_macro_line(line) {
+            out[offset + s..offset + e].fill(b' ');
+            changed = true;
+        }
+        offset += line.len();
+    }
+    changed.then_some(out)
+}
+
 const TEST_BLOCK_MACRO_NAMES: &[&str] = &[
     "TEST_CASE",
     "TEST_CASE_FIXTURE",
@@ -312,6 +431,12 @@ impl LanguageSemantics for CLanguage {
     fn is_builtin_keyword(&self, name: &str) -> bool {
         is_c_family_keyword(name)
     }
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_cpp_std_member(name)
+    }
+    fn blank_error_macros(&self, source_bytes: &[u8]) -> Option<Vec<u8>> {
+        blank_c_family_macro_lines(source_bytes)
+    }
 
     fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
         is_c_family_def_allowed(ctx, false)
@@ -361,6 +486,12 @@ impl LanguageSemantics for CppLanguage {
     fn is_builtin_keyword(&self, name: &str) -> bool {
         is_c_family_keyword(name)
     }
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_cpp_std_member(name)
+    }
+    fn blank_error_macros(&self, source_bytes: &[u8]) -> Option<Vec<u8>> {
+        blank_c_family_macro_lines(source_bytes)
+    }
 
     fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
         is_c_family_def_allowed(ctx, true)
@@ -402,6 +533,12 @@ impl LanguageSemantics for CudaLanguage {
     }
     fn is_builtin_keyword(&self, name: &str) -> bool {
         is_c_family_keyword(name)
+    }
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_cpp_std_member(name)
+    }
+    fn blank_error_macros(&self, source_bytes: &[u8]) -> Option<Vec<u8>> {
+        blank_c_family_macro_lines(source_bytes)
     }
 
     fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
@@ -548,5 +685,45 @@ TEST_CASE("widget test") {
         assert_eq!(ingest.files[2].lang, Lang::C);
         let names: Vec<&str> = ingest.symbols.iter().map(|s| &interner[s.name]).collect();
         assert!(names.contains(&"kindIs"));
+    }
+    #[test]
+    fn test_macro_blanking_reparse_and_macro_body_calls() {
+        let registry = LanguageRegistry::new().unwrap();
+        let interner = crate::domain::Interner::new();
+        let src = br#"
+#define RW_CHECK_(x) handleAssert(x)
+#define ASSUME(x) RW_CHECK_(x)
+
+struct LanternRecord {
+    int id = 0;
+    TAG_KIND(LanternRecord)
+};
+
+struct MooringRecord {
+    int id = 0;
+    TAG_KIND(MooringRecord)
+};
+
+int countMoorings(int a) {
+    ASSUME(a > 0);
+    return a;
+}
+"#;
+        let ingest =
+            ingest_in_memory_files(&[("src/leak.cpp", Lang::Cpp, src)], &registry, &interner);
+        let names: Vec<&str> = ingest.symbols.iter().map(|s| &interner[s.name]).collect();
+        assert!(names.contains(&"countMoorings"));
+        assert!(names.contains(&"ASSUME"));
+        assert!(names.contains(&"RW_CHECK_"));
+        let assume_sym = ingest
+            .symbols
+            .iter()
+            .find(|s| &interner[s.name] == "ASSUME")
+            .unwrap();
+        let has_macro_edge = ingest
+            .references
+            .iter()
+            .any(|r| r.from_symbol == assume_sym.id && &interner[r.callee_name] == "RW_CHECK_");
+        assert!(has_macro_edge);
     }
 }

@@ -172,6 +172,16 @@ pub trait LanguageSemantics: Sync {
         self.is_builtin_keyword(name)
     }
 
+    /// True if a method name belongs to the language's standard container/string/builtin types (declined on untyped receivers).
+    fn is_std_or_builtin_member(&self, _name: &str) -> bool {
+        false
+    }
+
+    /// Optional byte-preserving macro-blanking pass invoked only when the primary tree-sitter parse contains syntax errors.
+    fn blank_error_macros(&self, _source_bytes: &[u8]) -> Option<Vec<u8>> {
+        None
+    }
+
     /// True if a captured definition satisfies language-specific structural/naming gates.
     fn is_def_capture_allowed(&self, _ctx: &DefCaptureGateContext<'_>) -> bool {
         true

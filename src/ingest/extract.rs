@@ -171,6 +171,37 @@ fn find_enclosing_scope(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -
     None
 }
 
+fn extract_member_receiver_qualifier(
+    parent: tree_sitter::Node<'_>,
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+) -> Option<String> {
+    if !matches!(
+        parent.kind(),
+        "field_expression"
+            | "member_expression"
+            | "attribute"
+            | "navigation_expression"
+            | "method_invocation"
+    ) {
+        return None;
+    }
+    let recv = parent
+        .child_by_field_name("argument")
+        .or_else(|| parent.child_by_field_name("object"))
+        .or_else(|| parent.child_by_field_name("value"))?;
+    if recv == name_node {
+        return None;
+    }
+    let text = recv.utf8_text(source_bytes).ok()?.trim();
+    if matches!(text, "self" | "this" | "Self") {
+        return find_enclosing_scope(name_node, source_bytes);
+    }
+    let is_type_ident = text.bytes().next().is_some_and(|b| b.is_ascii_uppercase())
+        && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    is_type_ident.then(|| text.to_string())
+}
+
 fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
     let parent = name_node.parent()?;
     if parent.kind() == "scoped_identifier"
@@ -183,7 +214,7 @@ fn find_call_qualifier(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) ->
             return Some(base.to_string());
         }
     }
-    None
+    extract_member_receiver_qualifier(parent, name_node, source_bytes)
 }
 
 fn count_arguments_in_list(child: tree_sitter::Node<'_>) -> u16 {
@@ -528,6 +559,56 @@ fn record_ref_item(
     });
 }
 
+fn is_macro_call_keyword(ident: &str, lang: Lang) -> bool {
+    lang.semantics().is_builtin_keyword(ident)
+        || matches!(
+            ident,
+            "if" | "for" | "while" | "switch" | "return" | "defined" | "typeof"
+        )
+}
+
+fn scan_macro_body_calls(
+    def_node: Option<tree_sitter::Node<'_>>,
+    macro_name: &str,
+    line: u32,
+    start_byte: usize,
+    lang: Lang,
+    source_bytes: &[u8],
+    refs: &mut Vec<RawRef>,
+) {
+    let Some(val_node) = def_node.and_then(|n| n.child_by_field_name("value")) else {
+        return;
+    };
+    let Ok(text) = val_node.utf8_text(source_bytes) else {
+        return;
+    };
+    for seg in text.split('(').collect::<Vec<_>>().windows(2) {
+        let prefix = seg[0].trim_end();
+        let ident: &str = prefix
+            .rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+            .next()
+            .unwrap_or("");
+        let valid = ident.len() >= 2
+            && ident != macro_name
+            && ident
+                .bytes()
+                .next()
+                .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+            && !is_macro_call_keyword(ident, lang);
+        if valid {
+            refs.push(RawRef {
+                callee_name: ident.to_string(),
+                qualifier: None,
+                line,
+                start_byte: start_byte.saturating_add(1),
+                role: RefRole::Call,
+                arg_count: 0,
+                arg_count_known: false,
+            });
+        }
+    }
+}
+
 fn record_extracted_item(
     ext: MatchExtract<'_>,
     source_bytes: &[u8],
@@ -535,8 +616,13 @@ fn record_extracted_item(
     defs: &mut Vec<RawDef>,
     refs: &mut Vec<RawRef>,
 ) {
-    if ext.def.is_some() {
+    if let Some((kind, _, start, _, line)) = ext.def {
         record_def_item(&ext, source_bytes, lang, defs);
+        if kind == SymKind::Macro
+            && let Some(name) = &ext.name
+        {
+            scan_macro_body_calls(ext.def_node, name, line, start, lang, source_bytes, refs);
+        }
     } else if ext.r#ref.is_some() {
         record_ref_item(&ext, source_bytes, lang, refs);
     }
@@ -670,6 +756,44 @@ fn extract_embedded_sql_refs(
     }
 }
 
+fn count_error_bytes(node: tree_sitter::Node<'_>) -> usize {
+    if node.is_error() || node.kind() == "ERROR" {
+        return node.end_byte().saturating_sub(node.start_byte()).max(1);
+    }
+    if !node.has_error() {
+        return 0;
+    }
+    let mut total = 0usize;
+    for i in 0..node.child_count() {
+        if let Some(ch) = node.child(i) {
+            total += count_error_bytes(ch);
+        }
+    }
+    total
+}
+
+fn parse_with_macro_blank_fallback(
+    parser: &mut tree_sitter::Parser,
+    source_bytes: &[u8],
+    lang: Lang,
+) -> Option<tree_sitter::Tree> {
+    let tree = parser.parse(source_bytes, None)?;
+    if !tree.root_node().has_error() {
+        return Some(tree);
+    }
+    let Some(blanked) = lang.semantics().blank_error_macros(source_bytes) else {
+        return Some(tree);
+    };
+    let Some(reparsed) = parser.parse(&blanked, None) else {
+        return Some(tree);
+    };
+    if count_error_bytes(reparsed.root_node()) < count_error_bytes(tree.root_node()) {
+        Some(reparsed)
+    } else {
+        Some(tree)
+    }
+}
+
 pub fn parse_file_tree(
     source_bytes: &[u8],
     language: &Language,
@@ -683,11 +807,9 @@ pub fn parse_file_tree(
             return FileParseResult::default();
         }
 
-        let tree = match parser.parse(source_bytes, None) {
-            Some(t) => t,
-            None => return FileParseResult::default(),
+        let Some(tree) = parse_with_macro_blank_fallback(parser, source_bytes, lang) else {
+            return FileParseResult::default();
         };
-
         let line_count = source_bytes.iter().filter(|&&b| b == b'\n').count() as u32 + 1;
         let mut defs = Vec::new();
         let mut refs = Vec::new();

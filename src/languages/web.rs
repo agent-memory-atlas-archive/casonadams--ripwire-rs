@@ -28,6 +28,45 @@ const WEB_SUFFIXES: &[&str] = &[
     ".d.ts",
 ];
 
+fn is_js_builtin_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "push"
+            | "pop"
+            | "shift"
+            | "unshift"
+            | "slice"
+            | "splice"
+            | "map"
+            | "filter"
+            | "reduce"
+            | "forEach"
+            | "find"
+            | "findIndex"
+            | "includes"
+            | "indexOf"
+            | "join"
+            | "split"
+            | "trim"
+            | "replace"
+            | "replaceAll"
+            | "startsWith"
+            | "endsWith"
+            | "toLowerCase"
+            | "toUpperCase"
+            | "toString"
+            | "valueOf"
+            | "keys"
+            | "values"
+            | "entries"
+            | "then"
+            | "catch"
+            | "finally"
+            | "test"
+            | "match"
+    )
+}
+
 impl LanguageSemantics for TypeScriptLanguage {
     fn tag(&self) -> &'static str {
         "ts"
@@ -39,6 +78,10 @@ impl LanguageSemantics for TypeScriptLanguage {
 
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Web
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_js_builtin_member_name(name)
     }
 
     fn parse_file_override(
@@ -97,6 +140,10 @@ impl LanguageSemantics for JavaScriptLanguage {
 
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Web
+    }
+
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_js_builtin_member_name(name)
     }
 
     fn resolve_import_target(

@@ -33,6 +33,10 @@ impl LanguageSemantics for RustLanguage {
         is_macro_inv && is_rust_builtin_macro_name(name)
     }
 
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        is_rust_std_member_name(name)
+    }
+
     fn resolve_import_target(
         &self,
         importer_path: &str,
@@ -80,6 +84,65 @@ fn is_rust_builtin_macro_name(name: &str) -> bool {
             | "module_path"
             | "compile_error"
             | "thread_local"
+    )
+}
+
+fn is_rust_std_member_name(name: &str) -> bool {
+    matches!(
+        name,
+        "len"
+            | "is_empty"
+            | "push"
+            | "push_str"
+            | "pop"
+            | "clear"
+            | "get"
+            | "get_mut"
+            | "insert"
+            | "remove"
+            | "contains"
+            | "contains_key"
+            | "iter"
+            | "iter_mut"
+            | "into_iter"
+            | "as_slice"
+            | "as_mut_slice"
+            | "as_str"
+            | "as_bytes"
+            | "as_ref"
+            | "as_mut"
+            | "as_deref"
+            | "as_deref_mut"
+            | "clone"
+            | "to_string"
+            | "to_owned"
+            | "to_vec"
+            | "unwrap"
+            | "unwrap_or"
+            | "unwrap_or_default"
+            | "unwrap_or_else"
+            | "expect"
+            | "ok"
+            | "err"
+            | "map"
+            | "and_then"
+            | "or_else"
+            | "filter"
+            | "collect"
+            | "extend"
+            | "reserve"
+            | "with_capacity"
+            | "default"
+            | "from"
+            | "into"
+            | "fmt"
+            | "eq"
+            | "cmp"
+            | "partial_cmp"
+            | "hash"
+            | "index"
+            | "deref"
+            | "next"
     )
 }
 

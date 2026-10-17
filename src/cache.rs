@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
-const CACHE_VERSION: u32 = 8;
+const CACHE_VERSION: u32 = 12;
 
 /// Serialized binary cache payload for fast warm repository queries.
 #[derive(Serialize, Deserialize)]

@@ -310,6 +310,39 @@ fn identifier_word_count(id: &str) -> usize {
     words
 }
 
+fn symbol_prior_weight(
+    view: &(&IngestResult, &Interner),
+    s: &crate::domain::Symbol,
+    def_cnt: usize,
+    has_prod: bool,
+) -> f64 {
+    use crate::domain::CorpusView;
+    let name = view.sym_name(s);
+    let mut w = 1.0f64;
+    if def_cnt > 5 {
+        w *= 0.5;
+    }
+    if name.starts_with('_') {
+        w *= 0.5;
+    }
+    if name.len() >= 8 && identifier_word_count(name) >= 2 {
+        w *= 1.7;
+    }
+    if s.lang.semantics().is_std_or_builtin_member(name) {
+        w *= 0.25;
+    }
+    if matches!(
+        s.kind,
+        crate::domain::SymKind::Field | crate::domain::SymKind::Var
+    ) {
+        w *= 0.4;
+    }
+    if has_prod && !view.is_production_symbol(s) {
+        w *= 0.15;
+    }
+    w
+}
+
 fn compute_prior_weights(ingest: &IngestResult, interner: &Interner) -> Vec<f64> {
     use crate::domain::CorpusView;
     let view = (ingest, interner);
@@ -323,22 +356,8 @@ fn compute_prior_weights(ingest: &IngestResult, interner: &Interner) -> Vec<f64>
         .symbols
         .iter()
         .map(|s| {
-            let name = view.sym_name(s);
             let def_cnt = name_counts.get(&s.name).copied().unwrap_or(0);
-            let mut w = 1.0f64;
-            if def_cnt > 5 {
-                w *= 0.5;
-            }
-            if name.starts_with('_') {
-                w *= 0.5;
-            }
-            if name.len() >= 8 && identifier_word_count(name) >= 2 {
-                w *= 1.7;
-            }
-            if has_prod && !view.is_production_symbol(s) {
-                w *= 0.15;
-            }
-            w
+            symbol_prior_weight(&view, s, def_cnt, has_prod)
         })
         .collect()
 }
