@@ -45,9 +45,11 @@ fn matches_symbol_selector(
     interner: &Interner,
     selector: &str,
 ) -> bool {
-    let sym_name = &interner[sym.name];
-    let sym_scope = sym.scope.map(|sc| &interner[sc]).unwrap_or("");
-    let file_path = ingest.sym_file_path(sym, interner);
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let sym_name = view.sym_name(sym);
+    let sym_scope = view.sym_scope(sym).unwrap_or("");
+    let file_path = view.sym_path(sym);
 
     if let Some((scope, name)) = selector.split_once("::") {
         if let Some((file, sc)) = scope.split_once("::") {
@@ -67,27 +69,44 @@ fn matches_symbol_selector(
     sym_name == selector
 }
 
+/// Trait providing unified symbol resolution by bare name or qualified selector (`p::sc::n`, `sc::n`, `file:name`, `Type.method`).
+pub trait SymbolLookup<'a>: crate::domain::CorpusView<'a> {
+    #[must_use]
+    fn find_symbols(&self, selector: &str) -> Vec<NodeId> {
+        let ingest = self.ingest();
+        let interner = self.interner();
+        if let Some(target_spur) = interner.get(selector) {
+            let exact: Vec<NodeId> = ingest
+                .symbols
+                .iter()
+                .filter(|s| s.name == target_spur)
+                .map(|s| s.id)
+                .collect();
+            if !exact.is_empty() {
+                return exact;
+            }
+        }
+
+        ingest
+            .symbols
+            .iter()
+            .filter(|s| matches_symbol_selector(s, ingest, interner, selector))
+            .map(|s| s.id)
+            .collect()
+    }
+
+    #[must_use]
+    fn find_nearest_symbol(&self, query: &str) -> Option<&'a str> {
+        find_nearest_symbol_name(query, self.ingest(), self.interner())
+    }
+}
+
+impl<'a, T: crate::domain::CorpusView<'a> + ?Sized> SymbolLookup<'a> for T {}
+
 /// Find symbol IDs by exact name match or qualified selector (`p::sc::n`, `sc::n`, `file:name`, `Type.method`).
 #[must_use]
 pub fn find_symbols_by_name(name: &str, ingest: &IngestResult, interner: &Interner) -> Vec<NodeId> {
-    if let Some(target_spur) = interner.get(name) {
-        let exact: Vec<NodeId> = ingest
-            .symbols
-            .iter()
-            .filter(|s| s.name == target_spur)
-            .map(|s| s.id)
-            .collect();
-        if !exact.is_empty() {
-            return exact;
-        }
-    }
-
-    ingest
-        .symbols
-        .iter()
-        .filter(|s| matches_symbol_selector(s, ingest, interner, name))
-        .map(|s| s.id)
-        .collect()
+    (ingest, interner).find_symbols(name)
 }
 
 /// Compute bounded Levenshtein edit distance between two ASCII strings.

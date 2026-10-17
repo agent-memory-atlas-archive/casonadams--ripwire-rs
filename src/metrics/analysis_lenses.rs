@@ -897,21 +897,10 @@ pub fn serialize_executive_report_md<W: Write>(
     write_report_modules_and_bridges(ingest, graph, interner, out)?;
     write_report_deps_sections(ingest, graph, interner, out)?;
 
-    let is_prod_sym = |idx: usize| {
-        let sym = &ingest.symbols[idx];
-        if sym.kind == crate::domain::SymKind::Section
-            || sym.kind == crate::domain::SymKind::ModuleScope
-        {
-            return false;
-        }
-        let file = ingest
-            .files
-            .get(sym.file_id as usize)
-            .map_or("", |f| interner.resolve(&f.path));
-        !crate::gate::affected::is_test_path(file)
-    };
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     let mut order: Vec<usize> = (0..ingest.symbols.len())
-        .filter(|&i| is_prod_sym(i))
+        .filter(|&i| view.is_production_symbol(&ingest.symbols[i]))
         .collect();
     if order.is_empty() {
         order = (0..ingest.symbols.len()).collect();
@@ -926,11 +915,8 @@ pub fn serialize_executive_report_md<W: Write>(
     writeln!(out, "|---|---|---|---|---|---|")?;
     for idx in order.into_iter().take(15) {
         let sym = &ingest.symbols[idx];
-        let name = interner.resolve(&sym.name);
-        let file = ingest
-            .files
-            .get(sym.file_id as usize)
-            .map_or("", |f| interner.resolve(&f.path));
+        let name = view.sym_name(sym);
+        let file = view.sym_path(sym);
         let rank = ranks.get(idx).copied().unwrap_or(0.0);
         writeln!(
             out,

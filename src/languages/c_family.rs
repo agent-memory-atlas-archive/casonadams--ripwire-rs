@@ -156,27 +156,97 @@ fn is_c_constant_allowed(ctx: &DefCaptureGateContext<'_>, is_cpp: bool) -> bool 
     is_cpp_global_constant_allowed(dn, ctx.name_node, ctx.name, ctx.source_bytes)
 }
 
-fn is_cpp_block_scope_direct_init(fn_decl: tree_sitter::Node<'_>) -> bool {
-    let mut decl = fn_decl.parent();
-    while let Some(p) = decl {
-        if p.kind() == "pointer_declarator" || p.kind() == "reference_declarator" {
-            decl = p.parent();
-        } else {
+fn has_pre_body_error(node: tree_sitter::Node<'_>) -> bool {
+    for i in 0..node.child_count() {
+        let Some(ch) = node.child(i) else {
+            continue;
+        };
+        if ch.kind() == "compound_statement" {
             break;
         }
+        if ch.is_error() || ch.kind() == "ERROR" {
+            return true;
+        }
     }
-    let Some(decl_node) = decl.filter(|d| d.kind() == "declaration") else {
-        return false;
+    false
+}
+
+fn unwrap_declarator_container(fn_decl: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    let mut decl = fn_decl.parent();
+    while let Some(p) = decl {
+        if matches!(
+            p.kind(),
+            "pointer_declarator"
+                | "reference_declarator"
+                | "parenthesized_declarator"
+                | "attributed_declarator"
+                | "function_declarator"
+        ) {
+            decl = p.parent();
+        } else {
+            return Some(p);
+        }
+    }
+    None
+}
+
+fn is_invalid_c_callable_scope(fn_decl: tree_sitter::Node<'_>) -> bool {
+    if fn_decl.has_error() {
+        return true;
+    }
+    let Some(container) = unwrap_declarator_container(fn_decl) else {
+        return true;
     };
-    let mut curr = decl_node.parent();
+    if !matches!(
+        container.kind(),
+        "function_definition" | "declaration" | "field_declaration" | "template_declaration"
+    ) || has_pre_body_error(container)
+    {
+        return true;
+    }
+    let mut curr = container.parent();
     while let Some(p) = curr {
         match p.kind() {
-            "function_definition" | "lambda_expression" => return true,
+            "compound_statement" | "ERROR" | "if_statement" | "for_statement"
+            | "while_statement" => return true,
             "field_declaration_list" | "declaration_list" | "translation_unit" => return false,
             _ => curr = p.parent(),
         }
     }
     false
+}
+
+fn has_cpp_header_markers(text: &str) -> bool {
+    text.contains("namespace ")
+        || text.contains("template<")
+        || text.contains("template <")
+        || text.contains("class ")
+        || text.contains("constexpr")
+        || text.contains("std::")
+        || text.contains("::")
+        || text.contains("public:")
+        || text.contains("private:")
+        || text.contains("noexcept")
+}
+
+fn refine_c_header_dialect(
+    base_lang: crate::domain::Lang,
+    rel_path: &str,
+    source_bytes: &[u8],
+) -> crate::domain::Lang {
+    if !rel_path.ends_with(".h") {
+        return base_lang;
+    }
+    if let Ok(text) = std::str::from_utf8(source_bytes) {
+        if text.contains("@interface ") || text.contains("@protocol ") || text.contains("@property")
+        {
+            return crate::domain::Lang::ObjC;
+        }
+        if base_lang == crate::domain::Lang::C && !has_cpp_header_markers(text) {
+            return crate::domain::Lang::C;
+        }
+    }
+    crate::domain::Lang::Cpp
 }
 
 fn is_c_family_def_allowed(ctx: &DefCaptureGateContext<'_>, is_cpp: bool) -> bool {
@@ -185,8 +255,8 @@ fn is_c_family_def_allowed(ctx: &DefCaptureGateContext<'_>, is_cpp: bool) -> boo
         Some("constant") => is_c_constant_allowed(ctx, is_cpp),
         Some("specialization") => false,
         _ => match ctx.kind {
-            SymKind::Function => {
-                !is_cpp || !ctx.def_node.is_some_and(is_cpp_block_scope_direct_init)
+            SymKind::Function | SymKind::Method => {
+                !ctx.def_node.is_some_and(is_invalid_c_callable_scope)
             }
             SymKind::Field => ctx
                 .def_node
@@ -231,6 +301,14 @@ impl LanguageSemantics for CLanguage {
     fn supports_c_layout(&self) -> bool {
         true
     }
+    fn refine_dialect(
+        &self,
+        base_lang: crate::domain::Lang,
+        rel_path: &str,
+        source_bytes: &[u8],
+    ) -> crate::domain::Lang {
+        refine_c_header_dialect(base_lang, rel_path, source_bytes)
+    }
     fn is_builtin_keyword(&self, name: &str) -> bool {
         is_c_family_keyword(name)
     }
@@ -271,6 +349,14 @@ impl LanguageSemantics for CppLanguage {
 
     fn supports_c_layout(&self) -> bool {
         true
+    }
+    fn refine_dialect(
+        &self,
+        base_lang: crate::domain::Lang,
+        rel_path: &str,
+        source_bytes: &[u8],
+    ) -> crate::domain::Lang {
+        refine_c_header_dialect(base_lang, rel_path, source_bytes)
     }
     fn is_builtin_keyword(&self, name: &str) -> bool {
         is_c_family_keyword(name)
@@ -438,5 +524,29 @@ TEST_CASE("widget test") {
         assert!(!names.contains(&"s_mutable"));
         assert!(!names.contains(&"guard"));
         assert!(!names.contains(&"c_mut"));
+    }
+
+    #[test]
+    fn test_header_dialect_refinement_and_error_recovery_guard() {
+        let registry = LanguageRegistry::new().unwrap();
+        let interner = crate::domain::Interner::new();
+        let cpp_hdr =
+            b"namespace rw { inline bool kindIs(const char* a, const char* b) { return true; } }\n";
+        let objc_hdr = b"@interface Renderer : NSObject\n- (void)draw;\n@end\n";
+        let pure_c_hdr = b"int c_header_fn(int a);\n";
+        let ingest = ingest_in_memory_files(
+            &[
+                ("include/nodekind.h", Lang::C, cpp_hdr),
+                ("include/Renderer.h", Lang::Cpp, objc_hdr),
+                ("include/pure.h", Lang::C, pure_c_hdr),
+            ],
+            &registry,
+            &interner,
+        );
+        assert_eq!(ingest.files[0].lang, Lang::Cpp);
+        assert_eq!(ingest.files[1].lang, Lang::ObjC);
+        assert_eq!(ingest.files[2].lang, Lang::C);
+        let names: Vec<&str> = ingest.symbols.iter().map(|s| &interner[s.name]).collect();
+        assert!(names.contains(&"kindIs"));
     }
 }

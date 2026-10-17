@@ -128,6 +128,104 @@ fn render_flow_xml(
     out
 }
 
+fn collect_slice_candidates<'a>(
+    sym_query: &str,
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+) -> Vec<&'a crate::domain::Symbol> {
+    use crate::domain::CorpusView;
+    use crate::navigate::SymbolLookup;
+    let view = (ingest, interner);
+    let ids = view.find_symbols(sym_query);
+    let mut cands: Vec<&crate::domain::Symbol> = if !ids.is_empty() {
+        ids.into_iter().filter_map(|id| ingest.sym(id)).collect()
+    } else {
+        ingest
+            .symbols
+            .iter()
+            .filter(|s| {
+                interner.resolve(&s.name) == sym_query
+                    || interner.resolve(&s.canonical_id) == sym_query
+                    || interner.resolve(&s.canonical_id).ends_with(sym_query)
+            })
+            .collect()
+    };
+    cands.sort_by_key(|s| {
+        let prod = u8::from(!view.is_production_symbol(s));
+        let callable = u8::from(!s.is_callable());
+        let kind_rank = u8::from(s.kind != crate::domain::SymKind::Function);
+        let bodiless = u8::from(!s.has_body());
+        (prod, callable, bodiless, kind_rank, s.id)
+    });
+    cands
+}
+
+fn read_slice_candidate_bytes(
+    root: &str,
+    file_path: &str,
+    custom_source: Option<&[u8]>,
+) -> Result<Vec<u8>, String> {
+    if let Some(b) = custom_source {
+        return Ok(b.to_vec());
+    }
+    let root_candidate = std::path::Path::new(root).join(file_path);
+    std::fs::read(&root_candidate)
+        .or_else(|_| std::fs::read(file_path))
+        .map_err(|e| format!("cannot read file {file_path}: {e}"))
+}
+
+fn parse_candidate_variables(
+    symbol: &crate::domain::Symbol,
+    source_bytes: &[u8],
+    registry: &LanguageRegistry,
+) -> Result<(tree_sitter::Tree, Vec<VariableOcc>), String> {
+    let (ts_lang, _) = registry
+        .get(symbol.lang)
+        .ok_or_else(|| format!("language not supported for slicing: {:?}", symbol.lang))?;
+    let mut parser = Parser::new();
+    parser
+        .set_language(ts_lang)
+        .map_err(|e| format!("failed to initialize parser: {e}"))?;
+    let tree = parser
+        .parse(source_bytes, None)
+        .ok_or_else(|| "failed to parse source file".to_string())?;
+    let occs = collect_span_variables(
+        tree.root_node(),
+        symbol.sig_start_byte as usize,
+        symbol.end_byte as usize,
+        source_bytes,
+    );
+    Ok((tree, occs))
+}
+
+fn select_best_slice_candidate<'a>(
+    root: &str,
+    var_opt: Option<&str>,
+    custom_source: Option<&[u8]>,
+    candidates: &[&'a crate::domain::Symbol],
+    ingest: &'a IngestResult,
+    interner: &Interner,
+    registry: &LanguageRegistry,
+) -> &'a crate::domain::Symbol {
+    let first = candidates[0];
+    let Some(var_name) = var_opt.filter(|_| candidates.len() > 1 && custom_source.is_none()) else {
+        return first;
+    };
+    for &cand in candidates {
+        if !cand.is_callable() || !cand.lang.semantics().supports_slice() {
+            continue;
+        }
+        let fpath = ingest.sym_file_path(cand, interner);
+        if let Ok(bytes) = read_slice_candidate_bytes(root, fpath, None)
+            && let Ok((_, occs)) = parse_candidate_variables(cand, &bytes, registry)
+            && occs.iter().any(|o| o.var_name == var_name)
+        {
+            return cand;
+        }
+    }
+    first
+}
+
 /// Execute intra-procedural def-use variable slicing on a symbol target.
 pub fn execute_slice(
     ingest: &IngestResult,
@@ -138,72 +236,72 @@ pub fn execute_slice(
     max_depth: u32,
     custom_source: Option<&[u8]>,
 ) -> Result<String, String> {
-    let (sym_query, var_opt) = parse_slice_target(target);
+    execute_slice_with_root(
+        ".",
+        (ingest, interner),
+        registry,
+        target,
+        flow_dir,
+        max_depth,
+        custom_source,
+    )
+}
 
-    let matches_query = |s: &&crate::domain::Symbol| {
-        interner.resolve(&s.name) == sym_query
-            || interner.resolve(&s.canonical_id) == sym_query
-            || interner.resolve(&s.canonical_id).ends_with(sym_query)
-    };
-    let symbol = ingest
-        .symbols
-        .iter()
-        .filter(matches_query)
-        .find(|s| {
-            s.kind == crate::domain::SymKind::Function || s.kind == crate::domain::SymKind::Method
-        })
-        .or_else(|| ingest.symbols.iter().find(matches_query))
+fn execute_slice_with_root(
+    root: &str,
+    corpus: (&IngestResult, &Interner),
+    registry: &LanguageRegistry,
+    target: &str,
+    flow_dir: SliceFlowDir,
+    max_depth: u32,
+    custom_source: Option<&[u8]>,
+) -> Result<String, String> {
+    let (ingest, interner) = corpus;
+    let (sym_query, var_opt) = parse_slice_target(target);
+    let candidates = collect_slice_candidates(sym_query, ingest, interner);
+    let first = candidates
+        .first()
+        .copied()
         .ok_or_else(|| format!("symbol not found: {sym_query}"))?;
-    if !symbol.lang.semantics().supports_slice() || symbol.kind == crate::domain::SymKind::Section {
+    if !first.lang.semantics().supports_slice() || first.kind == crate::domain::SymKind::Section {
         return Err(format!(
             "--slice: slice not served for {} yet — the def-use classification requires a verified per-grammar local variable AST",
-            symbol.lang.tag()
+            first.lang.tag()
         ));
     }
-    let file_info = ingest
-        .files
-        .get(symbol.file_id as usize)
-        .ok_or_else(|| "file info not found for symbol".to_string())?;
 
-    let file_path = interner.resolve(&file_info.path);
-    let source_bytes = match custom_source {
-        Some(b) => b.to_vec(),
-        None => {
-            std::fs::read(file_path).map_err(|e| format!("cannot read file {file_path}: {e}"))?
-        }
-    };
-
-    let (ts_lang, _) = registry
-        .get(symbol.lang)
-        .ok_or_else(|| format!("language not supported for slicing: {:?}", symbol.lang))?;
-
-    let mut parser = Parser::new();
-    parser
-        .set_language(ts_lang)
-        .map_err(|e| format!("failed to initialize parser: {e}"))?;
-
-    let tree = parser
-        .parse(&source_bytes, None)
-        .ok_or_else(|| "failed to parse source file".to_string())?;
-
-    let start_b = symbol.sig_start_byte as usize;
-    let end_b = symbol.end_byte as usize;
-    let sym_name = interner.resolve(&symbol.name);
-    let path_line = format!("{file_path}:{}", symbol.line);
+    let chosen = select_best_slice_candidate(
+        root,
+        var_opt,
+        custom_source,
+        &candidates,
+        ingest,
+        interner,
+        registry,
+    );
+    let file_path = ingest.sym_file_path(chosen, interner);
+    let source_bytes = read_slice_candidate_bytes(root, file_path, custom_source)?;
+    let (tree, all_occs) = parse_candidate_variables(chosen, &source_bytes, registry)?;
+    let sym_name = interner.resolve(&chosen.name);
+    let path_line = format!("{file_path}:{}", chosen.line);
 
     match var_opt {
         None => {
-            let locals = list_span_locals(tree.root_node(), start_b, end_b, &source_bytes);
+            let locals = list_span_locals(
+                tree.root_node(),
+                chosen.sig_start_byte as usize,
+                chosen.end_byte as usize,
+                &source_bytes,
+            );
             Ok(render_locals_xml(
                 sym_name,
                 &path_line,
-                symbol.kind.tag(),
-                symbol.lang.tag(),
+                chosen.kind.tag(),
+                chosen.lang.tag(),
                 &locals,
             ))
         }
         Some(var_name) => {
-            let all_occs = collect_span_variables(tree.root_node(), start_b, end_b, &source_bytes);
             let steps = compute_dataflow_slice(&all_occs, var_name, flow_dir, max_depth);
             Ok(render_flow_xml(
                 sym_name, var_name, &path_line, flow_dir, max_depth, &steps,
@@ -234,35 +332,15 @@ pub fn execute_slice_command_with_depth(
 
     let (ingest, _graph, _pr, interner) = crate::cli::load_repo_analysis(root)?;
     let registry = LanguageRegistry::new().map_err(|e| std::io::Error::other(e.to_string()))?;
-    let (sym_query, _) = parse_slice_target(target);
-    let matches_query = |s: &&crate::domain::Symbol| {
-        interner.resolve(&s.name) == sym_query
-            || interner.resolve(&s.canonical_id) == sym_query
-            || interner.resolve(&s.canonical_id).ends_with(sym_query)
-    };
-    let custom_bytes = ingest
-        .symbols
-        .iter()
-        .filter(matches_query)
-        .find(|s| {
-            s.kind == crate::domain::SymKind::Function || s.kind == crate::domain::SymKind::Method
-        })
-        .or_else(|| ingest.symbols.iter().find(matches_query))
-        .and_then(|s| ingest.files.get(s.file_id as usize))
-        .and_then(|fi| {
-            let rel = interner.resolve(&fi.path);
-            std::fs::read(std::path::Path::new(root).join(rel)).ok()
-        });
-
     let flow_dir = flow_str.parse::<SliceFlowDir>().unwrap_or_default();
-    match execute_slice(
-        &ingest,
+    match execute_slice_with_root(
+        root,
+        (&ingest, &interner),
         &registry,
-        &interner,
         target,
         flow_dir,
         max_depth,
-        custom_bytes.as_deref(),
+        None,
     ) {
         Ok(out) => {
             use std::io::Write;

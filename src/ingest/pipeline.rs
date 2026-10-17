@@ -29,20 +29,21 @@ pub fn ingest_crawled_files(
     registry: &LanguageRegistry,
     interner: &Interner,
 ) -> IngestResult {
-    let parsed_files: Vec<Option<FileParseResult>> = files
+    let parsed_files: Vec<Option<(Lang, FileParseResult)>> = files
         .par_iter()
         .map(|file| {
-            let (language, query) = registry.get(file.lang)?;
             let source_bytes = fs::read(&file.path).ok()?;
             if crate::crawler::is_binary_buffer(&source_bytes) {
                 return None;
             }
-            Some(parse_file_content(
-                &source_bytes,
-                language,
-                query,
-                file.lang,
-                &file.rel_path,
+            let eff_lang =
+                file.lang
+                    .semantics()
+                    .refine_dialect(file.lang, &file.rel_path, &source_bytes);
+            let (language, query) = registry.get(eff_lang)?;
+            Some((
+                eff_lang,
+                parse_file_content(&source_bytes, language, query, eff_lang, &file.rel_path),
             ))
         })
         .collect();
@@ -51,7 +52,7 @@ pub fn ingest_crawled_files(
     let mut current_offset: NodeId = 0;
     for parsed in &parsed_files {
         node_offsets.push(current_offset);
-        if let Some(p) = parsed {
+        if let Some((_, p)) = parsed {
             current_offset += p.defs.len() as NodeId;
         }
     }
@@ -66,22 +67,25 @@ pub fn ingest_crawled_files(
             let file_spur = interner.intern(&file.rel_path);
             let mut start_id = node_offsets[file_id as usize];
 
-            let (line_count, byte_size, defs, refs) = match parsed {
-                Some(p) => (p.line_count, p.byte_size, p.defs, p.refs),
-                None => (0, file.byte_size, Vec::new(), Vec::new()),
+            let (eff_lang, line_count, byte_size, defs, refs) = match parsed {
+                Some((l, p)) => (l, p.line_count, p.byte_size, p.defs, p.refs),
+                None => (file.lang, 0, file.byte_size, Vec::new(), Vec::new()),
             };
 
             let file_info = FileInfo {
                 id: file_id,
                 path: file_spur,
-                lang: file.lang,
+                lang: eff_lang,
                 line_count,
                 byte_size,
             };
 
-            let file_symbols = build_file_symbols(defs, file, file_id, interner, &mut start_id);
-            let file_refs = build_file_references(refs, file, file_id, &file_symbols, interner);
-
+            let mut eff_file = file.clone();
+            eff_file.lang = eff_lang;
+            let file_symbols =
+                build_file_symbols(defs, &eff_file, file_id, interner, &mut start_id);
+            let file_refs =
+                build_file_references(refs, &eff_file, file_id, &file_symbols, interner);
             (file_info, file_symbols, file_refs)
         })
         .collect();
@@ -111,8 +115,11 @@ pub fn ingest_in_memory_files(
         let file_id = file_id as u32;
         let file_spur = interner.intern(rel_path);
 
-        let parsed = registry.get(lang).map(|(language, query)| {
-            parse_file_content(source_bytes, language, query, lang, rel_path)
+        let eff_lang = lang
+            .semantics()
+            .refine_dialect(lang, rel_path, source_bytes);
+        let parsed = registry.get(eff_lang).map(|(language, query)| {
+            parse_file_content(source_bytes, language, query, eff_lang, rel_path)
         });
 
         let (line_count, byte_size, defs, refs) = match parsed {
@@ -123,7 +130,7 @@ pub fn ingest_in_memory_files(
         ingest.files.push(FileInfo {
             id: file_id,
             path: file_spur,
-            lang,
+            lang: eff_lang,
             line_count,
             byte_size,
         });
@@ -131,7 +138,7 @@ pub fn ingest_in_memory_files(
         let dummy_crawled = CrawledFile {
             path: std::path::PathBuf::from(rel_path),
             rel_path: rel_path.to_string(),
-            lang,
+            lang: eff_lang,
             byte_size: source_bytes.len() as u64,
         };
 

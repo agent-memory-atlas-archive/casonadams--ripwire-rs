@@ -25,7 +25,8 @@ pub use crawler::{
     CrawledFile, CrawlerOptions, DEFAULT_MAX_FILE_SIZE, DENYLIST_DIRS, crawl_directory,
 };
 pub use domain::{
-    FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, RefRole, Reference, SymKind, Symbol,
+    CorpusView, FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, RefRole, Reference,
+    SymKind, Symbol,
 };
 pub use gate::{
     AffectedReport, AffectedTest, CallerCheckResult, ContractStatus, DEFAULT_BASELINE_FILE,
@@ -52,9 +53,9 @@ pub use metrics::{
     compute_complexity, compute_hotspots, compute_readability, posnett_score,
 };
 pub use navigate::{
-    ImpactNode, NavNeighborhood, SymbolNavInfo, find_symbols_by_name, get_symbol_nav_info,
-    navigate_1hop, serialize_callees_xml, serialize_callers_xml, serialize_find_symbol_xml,
-    serialize_impact_xml, serialize_uses_xml, transitive_impact,
+    ImpactNode, NavNeighborhood, SymbolLookup, SymbolNavInfo, find_symbols_by_name,
+    get_symbol_nav_info, navigate_1hop, serialize_callees_xml, serialize_callers_xml,
+    serialize_find_symbol_xml, serialize_impact_xml, serialize_uses_xml, transitive_impact,
 };
 pub use rank::{
     HitsConfig, HitsResult, PageRankConfig, PageRankResult, biased_teleport, compute_hits,

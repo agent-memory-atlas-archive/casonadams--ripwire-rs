@@ -120,22 +120,11 @@ fn resolve_rust_base_and_rest<'a>(
     }
 }
 
-fn resolve_rust_use_target(
-    importer_path: &str,
-    raw_target: &str,
+fn probe_rust_segs_in_base(
+    base_dir: &str,
+    segs: &[&str],
     file_index: &HashMap<&str, u32>,
 ) -> Option<u32> {
-    let clean = strip_import_quotes(raw_target)
-        .split('{')
-        .next()
-        .unwrap_or("")
-        .trim_end_matches("::*")
-        .trim_end_matches("::");
-    let (base_dir, rest) = resolve_rust_base_and_rest(importer_path, clean)?;
-    let segs: Vec<&str> = rest.split("::").filter(|s| !s.is_empty()).collect();
-    if segs.is_empty() {
-        return None;
-    }
     for take_len in [segs.len(), segs.len().saturating_sub(1)] {
         if take_len == 0 {
             continue;
@@ -147,4 +136,34 @@ fn resolve_rust_use_target(
         }
     }
     None
+}
+
+fn resolve_rust_workspace_crate_target(
+    clean: &str,
+    file_index: &HashMap<&str, u32>,
+) -> Option<u32> {
+    let segs: Vec<&str> = clean.split("::").filter(|s| !s.is_empty()).collect();
+    if segs.len() < 2 {
+        return None;
+    }
+    let crate_dir = format!("crates/{}/src", segs[0].replace('_', "-"));
+    probe_rust_segs_in_base(&crate_dir, &segs[1..], file_index)
+}
+
+fn resolve_rust_use_target(
+    importer_path: &str,
+    raw_target: &str,
+    file_index: &HashMap<&str, u32>,
+) -> Option<u32> {
+    let clean = strip_import_quotes(raw_target)
+        .split('{')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches("::*")
+        .trim_end_matches("::");
+    if let Some((base_dir, rest)) = resolve_rust_base_and_rest(importer_path, clean) {
+        let segs: Vec<&str> = rest.split("::").filter(|s| !s.is_empty()).collect();
+        return probe_rust_segs_in_base(base_dir, &segs, file_index);
+    }
+    resolve_rust_workspace_crate_target(clean, file_index)
 }

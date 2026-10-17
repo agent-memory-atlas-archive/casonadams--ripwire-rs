@@ -114,6 +114,8 @@ pub struct Graph {
     pub unresolved: usize,
     #[serde(default)]
     pub unindexed: usize,
+    #[serde(default)]
+    pub prior_weights: Vec<f64>,
 }
 
 impl Graph {
@@ -207,7 +209,12 @@ impl Graph {
 
     #[must_use]
     pub fn page_rank(&self, config: &PageRankConfig) -> PageRankResult {
-        let teleport = uniform_teleport(self.node_count());
+        let teleport =
+            if self.prior_weights.len() == self.node_count() && !self.prior_weights.is_empty() {
+                crate::rank::biased_teleport(&self.prior_weights)
+            } else {
+                uniform_teleport(self.node_count())
+            };
         self.page_rank_custom(config, &teleport)
     }
 
@@ -246,6 +253,7 @@ impl Graph {
             .count();
         let mut g = Self::from_resolution(ingest.symbols.len(), resolution);
         g.unindexed = unindexed;
+        g.prior_weights = compute_prior_weights(ingest, interner);
         g
     }
 
@@ -277,8 +285,62 @@ impl Graph {
             amb_out: resolution.amb_out,
             unresolved: resolution.unresolved,
             unindexed: 0,
+            prior_weights: Vec::new(),
         }
     }
+}
+
+fn identifier_word_count(id: &str) -> usize {
+    let mut words = 0usize;
+    let mut in_word = false;
+    let mut prev = 0u8;
+    for &b in id.as_bytes() {
+        if !b.is_ascii_alphanumeric() {
+            in_word = false;
+            prev = b;
+            continue;
+        }
+        let camel_boundary = b.is_ascii_uppercase() && in_word && !prev.is_ascii_uppercase();
+        if !in_word || camel_boundary {
+            words += 1;
+        }
+        in_word = true;
+        prev = b;
+    }
+    words
+}
+
+fn compute_prior_weights(ingest: &IngestResult, interner: &Interner) -> Vec<f64> {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let mut name_counts: std::collections::HashMap<lasso::Spur, usize> =
+        std::collections::HashMap::with_capacity(ingest.symbols.len());
+    for s in &ingest.symbols {
+        *name_counts.entry(s.name).or_default() += 1;
+    }
+    let has_prod = ingest.symbols.iter().any(|s| view.is_production_symbol(s));
+    ingest
+        .symbols
+        .iter()
+        .map(|s| {
+            let name = view.sym_name(s);
+            let def_cnt = name_counts.get(&s.name).copied().unwrap_or(0);
+            let mut w = 1.0f64;
+            if def_cnt > 5 {
+                w *= 0.5;
+            }
+            if name.starts_with('_') {
+                w *= 0.5;
+            }
+            if name.len() >= 8 && identifier_word_count(name) >= 2 {
+                w *= 1.7;
+            }
+            if has_prod && !view.is_production_symbol(s) {
+                w *= 0.15;
+            }
+            w
+        })
+        .collect()
 }
 
 struct OutEdges {

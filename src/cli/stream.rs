@@ -13,6 +13,7 @@ pub struct RankedStreamArgs<'a> {
     pub emit_legend: bool,
     pub legend_full: bool,
     pub map_diff: bool,
+    pub no_inventory: bool,
 }
 
 pub fn execute_stream_xml_with<W: Write>(
@@ -31,6 +32,7 @@ pub fn execute_stream_xml_with<W: Write>(
         emit_legend: true,
         legend_full: false,
         map_diff: false,
+        no_inventory: false,
     };
     execute_stream_xml_ranked(&args, ingest, graph, pr, interner, out)
 }
@@ -102,6 +104,7 @@ pub fn execute_stream_xml_ranked<W: Write>(
             legend_full: args.legend_full,
             map_diff_at,
             metrics: false,
+            no_inventory: args.no_inventory,
         },
     )
 }

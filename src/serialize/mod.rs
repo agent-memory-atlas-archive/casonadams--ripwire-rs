@@ -7,10 +7,10 @@ pub mod xml;
 pub use writer::{MinifyingWriter, XmlWriter};
 
 pub use query_xml::{
-    CommunityModule, CommunitySummary, DepsFileRow, DepsReport, LEGEND_DICT_ENTRIES,
-    LEGEND_DICT_VERSION, TreeFileSymbols, serialize_around_xml,
-    serialize_communities_with_summary_xml, serialize_communities_xml, serialize_connect_xml,
-    serialize_dead_code_xml, serialize_deps_report_xml, serialize_deps_xml,
+    AroundSymbolRow, CommunityModule, CommunitySummary, DepsFileRow, DepsReport,
+    LEGEND_DICT_ENTRIES, LEGEND_DICT_VERSION, TreeFileSymbols, serialize_around_rows_xml,
+    serialize_around_xml, serialize_communities_with_summary_xml, serialize_communities_xml,
+    serialize_connect_xml, serialize_dead_code_xml, serialize_deps_report_xml, serialize_deps_xml,
     serialize_doc_drift_xml, serialize_exemplar_xml, serialize_exercises_xml, serialize_expand_xml,
     serialize_external_surface_xml, serialize_flags_xml, serialize_for_xml,
     serialize_from_trace_xml, serialize_grep_xml, serialize_legend_dict_xml, serialize_lego_xml,

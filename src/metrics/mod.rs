@@ -18,7 +18,7 @@ pub use analysis_lenses::{
     serialize_naming_consistency_xml,
 };
 pub use dmm::{DmmProperty, DmmReport, compute_dmm_report, serialize_dmm_xml};
-pub use eval::{run_cochange_eval, run_retrieval_eval};
+pub use eval::{run_cochange_eval, run_retrieval_eval, run_retrieval_eval_for_repo};
 pub use layout::{
     FieldLayout, StructLayoutDef, StructLayoutReport, compute_layout_report,
     serialize_field_affinity_xml, serialize_layout_xml,

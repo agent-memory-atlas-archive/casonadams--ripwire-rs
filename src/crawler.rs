@@ -26,7 +26,6 @@ pub const DENYLIST_DIRS: &[&str] = &[
     "build_prof",
     "CMakeFiles",
     "captures",
-    ".specs",
     ".agents",
     ".skills",
 ];
@@ -65,9 +64,12 @@ fn build_walker(root: &Path, options: &CrawlerOptions) -> ignore::Walk {
         .git_ignore(options.honor_gitignore)
         .git_global(options.honor_gitignore)
         .git_exclude(options.honor_gitignore)
-        .hidden(false)
+        .hidden(true)
         .follow_links(false)
         .filter_entry(move |entry| {
+            if entry.depth() == 0 {
+                return true;
+            }
             let Some(name) = entry.file_name().to_str() else {
                 return true;
             };
@@ -122,7 +124,15 @@ pub fn crawl_directory<P: AsRef<Path>>(root: P, options: &CrawlerOptions) -> Vec
 }
 
 #[inline]
+fn is_dot_name(name: &str) -> bool {
+    name.starts_with('.') && name != "." && name != ".."
+}
+
+#[inline]
 fn is_entry_denylisted(name: &str, is_dir: bool, custom_excludes: &[String]) -> bool {
+    if is_dot_name(name) {
+        return true;
+    }
     if is_dir {
         DENYLIST_DIRS.contains(&name)
             || name.starts_with("cmake-build-")
@@ -137,7 +147,8 @@ fn is_entry_denylisted(name: &str, is_dir: bool, custom_excludes: &[String]) -> 
 pub fn is_path_denylisted<P: AsRef<Path>>(path: P, custom_excludes: &[String]) -> bool {
     path.as_ref().components().any(|c| {
         c.as_os_str().to_str().is_some_and(|name| {
-            DENYLIST_DIRS.contains(&name)
+            is_dot_name(name)
+                || DENYLIST_DIRS.contains(&name)
                 || name.starts_with("cmake-build-")
                 || custom_excludes.iter().any(|ex| name.contains(ex))
         })
@@ -299,5 +310,8 @@ mod tests {
         assert!(
             evaluate_candidate("config.yaml", DEFAULT_YAML_CEILING + 1, false, &defaults).is_none()
         );
+        assert!(evaluate_candidate(".github/workflows/ci.yml", 20, false, &defaults).is_none());
+        assert!(evaluate_candidate(".eslintrc.json", 20, false, &defaults).is_none());
+        assert!(evaluate_candidate("src/.hidden.rs", 20, false, &defaults).is_none());
     }
 }

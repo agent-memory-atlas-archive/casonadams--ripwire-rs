@@ -61,6 +61,18 @@ pub struct NavContext<'a> {
     pub interner: &'a Interner,
 }
 
+impl<'a> crate::domain::CorpusView<'a> for NavContext<'a> {
+    #[inline]
+    fn ingest(&self) -> &'a IngestResult {
+        self.ingest
+    }
+
+    #[inline]
+    fn interner(&self) -> &'a Interner {
+        self.interner
+    }
+}
+
 pub fn serialize_1hop_mode<W: Write>(
     root: &str,
     sym: &str,
@@ -923,23 +935,44 @@ pub fn execute_dead_code_query<W: Write>(
     )
 }
 
+fn community_anchor_priority(
+    view: &(&IngestResult, &Interner),
+    s: &crate::domain::Symbol,
+) -> (u8, u32) {
+    use crate::domain::CorpusView;
+    let prod = view.is_production_symbol(s);
+    let tier = if prod && (s.is_callable() || s.kind.is_type_container()) {
+        3
+    } else if prod {
+        2
+    } else if s.is_code_symbol() {
+        1
+    } else {
+        0
+    };
+    (tier, s.loc.saturating_add(s.ccx.saturating_mul(2)))
+}
+
 pub fn build_community_module<'a>(
     id: u32,
     nodes: &[NodeId],
     ingest: &'a IngestResult,
     interner: &'a Interner,
 ) -> crate::serialize::CommunityModule<'a> {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     let mut members = Vec::new();
     let mut top_dir = "";
     let mut top_label = "";
+    let mut best_prio = (0u8, 0u32);
     for &nid in nodes {
         if let Some(s) = ingest.sym(nid) {
-            let n = &interner[s.name];
-            let p = ingest.sym_file_path(s, interner);
-            if top_dir.is_empty() {
+            let n = view.sym_name(s);
+            let p = view.sym_path(s);
+            let prio = community_anchor_priority(&view, s);
+            if top_label.is_empty() || prio > best_prio {
+                best_prio = prio;
                 top_dir = p;
-            }
-            if top_label.is_empty() {
                 top_label = n;
             }
             members.push((s.kind.tag(), n, p, s.line));
@@ -1077,17 +1110,55 @@ fn enqueue_around_neighbors(
     graph: &Graph,
     visited: &mut std::collections::HashSet<NodeId>,
     queue: &mut std::collections::VecDeque<(NodeId, u32)>,
-) {
-    for (callee_id, _) in graph.callees(curr).take(fanout) {
-        if visited.insert(callee_id) {
-            queue.push_back((callee_id, next_d));
+) -> usize {
+    let mut cut = 0usize;
+    for (idx, (callee_id, _)) in graph.callees(curr).enumerate() {
+        if idx < fanout {
+            if visited.insert(callee_id) {
+                queue.push_back((callee_id, next_d));
+            }
+        } else {
+            cut += 1;
         }
     }
-    for (caller_id, _) in graph.callers(curr).take(fanout) {
-        if visited.insert(caller_id) {
-            queue.push_back((caller_id, next_d));
+    for (idx, (caller_id, _)) in graph.callers(curr).enumerate() {
+        if idx < fanout {
+            if visited.insert(caller_id) {
+                queue.push_back((caller_id, next_d));
+            }
+        } else {
+            cut += 1;
         }
     }
+    cut
+}
+
+fn collect_around_callees<'a>(
+    curr: NodeId,
+    fanout: usize,
+    visited: &std::collections::HashSet<NodeId>,
+    ingest: &'a IngestResult,
+    graph: &Graph,
+    interner: &'a Interner,
+) -> Vec<&'a str> {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let mut callees = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for (callee_id, _) in graph.callees(curr) {
+        if visited.contains(&callee_id)
+            && let Some(cs) = ingest.sym(callee_id)
+        {
+            let cn = view.sym_name(cs);
+            if seen.insert(cn) {
+                callees.push(cn);
+                if callees.len() >= fanout {
+                    break;
+                }
+            }
+        }
+    }
+    callees
 }
 
 pub fn execute_around_query<W: Write>(
@@ -1099,28 +1170,31 @@ pub fn execute_around_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
+    use crate::domain::CorpusView;
+    use crate::navigate::SymbolLookup;
+    let view = (ingest, interner);
+    let ids = view.find_symbols(sym_name);
     if ids.is_empty() {
         return Err(io::Error::other(format!(
             "ripwire: --around symbol not found: {sym_name}"
         )));
     }
-    let sym_id = ids[0];
+    let sym_id = ids
+        .iter()
+        .copied()
+        .find(|&id| ingest.sym(id).is_some_and(|s| view.is_production_symbol(s)))
+        .unwrap_or(ids[0]);
     let mut visited = std::collections::HashSet::new();
     let mut queue = std::collections::VecDeque::new();
     visited.insert(sym_id);
     queue.push_back((sym_id, 0u32));
 
-    let mut result_syms = Vec::new();
-
+    let mut ordered_nodes = Vec::new();
+    let mut fanout_cut = 0usize;
     while let Some((curr, curr_d)) = queue.pop_front() {
-        if let Some(s) = ingest.sym(curr) {
-            let n = &interner[s.name];
-            let p = ingest.sym_file_path(s, interner);
-            result_syms.push((n, s.kind.tag(), p, s.line));
-        }
+        ordered_nodes.push((curr, curr_d));
         if curr_d < cfg.depth {
-            enqueue_around_neighbors(
+            fanout_cut += enqueue_around_neighbors(
                 curr,
                 curr_d + 1,
                 cfg.fanout,
@@ -1131,7 +1205,25 @@ pub fn execute_around_query<W: Write>(
         }
     }
 
-    crate::serialize::serialize_around_xml(root, sym_name, cfg.depth, cfg.fanout, &result_syms, out)
+    let mut rows = Vec::with_capacity(ordered_nodes.len());
+    for (curr, hop) in ordered_nodes {
+        if let Some(s) = ingest.sym(curr) {
+            rows.push(crate::serialize::AroundSymbolRow {
+                name: view.sym_name(s),
+                scope: view.sym_scope(s),
+                kind: s.kind.tag(),
+                path: view.sym_path(s),
+                hop,
+                callees: collect_around_callees(
+                    curr, cfg.fanout, &visited, ingest, graph, interner,
+                ),
+            });
+        }
+    }
+
+    crate::serialize::serialize_around_rows_xml(
+        root, sym_name, cfg.depth, cfg.fanout, fanout_cut, &rows, out,
+    )
 }
 
 pub fn execute_external_surface_query<W: Write>(
@@ -1211,12 +1303,15 @@ fn collect_import_and_call_adj<'a>(
         &mut inc_targets,
     );
 
-    for u in 0..graph.node_count() as NodeId {
-        let uf = ingest.symbols[u as usize].file_id as usize;
-        for (v, _, is_split) in graph.callees_with_prov(u) {
-            let vf = ingest.symbols[v as usize].file_id as usize;
-            if !is_split && uf != vf && uf < f_len && vf < f_len {
-                adj_sets[uf].insert(vf);
+    let has_import_edges = adj_sets.iter().any(|s| !s.is_empty());
+    if !has_import_edges {
+        for u in 0..graph.node_count() as NodeId {
+            let uf = ingest.symbols[u as usize].file_id as usize;
+            for (v, _, is_split) in graph.callees_with_prov(u) {
+                let vf = ingest.symbols[v as usize].file_id as usize;
+                if !is_split && uf != vf && uf < f_len && vf < f_len {
+                    adj_sets[uf].insert(vf);
+                }
             }
         }
     }

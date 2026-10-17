@@ -412,6 +412,36 @@ fn filter_present_in_code_drift(
     });
 }
 
+fn scan_corpus_markdown_docs(
+    root_path: &std::path::Path,
+    ingest: &IngestResult,
+    interner: &Interner,
+    file_map: &HashMap<&str, u32>,
+    sym_set: &std::collections::HashSet<&str>,
+    drift_items: &mut Vec<Value>,
+) -> (usize, usize) {
+    let mut docs_scanned = 0usize;
+    let mut dated_docs = 0usize;
+    for file in &ingest.files {
+        let doc_path = interner.resolve(&file.path);
+        if !doc_path.ends_with(".md") {
+            continue;
+        }
+        let Ok(text) =
+            fs::read_to_string(root_path.join(doc_path)).or_else(|_| fs::read_to_string(doc_path))
+        else {
+            continue;
+        };
+        docs_scanned += 1;
+        if is_dated_or_historical_doc(doc_path, &text) {
+            dated_docs += 1;
+        } else {
+            scan_doc_text_for_drift(&text, doc_path, file_map, sym_set, drift_items);
+        }
+    }
+    (docs_scanned, dated_docs)
+}
+
 pub fn call_doc_drift_with_history(
     root: &str,
     ingest: &IngestResult,
@@ -426,17 +456,14 @@ pub fn call_doc_drift_with_history(
         .collect();
     let sym_set = build_known_code_ident_set(ingest, interner);
     let root_path = std::path::Path::new(root);
-
-    for file in &ingest.files {
-        let doc_path = interner.resolve(&file.path);
-        if doc_path.ends_with(".md")
-            && let Ok(text) = fs::read_to_string(root_path.join(doc_path))
-                .or_else(|_| fs::read_to_string(doc_path))
-            && !is_dated_or_historical_doc(doc_path, &text)
-        {
-            scan_doc_text_for_drift(&text, doc_path, &file_map, &sym_set, &mut drift_items);
-        }
-    }
+    let (docs_scanned, dated_docs) = scan_corpus_markdown_docs(
+        root_path,
+        ingest,
+        interner,
+        &file_map,
+        &sym_set,
+        &mut drift_items,
+    );
     filter_present_in_code_drift(root_path, ingest, interner, &mut drift_items);
     if with_history {
         let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
@@ -444,9 +471,19 @@ pub fn call_doc_drift_with_history(
             enrich_drift_item_history(root, item, &head_sha);
         }
     }
+    let drifted_docs: std::collections::HashSet<&str> = drift_items
+        .iter()
+        .filter_map(|d| d["doc"].as_str())
+        .collect();
+    let clean_docs = docs_scanned
+        .saturating_sub(dated_docs)
+        .saturating_sub(drifted_docs.len());
 
     json!({
         "root": root,
+        "docs_scanned": docs_scanned,
+        "clean_docs": clean_docs,
+        "dated_docs": dated_docs,
         "drift_count": drift_items.len(),
         "drift": drift_items
     })

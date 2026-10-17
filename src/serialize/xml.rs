@@ -1,4 +1,4 @@
-use crate::domain::{IngestResult, Interner, NodeId, Symbol};
+use crate::domain::{CorpusView, IngestResult, Interner, NodeId, Symbol};
 use crate::graph::Graph;
 use crate::rank::PageRankResult;
 use crate::serialize::escape::{XmlEscapeExt, escape_xml_write};
@@ -19,6 +19,7 @@ pub struct SerializeOptions {
     pub legend_full: bool,
     pub map_diff_at: Option<String>,
     pub metrics: bool,
+    pub no_inventory: bool,
 }
 
 impl Default for SerializeOptions {
@@ -33,6 +34,7 @@ impl Default for SerializeOptions {
             legend_full: false,
             map_diff_at: None,
             metrics: false,
+            no_inventory: false,
         }
     }
 }
@@ -257,6 +259,18 @@ pub struct StreamXmlContext<'a> {
     pub interner: &'a Interner,
 }
 
+impl<'a> crate::domain::CorpusView<'a> for StreamXmlContext<'a> {
+    #[inline]
+    fn ingest(&self) -> &'a IngestResult {
+        self.ingest
+    }
+
+    #[inline]
+    fn interner(&self) -> &'a Interner {
+        self.interner
+    }
+}
+
 pub fn serialize_xml<W: Write>(
     ingest: &IngestResult,
     graph: &Graph,
@@ -312,6 +326,28 @@ fn build_symbol_row_context<'a>(
     }
 }
 
+fn serialize_single_file_bucket(
+    ctx: &StreamXmlContext<'_>,
+    sym_ids: &[NodeId],
+    remaining_budget: usize,
+    include_pr: bool,
+    metrics: bool,
+    file_buf: &mut Vec<u8>,
+) -> io::Result<usize> {
+    let mut shown = 0usize;
+    for &sym_id in sym_ids {
+        if file_buf.len() >= remaining_budget {
+            break;
+        }
+        let sym = &ctx.ingest.symbols[sym_id as usize];
+        let callees: Vec<(NodeId, f32, bool)> = ctx.graph.callees_with_prov(sym_id).collect();
+        let row_ctx = build_symbol_row_context(sym, sym_id, ctx, &callees, include_pr, metrics);
+        write_symbol_row(file_buf, &row_ctx, ctx.interner, &ctx.ingest.symbols)?;
+        shown += 1;
+    }
+    Ok(shown)
+}
+
 fn serialize_symbol_buckets(
     ctx: &StreamXmlContext<'_>,
     file_order: &[u32],
@@ -319,40 +355,118 @@ fn serialize_symbol_buckets(
     budget: usize,
     include_pr: bool,
     metrics: bool,
-) -> io::Result<(Vec<u8>, usize)> {
+) -> io::Result<(Vec<u8>, usize, Vec<bool>)> {
     let mut body_buf = Vec::with_capacity(budget.min(DEFAULT_STREAM_BUFFER_CAPACITY));
     let mut file_buf = Vec::new();
     let mut symbols_shown = 0usize;
+    let mut listed_files = vec![false; ctx.ingest.files.len()];
 
     for &f in file_order {
         if body_buf.len() >= budget {
             break;
         }
-        let file_info = &ctx.ingest.files[f as usize];
-        let file_path = ctx.interner.resolve(&file_info.path);
+        let file_path = ctx.file_path(f);
         file_buf.clear();
         write_file_header(&mut file_buf, file_path)?;
-
-        let mut file_has_symbols = false;
-        for &sym_id in &buckets[f as usize] {
-            if body_buf.len() + file_buf.len() >= budget {
-                break;
-            }
-            let sym = &ctx.ingest.symbols[sym_id as usize];
-            let callees: Vec<(NodeId, f32, bool)> = ctx.graph.callees_with_prov(sym_id).collect();
-            let row_ctx = build_symbol_row_context(sym, sym_id, ctx, &callees, include_pr, metrics);
-
-            write_symbol_row(&mut file_buf, &row_ctx, ctx.interner, &ctx.ingest.symbols)?;
-            symbols_shown += 1;
-            file_has_symbols = true;
-        }
-        if file_has_symbols {
+        let shown = serialize_single_file_bucket(
+            ctx,
+            &buckets[f as usize],
+            budget.saturating_sub(body_buf.len()),
+            include_pr,
+            metrics,
+            &mut file_buf,
+        )?;
+        if shown > 0 {
+            symbols_shown += shown;
+            listed_files[f as usize] = true;
             file_buf.extend_from_slice(b"</f>");
             body_buf.extend_from_slice(&file_buf);
         }
     }
 
-    Ok((body_buf, symbols_shown))
+    Ok((body_buf, symbols_shown, listed_files))
+}
+
+fn is_inv_code_file(lang: crate::domain::Lang, path: &str) -> bool {
+    !lang.semantics().is_prose_document()
+        && !matches!(
+            lang,
+            crate::domain::Lang::Json | crate::domain::Lang::Toml | crate::domain::Lang::Yaml
+        )
+        && !crate::gate::affected::is_test_or_bench_path(path)
+}
+
+fn write_inv_entries<W: Write>(w: &mut W, ctx: &StreamXmlContext<'_>) -> io::Result<()> {
+    use crate::domain::CorpusView;
+    let mut emitted = 0usize;
+    for sym in &ctx.ingest.symbols {
+        if emitted >= 24 {
+            break;
+        }
+        let name = ctx.sym_name(sym);
+        let scope = ctx.sym_scope(sym);
+        let path = ctx.sym_path(sym);
+        if !sym
+            .lang
+            .semantics()
+            .is_entrypoint_symbol(name, scope, sym.kind, path)
+        {
+            continue;
+        }
+        write!(
+            w,
+            "<entry p=\"{}\" n=\"{}\">",
+            path.xml_escaped(),
+            name.xml_escaped()
+        )?;
+        let callees: Vec<(NodeId, f32, bool)> = ctx.graph.callees_with_prov(sym.id).collect();
+        write_callees_tags(w, &callees, ctx.interner, &ctx.ingest.symbols)?;
+        w.write_all(b"</entry>")?;
+        emitted += 1;
+    }
+    Ok(())
+}
+
+fn write_inv_section<W: Write>(
+    w: &mut W,
+    ctx: &StreamXmlContext<'_>,
+    listed_files: &[bool],
+) -> io::Result<()> {
+    let listed = listed_files.iter().filter(|&&b| b).count();
+    let unlisted = ctx.ingest.files.len().saturating_sub(listed);
+    if unlisted == 0 {
+        return Ok(());
+    }
+    write!(w, "<inv listed=\"{listed}\" unlisted=\"{unlisted}\">")?;
+    write_inv_entries(w, ctx)?;
+    let mut dir_map: std::collections::BTreeMap<&str, (usize, Vec<&str>)> =
+        std::collections::BTreeMap::new();
+    for (idx, f) in ctx.ingest.files.iter().enumerate() {
+        if listed_files.get(idx).copied().unwrap_or(false) {
+            continue;
+        }
+        let p = ctx.interner.resolve(&f.path);
+        let (dir, fname) = p.rsplit_once('/').unwrap_or((".", p));
+        let entry = dir_map.entry(dir).or_insert_with(|| (0, Vec::new()));
+        entry.0 += 1;
+        if entry.1.len() < 8 && is_inv_code_file(f.lang, p) {
+            entry.1.push(fname);
+        }
+    }
+    for (dir, (cnt, code_files)) in dir_map.into_iter().take(60) {
+        if code_files.is_empty() {
+            write!(w, "<ls p=\"{}\" n=\"{cnt}\"/>", dir.xml_escaped())?;
+        } else {
+            let f_list = code_files.join(",");
+            write!(
+                w,
+                "<ls p=\"{}\" n=\"{cnt}\" f=\"{}\"/>",
+                dir.xml_escaped(),
+                f_list.xml_escaped()
+            )?;
+        }
+    }
+    w.write_all(b"</inv>")
 }
 
 /// Stream minified XML with custom ranks and budget enforcement.
@@ -422,7 +536,7 @@ pub fn serialize_xml_with_ranks<W: Write>(
     );
 
     let budget = options.pack_budget_bytes.unwrap_or(usize::MAX);
-    let (body_buf, symbols_shown) = serialize_symbol_buckets(
+    let (body_buf, symbols_shown, listed_files) = serialize_symbol_buckets(
         ctx,
         &file_order,
         &buckets,
@@ -481,6 +595,14 @@ pub fn serialize_xml_with_ranks<W: Write>(
         write_root_open(&mut counter, &root_ctx)?;
     }
     counter.write_all(&body_buf)?;
+    if options.emit_legend
+        && !options.no_inventory
+        && !options.metrics
+        && options.map_diff_at.is_none()
+        && options.rank_by.is_none()
+    {
+        write_inv_section(&mut counter, ctx, &listed_files)?;
+    }
     counter.write_all(b"</r>\n")?;
     counter.flush()
 }
@@ -562,5 +684,71 @@ mod tests {
         assert!(xml.contains("<s t=\"fn\" n=\"run\" k=\"0.6500\"></s>"));
         assert!(xml.contains("<s t=\"fn\" n=\"start\" k=\"0.3500\"><c n=\"run\"/></s>"));
         assert!(xml.ends_with("</f></r>\n"));
+    }
+
+    #[test]
+    fn test_serialize_xml_inventory_and_entries() {
+        let interner = Interner::new();
+        let mut ingest = IngestResult::new();
+        ingest.files.push(FileInfo {
+            id: 0,
+            path: interner.intern("src/main.rs"),
+            lang: Lang::Rust,
+            line_count: 10,
+            byte_size: 100,
+        });
+        ingest.files.push(FileInfo {
+            id: 1,
+            path: interner.intern("src/helper.rs"),
+            lang: Lang::Rust,
+            line_count: 10,
+            byte_size: 100,
+        });
+        ingest.files.push(FileInfo {
+            id: 2,
+            path: interner.intern("docs/README.md"),
+            lang: Lang::Markdown,
+            line_count: 10,
+            byte_size: 100,
+        });
+        ingest.symbols.push(Symbol::new(
+            0,
+            interner.intern("main"),
+            interner.intern("src/main.rs::main"),
+            SymKind::Function,
+            Lang::Rust,
+            0,
+            1,
+        ));
+        ingest.symbols.push(Symbol::new(
+            1,
+            interner.intern("helper"),
+            interner.intern("src/helper.rs::helper"),
+            SymKind::Function,
+            Lang::Rust,
+            1,
+            1,
+        ));
+        let graph = Graph::build(&ingest, &interner);
+        let pr = PageRankResult {
+            iterations: 5,
+            converged: true,
+            ranks: vec![0.8, 0.2],
+        };
+        let xml = serialize_xml_to_string(
+            &ingest,
+            &graph,
+            &pr,
+            &interner,
+            &SerializeOptions {
+                top_k: Some(1),
+                emit_legend: true,
+                ..Default::default()
+            },
+        );
+        assert!(xml.contains("<inv listed=\"1\" unlisted=\"2\">"));
+        assert!(xml.contains("<entry p=\"src/main.rs\" n=\"main\"></entry>"));
+        assert!(xml.contains("<ls p=\"src\" n=\"1\" f=\"helper.rs\"/>"));
+        assert!(xml.contains("<ls p=\"docs\" n=\"1\"/>"));
     }
 }

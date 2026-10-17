@@ -89,6 +89,37 @@ pub fn is_test_path<P: AsRef<Path>>(path: P) -> bool {
         || lower.ends_with("test.java")
 }
 
+/// Check if a path is a test, benchmark, or fixture path for ranking and module naming.
+#[must_use]
+pub fn is_test_or_bench_path<P: AsRef<Path>>(path: P) -> bool {
+    let p = path.as_ref();
+    if is_test_path(p) {
+        return true;
+    }
+    for component in p.components() {
+        if let Some(s) = component.as_os_str().to_str() {
+            let lower = s.to_ascii_lowercase();
+            if matches!(
+                lower.as_str(),
+                "bench" | "benches" | "fixtures" | "__tests__"
+            ) || lower.ends_with("_tests")
+                || lower.ends_with("_test")
+            {
+                return true;
+            }
+        }
+    }
+    let file_name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    let lower = file_name.to_ascii_lowercase();
+    matches!(lower.as_str(), "tests.rs" | "test.rs")
+        || lower.ends_with("_tests.rs")
+        || lower.ends_with(".test.tsx")
+        || lower.ends_with(".spec.tsx")
+        || lower.ends_with("_test.py")
+        || lower.ends_with("_test.cpp")
+        || lower.ends_with("_test.c")
+}
+
 struct SeedResolution {
     seed_nodes: Vec<NodeId>,
     seed_test_files: Vec<String>,

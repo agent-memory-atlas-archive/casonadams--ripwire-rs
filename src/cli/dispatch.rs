@@ -275,6 +275,18 @@ pub struct ExecutionContext<'a> {
     pub interner: &'a Interner,
 }
 
+impl<'a> crate::domain::CorpusView<'a> for ExecutionContext<'a> {
+    #[inline]
+    fn ingest(&self) -> &'a crate::domain::IngestResult {
+        self.ingest
+    }
+
+    #[inline]
+    fn interner(&self) -> &'a Interner {
+        self.interner
+    }
+}
+
 /// Trait for CLI verb groups that execute against an `ExecutionContext`.
 pub trait CliVerb: VerbGroup {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()>;
@@ -743,8 +755,11 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         return Some(crate::metrics::run_cochange_eval(&mut stdout));
     }
     if cli.modifiers.eval_retrieval {
-        let mut stdout = io::stdout().lock();
-        return Some(crate::metrics::run_retrieval_eval(&mut stdout));
+        return Some((|| {
+            let (ingest, _graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+            let mut stdout = io::stdout().lock();
+            crate::metrics::run_retrieval_eval_for_repo(&ingest, &interner, &pr.ranks, &mut stdout)
+        })());
     }
     if let Some(file) = cli.modifiers.batch.as_deref() {
         return Some((|| {
@@ -777,6 +792,7 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
         emit_legend,
         legend_full,
         map_diff: cli.safety.map_diff,
+        no_inventory: cli.modifiers.no_inventory,
     };
     execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)?;
     stdout.flush()

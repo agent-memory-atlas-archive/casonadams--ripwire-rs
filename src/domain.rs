@@ -103,6 +103,23 @@ impl SymKind {
         ];
         TAGS[self as usize]
     }
+    #[inline]
+    #[must_use]
+    pub const fn is_callable(self) -> bool {
+        matches!(self, Self::Function | Self::Method)
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn is_type_container(self) -> bool {
+        matches!(self, Self::Class | Self::Struct | Self::Interface)
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn is_code_symbol(self) -> bool {
+        !matches!(self, Self::Section | Self::ModuleScope)
+    }
 }
 
 impl std::fmt::Display for SymKind {
@@ -211,7 +228,7 @@ impl Lang {
             ("pyi", Lang::Python),
             ("go", Lang::Go),
             ("c", Lang::C),
-            ("h", Lang::C),
+            ("h", Lang::Cpp),
             ("cpp", Lang::Cpp),
             ("cc", Lang::Cpp),
             ("cxx", Lang::Cpp),
@@ -367,6 +384,30 @@ impl Symbol {
         self.scope = Some(scope);
         self
     }
+
+    #[inline]
+    #[must_use]
+    pub const fn is_callable(&self) -> bool {
+        self.kind.is_callable()
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn is_code_symbol(&self) -> bool {
+        self.kind.is_code_symbol()
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn has_body(&self) -> bool {
+        self.sig_end_byte < self.end_byte
+    }
+
+    #[inline]
+    #[must_use]
+    pub const fn end_line(&self) -> u32 {
+        self.line.saturating_add(self.loc.saturating_sub(1))
+    }
 }
 
 /// Unresolved reference extracted from AST syntax.
@@ -464,7 +505,9 @@ impl IngestResult {
     #[inline]
     #[must_use]
     pub fn file_path<'a>(&self, file_id: u32, interner: &'a Interner) -> &'a str {
-        self.file(file_id).map_or("", |f| interner.resolve(&f.path))
+        self.file(file_id)
+            .and_then(|f| interner.try_resolve(&f.path))
+            .unwrap_or("")
     }
 
     #[inline]
@@ -476,7 +519,7 @@ impl IngestResult {
     #[inline]
     #[must_use]
     pub fn sym_name<'a>(&self, sym: &Symbol, interner: &'a Interner) -> &'a str {
-        interner.resolve(&sym.name)
+        interner.try_resolve(&sym.name).unwrap_or("")
     }
 }
 
@@ -486,6 +529,67 @@ impl std::ops::Index<NodeId> for IngestResult {
     #[inline]
     fn index(&self, id: NodeId) -> &Self::Output {
         &self.symbols[id as usize]
+    }
+}
+
+/// Unified read-only view over an indexed corpus (`IngestResult` + `Interner`) to simplify caller queries.
+pub trait CorpusView<'a> {
+    fn ingest(&self) -> &'a IngestResult;
+    fn interner(&self) -> &'a Interner;
+
+    #[inline]
+    #[must_use]
+    fn sym_name(&self, sym: &Symbol) -> &'a str {
+        self.interner().try_resolve(&sym.name).unwrap_or("")
+    }
+
+    #[inline]
+    #[must_use]
+    fn sym_scope(&self, sym: &Symbol) -> Option<&'a str> {
+        sym.scope
+            .as_ref()
+            .and_then(|sc| self.interner().try_resolve(sc))
+            .filter(|s| !s.is_empty())
+    }
+
+    #[inline]
+    #[must_use]
+    fn sym_path(&self, sym: &Symbol) -> &'a str {
+        self.ingest().sym_file_path(sym, self.interner())
+    }
+
+    #[inline]
+    #[must_use]
+    fn file_path(&self, file_id: u32) -> &'a str {
+        self.ingest().file_path(file_id, self.interner())
+    }
+
+    #[inline]
+    #[must_use]
+    fn is_test_symbol(&self, sym: &Symbol) -> bool {
+        crate::gate::affected::is_test_or_bench_path(self.sym_path(sym))
+            || self.sym_name(sym).starts_with("test_")
+            || self
+                .sym_scope(sym)
+                .is_some_and(|sc| sc == "tests" || sc == "test" || sc.ends_with("Tests"))
+    }
+
+    #[inline]
+    #[must_use]
+    fn is_production_symbol(&self, sym: &Symbol) -> bool {
+        sym.is_code_symbol() && !self.is_test_symbol(sym)
+    }
+}
+
+impl<'a> CorpusView<'a> for (&'a IngestResult, &'a Interner) {
+    #[inline]
+    fn ingest(&self) -> &'a IngestResult {
+        self.0
+    }
+
+    #[inline]
+    fn interner(&self) -> &'a Interner {
+        self.1
     }
 }
 #[cfg(test)]
@@ -515,5 +619,44 @@ mod tests {
         assert_eq!(interner.resolve(&s1), "foo");
         assert_eq!(&interner[s1], "foo");
         assert_eq!(&interner[&s2], "bar");
+    }
+
+    #[test]
+    fn test_corpus_view_and_symbol_predicates() {
+        let interner = Interner::new();
+        let mut ingest = IngestResult::new();
+        ingest.files.push(FileInfo {
+            id: 0,
+            path: interner.intern("src/engine.rs"),
+            lang: Lang::Rust,
+            line_count: 20,
+            byte_size: 200,
+        });
+        let mut sym = Symbol::new(
+            0,
+            interner.intern("execute_turn"),
+            interner.intern("src/engine.rs::Engine::execute_turn"),
+            SymKind::Method,
+            Lang::Rust,
+            0,
+            10,
+        )
+        .with_scope(interner.intern("Engine"));
+        sym.sig_start_byte = 10;
+        sym.sig_end_byte = 30;
+        sym.end_byte = 90;
+        sym.loc = 5;
+        ingest.symbols.push(sym);
+
+        let view = (&ingest, &interner);
+        assert!(sym.is_callable());
+        assert!(sym.is_code_symbol());
+        assert!(sym.has_body());
+        assert_eq!(sym.end_line(), 14);
+        assert_eq!(view.sym_name(&sym), "execute_turn");
+        assert_eq!(view.sym_scope(&sym), Some("Engine"));
+        assert_eq!(view.sym_path(&sym), "src/engine.rs");
+        assert!(view.is_production_symbol(&sym));
+        assert_eq!(Lang::from_extension("h"), Lang::Cpp);
     }
 }

@@ -103,6 +103,25 @@ pub trait LanguageSemantics: Sync {
         default_max
     }
 
+    /// Refine file dialect from source content when the extension is shared (e.g., `.h` across C, C++, and Objective-C).
+    fn refine_dialect(&self, base_lang: Lang, _rel_path: &str, _source_bytes: &[u8]) -> Lang {
+        base_lang
+    }
+
+    /// True if a symbol represents a conventional program entrypoint (`main`, `__main__.py`, etc.) for `<inv><entry>`.
+    fn is_entrypoint_symbol(
+        &self,
+        sym_name: &str,
+        scope: Option<&str>,
+        kind: SymKind,
+        rel_path: &str,
+    ) -> bool {
+        if !kind.is_callable() || crate::gate::affected::is_test_path(rel_path) {
+            return false;
+        }
+        sym_name == "main" && scope.is_none()
+    }
+
     /// Optional custom file parser override (used by Markdown, YAML nesting guard, and Astro frontmatter).
     fn parse_file_override(
         &self,

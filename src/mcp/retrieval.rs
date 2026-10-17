@@ -12,6 +12,41 @@ fn stem_query_term(term: &str) -> String {
     }
 }
 
+fn is_for_stopword(w: &str) -> bool {
+    matches!(
+        w.to_ascii_lowercase().as_str(),
+        "how"
+            | "the"
+            | "and"
+            | "are"
+            | "for"
+            | "with"
+            | "from"
+            | "into"
+            | "what"
+            | "when"
+            | "where"
+            | "which"
+            | "that"
+            | "this"
+            | "does"
+            | "can"
+            | "via"
+            | "use"
+            | "used"
+            | "using"
+    )
+}
+
+fn contains_term_aware(haystack: &str, needle: &str) -> bool {
+    if needle.len() >= 4 {
+        return haystack.contains(needle);
+    }
+    haystack
+        .split(|c: char| !c.is_ascii_alphanumeric())
+        .any(|tok| tok == needle || (needle.len() == 3 && tok.starts_with(needle)))
+}
+
 /// Score a symbol against a single search term across name, scope, and file path.
 fn score_single_term(
     lower_name: &str,
@@ -23,22 +58,25 @@ fn score_single_term(
     let stem = stem_query_term(&t);
     let name_hit = if lower_name == t || lower_name == stem {
         30.0
-    } else if lower_name.contains(&t) || lower_name.contains(&stem) {
+    } else if contains_term_aware(lower_name, &t) || contains_term_aware(lower_name, &stem) {
         12.0
     } else {
         0.0
     };
-    let scope_hit = if lower_scope.is_some_and(|sc| sc.contains(&t) || sc.contains(&stem)) {
+    let scope_hit = if lower_scope
+        .is_some_and(|sc| contains_term_aware(sc, &t) || contains_term_aware(sc, &stem))
+    {
         6.0
     } else {
         0.0
     };
-    let path_hit =
-        if !lower_path.is_empty() && (lower_path.contains(&t) || lower_path.contains(&stem)) {
-            4.0
-        } else {
-            0.0
-        };
+    let path_hit = if !lower_path.is_empty()
+        && (contains_term_aware(lower_path, &t) || contains_term_aware(lower_path, &stem))
+    {
+        4.0
+    } else {
+        0.0
+    };
     name_hit + scope_hit + path_hit
 }
 
@@ -113,8 +151,14 @@ fn score_symbol_match_in_file(
     }
     let term_score: f64 = scores.iter().sum();
     let synergy = (scores.len() as f64).powi(3);
-    let non_test = if crate::gate::affected::is_test_path(file_path) {
-        0.25
+    let query_wants_test = terms.iter().any(|t| {
+        let l = t.to_ascii_lowercase();
+        l.contains("test") || l.contains("spec")
+    });
+    let is_test =
+        crate::gate::affected::is_test_or_bench_path(file_path) || lower_name.starts_with("test_");
+    let non_test = if is_test && !query_wants_test {
+        0.05
     } else {
         1.0
     };
@@ -129,12 +173,14 @@ fn score_candidate_symbol(
     body_masks: &[u32],
     raw_terms: &[&str],
 ) -> f64 {
-    if sym.kind == SymKind::Section {
+    use crate::domain::CorpusView;
+    if !sym.is_code_symbol() {
         return 0.0;
     }
-    let name = &interner[sym.name];
-    let scope = sym.scope.as_ref().map(|s| &interner[s]);
-    let file_path = ingest.sym_file_path(sym, interner);
+    let view = (ingest, interner);
+    let name = view.sym_name(sym);
+    let scope = view.sym_scope(sym);
+    let file_path = view.sym_path(sym);
     let rank = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
     let body_mask = body_masks.get(sym.id as usize).copied().unwrap_or(0);
     let kind_factor = if matches!(sym.kind, SymKind::Var | SymKind::Field) {
@@ -356,11 +402,21 @@ pub fn call_for_task_with_options(
     task: &str,
     opts: ForTaskOptions<'_>,
 ) -> Value {
-    let raw_terms: Vec<&str> = task
+    let all_terms: Vec<&str> = task
         .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
         .filter(|w| w.len() >= 2)
         .collect();
+    let filtered_terms: Vec<&str> = all_terms
+        .iter()
+        .copied()
+        .filter(|w| !is_for_stopword(w))
+        .collect();
+    let raw_terms = if filtered_terms.is_empty() {
+        all_terms
+    } else {
+        filtered_terms
+    };
 
     let body_masks = build_body_term_masks(ingest, interner, &raw_terms);
     let mut scored = Vec::new();
@@ -399,6 +455,8 @@ pub fn call_for_task_with_options(
         compute_for_route_metadata(task, &raw_terms, &scored, interner);
     let est_tokens = (symbols_json.len() * 22 + detail_count * 120 + 180) as u64;
     let lego = collect_for_lego(ingest, interner, &scored[..limit]);
+    let tree = collect_for_tree_rows(ingest, interner, &scored, limit);
+    let docs = collect_for_doc_mentions(ingest, interner, &raw_terms);
     json!({
         "task": task,
         "root": opts.root,
@@ -411,6 +469,8 @@ pub fn call_for_task_with_options(
         "count": symbols_json.len(),
         "detail": detail_count,
         "lego": lego,
+        "tree": tree,
+        "docs": docs,
         "adaptive": adaptive_info.map(|(k, t, g)| json!({ "kept": k, "total": t, "gap": g }))
     })
 }
@@ -449,6 +509,64 @@ fn collect_for_lego(
         }));
     }
     out
+}
+
+fn collect_for_tree_rows(
+    ingest: &IngestResult,
+    interner: &Interner,
+    scored: &[(f64, &crate::domain::Symbol)],
+    sig_limit: usize,
+) -> Vec<Value> {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let shown_files: std::collections::HashSet<u32> =
+        scored[..sig_limit].iter().map(|(_, s)| s.file_id).collect();
+    let mut seen_tree_files = std::collections::HashSet::new();
+    let mut rows = Vec::new();
+    for &(_, sym) in scored.iter().skip(sig_limit) {
+        if rows.len() >= 12 {
+            break;
+        }
+        if !shown_files.contains(&sym.file_id) && seen_tree_files.insert(sym.file_id) {
+            rows.push(json!({
+                "path": view.sym_path(sym),
+                "sym": view.sym_name(sym),
+                "kind": sym.kind.tag(),
+            }));
+        }
+    }
+    rows
+}
+
+fn collect_for_doc_mentions(
+    ingest: &IngestResult,
+    interner: &Interner,
+    raw_terms: &[&str],
+) -> Vec<Value> {
+    let mut doc_hits: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    for sym in &ingest.symbols {
+        if sym.kind != SymKind::Section || sym.lang != crate::domain::Lang::Markdown {
+            continue;
+        }
+        let sec_lower = interner.resolve(&sym.name).to_ascii_lowercase();
+        let hits = raw_terms
+            .iter()
+            .filter(|&&t| {
+                let low = t.to_ascii_lowercase();
+                contains_term_aware(&sec_lower, &low)
+            })
+            .count();
+        if hits > 0 {
+            let p = ingest.sym_file_path(sym, interner);
+            *doc_hits.entry(p).or_default() += hits;
+        }
+    }
+    let mut docs: Vec<(&str, usize)> = doc_hits.into_iter().collect();
+    docs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+    docs.into_iter()
+        .take(4)
+        .map(|(p, m)| json!({ "path": p, "mentions": m }))
+        .collect()
 }
 
 /// Execute `fetch_body` tool.

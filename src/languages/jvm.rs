@@ -31,6 +31,16 @@ impl LanguageSemantics for JavaLanguage {
     fn visibility_mode(&self) -> VisibilityMode {
         VisibilityMode::ExplicitModifier
     }
+
+    fn is_entrypoint_symbol(
+        &self,
+        sym_name: &str,
+        _scope: Option<&str>,
+        kind: crate::domain::SymKind,
+        rel_path: &str,
+    ) -> bool {
+        kind.is_callable() && !crate::gate::affected::is_test_path(rel_path) && sym_name == "main"
+    }
 }
 
 impl LanguageSemantics for KotlinLanguage {
@@ -76,6 +86,18 @@ impl LanguageSemantics for CSharpLanguage {
 
     fn visibility_mode(&self) -> VisibilityMode {
         VisibilityMode::ExplicitModifier
+    }
+
+    fn is_entrypoint_symbol(
+        &self,
+        sym_name: &str,
+        _scope: Option<&str>,
+        kind: crate::domain::SymKind,
+        rel_path: &str,
+    ) -> bool {
+        kind.is_callable()
+            && !crate::gate::affected::is_test_path(rel_path)
+            && (sym_name == "main" || sym_name == "Main")
     }
 }
 
