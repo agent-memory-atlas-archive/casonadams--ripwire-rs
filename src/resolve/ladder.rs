@@ -62,6 +62,32 @@ impl Default for CandBuffer {
     }
 }
 
+impl std::ops::Deref for CandBuffer {
+    type Target = [NodeId];
+
+    #[inline]
+    fn deref(&self) -> &[NodeId] {
+        self.as_slice()
+    }
+}
+
+impl AsRef<[NodeId]> for CandBuffer {
+    #[inline]
+    fn as_ref(&self) -> &[NodeId] {
+        self.as_slice()
+    }
+}
+
+impl<'a> IntoIterator for &'a CandBuffer {
+    type Item = &'a NodeId;
+    type IntoIter = std::slice::Iter<'a, NodeId>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.as_slice().iter()
+    }
+}
+
 /// Resolved reference outcome with target nodes and per-target confidence.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedRef {
@@ -190,7 +216,7 @@ pub fn filter_candidates(
 
     if let Some(q) = r.qualifier {
         let mut qualified = CandBuffer::default();
-        for &id in cands.as_slice() {
+        for &id in &cands {
             if symbols[id as usize].scope == Some(q) {
                 qualified.push(id);
             }
@@ -221,13 +247,8 @@ pub fn resolve_call_reference(
         .get(caller_file_id as usize)
         .copied()
         .unwrap_or(u32::MAX);
-    let (tier, conf) = select_precedence_tier(
-        cands.as_slice(),
-        caller_file_id,
-        caller_dir_id,
-        symbols,
-        file_dirs,
-    )?;
+    let (tier, conf) =
+        select_precedence_tier(&cands, caller_file_id, caller_dir_id, symbols, file_dirs)?;
 
     let real_targets: Vec<NodeId> = tier
         .into_iter()
