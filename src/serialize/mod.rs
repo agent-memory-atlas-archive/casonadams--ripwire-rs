@@ -105,6 +105,12 @@ pub trait ToXmlString {
     }
 }
 
+impl<T: XmlReport + ?Sized> ToXmlString for T {
+    fn write_xml<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        self.render_envelope(out)
+    }
+}
+
 /// Resolver gauge counts (`graph_ambiguous=`, `graph_unresolved=`, `graph_unindexed=`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct GraphGauges {

@@ -256,12 +256,6 @@ impl crate::serialize::XmlReport for SeamsReport {
     }
 }
 
-impl crate::serialize::ToXmlString for SeamsReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        serialize_seams_xml(".", self, out)
-    }
-}
-
 /// Serialize seams report to canonical XML format.
 pub fn serialize_seams_xml<W: Write>(root: &str, rep: &SeamsReport, out: &mut W) -> io::Result<()> {
     use crate::serialize::XmlReport;

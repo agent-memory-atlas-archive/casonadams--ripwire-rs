@@ -69,13 +69,6 @@ impl crate::serialize::XmlReport for HotspotsReport {
     }
 }
 
-impl crate::serialize::ToXmlString for HotspotsReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::XmlReport;
-        self.render_envelope(out)
-    }
-}
-
 struct FileSymbolStats {
     ccx_sum: u32,
     worst_name: String,

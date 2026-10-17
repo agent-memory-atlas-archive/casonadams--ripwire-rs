@@ -186,13 +186,6 @@ impl crate::serialize::XmlReport for PrContextReport {
     }
 }
 
-impl crate::serialize::ToXmlString for PrContextReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::XmlReport;
-        self.render_envelope(out)
-    }
-}
-
 /// Serialize PR context to canonical XML format.
 pub fn serialize_pr_context_xml<W: Write>(rep: &PrContextReport, out: &mut W) -> io::Result<()> {
     use crate::serialize::ToXmlString;

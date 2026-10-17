@@ -61,13 +61,6 @@ impl crate::serialize::XmlReport for AffectedReport {
     }
 }
 
-impl crate::serialize::ToXmlString for AffectedReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::XmlReport;
-        self.render_envelope(out)
-    }
-}
-
 /// Check if a path corresponds to a test file by directory convention or filename.
 #[must_use]
 pub fn is_test_path(path: &str) -> bool {

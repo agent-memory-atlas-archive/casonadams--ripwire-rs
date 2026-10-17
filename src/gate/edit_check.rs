@@ -122,13 +122,6 @@ fn write_caller_row<W: Write>(c: &CallerCheckResult, out: &mut W) -> io::Result<
     writeln!(out, "  </c>")
 }
 
-impl crate::serialize::ToXmlString for EditCheckReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::XmlReport;
-        self.render_envelope(out)
-    }
-}
-
 fn check_caller_compatibility(
     caller_id: NodeId,
     sym_name: &str,

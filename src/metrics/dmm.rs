@@ -202,12 +202,6 @@ impl crate::serialize::XmlReport for DmmReport {
     }
 }
 
-impl crate::serialize::ToXmlString for DmmReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        serialize_dmm_xml(self, out)
-    }
-}
-
 pub fn serialize_dmm_xml<W: Write>(rep: &DmmReport, out: &mut W) -> io::Result<()> {
     use crate::serialize::XmlReport;
     rep.render_envelope(out)

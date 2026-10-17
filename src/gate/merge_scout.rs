@@ -122,12 +122,6 @@ impl crate::serialize::XmlReport for MergeScoutReport {
     }
 }
 
-impl crate::serialize::ToXmlString for MergeScoutReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        serialize_merge_scout_xml(self, out)
-    }
-}
-
 /// Serialize merge scout report to canonical XML format.
 pub fn serialize_merge_scout_xml<W: Write>(rep: &MergeScoutReport, out: &mut W) -> io::Result<()> {
     use crate::serialize::XmlReport;

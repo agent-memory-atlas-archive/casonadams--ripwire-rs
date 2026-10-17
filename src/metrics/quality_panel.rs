@@ -321,12 +321,6 @@ impl crate::serialize::XmlReport for QualityPanelReport {
     }
 }
 
-impl crate::serialize::ToXmlString for QualityPanelReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        serialize_quality_panel_xml(self, out)
-    }
-}
-
 pub fn serialize_quality_panel_xml<W: Write>(
     rep: &QualityPanelReport,
     out: &mut W,

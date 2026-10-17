@@ -188,12 +188,6 @@ impl crate::serialize::XmlReport for ContextRatioReport {
     }
 }
 
-impl crate::serialize::ToXmlString for ContextRatioReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        serialize_context_ratio_xml(self, ".", out)
-    }
-}
-
 pub fn serialize_context_ratio_xml<W: Write>(
     rep: &ContextRatioReport,
     root: &str,
@@ -348,12 +342,6 @@ impl crate::serialize::XmlReport for EnsembleReport {
             )?;
         }
         Ok(())
-    }
-}
-
-impl crate::serialize::ToXmlString for EnsembleReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        serialize_ensemble_xml(self, ".", out)
     }
 }
 
@@ -599,11 +587,6 @@ impl crate::serialize::XmlReport for CommentCoherenceReport {
             )?;
         }
         Ok(())
-    }
-}
-impl crate::serialize::ToXmlString for CommentCoherenceReport {
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        serialize_comment_coherence_xml(self, ".", out)
     }
 }
 
