@@ -821,7 +821,6 @@ pub fn execute_pack_top_n_query<W: Write>(
         &pr.ranks,
         Some(n),
     );
-    let root_path = Path::new(root);
     let mut bodies = Vec::new();
     let mut count = 0;
 
@@ -830,8 +829,7 @@ pub fn execute_pack_top_n_query<W: Write>(
             break;
         }
         let rel_path = ingest.file_path(f, interner);
-        let file_disk_path = root_path.join(rel_path);
-        if let Ok(bytes) = std::fs::read(&file_disk_path) {
+        if let Ok(bytes) = crate::domain::read_rel_bytes(root, rel_path) {
             let content = String::from_utf8_lossy(&bytes).to_string();
             bodies.push((rel_path, content));
             count += buckets[f as usize].len();
@@ -915,7 +913,8 @@ pub fn execute_dead_code_query_paged<W: Write>(
     page: &dyn super::args::Paginated,
     out: &mut W,
 ) -> io::Result<()> {
-    let root_path = Path::new(root);
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     let mut file_cache: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
     let mut dead = Vec::new();
     for sym in &ingest.symbols {
@@ -925,16 +924,15 @@ pub fn execute_dead_code_query_paged<W: Write>(
         {
             continue;
         }
-        let p = ingest.sym_file_path(sym, interner);
+        let p = view.sym_path(sym);
         if is_header_path(p) {
             continue;
         }
         let src = file_cache
             .entry(sym.file_id)
-            .or_insert_with(|| std::fs::read(root_path.join(p)).unwrap_or_default());
+            .or_insert_with(|| crate::domain::read_rel_bytes(root, p).unwrap_or_default());
         if sig_has_static_token(src, sym.sig_start_byte, sym.sig_end_byte) {
-            let n = &interner[sym.name];
-            dead.push((n, sym.kind.tag(), p, sym.line));
+            dead.push((view.sym_name(sym), sym.kind.tag(), p, sym.line));
         }
     }
     dead.sort_by(|a, b| {
@@ -952,11 +950,10 @@ pub fn execute_dead_code_query_paged<W: Write>(
     )
 }
 
-fn community_anchor_priority(
-    view: &(&IngestResult, &Interner),
+fn community_anchor_priority<'a, V: crate::domain::CorpusView<'a> + ?Sized>(
+    view: &V,
     s: &crate::domain::Symbol,
 ) -> (u8, u32) {
-    use crate::domain::CorpusView;
     let prod = view.is_production_symbol(s);
     let tier = if prod && (s.is_callable() || s.kind.is_type_container()) {
         3
