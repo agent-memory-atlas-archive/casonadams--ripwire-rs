@@ -32,8 +32,19 @@ pub struct EditCheckReport {
     pub incompatible_callers: usize,
     pub callers: Vec<CallerCheckResult>,
     pub gauges: crate::serialize::GraphGauges,
+    pub at_stamp: String,
 }
 
+impl EditCheckReport {
+    #[must_use]
+    fn is_verdict_only_fold(&self) -> bool {
+        self.at_stamp != "HEAD"
+            && !self.at_stamp.ends_with("+dirty")
+            && self.status == ContractStatus::Unchanged
+            && self.incompatible_callers == 0
+            && self.total_callers > 0
+    }
+}
 impl crate::serialize::XmlReport for EditCheckReport {
     fn schema_tag(&self) -> &'static str {
         "edit-check"
@@ -52,10 +63,7 @@ impl crate::serialize::XmlReport for EditCheckReport {
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let est_tokens = 60 + self.callers.len() * 24;
-        let rows_next = if self.status == ContractStatus::Unchanged
-            && self.incompatible_callers == 0
-            && self.total_callers > 0
-        {
+        let rows_next = if self.is_verdict_only_fold() {
             format!(
                 " rows_next=\"--edit-check={} --limit={}\"",
                 self.symbol_name, self.total_callers
@@ -65,46 +73,53 @@ impl crate::serialize::XmlReport for EditCheckReport {
         };
         write!(
             out,
-            " sym=\"{}\" t=\"fn\" p=\"{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"HEAD\" root=\".\"{rows_next} next=\"--test-gate={}\" est_tokens=\"{est_tokens}\"",
+            " sym=\"{}\" t=\"fn\" p=\"{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"{}\" root=\".\"{rows_next} next=\"--test-gate={}\" est_tokens=\"{est_tokens}\"",
             self.symbol_name,
             self.file_path,
             self.status,
             self.total_callers,
             self.incompatible_callers,
+            self.at_stamp,
             self.file_path
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        if self.is_verdict_only_fold() {
+            return Ok(());
+        }
         for c in &self.callers {
-            let incomp_attr = if c.is_incompatible {
-                " incompatible=\"1\""
-            } else {
-                ""
-            };
-            if c.sites.is_empty() {
-                writeln!(
-                    out,
-                    "  <c n=\"{}\" p=\"{}:{}\"{}/>",
-                    c.caller_name, c.file_path, c.line, incomp_attr
-                )?;
-            } else {
-                writeln!(
-                    out,
-                    "  <c n=\"{}\" p=\"{}:{}\"{}>",
-                    c.caller_name, c.file_path, c.line, incomp_attr
-                )?;
-                for s in &c.sites {
-                    writeln!(
-                        out,
-                        "    <site line=\"{}\" args=\"{}\" required=\"{}\"/>",
-                        s.line, s.arg_count, s.required_params
-                    )?;
-                }
-                writeln!(out, "  </c>")?;
-            }
+            write_caller_row(c, out)?;
         }
         Ok(())
     }
+}
+
+fn write_caller_row<W: Write>(c: &CallerCheckResult, out: &mut W) -> io::Result<()> {
+    let incomp_attr = if c.is_incompatible {
+        " incompatible=\"1\""
+    } else {
+        ""
+    };
+    if c.sites.is_empty() {
+        return writeln!(
+            out,
+            "  <c n=\"{}\" p=\"{}:{}\"{}/>",
+            c.caller_name, c.file_path, c.line, incomp_attr
+        );
+    }
+    writeln!(
+        out,
+        "  <c n=\"{}\" p=\"{}:{}\"{}>",
+        c.caller_name, c.file_path, c.line, incomp_attr
+    )?;
+    for s in &c.sites {
+        writeln!(
+            out,
+            "    <site line=\"{}\" args=\"{}\" required=\"{}\"/>",
+            s.line, s.arg_count, s.required_params
+        )?;
+    }
+    writeln!(out, "  </c>")
 }
 
 impl crate::serialize::ToXmlString for EditCheckReport {
@@ -216,6 +231,7 @@ pub fn check_symbol_contract(
         incompatible_callers,
         callers,
         gauges: graph.gauges(),
+        at_stamp: "HEAD".to_string(),
     })
 }
 

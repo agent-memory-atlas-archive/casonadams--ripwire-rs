@@ -127,9 +127,14 @@ pub trait LanguageSemantics: Sync {
         (params, orig_name.to_string())
     }
 
-    /// True if a captured call reference is a language builtin/macro that should not form a user call edge.
-    fn should_ignore_call(&self, _name_node: Option<tree_sitter::Node<'_>>, _name: &str) -> bool {
+    /// True if a captured identifier is a language keyword or cast operator that must not be indexed.
+    fn is_builtin_keyword(&self, _name: &str) -> bool {
         false
+    }
+
+    /// True if a captured call reference is a language builtin/macro that should not form a user call edge.
+    fn should_ignore_call(&self, _name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {
+        self.is_builtin_keyword(name)
     }
 
     /// True if a symbol name is public by language naming convention.

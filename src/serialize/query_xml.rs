@@ -931,6 +931,32 @@ pub fn serialize_safe_delete_with_gauge_xml<W: Write>(
     writeln!(out, "</safe-delete>")
 }
 
+pub struct ExercisesReport<'a> {
+    pub test_path: &'a str,
+    pub reached: &'a [(&'a str, &'a str)],
+}
+
+impl crate::serialize::XmlReport for ExercisesReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "exercises"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.exercises/v1"
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let test_esc = escape_xml_str(self.test_path);
+        write!(out, " test=\"{test_esc}\" count=\"{}\"", self.reached.len())
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for (p, n) in self.reached {
+            let p_esc = escape_xml_str(p);
+            let n_esc = escape_xml_str(n);
+            writeln!(out, "  <target p=\"{p_esc}\" n=\"{n_esc}\"/>")?;
+        }
+        Ok(())
+    }
+}
+
 /// Serialize `--exercises` to Ripwire XML.
 pub fn serialize_exercises_xml<W: Write>(
     root: &str,
@@ -938,18 +964,8 @@ pub fn serialize_exercises_xml<W: Write>(
     reached: &[(&str, &str)],
     out: &mut W,
 ) -> io::Result<()> {
-    let test_esc = escape_xml_str(test_path);
-    writeln!(
-        out,
-        "<exercises schema=\"ripwire.exercises/v1\" root=\"{root}\" test=\"{test_esc}\" count=\"{}\">",
-        reached.len()
-    )?;
-    for (p, n) in reached {
-        let p_esc = escape_xml_str(p);
-        let n_esc = escape_xml_str(n);
-        writeln!(out, "  <target p=\"{p_esc}\" n=\"{n_esc}\"/>")?;
-    }
-    writeln!(out, "</exercises>")
+    use crate::serialize::XmlReport;
+    ExercisesReport { test_path, reached }.write_xml_report(root, out)
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommunityModule<'a> {
@@ -1187,34 +1203,61 @@ pub fn serialize_around_xml<W: Write>(
 }
 
 /// Serialize `--external-surface` to Ripwire XML.
+pub struct ExternalSurfaceReport<'a> {
+    pub externals: &'a [(&'a str, &'a str, usize)],
+}
+
+impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "external-surface"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.external-surface/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire external-surface schema=ripwire.external-surface/v1: names used but never defined in the index: <x n= lang= refs= calls=>.",
+        )
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let total = self.externals.len();
+        let pw = crate::serialize::PageWindow::compute(total, 100, None, None);
+        let page_attrs = if pw.capped {
+            format!(
+                "{} next=\"--external-surface --offset={}\"",
+                pw.xml_attrs(),
+                pw.shown
+            )
+        } else {
+            pw.xml_attrs()
+        };
+        write!(
+            out,
+            " names=\"{total}\" builtins_excluded=\"14\"{page_attrs}"
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for (name, lang, refs) in self.externals.iter().take(100) {
+            let n_esc = escape_xml_str(name);
+            writeln!(
+                out,
+                "  <x n=\"{n_esc}\" lang=\"{lang}\" refs=\"{refs}\" calls=\"{refs}\"/>"
+            )?;
+        }
+        Ok(())
+    }
+}
+
 pub fn serialize_external_surface_xml<W: Write>(
     _root: &str,
     externals: &[(&str, &str, usize)],
     out: &mut W,
 ) -> io::Result<()> {
-    let total = externals.len();
-    let pw = crate::serialize::PageWindow::compute(total, 100, None, None);
-    let shown = pw.shown;
-    let page_attrs = if pw.capped {
-        format!(
-            "{} next=\"--external-surface --offset={shown}\"",
-            pw.xml_attrs()
-        )
-    } else {
-        pw.xml_attrs()
-    };
-    writeln!(
-        out,
-        "<!-- ripwire external-surface schema=ripwire.external-surface/v1: names used but never defined in the index: <x n= lang= refs= calls=>. -->\n<external-surface schema=\"ripwire.external-surface/v1\" names=\"{total}\" builtins_excluded=\"14\"{page_attrs}>",
-    )?;
-    for (name, lang, refs) in externals.iter().take(shown) {
-        let n_esc = escape_xml_str(name);
-        writeln!(
-            out,
-            "  <x n=\"{n_esc}\" lang=\"{lang}\" refs=\"{refs}\" calls=\"{refs}\"/>"
-        )?;
-    }
-    writeln!(out, "</external-surface>")
+    use crate::serialize::XmlReport;
+    ExternalSurfaceReport { externals }.render_envelope(out)
 }
 
 #[derive(Debug, Clone)]

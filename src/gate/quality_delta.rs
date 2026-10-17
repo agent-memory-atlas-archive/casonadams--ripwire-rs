@@ -614,7 +614,12 @@ fn load_head_baseline_incremental(
         .collect();
     let head_ingest = crate::ingest::ingest_in_memory_files(&slices, &registry, &head_interner);
     let head_graph = crate::graph::Graph::build(&head_ingest, &head_interner);
-    let delta_snap = compute_snapshot(&head_ingest, &head_graph, &head_interner, head_sha);
+    let mut delta_snap = compute_snapshot(&head_ingest, &head_graph, &head_interner, head_sha);
+    for k in delta_snap.ccx_by_sym.keys() {
+        if working.dead_symbols.contains(k) {
+            delta_snap.dead_symbols.insert(k.clone());
+        }
+    }
     merge_snapshot_entries(&mut snap, delta_snap);
     snap
 }

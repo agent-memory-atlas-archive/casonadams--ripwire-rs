@@ -905,13 +905,30 @@ pub fn serialize_executive_report_md<W: Write>(
     write_report_modules_and_bridges(ingest, graph, interner, out)?;
     write_report_deps_sections(ingest, graph, interner, out)?;
 
-    let mut order: Vec<usize> = (0..ingest.symbols.len()).collect();
+    let is_prod_sym = |idx: usize| {
+        let sym = &ingest.symbols[idx];
+        if sym.kind == crate::domain::SymKind::Section
+            || sym.kind == crate::domain::SymKind::ModuleScope
+        {
+            return false;
+        }
+        let file = ingest
+            .files
+            .get(sym.file_id as usize)
+            .map_or("", |f| interner.resolve(&f.path));
+        !crate::gate::affected::is_test_path(file)
+    };
+    let mut order: Vec<usize> = (0..ingest.symbols.len())
+        .filter(|&i| is_prod_sym(i))
+        .collect();
+    if order.is_empty() {
+        order = (0..ingest.symbols.len()).collect();
+    }
     order.sort_by(|&a, &b| {
         let ra = ranks.get(a).copied().unwrap_or(0.0);
         let rb = ranks.get(b).copied().unwrap_or(0.0);
         rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
     });
-
     writeln!(out, "## Top Symbols by PageRank")?;
     writeln!(out, "| Symbol | Kind | File | Line | CCX | PageRank |")?;
     writeln!(out, "|---|---|---|---|---|---|")?;

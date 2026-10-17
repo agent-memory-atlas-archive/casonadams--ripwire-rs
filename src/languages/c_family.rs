@@ -25,6 +25,21 @@ fn resolve_c_family_include(
     let clean = strip_import_quotes(trimmed);
     resolve_relative_or_exact(importer_path, clean, file_index, &[".h", ".hpp", ".hh"])
 }
+fn is_c_family_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "static_cast"
+            | "dynamic_cast"
+            | "const_cast"
+            | "reinterpret_cast"
+            | "sizeof"
+            | "alignof"
+            | "decltype"
+            | "typeid"
+            | "static_assert"
+            | "noexcept"
+    )
+}
 
 impl LanguageSemantics for CLanguage {
     fn tag(&self) -> &'static str {
@@ -41,6 +56,9 @@ impl LanguageSemantics for CLanguage {
 
     fn supports_c_layout(&self) -> bool {
         true
+    }
+    fn is_builtin_keyword(&self, name: &str) -> bool {
+        is_c_family_keyword(name)
     }
 
     fn resolve_import_target(
@@ -69,6 +87,9 @@ impl LanguageSemantics for CppLanguage {
     fn supports_c_layout(&self) -> bool {
         true
     }
+    fn is_builtin_keyword(&self, name: &str) -> bool {
+        is_c_family_keyword(name)
+    }
 
     fn resolve_import_target(
         &self,
@@ -95,6 +116,9 @@ impl LanguageSemantics for CudaLanguage {
 
     fn supports_c_layout(&self) -> bool {
         true
+    }
+    fn is_builtin_keyword(&self, name: &str) -> bool {
+        is_c_family_keyword(name)
     }
 
     fn resolve_import_target(

@@ -66,8 +66,16 @@ fn build_body_term_masks(
             continue;
         }
         let callee = interner.resolve(&r.callee_name).to_ascii_lowercase();
+        let qual = r
+            .qualifier
+            .map(|q| interner.resolve(&q).to_ascii_lowercase());
         for (i, (low, st)) in stems.iter().enumerate() {
-            if callee.contains(low) || callee.contains(st) {
+            let hit = callee.contains(low)
+                || callee.contains(st)
+                || qual
+                    .as_deref()
+                    .is_some_and(|q| q.contains(low) || q.contains(st));
+            if hit {
                 masks[sym_idx] |= 1u32 << i;
             }
         }
@@ -104,7 +112,7 @@ fn score_symbol_match_in_file(
         return 0.0;
     }
     let term_score: f64 = scores.iter().sum();
-    let synergy = (scores.len() as f64).powi(2);
+    let synergy = (scores.len() as f64).powi(3);
     let non_test = if crate::gate::affected::is_test_path(file_path) {
         0.25
     } else {

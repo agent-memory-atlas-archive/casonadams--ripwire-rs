@@ -849,13 +849,16 @@ pub fn execute_edit_check_with<W: Write>(
     .ok()
     .flatten();
 
-    if let Some(report) = crate::gate::edit_check::check_symbol_contract(
+    if let Some(mut report) = crate::gate::edit_check::check_symbol_contract(
         sym_id,
         head_contract.as_ref(),
         &state.ingest,
         &state.graph,
         &state.interner,
     ) {
+        if let Some(stamp) = crate::git::history::compute_git_at_stamp(&state.root) {
+            report.at_stamp = stamp;
+        }
         report.write_xml(out)?;
     }
     Ok(())

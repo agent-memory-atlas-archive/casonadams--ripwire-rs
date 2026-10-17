@@ -130,7 +130,25 @@ impl FileLintRule for CStyleCastRule {
         }
         check_lines(self, ctx, findings, |_, t| {
             [
-                "(int)", "(char*)", "(void*)", "(size_t)", "(double)", "(float)",
+                "(int)",
+                "(unsigned)",
+                "(unsigned ",
+                "(long)",
+                "(long ",
+                "(short)",
+                "(char)",
+                "(char*)",
+                "(const char*)",
+                "(void*)",
+                "(const void*)",
+                "(size_t)",
+                "(std::size_t)",
+                "(uint32_t)",
+                "(uint64_t)",
+                "(int32_t)",
+                "(int64_t)",
+                "(double)",
+                "(float)",
             ]
             .iter()
             .any(|c| t.contains(c))
@@ -297,16 +315,9 @@ impl FileLintRule for MagicNumberRule {
         }
         check_lines(self, ctx, findings, |idx, t| {
             let line_no = (idx + 1) as u32;
-            let is_decl = [
-                "const ",
-                "constexpr ",
-                "static ",
-                "#define",
-                "case ",
-                "enum ",
-            ]
-            .iter()
-            .any(|p| t.starts_with(p));
+            let is_decl = ["const ", "constexpr ", "#define", "case ", "enum "]
+                .iter()
+                .any(|p| t.contains(p));
             if is_decl || ctx.enclosing_at(line_no) == "<top>" {
                 return None;
             }
@@ -316,7 +327,29 @@ impl FileLintRule for MagicNumberRule {
                         && tok.bytes().all(|b| b.is_ascii_digit())
                         && !matches!(
                             tok,
-                            "10" | "16" | "32" | "64" | "100" | "256" | "1000" | "1024"
+                            "10" | "12"
+                                | "16"
+                                | "20"
+                                | "24"
+                                | "32"
+                                | "40"
+                                | "48"
+                                | "60"
+                                | "64"
+                                | "80"
+                                | "100"
+                                | "120"
+                                | "128"
+                                | "200"
+                                | "256"
+                                | "500"
+                                | "512"
+                                | "1000"
+                                | "1024"
+                                | "2048"
+                                | "4096"
+                                | "8192"
+                                | "65536"
                         )
                 })
                 .then_some("non-trivial numeric literal in function body")
@@ -663,9 +696,11 @@ impl FileLintRule for AtomCommaOperatorRule {
             return;
         }
         check_lines(self, ctx, findings, |_, t| {
+            let (first_lhs, _) = t.split_once('=')?;
             (!t.starts_with("for")
                 && t.ends_with(';')
                 && !t.contains('(')
+                && !first_lhs.trim().contains(' ')
                 && t.matches('=').count() >= 2
                 && t.contains(", "))
             .then_some("comma operator in expression statement")
@@ -694,24 +729,21 @@ impl FileLintRule for AtomEmbeddedCrementRule {
             {
                 return None;
             }
-            let bare = t.trim_end_matches(';').trim();
-            let standalone = bare
-                .strip_prefix("++")
-                .or_else(|| bare.strip_prefix("--"))
-                .or_else(|| bare.strip_suffix("++"))
-                .or_else(|| bare.strip_suffix("--"));
-            standalone
-                .is_none_or(|s| !s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
-                .then_some("++/-- embedded inside a larger expression")
+            let has_outer_expr = t.contains(" = ")
+                || t.contains("+ ")
+                || t.contains("- ")
+                || (t.contains('[') && (t.contains("++]") || t.contains("--]")));
+            has_outer_expr.then_some("++/-- embedded inside a larger expression")
         });
     }
 }
 
 fn extract_cond(t: &str) -> Option<&str> {
-    t.strip_prefix("if (")
-        .or_else(|| t.strip_prefix("if("))
-        .or_else(|| t.strip_prefix("while ("))
-        .or_else(|| t.strip_prefix("while("))?
+    let head = t.split('{').next()?;
+    head.strip_prefix("if (")
+        .or_else(|| head.strip_prefix("if("))
+        .or_else(|| head.strip_prefix("while ("))
+        .or_else(|| head.strip_prefix("while("))?
         .rsplit_once(')')
         .map(|(c, _)| c)
 }

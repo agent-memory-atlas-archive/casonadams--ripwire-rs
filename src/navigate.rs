@@ -310,6 +310,49 @@ pub fn transitive_impact(
     transitive_impact_multi(&[seed_id], ingest, graph, ranks, interner, max_depth)
 }
 
+fn select_impact_seeds(
+    seed_ids: &[NodeId],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> Vec<NodeId> {
+    if seed_ids.len() <= 1 {
+        return seed_ids.to_vec();
+    }
+    let non_test: Vec<NodeId> = seed_ids
+        .iter()
+        .copied()
+        .filter(|&id| {
+            ingest
+                .symbols
+                .get(id as usize)
+                .and_then(|s| ingest.files.get(s.file_id as usize))
+                .is_none_or(|f| !crate::gate::affected::is_test_path(interner.resolve(&f.path)))
+        })
+        .collect();
+    if non_test.is_empty() {
+        seed_ids.to_vec()
+    } else {
+        non_test
+    }
+}
+fn enqueue_impact_callers(
+    curr: NodeId,
+    depth: u32,
+    graph: &Graph,
+    visited: &mut HashSet<NodeId>,
+    queue: &mut VecDeque<(NodeId, u32)>,
+) {
+    if depth >= 1 && graph.in_degree(curr) > 64 {
+        return;
+    }
+    let min_weight = if depth == 0 { 0.2 } else { 0.35 };
+    for (caller_id, weight) in graph.callers(curr) {
+        if weight >= min_weight && visited.insert(caller_id) {
+            queue.push_back((caller_id, depth + 1));
+        }
+    }
+}
+
 #[must_use]
 pub fn transitive_impact_multi(
     seed_ids: &[NodeId],
@@ -319,12 +362,13 @@ pub fn transitive_impact_multi(
     interner: &Interner,
     max_depth: Option<u32>,
 ) -> Vec<ImpactNode> {
+    let effective_seeds = select_impact_seeds(seed_ids, ingest, interner);
     let mut visited = HashSet::new();
     let mut queue = VecDeque::new();
     let mut results = Vec::new();
-    let seeds: HashSet<NodeId> = seed_ids.iter().copied().collect();
+    let seeds: HashSet<NodeId> = effective_seeds.iter().copied().collect();
 
-    for &seed_id in seed_ids {
+    for &seed_id in &effective_seeds {
         if visited.insert(seed_id) {
             queue.push_back((seed_id, 0u32));
         }
@@ -339,15 +383,8 @@ pub fn transitive_impact_multi(
                 || crate::gate::affected::is_test_path(&node.path);
             results.push(node);
         }
-
-        if max_depth.is_some_and(|limit| depth >= limit) {
-            continue;
-        }
-
-        for (caller_id, _) in graph.callers(curr) {
-            if visited.insert(caller_id) {
-                queue.push_back((caller_id, depth + 1));
-            }
+        if !max_depth.is_some_and(|limit| depth >= limit) {
+            enqueue_impact_callers(curr, depth, graph, &mut visited, &mut queue);
         }
     }
 
@@ -789,6 +826,41 @@ fn check_call_relationship(
     false
 }
 
+pub struct VerifyReport<'a> {
+    pub claim: &'a str,
+    pub verdict: &'static str,
+    pub from_defs: usize,
+    pub to_defs: usize,
+    pub gauges: crate::serialize::GraphGauges,
+}
+
+impl crate::serialize::XmlReport for VerifyReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "verify"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.verify/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire verify schema=ripwire.verify/v1: ONE structured claim, verdict=confirmed|refuted|unknown.",
+        )
+    }
+    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
+        Some(self.gauges)
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        write!(
+            out,
+            " claim=\"{}\" shape=\"calls\" verdict=\"{}\" from_defs=\"{}\" to_defs=\"{}\" limit=\"call-graph-floor\" shown=\"0\" capped=\"0\"",
+            self.claim, self.verdict, self.from_defs, self.to_defs
+        )
+    }
+    fn write_body<W: Write>(&self, _out: &mut W) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 pub fn evaluate_verify_claim<W: Write>(
     claim: &str,
     ingest: &IngestResult,
@@ -819,12 +891,15 @@ pub fn evaluate_verify_claim<W: Write>(
     } else {
         "confirmed"
     };
-
-    let gauge_attrs = graph.xml_gauge_attrs();
-    writeln!(
-        out,
-        "<!-- ripwire verify schema=ripwire.verify/v1: ONE structured claim, verdict=confirmed|refuted|unknown. -->\n<verify schema=\"ripwire.verify/v1\" claim=\"{claim}\" shape=\"calls\" verdict=\"{verdict}\" from_defs=\"{from_defs}\" to_defs=\"{to_defs}\" root=\".\" limit=\"call-graph-floor\" {gauge_attrs} shown=\"0\" capped=\"0\"></verify>"
-    )
+    use crate::serialize::XmlReport;
+    VerifyReport {
+        claim,
+        verdict,
+        from_defs,
+        to_defs,
+        gauges: graph.gauges(),
+    }
+    .render_envelope(out)
 }
 
 struct PackTaskBody {
@@ -1492,6 +1567,60 @@ fn evaluate_graph_expr(
     }
 }
 
+pub struct GraphQueryReport<'a> {
+    pub expr: &'a str,
+    pub matched_nodes: &'a BTreeSet<NodeId>,
+    pub ingest: &'a IngestResult,
+    pub interner: &'a Interner,
+    pub pr_iters: u32,
+    pub gauges: crate::serialize::GraphGauges,
+}
+
+impl crate::serialize::XmlReport for GraphQueryReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "query"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.graph-query/v1"
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire graph-query schema=ripwire.graph-query/v1: graph-query expression over the symbol graph.",
+        )
+    }
+    fn pr_iters(&self) -> Option<u32> {
+        Some(self.pr_iters)
+    }
+    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
+        Some(self.gauges)
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let count = self.matched_nodes.len();
+        let escaped_expr = crate::serialize::escape::escape_xml_str(self.expr);
+        write!(
+            out,
+            " expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\""
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for &node_id in self.matched_nodes {
+            if let Some(sym) = self.ingest.symbols.get(node_id as usize) {
+                let n = self.interner.resolve(&sym.name);
+                let p = self
+                    .interner
+                    .resolve(&self.ingest.files[sym.file_id as usize].path);
+                writeln!(
+                    out,
+                    "<s t=\"{}\" n=\"{n}\" p=\"{p}:{}\"/>",
+                    sym.kind.tag(),
+                    sym.line
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
 pub fn execute_graph_query_expr<W: Write>(
     expr: &str,
     root: &str,
@@ -1509,27 +1638,20 @@ pub fn execute_graph_query_expr<W: Write>(
         .parse_expr()
         .unwrap_or_else(|| GraphExpr::Name(expr.to_string()));
     let matched_nodes = evaluate_graph_expr(&parsed, ingest, graph, interner);
-    let count = matched_nodes.len();
-    let gauge_attrs = graph.xml_gauge_attrs();
     let pr_iters = graph
         .page_rank(&crate::rank::PageRankConfig::default())
         .iterations
         .max(1);
-    let escaped_expr = crate::serialize::escape::escape_xml_str(expr);
-    writeln!(
-        out,
-        "<!-- ripwire graph-query schema=ripwire.graph-query/v1: graph-query expression over the symbol graph. -->\n<query schema=\"ripwire.graph-query/v1\" expr=\"{escaped_expr}\" count=\"{count}\" shown=\"{count}\" capped=\"0\" {gauge_attrs} root=\"{root}\" pr_iters=\"{pr_iters}\">"
-    )?;
-    for node_id in matched_nodes {
-        if let Some(sym) = ingest.symbols.get(node_id as usize) {
-            let n = interner.resolve(&sym.name);
-            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
-            let k = sym.kind.tag();
-            let l = sym.line;
-            writeln!(out, "<s t=\"{k}\" n=\"{n}\" p=\"{p}:{l}\"/>")?;
-        }
+    use crate::serialize::XmlReport;
+    GraphQueryReport {
+        expr,
+        matched_nodes: &matched_nodes,
+        ingest,
+        interner,
+        pr_iters,
+        gauges: graph.gauges(),
     }
-    writeln!(out, "</query>")
+    .write_xml_report(root, out)
 }
 #[cfg(test)]
 mod tests {

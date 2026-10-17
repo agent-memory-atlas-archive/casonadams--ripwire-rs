@@ -438,7 +438,9 @@ fn record_def_item(
     let (Some(orig_name), Some((kind, sub, start, end, line))) = (&ext.name, ext.def) else {
         return;
     };
-    if !is_gated_def_allowed(sub, ext.name_node, source_bytes) {
+    if lang.semantics().is_builtin_keyword(orig_name)
+        || !is_gated_def_allowed(sub, ext.name_node, source_bytes)
+    {
         return;
     }
     let scope = ext
@@ -483,7 +485,9 @@ fn record_ref_item(
     let (Some(name), Some((role, start, line))) = (&ext.name, ext.r#ref) else {
         return;
     };
-    if role == RefRole::Call && lang.semantics().should_ignore_call(ext.name_node, name) {
+    if lang.semantics().is_builtin_keyword(name)
+        || (role == RefRole::Call && lang.semantics().should_ignore_call(ext.name_node, name))
+    {
         return;
     }
 
