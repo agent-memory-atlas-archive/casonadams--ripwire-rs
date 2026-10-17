@@ -280,15 +280,10 @@ pub fn call_slice(state: &McpState, args: &Value) -> Result<Value, String> {
     let flow_dir = flow_str.parse().unwrap_or_default();
     let registry = LanguageRegistry::new().map_err(|e| e.to_string())?;
     use crate::domain::CorpusView;
+    use crate::navigate::SymbolLookup;
     let sym_query = target.split(':').next().unwrap_or(target);
     let custom_bytes = state
-        .ingest
-        .symbols
-        .iter()
-        .find(|s| {
-            state.sym_name(s) == sym_query
-                || state.interner.resolve(&s.canonical_id).ends_with(sym_query)
-        })
+        .find_first_symbol(sym_query)
         .and_then(|s| state.read_sym_bytes(&state.root, s).ok());
     let xml = crate::slice::execute_slice(
         &state.ingest,

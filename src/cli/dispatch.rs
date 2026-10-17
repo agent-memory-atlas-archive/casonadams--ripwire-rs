@@ -421,15 +421,7 @@ impl CliVerb for TopDetailArgs {
                 out,
             )
         } else {
-            execute_detail_extended(
-                ctx.cli,
-                ctx.root,
-                ctx.ingest,
-                ctx.graph,
-                ctx.pr,
-                ctx.interner,
-                out,
-            )
+            execute_detail_extended(ctx, out)
         }
     }
 
@@ -461,15 +453,7 @@ impl CliVerb for TopSafetyArgs {
 
 impl AnalysisLens for TopArchitectureArgs {
     fn execute_lens<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<bool> {
-        dispatch_lens_queries(
-            ctx.cli,
-            ctx.root,
-            ctx.ingest,
-            ctx.graph,
-            ctx.pr,
-            ctx.interner,
-            out,
-        )
+        dispatch_lens_queries(ctx, out)
     }
 }
 
@@ -486,21 +470,7 @@ impl CliVerb for TopWorkspaceArgs {
             let val = crate::mcp::doc_tools::call_stray_content(ctx.root);
             return crate::serialize::serialize_stray_content_xml(&val, out);
         }
-        if let Some((spec, op)) = self
-            .replace_symbol_body
-            .as_deref()
-            .map(|s| (s, crate::mcp::edit::EditOp::ReplaceBody))
-            .or_else(|| {
-                self.insert_before_symbol
-                    .as_deref()
-                    .map(|s| (s, crate::mcp::edit::EditOp::InsertBefore))
-            })
-            .or_else(|| {
-                self.insert_after_symbol
-                    .as_deref()
-                    .map(|s| (s, crate::mcp::edit::EditOp::InsertAfter))
-            })
-        {
+        if let Some((spec, op)) = self.active_edit_op() {
             execute_edit_op_with_options(
                 EditCliOptions {
                     root: ctx.root,
@@ -589,15 +559,15 @@ fn filter_and_cap_lint_findings(
     }
 }
 
-fn execute_detail_extended<W: Write>(
-    cli: &Cli,
-    root: &str,
-    ingest: &crate::domain::IngestResult,
-    graph: &Graph,
-    pr: &PageRankResult,
-    interner: &Interner,
-    stdout: &mut W,
-) -> io::Result<()> {
+fn execute_detail_extended<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W) -> io::Result<()> {
+    let (cli, root, ingest, graph, pr, interner) = (
+        ctx.cli,
+        ctx.root,
+        ctx.ingest,
+        ctx.graph,
+        ctx.pr,
+        ctx.interner,
+    );
     let detail = &cli.detail;
     if detail.lint {
         let mut findings =
@@ -742,15 +712,15 @@ pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     run_cli_verb(&cli.arch, cli, root)
 }
 
-fn dispatch_lens_queries<W: Write>(
-    cli: &Cli,
-    root: &str,
-    ingest: &crate::domain::IngestResult,
-    graph: &Graph,
-    pr: &crate::rank::PageRankResult,
-    interner: &Interner,
-    stdout: &mut W,
-) -> io::Result<bool> {
+fn dispatch_lens_queries<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W) -> io::Result<bool> {
+    let (cli, root, ingest, graph, pr, interner) = (
+        ctx.cli,
+        ctx.root,
+        ctx.ingest,
+        ctx.graph,
+        ctx.pr,
+        ctx.interner,
+    );
     let a = &cli.arch;
     if a.metrics {
         let opts = crate::serialize::SerializeOptions {

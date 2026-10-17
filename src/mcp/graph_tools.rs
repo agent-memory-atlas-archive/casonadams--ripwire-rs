@@ -4,22 +4,8 @@ use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
 
 fn find_symbols_matching(ingest: &IngestResult, interner: &Interner, name: &str) -> Vec<NodeId> {
-    let ids = crate::navigate::find_symbols_by_name(name, ingest, interner);
-    if !ids.is_empty() {
-        return ids;
-    }
-    ingest
-        .symbols
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| {
-            let n = interner.resolve(&s.name);
-            n == name
-                || interner.resolve(&s.canonical_id) == name
-                || interner.resolve(&s.canonical_id).ends_with(name)
-        })
-        .map(|(idx, _)| idx as NodeId)
-        .collect()
+    use crate::navigate::SymbolLookup;
+    (ingest, interner).find_symbols(name)
 }
 
 fn bfs_directed_path(graph: &Graph, from: NodeId, to: NodeId) -> Option<Vec<NodeId>> {

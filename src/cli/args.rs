@@ -747,6 +747,23 @@ pub struct TopWorkspaceArgs {
 }
 
 impl TopWorkspaceArgs {
+    #[must_use]
+    pub fn active_edit_op(&self) -> Option<(&str, crate::mcp::edit::EditOp)> {
+        self.replace_symbol_body
+            .as_deref()
+            .map(|s| (s, crate::mcp::edit::EditOp::ReplaceBody))
+            .or_else(|| {
+                self.insert_before_symbol
+                    .as_deref()
+                    .map(|s| (s, crate::mcp::edit::EditOp::InsertBefore))
+            })
+            .or_else(|| {
+                self.insert_after_symbol
+                    .as_deref()
+                    .map(|s| (s, crate::mcp::edit::EditOp::InsertAfter))
+            })
+    }
+
     pub fn is_active(&self) -> bool {
         self.whereis.is_some()
             || self.owners
@@ -761,9 +778,7 @@ impl TopWorkspaceArgs {
             || self.flip.is_some()
             || self.plan_lint.is_some()
             || self.skipped
-            || self.replace_symbol_body.is_some()
-            || self.insert_before_symbol.is_some()
-            || self.insert_after_symbol.is_some()
+            || self.active_edit_op().is_some()
     }
 }
 /// Categorized workflow command groups.

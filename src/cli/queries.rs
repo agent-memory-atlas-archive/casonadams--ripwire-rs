@@ -658,35 +658,8 @@ fn execute_symbol_mutation_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<bool> {
-    if let Some(spec) = ws.replace_symbol_body.as_deref() {
-        execute_edit_op(
-            root,
-            ingest,
-            interner,
-            spec,
-            crate::mcp::edit::EditOp::ReplaceBody,
-            out,
-        )?;
-        Ok(true)
-    } else if let Some(spec) = ws.insert_before_symbol.as_deref() {
-        execute_edit_op(
-            root,
-            ingest,
-            interner,
-            spec,
-            crate::mcp::edit::EditOp::InsertBefore,
-            out,
-        )?;
-        Ok(true)
-    } else if let Some(spec) = ws.insert_after_symbol.as_deref() {
-        execute_edit_op(
-            root,
-            ingest,
-            interner,
-            spec,
-            crate::mcp::edit::EditOp::InsertAfter,
-            out,
-        )?;
+    if let Some((spec, op)) = ws.active_edit_op() {
+        execute_edit_op(root, ingest, interner, spec, op, out)?;
         Ok(true)
     } else {
         Ok(false)
