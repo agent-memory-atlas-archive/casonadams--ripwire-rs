@@ -322,6 +322,29 @@ pub trait ResolutionLookup {
     }
 
     #[must_use]
+    fn is_interface_scoped_method(&self, sym: &Symbol) -> bool {
+        let Some(sc) = sym.scope else {
+            return false;
+        };
+        let symbols = self.symbols();
+        self.by_name().get(&sc).is_some_and(|ids| {
+            ids.iter()
+                .any(|&id| symbols[id as usize].kind == crate::domain::SymKind::Interface)
+        })
+    }
+
+    #[must_use]
+    fn select_interface_contract_tier(&self, cands: &[NodeId]) -> Option<(Vec<NodeId>, f32)> {
+        let symbols = self.symbols();
+        let iface_cands: Vec<NodeId> = cands
+            .iter()
+            .copied()
+            .filter(|&id| self.is_interface_scoped_method(&symbols[id as usize]))
+            .collect();
+        is_unique_global_group(&iface_cands, symbols).then_some((iface_cands, 0.2))
+    }
+
+    #[must_use]
     fn resolve_ref(&self, r: &Reference) -> Option<ResolvedRef> {
         if r.from_symbol == NO_NODE
             || !matches!(
@@ -345,7 +368,8 @@ pub trait ResolutionLookup {
             caller_dir_id,
             self.symbols(),
             self.file_dirs(),
-        )?;
+        )
+        .or_else(|| self.select_interface_contract_tier(&cands))?;
         let real_targets: Vec<NodeId> = tier
             .into_iter()
             .filter(|&target| target != r.from_symbol)

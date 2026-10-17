@@ -39,6 +39,10 @@
     (function_item
         name: (identifier) @name) @definition.method)
 
+(declaration_list
+    (function_signature_item
+        name: (identifier) @name) @definition.method)
+
 ; function definitions
 
 (function_item

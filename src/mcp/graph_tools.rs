@@ -80,6 +80,17 @@ fn find_shortest_path_between_sets(
     best
 }
 
+fn build_path_step_json(id: NodeId, ingest: &IngestResult, interner: &Interner) -> Option<Value> {
+    let sym = ingest.sym(id)?;
+    let path = ingest.sym_file_path(sym, interner);
+    Some(json!({
+        "name": &interner[sym.name],
+        "kind": sym.kind.tag(),
+        "path": path,
+        "line": sym.line
+    }))
+}
+
 /// Execute `path_between` tool: shortest directed call path between two symbols.
 pub fn call_path_between(
     ingest: &IngestResult,
@@ -127,9 +138,13 @@ pub fn call_path_between(
     };
 
     let path: Vec<&str> = path_ids
-        .into_iter()
-        .filter_map(|id| ingest.sym(id))
+        .iter()
+        .filter_map(|&id| ingest.sym(id))
         .map(|sym| &interner[sym.name])
+        .collect();
+    let steps: Vec<Value> = path_ids
+        .into_iter()
+        .filter_map(|id| build_path_step_json(id, ingest, interner))
         .collect();
 
     json!({
@@ -139,7 +154,8 @@ pub fn call_path_between(
         "to_defs": to_ids.len(),
         "reachable": true,
         "hops": path.len().saturating_sub(1),
-        "path": path
+        "path": path,
+        "steps": steps
     })
 }
 
@@ -278,6 +294,16 @@ struct ConnectAccum {
     dir_edge_ids: std::collections::BTreeSet<(NodeId, NodeId)>,
 }
 
+fn update_connect_terminal(slot: &mut (NodeId, usize), cand_id: NodeId, ingest: &IngestResult) {
+    let same_name = ingest
+        .sym(slot.0)
+        .zip(ingest.sym(cand_id))
+        .is_some_and(|(cur, cand)| cur.name == cand.name);
+    if same_name {
+        slot.0 = cand_id;
+    }
+}
+
 fn record_connect_pair(
     i: usize,
     j: usize,
@@ -295,10 +321,10 @@ fn record_connect_pair(
         return;
     };
     if let Some(&first_id) = nodes.first() {
-        acc.chosen_terminals[i].0 = first_id;
+        update_connect_terminal(&mut acc.chosen_terminals[i], first_id, ingest);
     }
     if let Some(&last_id) = nodes.last() {
-        acc.chosen_terminals[j].0 = last_id;
+        update_connect_terminal(&mut acc.chosen_terminals[j], last_id, ingest);
     }
     let path_names: Vec<&str> = nodes
         .iter()
@@ -320,6 +346,28 @@ pub fn call_connect(
     call_connect_with_radius(ingest, graph, interner, symbol_names, 6)
 }
 
+fn expand_connect_seeds(ingest: &IngestResult, ids: Vec<NodeId>) -> Vec<NodeId> {
+    let mut out = ids.clone();
+    for &id in &ids {
+        let Some(sym) = ingest.sym(id) else {
+            continue;
+        };
+        if matches!(
+            sym.kind,
+            crate::domain::SymKind::Class
+                | crate::domain::SymKind::Struct
+                | crate::domain::SymKind::Interface
+        ) {
+            for m in &ingest.symbols {
+                if m.scope == Some(sym.name) {
+                    out.push(m.id);
+                }
+            }
+        }
+    }
+    out
+}
+
 pub fn call_connect_with_radius(
     ingest: &IngestResult,
     graph: &Graph,
@@ -330,8 +378,8 @@ pub fn call_connect_with_radius(
     let resolved: Vec<(&str, Vec<NodeId>)> = symbol_names
         .iter()
         .filter_map(|name| {
-            let ids = find_symbols_matching(ingest, interner, name);
-            (!ids.is_empty()).then_some((name.as_str(), ids))
+            let raw_ids = find_symbols_matching(ingest, interner, name);
+            (!raw_ids.is_empty()).then(|| (name.as_str(), expand_connect_seeds(ingest, raw_ids)))
         })
         .collect();
     let mut acc = ConnectAccum {
@@ -545,29 +593,57 @@ pub fn call_situational_awareness(
     })
 }
 
+fn parse_trace_file_line_token(word: &str) -> Option<(&str, u32)> {
+    let clean = word.trim_matches(|c: char| matches!(c, '(' | ')' | '[' | ']' | ',' | ';' | ':'));
+    let (file_part, rest) = clean.split_once(':')?;
+    if !file_part.contains('.') && !file_part.contains('/') {
+        return None;
+    }
+    let line_str = rest.split(':').next()?;
+    let line_num = line_str.parse::<u32>().ok()?;
+    Some((file_part, line_num))
+}
+
+fn resolve_trace_line_symbol<'a>(
+    trimmed: &str,
+    ingest: &'a IngestResult,
+    interner: &Interner,
+) -> Option<&'a crate::domain::Symbol> {
+    for word in trimmed.split_whitespace() {
+        if let Some((file_part, line_num)) = parse_trace_file_line_token(word)
+            && let Some(sym) =
+                crate::navigate::resolve_symbol_at(file_part, line_num, ingest, interner)
+        {
+            return Some(sym);
+        }
+    }
+    let tokens: HashSet<&str> = trimmed
+        .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .filter(|t| t.len() >= 3)
+        .collect();
+    ingest
+        .symbols
+        .iter()
+        .filter(|sym| tokens.contains(interner.resolve(&sym.name)))
+        .max_by_key(|sym| interner.resolve(&sym.name).len())
+}
+
 /// Execute `from_trace` tool.
 pub fn call_from_trace(ingest: &IngestResult, interner: &Interner, trace_text: &str) -> Value {
     let mut suspects = Vec::new();
 
     for line in trace_text.lines() {
         let trimmed = line.trim();
-        for sym in &ingest.symbols {
+        if let Some(sym) = resolve_trace_line_symbol(trimmed, ingest, interner) {
             let name = interner.resolve(&sym.name);
-            if name.len() >= 3 && trimmed.contains(name) {
-                let file_path = ingest
-                    .files
-                    .get(sym.file_id as usize)
-                    .map(|f| interner.resolve(&f.path))
-                    .unwrap_or("");
-                suspects.push(json!({
-                    "name": name,
-                    "kind": sym.kind.tag(),
-                    "file": file_path,
-                    "line": sym.line,
-                    "trace_line": trimmed
-                }));
-                break;
-            }
+            let file_path = ingest.sym_file_path(sym, interner);
+            suspects.push(json!({
+                "name": name,
+                "kind": sym.kind.tag(),
+                "file": file_path,
+                "line": sym.line,
+                "trace_line": trimmed
+            }));
         }
     }
 

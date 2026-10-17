@@ -311,16 +311,19 @@ pub fn serialize_grep_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> 
     let pat = escape_xml_str(val["pattern"].as_str().unwrap_or(""));
     let hits = val["hits"].as_array();
     let count = hits.map_or(0, Vec::len);
+    let cap = val.u64_or("limit", 100).max(1) as usize;
+    let shown = count.min(cap);
+    let capped = u8::from(shown < count);
     let (files_set, enc_set, first_loc) = collect_grep_summary(hits);
     let f_cnt = files_set.len();
     let attrs = format!(
-        "pattern=\"{pat}\" schema=\"ripwire.grep/v1\" root=\".\" files=\"{f_cnt}\" hits=\"{count}\" shown=\"{count}\" capped=\"0\" hits_capped=\"0\" suppressed_comment=\"0\" suppressed_string=\"0\" tier_parsed=\"{f_cnt}\" tier_unclassified=\"0\" corpus_pruned_dirs=\"0\" unindexed_hits=\"0\" unindexed_files_scanned=\"0\" next=\"--at={}:{}\"",
+        "pattern=\"{pat}\" schema=\"ripwire.grep/v1\" root=\".\" files=\"{f_cnt}\" hits=\"{count}\" shown=\"{shown}\" capped=\"{capped}\" hits_capped=\"{capped}\" suppressed_comment=\"0\" suppressed_string=\"0\" tier_parsed=\"{f_cnt}\" tier_unclassified=\"0\" corpus_pruned_dirs=\"0\" unindexed_hits=\"0\" unindexed_files_scanned=\"0\" next=\"--at={}:{}\"",
         escape_xml_str(&first_loc.0),
         first_loc.1
     );
     write_xml_envelope(out, "grep", &attrs, |out| {
         if let Some(items) = hits {
-            for h in items {
+            for h in items.iter().take(shown) {
                 write_grep_hit_row(out, h)?;
             }
         }
@@ -746,11 +749,19 @@ pub fn serialize_connect_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
 }
 
 fn write_path_step<W: Write>(step: &Value, out: &mut W) -> io::Result<()> {
-    writeln!(
-        out,
-        "  <s t=\"fn\" n=\"{}\"/>",
-        step.as_str().unwrap_or("").xml_escaped()
-    )
+    if let Some(s) = step.as_str() {
+        return writeln!(out, "  <s t=\"fn\" n=\"{}\"/>", s.xml_escaped());
+    }
+    let kind = step.str_or("kind", "fn").xml_escaped();
+    let name = step.str_or("name", "").xml_escaped();
+    let raw_path = step.str_or("path", "");
+    let line = step.u64_or("line", 0);
+    if !raw_path.is_empty() && line > 0 {
+        let path = raw_path.xml_escaped();
+        writeln!(out, "  <s t=\"{kind}\" n=\"{name}\" p=\"{path}:{line}\"/>")
+    } else {
+        writeln!(out, "  <s t=\"{kind}\" n=\"{name}\"/>")
+    }
 }
 
 /// Serialize `path_between` call path to Ripwire XML.
@@ -773,8 +784,12 @@ pub fn serialize_path_between_xml<W: Write>(val: &Value, out: &mut W) -> io::Res
         )?;
     }
     writeln!(out, ">")?;
-    if let Some(path) = val["path"].as_array() {
-        for step in path {
+    if let Some(steps) = val
+        .get("steps")
+        .or_else(|| val.get("path"))
+        .and_then(Value::as_array)
+    {
+        for step in steps {
             write_path_step(step, out)?;
         }
     }

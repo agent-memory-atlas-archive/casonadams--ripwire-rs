@@ -521,4 +521,85 @@ mod tests {
         assert!(!res.edge_accumulators.contains_key(&(3, 0)));
         assert!(!res.edge_accumulators.contains_key(&(3, 1)));
     }
+
+    #[test]
+    fn test_interface_contract_fallback_resolves_polymorphic_calls() {
+        let interner = Interner::new();
+        let m_name = interner.intern("render");
+        let tr_name = interner.intern("Widget");
+        let mut ingest = IngestResult::new();
+        ingest.files.push(FileInfo {
+            id: 0,
+            path: interner.intern("src/api/trait_def.rs"),
+            lang: Lang::Rust,
+            line_count: 10,
+            byte_size: 100,
+        });
+        ingest.symbols.push(Symbol::new(
+            0,
+            tr_name,
+            interner.intern("src/api/trait_def.rs::Widget"),
+            SymKind::Interface,
+            Lang::Rust,
+            0,
+            1,
+        ));
+        ingest.symbols.push(
+            Symbol::new(
+                1,
+                m_name,
+                interner.intern("src/api/trait_def.rs::Widget::render"),
+                SymKind::Method,
+                Lang::Rust,
+                0,
+                2,
+            )
+            .with_scope(tr_name),
+        );
+        for i in 0..3u32 {
+            let fid = i + 1;
+            let nid = i + 2;
+            let sc = interner.intern(&format!("Impl{i}"));
+            ingest.files.push(FileInfo {
+                id: fid,
+                path: interner.intern(&format!("src/impls/impl{i}.rs")),
+                lang: Lang::Rust,
+                line_count: 10,
+                byte_size: 100,
+            });
+            ingest.symbols.push(
+                Symbol::new(
+                    nid,
+                    m_name,
+                    interner.intern(&format!("src/impls/impl{i}.rs::Impl{i}::render")),
+                    SymKind::Method,
+                    Lang::Rust,
+                    fid,
+                    1,
+                )
+                .with_scope(sc),
+            );
+        }
+        ingest.files.push(FileInfo {
+            id: 4,
+            path: interner.intern("src/app/runner.rs"),
+            lang: Lang::Rust,
+            line_count: 10,
+            byte_size: 100,
+        });
+        ingest.symbols.push(Symbol::new(
+            5,
+            interner.intern("run_all"),
+            interner.intern("src/app/runner.rs::run_all"),
+            SymKind::Function,
+            Lang::Rust,
+            4,
+            1,
+        ));
+        ingest
+            .references
+            .push(Reference::new(5, m_name, 4, 3, Lang::Rust, RefRole::Call));
+        let res = resolve_all_references(&ingest, &interner);
+        assert!(res.edge_accumulators.contains_key(&(5, 1)));
+    }
 }
