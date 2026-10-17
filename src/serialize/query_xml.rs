@@ -1,3 +1,4 @@
+use crate::serialize::JsonValueExt;
 use crate::serialize::escape::{XmlEscapeExt, escape_xml_str};
 use serde_json::Value;
 use std::io::{self, Write};
@@ -18,41 +19,39 @@ where
 
 /// Serialize `for` task-lens ranking result to Ripwire XML.
 fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) -> io::Result<()> {
-    let raw_name = it["name"].as_str().unwrap_or("");
-    let line = it["line"].as_u64().unwrap_or(0);
-    let end_line = it["end_line"].as_u64().unwrap_or(line);
-    let cx = it["cx"].as_u64().unwrap_or(0);
-    let ccx = it["ccx"].as_u64().unwrap_or(0);
-    let in_deg = it["in"].as_u64().unwrap_or(0);
-    let churn = it["churn"].as_u64().unwrap_or(1);
-    let amp = it["amp"].as_u64().unwrap_or(1);
+    let raw_name = it.str_or("name", "");
+    let line = it.u64_or("line", 0);
+    let end_line = it.u64_or("end_line", line);
+    let cx = it.u64_or("cx", 0);
+    let ccx = it.u64_or("ccx", 0);
+    let in_deg = it.u64_or("in", 0);
+    let churn = it.u64_or("churn", 1);
+    let amp = it.u64_or("amp", 1);
     let r = idx + 1;
     write!(
         out,
         "<d l=\"{line}\" e=\"{end_line}\" n=\"{}\" p=\"{}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" churn=\"{churn}\" amp=\"{amp}\" r=\"{r}\" next=\"--for={task} --limit=40\">{}</d>",
         raw_name.xml_escaped(),
-        it["path"].as_str().unwrap_or("").xml_escaped(),
-        it["sig"].as_str().unwrap_or(raw_name).xml_escaped()
+        it.str_or("path", "").xml_escaped(),
+        it.str_or("sig", raw_name).xml_escaped()
     )
 }
 
 pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let raw_task = val["task"].as_str().unwrap_or("");
+    let raw_task = val.str_or("task", "");
     let task = escape_xml_str(raw_task);
     let default_route = format!("name-exact({raw_task})");
-    let route = escape_xml_str(val["route"].as_str().unwrap_or(&default_route));
-    let raw_root = val["root"].as_str().unwrap_or(".");
+    let route = escape_xml_str(val.str_or("route", &default_route));
+    let raw_root = val.str_or("root", ".");
     let root = escape_xml_str(raw_root);
     let at_stamp =
         crate::git::history::compute_git_at_stamp(raw_root).unwrap_or_else(|| "HEAD".to_string());
-    let confidence = escape_xml_str(val["confidence"].as_str().unwrap_or("high"));
-    let margin_pct = val["margin_pct"].as_u64().unwrap_or(0);
-    let coverage = val["coverage"].as_u64().unwrap_or(100);
+    let confidence = escape_xml_str(val.str_or("confidence", "high"));
+    let margin_pct = val.u64_or("margin_pct", 0);
+    let coverage = val.u64_or("coverage", 100);
     let sym_cnt = val["symbols"].as_array().map_or(0, Vec::len);
-    let est_tokens = val["est_tokens"]
-        .as_u64()
-        .unwrap_or_else(|| (80 + sym_cnt * 24) as u64);
-    let bodies_cnt = val["detail"].as_u64().unwrap_or(1).max(1);
+    let est_tokens = val.u64_or("est_tokens", (80 + sym_cnt * 24) as u64);
+    let bodies_cnt = val.u64_or("detail", 1).max(1);
     let attrs = format!(
         "task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" at=\"{at_stamp}\" schema=\"ripwire.for/v1\" bundle=\"auto\" bodies=\"{bodies_cnt}\" est_tokens=\"{est_tokens}\""
     );
@@ -62,17 +61,12 @@ pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
         if let Some(items) = val["symbols"].as_array() {
             for (idx, it) in items.iter().enumerate() {
                 write_for_sig_row(out, idx, it, &task)?;
-                let raw_name = it["name"].as_str().unwrap_or("");
-                let b_str = it
-                    .get("body")
-                    .or_else(|| it.get("sig"))
-                    .and_then(Value::as_str)
-                    .unwrap_or(raw_name)
-                    .to_string();
+                let raw_name = it.str_or("name", "");
+                let b_str = it.str_any(&["body", "sig"], raw_name).to_string();
                 if bodies_to_show.is_empty() {
-                    let kind = it["kind"].as_str().unwrap_or("fn").to_string();
-                    let line = it["line"].as_u64().unwrap_or(0);
-                    let path = escape_xml_str(it["path"].as_str().unwrap_or(""));
+                    let kind = it.str_or("kind", "fn").to_string();
+                    let line = it.u64_or("line", 0);
+                    let path = escape_xml_str(it.str_or("path", ""));
                     let name = escape_xml_str(raw_name);
                     bodies_to_show.push((kind, line, path, name, b_str));
                 }
@@ -159,18 +153,15 @@ fn collect_grep_summary(
         return (files_set, enc_map, first_loc);
     };
     for (idx, h) in items.iter().enumerate() {
-        let f = h["file"]
-            .as_str()
-            .or_else(|| h["path"].as_str())
-            .unwrap_or("src/lib.rs");
-        let l = h["line"].as_u64().unwrap_or(1);
+        let f = h.str_any(&["file", "path"], "src/lib.rs");
+        let l = h.u64_or("line", 1);
         if idx == 0 {
             first_loc = (f.to_string(), l);
         }
         files_set.insert(f.to_string());
-        if let Some(e) = h["enclosing"].as_str().filter(|s| !s.is_empty()) {
-            let callers = h["enclosing_callers"].as_u64().unwrap_or(0);
-            let cx = h["enclosing_cx"].as_u64().unwrap_or(1);
+        if let Some(e) = h.opt_str("enclosing").filter(|s| !s.is_empty()) {
+            let callers = h.u64_or("enclosing_callers", 0);
+            let cx = h.u64_or("enclosing_cx", 1);
             enc_map.entry(e.to_string()).or_insert((callers, cx));
         }
     }
@@ -193,15 +184,10 @@ fn write_grep_context_lines<W: Write>(
 }
 
 fn write_grep_hit_row<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
-    let file = escape_xml_str(
-        h["file"]
-            .as_str()
-            .or_else(|| h["path"].as_str())
-            .unwrap_or("src/lib.rs"),
-    );
-    let line = h["line"].as_u64().unwrap_or(1);
-    let enc = escape_xml_str(h["enclosing"].as_str().unwrap_or("main"));
-    let text = h["text"].as_str().unwrap_or("");
+    let file = h.str_any(&["file", "path"], "src/lib.rs").xml_escaped();
+    let line = h.u64_or("line", 1);
+    let enc = h.str_or("enclosing", "main").xml_escaped();
+    let text = h.str_or("text", "");
     write!(out, "  <f p=\"{file}\">")?;
     write_grep_context_lines(out, "b", h["before"].as_array())?;
     write!(
@@ -249,15 +235,15 @@ pub fn serialize_grep_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> 
 
 /// Serialize `whereis` branch symbol search to Ripwire XML.
 fn emit_whereis_fate<W: Write>(out: &mut W, fate: &Value, sym: &str) -> io::Result<()> {
-    let v = fate.get("v").and_then(Value::as_str).unwrap_or("never");
+    let v = fate.str_or("v", "never");
     let mut row = format!("  <fate sym=\"{sym}\" v=\"{v}\"");
-    if let Some(c) = fate.get("commit").and_then(Value::as_str) {
+    if let Some(c) = fate.opt_str("commit") {
         row.push_str(&format!(" commit=\"{c}\""));
     }
-    if let Some(d) = fate.get("date").and_then(Value::as_str) {
+    if let Some(d) = fate.opt_str("date") {
         row.push_str(&format!(" date=\"{d}\""));
     }
-    if let Some(n) = fate.get("note").and_then(Value::as_str) {
+    if let Some(n) = fate.opt_str("note") {
         row.push_str(&format!(" note=\"{}\"", n.xml_escaped()));
     }
     row.push_str("/>");
@@ -275,18 +261,13 @@ fn emit_whereis_history<W: Write>(out: &mut W, hist: &Value, sym: &str) -> io::R
 }
 
 fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
-    let ref_name = escape_xml_str(h.get("ref").and_then(Value::as_str).unwrap_or("HEAD"));
-    let tip = escape_xml_str(h.get("tip").and_then(Value::as_str).unwrap_or(""));
-    let date = escape_xml_str(h.get("date").and_then(Value::as_str).unwrap_or(""));
-    let path = escape_xml_str(
-        h.get("path")
-            .or_else(|| h.get("file"))
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-    );
-    let line = h["line"].as_u64().unwrap_or(0);
-    let kind = h["kind"].as_str().unwrap_or("def");
-    let text = escape_xml_str(h["text"].as_str().unwrap_or(""));
+    let ref_name = h.str_or("ref", "HEAD").xml_escaped();
+    let tip = h.str_or("tip", "").xml_escaped();
+    let date = h.str_or("date", "").xml_escaped();
+    let path = h.str_any(&["path", "file"], "").xml_escaped();
+    let line = h.u64_or("line", 0);
+    let kind = h.str_or("kind", "def");
+    let text = h.str_or("text", "").xml_escaped();
     writeln!(
         out,
         "  <hit ref=\"{ref_name}\" tip=\"{tip}\" date=\"{date}\" p=\"{path}\" l=\"{line}\" kind=\"{kind}\" t=\"{text}\"/>"
@@ -295,11 +276,8 @@ fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
 
 /// Serialize `whereis` branch symbol search to Ripwire XML.
 pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let sym = escape_xml_str(val["symbol"].as_str().unwrap_or(""));
-    let hits = val
-        .get("hits")
-        .or_else(|| val.get("locations"))
-        .and_then(Value::as_array);
+    let sym = escape_xml_str(val.str_or("symbol", ""));
+    let hits = val.array_any(&["hits", "locations"]);
     let count = hits.map_or(0, Vec::len);
     let cap = 60usize;
     let shown = count.min(cap);
@@ -311,27 +289,17 @@ pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
     } else {
         format!(" shown=\"{shown}\" capped=\"0\"")
     };
-    let on_head = val.get("on_head").and_then(Value::as_u64).unwrap_or(1);
-    let refs_scanned = val.get("refs_scanned").and_then(Value::as_u64).unwrap_or(0);
-    let blobs = val.get("blobs").and_then(Value::as_u64).unwrap_or(0);
+    let on_head = val.u64_or("on_head", 1);
+    let refs_scanned = val.u64_or("refs_scanned", 0);
+    let blobs = val.u64_or("blobs", 0);
     let at_val = val
-        .get("at")
-        .and_then(Value::as_str)
+        .opt_str("at")
         .filter(|s| !s.is_empty())
         .unwrap_or("HEAD");
-    let head_date = val
-        .get("head_date")
-        .and_then(Value::as_str)
-        .unwrap_or("2026-10-14");
-    let listing = val.get("listing").and_then(Value::as_str).unwrap_or("defs");
-    let ref_labels = val
-        .get("ref_labels")
-        .and_then(Value::as_str)
-        .unwrap_or("parsed");
-    let worktree = val
-        .get("worktree")
-        .and_then(Value::as_str)
-        .unwrap_or("read");
+    let head_date = val.str_or("head_date", "2026-10-14");
+    let listing = val.str_or("listing", "defs");
+    let ref_labels = val.str_or("ref_labels", "parsed");
+    let worktree = val.str_or("worktree", "read");
     let attrs = format!(
         "schema=\"ripwire.whereis/v1\" sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{page_attrs} listing=\"{listing}\" ref_labels=\"{ref_labels}\" head_date=\"{head_date}\" at=\"{at_val}\" worktree=\"{worktree}\" complete=\"1\""
     );
@@ -354,32 +322,15 @@ pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<(
 
 /// Serialize `owners` authorship to Ripwire XML.
 fn count_uniform_owners(files: &[Value]) -> usize {
-    files
-        .iter()
-        .filter(|f| f.get("authors").and_then(Value::as_u64).unwrap_or(1) == 1)
-        .count()
+    files.iter().filter(|f| f.u64_or("authors", 1) == 1).count()
 }
 
 fn write_owner_entry<W: Write>(out: &mut W, f: &Value) -> io::Result<()> {
-    let path = escape_xml_str(
-        f.get("path")
-            .or_else(|| f.get("file"))
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-    );
-    let authors = f.get("authors").and_then(Value::as_u64).unwrap_or(1);
-    let bf = f.get("bf").and_then(Value::as_u64).unwrap_or(1);
-    let top = escape_xml_str(
-        f.get("top_author")
-            .or_else(|| f.get("top"))
-            .and_then(Value::as_str)
-            .unwrap_or(""),
-    );
-    let share = f
-        .get("top_share")
-        .or_else(|| f.get("share"))
-        .and_then(Value::as_f64)
-        .unwrap_or(1.0);
+    let path = f.str_any(&["path", "file"], "").xml_escaped();
+    let authors = f.u64_or("authors", 1);
+    let bf = f.u64_or("bf", 1);
+    let top = f.str_any(&["top_author", "top"], "").xml_escaped();
+    let share = f.f64_any(&["top_share", "share"], 1.0);
     writeln!(
         out,
         "  <f p=\"{path}\" authors=\"{authors}\" bf=\"{bf}\" top=\"{top}\" share=\"{share:.2}\"/>"
@@ -388,7 +339,7 @@ fn write_owner_entry<W: Write>(out: &mut W, f: &Value) -> io::Result<()> {
 
 fn emit_owner_items<W: Write>(out: &mut W, files: &[Value], detail: bool) -> io::Result<()> {
     for f in files {
-        if !detail && f.get("authors").and_then(Value::as_u64).unwrap_or(1) == 1 {
+        if !detail && f.u64_or("authors", 1) == 1 {
             continue;
         }
         write_owner_entry(out, f)?;
@@ -398,16 +349,13 @@ fn emit_owner_items<W: Write>(out: &mut W, files: &[Value], detail: bool) -> io:
 
 /// Serialize `owners` authorship to Ripwire XML.
 pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let files = val
-        .get("files")
-        .or_else(|| val.get("ownership"))
-        .and_then(Value::as_array);
-    let count = files.map_or(0, |f| f.len());
-    let at_attr = match val.get("at").and_then(Value::as_str) {
+    let files = val.array_any(&["files", "ownership"]);
+    let count = files.map_or(0, Vec::len);
+    let at_attr = match val.opt_str("at") {
         Some(at) if !at.is_empty() => format!(" at=\"{at}\""),
         _ => String::new(),
     };
-    let detail = val.get("detail").and_then(Value::as_bool).unwrap_or(false);
+    let detail = val.bool_or("detail", false);
     let uniform_count = files.map_or(0, |f| count_uniform_owners(f));
 
     let attrs = format!("schema=\"ripwire.owners/v1\" files=\"{count}\" root=\".\"{at_attr}");
@@ -427,39 +375,23 @@ pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()
 
 /// Serialize `flags` environment and compile gates to Ripwire XML.
 pub fn serialize_flags_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let gates = val
-        .get("gates")
-        .or_else(|| val.get("flags"))
-        .and_then(Value::as_array);
-    let count = gates.map_or(0, |g| g.len());
-    let files = val.get("files").and_then(Value::as_u64).unwrap_or(0);
-    let compile = val
-        .get("compile_count")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
-    let cmake = val.get("cmake_count").and_then(Value::as_u64).unwrap_or(0);
-    let env = val.get("env_count").and_then(Value::as_u64).unwrap_or(0);
-    let dark = val.get("dark_gates").and_then(Value::as_u64).unwrap_or(0);
+    let gates = val.array_any(&["gates", "flags"]);
+    let count = gates.map_or(0, Vec::len);
+    let files = val.u64_or("files", 0);
+    let compile = val.u64_or("compile_count", 0);
+    let cmake = val.u64_or("cmake_count", 0);
+    let env = val.u64_or("env_count", 0);
+    let dark = val.u64_or("dark_gates", 0);
     let attrs = format!(
         "schema=\"ripwire.flags/v1\" files=\"{files}\" gates=\"{count}\" dark_gates=\"{dark}\" compile=\"{compile}\" cmake=\"{cmake}\" env=\"{env}\""
     );
     write_xml_envelope(out, "flags", &attrs, |out| {
         if let Some(items) = gates {
             for g in items {
-                let name = escape_xml_str(
-                    g.get("name")
-                        .or_else(|| g.get("flag"))
-                        .and_then(Value::as_str)
-                        .unwrap_or(""),
-                );
-                let kind = g.get("kind").and_then(Value::as_str).unwrap_or("compile");
-                let file = escape_xml_str(
-                    g.get("file")
-                        .or_else(|| g.get("path"))
-                        .and_then(Value::as_str)
-                        .unwrap_or(""),
-                );
-                let line = g["line"].as_u64().unwrap_or(0);
+                let name = g.str_any(&["name", "flag"], "").xml_escaped();
+                let kind = g.str_or("kind", "compile");
+                let file = g.str_any(&["file", "path"], "").xml_escaped();
+                let line = g.u64_or("line", 0);
                 writeln!(
                     out,
                     "  <gate name=\"{name}\" kind=\"{kind}\" p=\"{file}\" l=\"{line}\"/>"
@@ -482,18 +414,10 @@ fn format_doc_drift_extra_attrs(d: &Value) -> String {
 }
 
 fn write_doc_drift_anchor<W: Write>(out: &mut W, file: &str, d: &Value) -> io::Result<()> {
-    let line = d["line"]
-        .as_u64()
-        .or_else(|| d["doc_line"].as_u64())
-        .unwrap_or(0);
-    let kind = escape_xml_str(d["kind"].as_str().unwrap_or("symbol"));
-    let why = escape_xml_str(d["why"].as_str().unwrap_or("undefined"));
-    let ref_str = escape_xml_str(
-        d["referenced"]
-            .as_str()
-            .or_else(|| d["target_file"].as_str())
-            .unwrap_or(""),
-    );
+    let line = d.u64_any(&["line", "doc_line"], 0);
+    let kind = d.str_or("kind", "symbol").xml_escaped();
+    let why = d.str_or("why", "undefined").xml_escaped();
+    let ref_str = d.str_any(&["referenced", "target_file"], "").xml_escaped();
     let extra = format_doc_drift_extra_attrs(d);
     writeln!(
         out,
@@ -535,22 +459,17 @@ pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result
 
 /// Serialize `stray_content` branch divergence to Ripwire XML.
 pub fn serialize_stray_content_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let head = escape_xml_str(val["head"].as_str().unwrap_or(""));
-    let head_ref = escape_xml_str(val["head_ref"].as_str().unwrap_or("HEAD"));
-    let refs = val["refs"].as_u64().unwrap_or(0);
-    let blobs = val["blobs"].as_u64().unwrap_or(0);
-    let unmerged = val["unmerged"].as_u64().unwrap_or(0);
-    let superseded = val["superseded"].as_u64().unwrap_or(0);
-    let merged = val["merged"].as_u64().unwrap_or(0);
-    let unknown = val["unknown"].as_u64().unwrap_or(0);
-    let at_attr = if let Some(at) = val.get("at").and_then(Value::as_str) {
-        if !at.is_empty() {
-            format!(" at=\"{at}\"")
-        } else {
-            String::new()
-        }
-    } else {
-        String::new()
+    let head = val.str_or("head", "").xml_escaped();
+    let head_ref = val.str_or("head_ref", "HEAD").xml_escaped();
+    let refs = val.u64_or("refs", 0);
+    let blobs = val.u64_or("blobs", 0);
+    let unmerged = val.u64_or("unmerged", 0);
+    let superseded = val.u64_or("superseded", 0);
+    let merged = val.u64_or("merged", 0);
+    let unknown = val.u64_or("unknown", 0);
+    let at_attr = match val.opt_str("at") {
+        Some(at) if !at.is_empty() => format!(" at=\"{at}\""),
+        _ => String::new(),
     };
     let attrs = format!(
         "schema=\"ripwire.stray-content/v1\" head=\"{head}\" head_ref=\"{head_ref}\" refs=\"{refs}\" blobs=\"{blobs}\" unmerged=\"{unmerged}\" superseded=\"{superseded}\" merged=\"{merged}\" unknown=\"{unknown}\"{at_attr}"
@@ -558,18 +477,10 @@ pub fn serialize_stray_content_xml<W: Write>(val: &Value, out: &mut W) -> io::Re
     write_xml_envelope(out, "stray-content", &attrs, |out| {
         if let Some(branches) = val["branches"].as_array() {
             for b in branches {
-                let name = escape_xml_str(
-                    b["name"]
-                        .as_str()
-                        .or_else(|| b["branch"].as_str())
-                        .unwrap_or(""),
-                );
-                let base = escape_xml_str(b["base"].as_str().unwrap_or(""));
-                let verdict = escape_xml_str(b["verdict"].as_str().unwrap_or("unmerged"));
-                let stray = b["stray"]
-                    .as_u64()
-                    .or_else(|| b["unmerged_commits"].as_u64())
-                    .unwrap_or(0);
+                let name = b.str_any(&["name", "branch"], "").xml_escaped();
+                let base = b.str_or("base", "").xml_escaped();
+                let verdict = b.str_or("verdict", "unmerged").xml_escaped();
+                let stray = b.u64_any(&["stray", "unmerged_commits"], 0);
                 writeln!(
                     out,
                     "  <ref name=\"{name}\" ok=\"1\" v=\"{verdict}\" base=\"{base}\" stray=\"{stray}\"/>"
@@ -582,20 +493,15 @@ pub fn serialize_stray_content_xml<W: Write>(val: &Value, out: &mut W) -> io::Re
 
 /// Serialize `mentions` doc backtick occurrences to Ripwire XML.
 pub fn serialize_mentions_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let sym = escape_xml_str(val["symbol"].as_str().unwrap_or(""));
+    let sym = val.str_or("symbol", "").xml_escaped();
     let docs = val["docs"].as_array();
-    let count = docs.map_or(0, |d| d.len());
+    let count = docs.map_or(0, Vec::len);
     let attrs = format!("schema=\"ripwire.mentions/v1\" of=\"{sym}\" root=\".\" docs=\"{count}\"");
     write_xml_envelope(out, "mentions", &attrs, |out| {
         if let Some(items) = docs {
             for d in items {
-                let path = escape_xml_str(
-                    d.get("path")
-                        .or_else(|| d.get("file"))
-                        .and_then(Value::as_str)
-                        .unwrap_or(""),
-                );
-                let mentions = d["mentions"].as_u64().unwrap_or(0);
+                let path = d.str_any(&["path", "file"], "").xml_escaped();
+                let mentions = d.u64_or("mentions", 0);
                 writeln!(out, "  <doc p=\"{path}\" mentions=\"{mentions}\"/>")?;
             }
         }
@@ -1601,31 +1507,19 @@ pub fn serialize_deps_xml<W: Write>(
 }
 /// Serialize `--exemplar` to Ripwire XML.
 pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
-    let ex = if val.get("exemplar").is_some() {
-        &val["exemplar"]
-    } else {
-        val
-    };
-    let k = val
-        .get("kind")
-        .or_else(|| val.get("role"))
-        .and_then(Value::as_str)
-        .unwrap_or("fn");
-    let n = ex.get("name").and_then(Value::as_str).unwrap_or_default();
-    let p = ex.get("path").and_then(Value::as_str).unwrap_or_default();
-    let l = ex.get("line").and_then(Value::as_u64).unwrap_or(1);
-    let c = ex
-        .get("callers")
-        .or_else(|| ex.get("in"))
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let cx = ex.get("ccx").and_then(Value::as_u64).unwrap_or_default();
+    let ex = val.get("exemplar").unwrap_or(val);
+    let k = val.str_any(&["kind", "role"], "fn");
+    let n = ex.str_or("name", "");
+    let p = ex.str_or("path", "");
+    let l = ex.u64_or("line", 1);
+    let c = ex.u64_any(&["callers", "in"], 0);
+    let cx = ex.u64_or("ccx", 0);
     let cand_attr = match ex.get("candidates").and_then(Value::as_u64) {
         Some(cnt) => format!(" candidates=\"{cnt}\""),
         None => String::new(),
     };
-    let tested = ex.get("tested").and_then(Value::as_u64).unwrap_or(0);
-    let b = ex.get("body").and_then(Value::as_str).unwrap_or_default();
+    let tested = ex.u64_or("tested", 0);
+    let b = ex.str_or("body", "");
 
     writeln!(
         out,
@@ -1634,7 +1528,7 @@ pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) ->
 }
 /// Serialize `--lego` to Ripwire XML.
 pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
-    let iface = val["interface"].as_str().unwrap_or("");
+    let iface = val.str_or("interface", "");
     let empty = Vec::new();
     let impls = val["implementors"].as_array().unwrap_or(&empty);
     let mut buf = format!(
@@ -1642,9 +1536,9 @@ pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io:
         impls.len()
     );
     for it in impls {
-        let n = it["name"].as_str().unwrap_or("");
-        let p = it["path"].as_str().unwrap_or("");
-        let l = it["line"].as_u64().unwrap_or(0);
+        let n = it.str_or("name", "");
+        let p = it.str_or("path", "");
+        let l = it.u64_or("line", 0);
         if l > 0 {
             buf.push_str(&format!("  <impl n=\"{n}\" p=\"{p}:{l}\"/>\n"));
         } else {
@@ -1663,22 +1557,14 @@ pub fn serialize_recall_xml<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let empty = Vec::new();
-    let matches = val
-        .get("docs")
-        .or_else(|| val.get("matches"))
-        .and_then(Value::as_array)
-        .unwrap_or(&empty);
+    let matches = val.array_any(&["docs", "matches"]).unwrap_or(&empty);
     let mut buf = format!(
         "<recall schema=\"ripwire.recall/v1\" root=\"{root}\" query=\"{query}\" docs=\"{}\">\n",
         matches.len()
     );
     for d in matches {
-        let p = d["path"].as_str().unwrap_or("");
-        let text = d
-            .get("content")
-            .or_else(|| d.get("snippet"))
-            .and_then(Value::as_str)
-            .unwrap_or("");
+        let p = d.str_or("path", "");
+        let text = d.str_any(&["content", "snippet"], "");
         buf.push_str(&format!("  <doc p=\"{p}\"><![CDATA[{text}]]></doc>\n"));
     }
     buf.push_str("</recall>\n");
@@ -1694,13 +1580,9 @@ pub fn serialize_from_trace_xml<W: Write>(val: &Value, out: &mut W) -> io::Resul
         suspects.len()
     );
     for s in suspects {
-        let n = s["name"].as_str().unwrap_or("");
-        let p = s
-            .get("path")
-            .or_else(|| s.get("file"))
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        let l = s["line"].as_u64().unwrap_or(0);
+        let n = s.str_or("name", "");
+        let p = s.str_any(&["path", "file"], "");
+        let l = s.u64_or("line", 0);
         buf.push_str(&format!("  <suspect n=\"{n}\" p=\"{p}\" l=\"{l}\"/>\n"));
     }
     buf.push_str("</from-trace>\n");

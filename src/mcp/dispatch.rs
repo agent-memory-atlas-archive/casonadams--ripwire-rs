@@ -5,18 +5,17 @@ use super::retrieval;
 use super::state::McpState;
 use crate::ingest::LanguageRegistry;
 use crate::navigate::{find_symbols_by_name, navigate_1hop, transitive_impact};
+use crate::serialize::JsonValueExt;
 use serde_json::{Value, json};
 use std::path::Path;
 #[inline]
 pub fn require_str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
-    args[key]
-        .as_str()
-        .ok_or_else(|| format!("missing '{key}' parameter"))
+    args.req_str(key)
 }
 
 #[inline]
 pub fn opt_str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
-    args[key].as_str()
+    args.opt_str(key)
 }
 
 pub fn call_find_symbol(state: &McpState, args: &Value) -> Result<Value, String> {
@@ -82,9 +81,8 @@ pub fn call_callees(state: &McpState, args: &Value) -> Result<Value, String> {
 }
 
 pub fn call_impact(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym_name = require_str_arg(args, "symbol")?;
-    let max_depth = args["max_depth"].as_u64().unwrap_or(8) as u32;
-
+    let sym_name = args.req_str("symbol")?;
+    let max_depth = args.u64_or("max_depth", 8) as u32;
     let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
     let blast_radius: Vec<Value> = ids
         .into_iter()
@@ -109,7 +107,7 @@ pub fn call_impact(state: &McpState, args: &Value) -> Result<Value, String> {
 }
 
 pub fn call_explore(state: &McpState, args: &Value) -> Result<Value, String> {
-    let top_k = args["top_k"].as_u64().map(|k| k as usize);
+    let top_k = args.opt_usize("top_k");
     let mut out = Vec::new();
     crate::serialize::serialize_xml(
         &state.ingest,
@@ -226,9 +224,7 @@ pub fn call_edit_check(state: &McpState, args: &Value) -> Result<Value, String> 
 }
 
 pub fn call_affected(state: &McpState, args: &Value) -> Result<Value, String> {
-    let files_spec = args["files"]
-        .as_str()
-        .ok_or_else(|| "missing 'files' parameter".to_string())?;
+    let files_spec = args.req_str("files")?;
     let specs: Vec<&str> = files_spec.split(',').map(str::trim).collect();
     let rep = crate::gate::affected::find_affected_tests(
         &specs,
@@ -250,7 +246,7 @@ pub fn call_affected(state: &McpState, args: &Value) -> Result<Value, String> {
 
 pub fn call_quality_baseline(state: &McpState, args: &Value) -> Result<Value, String> {
     let mut out = Vec::new();
-    let allow_dirty = args["allow_dirty"].as_bool().unwrap_or(false);
+    let allow_dirty = args.bool_or("allow_dirty", false);
     crate::cli::execute_quality_baseline_with(state, allow_dirty, &mut out)
         .map_err(|e| e.to_string())?;
     let msg = String::from_utf8(out).unwrap_or_default();
@@ -283,14 +279,10 @@ pub fn call_quality_delta(state: &McpState, _args: &Value) -> Result<Value, Stri
 }
 
 pub fn call_slice(state: &McpState, args: &Value) -> Result<Value, String> {
-    let target = args["target"]
-        .as_str()
-        .or_else(|| args["symbol"].as_str())
-        .ok_or_else(|| "missing 'target' or 'symbol' parameter".to_string())?;
-    let flow_str = args["flow"].as_str().unwrap_or("fwd");
+    let target = args.req_str_any(&["target", "symbol"])?;
+    let flow_str = args.str_or("flow", "fwd");
     let flow_dir = crate::slice::SliceFlowDir::from_str_opt(flow_str)
         .unwrap_or(crate::slice::SliceFlowDir::Fwd);
-
     let registry = LanguageRegistry::new().map_err(|e| e.to_string())?;
     let sym_query = target.split(':').next().unwrap_or(target);
     let custom_bytes = state
@@ -324,20 +316,9 @@ pub fn call_edit_tool(
     args: &Value,
     is_replace: bool,
 ) -> Result<Value, String> {
-    let symbol = args["symbol"]
-        .as_str()
-        .ok_or_else(|| "missing 'symbol' parameter".to_string())?;
-    let payload = if is_replace {
-        args["new_body"]
-            .as_str()
-            .ok_or_else(|| "missing 'new_body' parameter".to_string())?
-    } else {
-        args["text"]
-            .as_str()
-            .ok_or_else(|| "missing 'text' parameter".to_string())?
-    };
-    let path_hint = args["path"].as_str().or_else(|| args["file"].as_str());
-
+    let symbol = args.req_str("symbol")?;
+    let payload = args.req_str(if is_replace { "new_body" } else { "text" })?;
+    let path_hint = args.opt_str_any(&["path", "file"]);
     Ok(edit::perform_atomic_edit_in_root(
         &state.root,
         &state.ingest,
@@ -350,10 +331,10 @@ pub fn call_edit_tool(
 }
 
 pub fn call_for_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let task = args["task"].as_str().unwrap_or("");
-    let budget = args["budget_tokens"].as_u64().map(|b| b as usize);
-    let detail = args["detail"].as_u64().map(|d| d as usize);
-    let adaptive = args["adaptive"].as_bool().unwrap_or(false);
+    let task = args.str_or("task", "");
+    let budget = args.opt_usize("budget_tokens");
+    let detail = args.opt_usize("detail");
+    let adaptive = args.bool_or("adaptive", false);
     Ok(retrieval::call_for_task_with_options(
         &state.ingest,
         &state.interner,
@@ -370,13 +351,10 @@ pub fn call_for_tool(state: &McpState, args: &Value) -> Result<Value, String> {
 }
 
 pub fn call_fetch_body_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym = args["symbol"]
-        .as_str()
-        .or_else(|| args["handle"].as_str())
-        .unwrap_or("");
-    let path_hint = args["path"].as_str().or_else(|| args["file"].as_str());
-    let sl = args["start_line"].as_u64().map(|l| l as usize);
-    let el = args["end_line"].as_u64().map(|l| l as usize);
+    let sym = args.str_any(&["symbol", "handle"], "");
+    let path_hint = args.opt_str_any(&["path", "file"]);
+    let sl = args.opt_usize("start_line");
+    let el = args.opt_usize("end_line");
     Ok(retrieval::call_fetch_body_in_root(
         &state.root,
         &state.ingest,
@@ -389,10 +367,7 @@ pub fn call_fetch_body_tool(state: &McpState, args: &Value) -> Result<Value, Str
 }
 
 pub fn call_exemplar_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let role = args["role"]
-        .as_str()
-        .or_else(|| args["kind"].as_str())
-        .unwrap_or("fn");
+    let role = args.str_any(&["role", "kind"], "fn");
     Ok(retrieval::call_exemplar_in_root(
         &state.root,
         &state.ingest,
@@ -404,16 +379,13 @@ pub fn call_exemplar_tool(state: &McpState, args: &Value) -> Result<Value, Strin
 }
 
 pub fn call_lego_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let iface = args["interface"]
-        .as_str()
-        .or_else(|| args["symbol"].as_str())
-        .unwrap_or("");
+    let iface = args.str_any(&["interface", "symbol"], "");
     Ok(retrieval::call_lego(&state.ingest, &state.interner, iface))
 }
 
 pub fn call_memory_recall_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let task = args["task"].as_str().unwrap_or("");
-    let top_k = args["top_k"].as_u64().map(|k| k as usize);
+    let task = args.str_or("task", "");
+    let top_k = args.opt_usize("top_k");
     Ok(retrieval::call_memory_recall_in_root(
         &state.root,
         &state.ingest,
@@ -424,8 +396,8 @@ pub fn call_memory_recall_tool(state: &McpState, args: &Value) -> Result<Value, 
 }
 
 pub fn call_grep_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let pattern = args["pattern"].as_str().unwrap_or("");
-    let path_filter = args["path"].as_str();
+    let pattern = args.str_or("pattern", "");
+    let path_filter = args.opt_str("path");
     Ok(retrieval::call_grep_in_root(
         &state.root,
         &state.ingest,
@@ -436,14 +408,7 @@ pub fn call_grep_tool(state: &McpState, args: &Value) -> Result<Value, String> {
 }
 
 pub fn call_connect_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let symbols: Vec<String> = args["symbols"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    let symbols = args.str_vec("symbols");
     Ok(graph_tools::call_connect(
         &state.ingest,
         &state.graph,
@@ -453,8 +418,8 @@ pub fn call_connect_tool(state: &McpState, args: &Value) -> Result<Value, String
 }
 
 pub fn call_path_between_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let from = args["from"].as_str().unwrap_or("");
-    let to = args["to"].as_str().unwrap_or("");
+    let from = args.str_or("from", "");
+    let to = args.str_or("to", "");
     Ok(graph_tools::call_path_between(
         &state.ingest,
         &state.graph,
@@ -465,13 +430,13 @@ pub fn call_path_between_tool(state: &McpState, args: &Value) -> Result<Value, S
 }
 
 pub fn call_uses_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym = args["symbol"].as_str().unwrap_or("");
+    let sym = args.str_or("symbol", "");
     Ok(graph_tools::call_uses(&state.ingest, &state.interner, sym))
 }
 
 pub fn call_analyze_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let top_k = args["top_k"].as_u64().map(|k| k as usize);
-    let rank_by = args["rank_by"].as_str();
+    let top_k = args.opt_usize("top_k");
+    let rank_by = args.opt_str("rank_by");
     Ok(graph_tools::call_analyze(
         &state.ingest,
         &state.graph,
@@ -483,8 +448,8 @@ pub fn call_analyze_tool(state: &McpState, args: &Value) -> Result<Value, String
 }
 
 pub fn call_rank_by_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let rank_by = args["rank_by"].as_str().unwrap_or("pagerank");
-    let top_k = args["top_k"].as_u64().map(|k| k as usize);
+    let rank_by = args.str_or("rank_by", "pagerank");
+    let top_k = args.opt_usize("top_k");
     Ok(graph_tools::call_analyze(
         &state.ingest,
         &state.graph,
@@ -496,14 +461,7 @@ pub fn call_rank_by_tool(state: &McpState, args: &Value) -> Result<Value, String
 }
 
 pub fn call_situational_awareness_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let changed: Vec<String> = args["files"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
+    let changed = args.str_vec("files");
     let commits = resolve_state_commits(state, 18);
     Ok(graph_tools::call_situational_awareness(
         &state.ingest,
@@ -515,7 +473,7 @@ pub fn call_situational_awareness_tool(state: &McpState, args: &Value) -> Result
 }
 
 pub fn call_from_trace_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let trace = args["trace"].as_str().unwrap_or("");
+    let trace = args.str_or("trace", "");
     Ok(graph_tools::call_from_trace(
         &state.ingest,
         &state.interner,
@@ -524,7 +482,7 @@ pub fn call_from_trace_tool(state: &McpState, args: &Value) -> Result<Value, Str
 }
 
 pub fn call_mentions_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym = args["symbol"].as_str().unwrap_or("");
+    let sym = args.str_or("symbol", "");
     Ok(doc_tools::call_mentions_in_root(
         &state.root,
         &state.ingest,
@@ -534,7 +492,7 @@ pub fn call_mentions_tool(state: &McpState, args: &Value) -> Result<Value, Strin
 }
 
 pub fn call_doc_drift_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let with_hist = args["with_history"].as_bool().unwrap_or(false);
+    let with_hist = args.bool_or("with_history", false);
     Ok(doc_tools::call_doc_drift_with_history(
         &state.root,
         &state.ingest,
@@ -552,14 +510,14 @@ pub fn call_flags_tool(state: &McpState, _args: &Value) -> Result<Value, String>
 }
 
 pub fn call_owners_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let path = args["path"].as_str().or_else(|| args["file"].as_str());
+    let path = args.opt_str_any(&["path", "file"]);
     let commits = resolve_state_commits(state, 12);
     Ok(doc_tools::call_owners(Some(&commits), path, None, None))
 }
 
 pub fn call_whereis_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym = args["symbol"].as_str().unwrap_or("");
-    let with_hist = args["with_history"].as_bool().unwrap_or(false);
+    let sym = args.str_or("symbol", "");
+    let with_hist = args.bool_or("with_history", false);
     Ok(doc_tools::call_whereis(
         &state.ingest,
         &state.interner,
@@ -568,7 +526,6 @@ pub fn call_whereis_tool(state: &McpState, args: &Value) -> Result<Value, String
         with_hist,
     ))
 }
-
 pub fn call_stray_content_tool(state: &McpState, _args: &Value) -> Result<Value, String> {
     Ok(doc_tools::call_stray_content(&state.root))
 }
