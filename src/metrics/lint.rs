@@ -639,9 +639,15 @@ pub fn run_lint_scan(
     run_lint_scan_in_root(".", ingest, graph, interner)
 }
 
-/// Scan the workspace for AST and source-level code smells in `root`.
-fn scan_file_line_patterns(path: &str, content: &str, findings: &mut Vec<LintFinding>) {
-    for (idx, line) in content.lines().enumerate() {
+/// Match the line rules against code bytes only, so comments and string literals never fire.
+fn scan_file_line_patterns(
+    path: &str,
+    content: &str,
+    lang: crate::domain::Lang,
+    findings: &mut Vec<LintFinding>,
+) {
+    let masked = super::source_mask::mask_source(content, lang);
+    for (idx, line) in masked.code.lines().enumerate() {
         for &(needle, rule, sev, msg) in LINE_LINT_PATTERNS {
             if line.contains(needle) {
                 findings.push(LintFinding {
@@ -692,7 +698,7 @@ pub fn run_lint_scan_in_root(
             if let Ok(content) =
                 std::fs::read_to_string(root_path.join(p)).or_else(|_| std::fs::read_to_string(p))
             {
-                scan_file_line_patterns(p, &content, &mut findings);
+                scan_file_line_patterns(p, &content, fi.lang, &mut findings);
             }
         }
     }
@@ -836,4 +842,21 @@ pub fn serialize_lint_sarif<W: Write>(findings: &[LintFinding], out: &mut W) -> 
     });
     serde_json::to_writer_pretty(&mut *out, &sarif)?;
     writeln!(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::Lang;
+
+    #[test]
+    fn test_line_patterns_ignore_literals_and_comments_and_keep_line_numbers() {
+        let src =
+            "const char* s = \"strcpy(\"; // goto done\n/* std::map<int,int> */\nstrcpy(dst, s);\n";
+        let mut findings = Vec::new();
+        scan_file_line_patterns("src/a.c", src, Lang::C, &mut findings);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, "unsafe-c-fn");
+        assert_eq!(findings[0].line, 3);
+    }
 }

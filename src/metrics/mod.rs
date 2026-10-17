@@ -8,6 +8,7 @@ pub mod lint;
 pub mod nonlocal;
 pub mod quality_panel;
 pub mod readability;
+pub mod source_mask;
 
 pub use analysis_lenses::{
     classify_identifier_casing, compute_comment_coherence, compute_context_ratio, compute_ensemble,

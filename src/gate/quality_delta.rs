@@ -688,6 +688,39 @@ fn check_churn_regressions(
     }
 }
 
+/// Body-text regression kinds read from code (and, for placeholder markers, comments) only.
+#[must_use]
+pub fn body_text_kinds(masked: &crate::metrics::source_mask::MaskedSource) -> Vec<&'static str> {
+    let code = &masked.code;
+    let compact: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+    let mut kinds = Vec::new();
+    let code_placeholder = ["todo!(", "unimplemented!(", "NotImplementedError"]
+        .iter()
+        .any(|m| code.contains(m));
+    let comment_placeholder = ["TODO:", "FIXME:"]
+        .iter()
+        .any(|m| masked.comments.contains(m));
+    if code_placeholder || comment_placeholder {
+        kinds.push("placeholder");
+    }
+    if [
+        "catch{}",
+        "catch(_){}",
+        "catch(...){}",
+        "except:pass",
+        ".catch(()=>{})",
+    ]
+    .iter()
+    .any(|m| compact.contains(m))
+    {
+        kinds.push("error-masking");
+    }
+    if code.contains("std::unique(") && !code.contains("std::sort(") {
+        kinds.push("defect-shape");
+    }
+    kinds
+}
+
 fn check_body_text_regressions(
     sym: &crate::domain::Symbol,
     sym_name: &str,
@@ -696,42 +729,10 @@ fn check_body_text_regressions(
     is_new: bool,
     regressions: &mut Vec<QualityRegression>,
 ) {
-    if body.contains("todo!(")
-        || body.contains("unimplemented!(")
-        || body.contains("NotImplementedError")
-        || body.contains("TODO:")
-        || body.contains("FIXME:")
-    {
+    let masked = crate::metrics::source_mask::mask_source(body, sym.lang);
+    for kind in body_text_kinds(&masked) {
         regressions.push(QualityRegression {
-            kind: "placeholder".to_string(),
-            sym_name: sym_name.to_string(),
-            file_path: file_path.to_string(),
-            line: sym.line,
-            was_val: 0,
-            now_val: 1,
-            is_gating: false,
-            is_new_symbol: is_new,
-        });
-    }
-    if body.contains("catch {}")
-        || body.contains("catch (_) {}")
-        || body.contains("except:\n        pass")
-        || body.contains(".catch(() => {})")
-    {
-        regressions.push(QualityRegression {
-            kind: "error-masking".to_string(),
-            sym_name: sym_name.to_string(),
-            file_path: file_path.to_string(),
-            line: sym.line,
-            was_val: 0,
-            now_val: 1,
-            is_gating: false,
-            is_new_symbol: is_new,
-        });
-    }
-    if body.contains("std::unique(") && !body.contains("std::sort(") {
-        regressions.push(QualityRegression {
-            kind: "defect-shape".to_string(),
+            kind: kind.to_string(),
             sym_name: sym_name.to_string(),
             file_path: file_path.to_string(),
             line: sym.line,
@@ -1046,6 +1047,43 @@ pub fn evaluate_quality_delta_with_basis(
 mod tests {
     use super::*;
     use crate::serialize::ToXmlString;
+
+    #[test]
+    fn test_body_text_kinds_ignore_literals_and_read_comments_for_markers() {
+        use crate::domain::Lang;
+        use crate::metrics::source_mask::mask_source;
+        let kinds = |src: &str, lang: Lang| body_text_kinds(&mask_source(src, lang));
+
+        let quoted = "fn f() { let s = \"TODO: catch {} todo!( std::unique(\"; }";
+        assert!(kinds(quoted, Lang::Rust).is_empty());
+        assert_eq!(
+            kinds("fn f() { // TODO: wire it\n}", Lang::Rust),
+            ["placeholder"]
+        );
+        assert_eq!(kinds("fn f() { todo!() }", Lang::Rust), ["placeholder"]);
+        assert_eq!(
+            kinds(
+                "def f():\n    try:\n        g()\n    except:\n        pass\n",
+                Lang::Python
+            ),
+            ["error-masking"]
+        );
+        assert_eq!(
+            kinds("void f() { try { g(); } catch (...) { } }", Lang::Cpp),
+            ["error-masking"]
+        );
+        assert_eq!(
+            kinds("void f() { std::unique(v.begin(), v.end()); }", Lang::Cpp),
+            ["defect-shape"]
+        );
+        assert!(
+            kinds(
+                "void f() { std::sort(a, b); std::unique(a, b); }",
+                Lang::Cpp
+            )
+            .is_empty()
+        );
+    }
 
     #[test]
     fn test_stale_rows_collapse_unless_show_stale() {
