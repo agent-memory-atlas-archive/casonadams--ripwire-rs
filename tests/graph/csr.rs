@@ -1,13 +1,66 @@
 use ripwire_rs::{
-    FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
+    CsrMatrix, EdgeAcc, FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference,
+    ResolutionResult, SymKind, Symbol,
 };
+
+#[test]
+fn test_csr_matrix_empty_and_verify() {
+    let empty = CsrMatrix::empty(4, 4);
+    assert_eq!(empty.rows, 4);
+    assert_eq!(empty.cols, 4);
+    assert_eq!(empty.nnz(), 0);
+    assert!(empty.verify());
+}
+
+#[test]
+fn test_graph_simple_chain() {
+    let mut resolution = ResolutionResult {
+        amb_out: vec![0, 0, 0],
+        ..Default::default()
+    };
+    resolution.edge_accumulators.insert(
+        (0, 1),
+        EdgeAcc {
+            conf_sum: 1.0,
+            n_ref: 1,
+            is_split: false,
+        },
+    );
+    resolution.edge_accumulators.insert(
+        (1, 2),
+        EdgeAcc {
+            conf_sum: 1.0,
+            n_ref: 1,
+            is_split: false,
+        },
+    );
+
+    let graph = Graph::from_resolution(3, resolution);
+    assert_eq!(graph.node_count(), 3);
+    assert_eq!(graph.edge_count(), 2);
+    assert!(graph.in_edges.verify());
+
+    assert_eq!(graph.out_degree(0), 1);
+    assert_eq!(graph.out_degree(1), 1);
+    assert_eq!(graph.out_degree(2), 0);
+    assert!(graph.is_dangling(2));
+    assert!(!graph.is_dangling(0));
+
+    assert_eq!(graph.in_degree(0), 0);
+    assert_eq!(graph.in_degree(1), 1);
+    assert_eq!(graph.in_degree(2), 1);
+
+    let callers_of_2: Vec<_> = graph.callers(2).collect();
+    assert_eq!(callers_of_2, vec![(1, 1.0)]);
+
+    let callees_of_0: Vec<_> = graph.callees(0).collect();
+    assert_eq!(callees_of_0, vec![(1, 1.0)]);
+}
 
 #[test]
 fn test_csr_diamond_and_cycles() {
     let interner = Interner::new();
 
-    // ── 1. DIAMOND GRAPH TEST: A -> B, A -> C, B -> D, C -> D ────────────────
-    // Files: all in same file for clean direct resolution
     let file = FileInfo {
         id: 0,
         path: interner.intern("src/diamond.rs"),
@@ -27,7 +80,6 @@ fn test_csr_diamond_and_cycles() {
     let node_c = Symbol::new(2, name_c, canon, SymKind::Function, Lang::Rust, 0, 30);
     let node_d = Symbol::new(3, name_d, canon, SymKind::Function, Lang::Rust, 0, 40);
 
-    // References: A calls B and C; B calls D; C calls D
     let ref_a_b = Reference::new(0, name_b, 0, 11, Lang::Rust, RefRole::Call);
     let ref_a_c = Reference::new(0, name_c, 0, 12, Lang::Rust, RefRole::Call);
     let ref_b_d = Reference::new(1, name_d, 0, 21, Lang::Rust, RefRole::Call);
@@ -44,29 +96,17 @@ fn test_csr_diamond_and_cycles() {
 
     let diamond_graph = Graph::build(&ingest_diamond, &interner);
 
-    // Verify matrix dimensions and basic counts
     assert_eq!(diamond_graph.node_count(), 4);
     assert_eq!(diamond_graph.edge_count(), 4);
     assert!(diamond_graph.in_edges.verify());
 
-    // In-edge CSR structure (rows = targets):
-    // Target 0 (A): in-degree 0, row_offsets[0..=1] = [0, 0]
-    // Target 1 (B): in-degree 1 (from 0), row_offsets[1..=2] = [0, 1], col_indices=[0]
-    // Target 2 (C): in-degree 1 (from 0), row_offsets[2..=3] = [1, 2], col_indices=[0]
-    // Target 3 (D): in-degree 2 (from 1, 2), row_offsets[3..=4] = [2, 4], col_indices=[1, 2]
     assert_eq!(diamond_graph.in_edges.row_offsets, vec![0, 0, 1, 2, 4]);
     assert_eq!(diamond_graph.in_edges.col_indices, vec![0, 0, 1, 2]);
 
-    // Single call in same file: conf = 1.0, weight = (1.0 / 1) * sqrt(1) = 1.0
     for &val in &diamond_graph.in_edges.values {
         assert!((val - 1.0).abs() < 1e-6);
     }
 
-    // Out-degree and dangling status:
-    // A: out-degree 2, w_out_deg 2.0
-    // B: out-degree 1, w_out_deg 1.0
-    // C: out-degree 1, w_out_deg 1.0
-    // D: out-degree 0, w_out_deg 0.0 (dangling sink!)
     assert_eq!(diamond_graph.out_degree(0), 2);
     assert_eq!(diamond_graph.out_degree(1), 1);
     assert_eq!(diamond_graph.out_degree(2), 1);
@@ -80,14 +120,12 @@ fn test_csr_diamond_and_cycles() {
     assert!((diamond_graph.w_out_deg[0] - 2.0).abs() < 1e-6);
     assert!((diamond_graph.w_out_deg[3] - 0.0).abs() < 1e-6);
 
-    // Callers and callees accessors:
     let callers_of_d: Vec<_> = diamond_graph.callers(3).collect();
     assert_eq!(callers_of_d, vec![(1, 1.0), (2, 1.0)]);
 
     let callees_of_a: Vec<_> = diamond_graph.callees(0).collect();
     assert_eq!(callees_of_a, vec![(1, 1.0), (2, 1.0)]);
 
-    // ── 2. CYCLE GRAPH TEST: A -> B -> C -> A ─────────────────────────────────
     let cycle_a = Symbol::new(0, name_a, canon, SymKind::Function, Lang::Rust, 0, 10);
     let cycle_b = Symbol::new(1, name_b, canon, SymKind::Function, Lang::Rust, 0, 20);
     let cycle_c = Symbol::new(2, name_c, canon, SymKind::Function, Lang::Rust, 0, 30);
@@ -111,7 +149,6 @@ fn test_csr_diamond_and_cycles() {
     assert_eq!(cycle_graph.edge_count(), 3);
     assert!(cycle_graph.in_edges.verify());
 
-    // In a 3-cycle: every node has in-degree 1 and out-degree 1
     for node in 0..3 {
         assert_eq!(cycle_graph.in_degree(node), 1);
         assert_eq!(cycle_graph.out_degree(node), 1);
@@ -119,14 +156,9 @@ fn test_csr_diamond_and_cycles() {
         assert!((cycle_graph.w_out_deg[node as usize] - 1.0).abs() < 1e-6);
     }
 
-    // In-edge CSR for cycle:
-    // Target 0 (A) <- Source 2 (C)
-    // Target 1 (B) <- Source 0 (A)
-    // Target 2 (C) <- Source 1 (B)
     assert_eq!(cycle_graph.in_edges.row_offsets, vec![0, 1, 2, 3]);
     assert_eq!(cycle_graph.in_edges.col_indices, vec![2, 0, 1]);
 
-    // ── 3. MULTI-REFERENCE WEIGHT TEST: A calls B twice ───────────────────────
     let mut ingest_multi = IngestResult::new();
     ingest_multi.files.push(file);
     ingest_multi.symbols.extend_from_slice(&[node_a, node_b]);
@@ -137,11 +169,9 @@ fn test_csr_diamond_and_cycles() {
 
     let multi_graph = Graph::build(&ingest_multi, &interner);
     assert_eq!(multi_graph.edge_count(), 1);
-    // Weight = (2.0 / 2) * sqrt(2) = sqrt(2) ≈ 1.4142135
     let expected_w = 2.0f32.sqrt();
     assert!((multi_graph.in_edges.values[0] - expected_w).abs() < 1e-6);
 
-    // ── 4. AMBIGUOUS REFERENCE TEST: A calls "helper", defined twice in same file ──
     let name_helper = interner.intern("helper");
     let helper1 = Symbol::new(1, name_helper, canon, SymKind::Function, Lang::Rust, 0, 20);
     let helper2 = Symbol::new(2, name_helper, canon, SymKind::Function, Lang::Rust, 0, 30);
@@ -155,12 +185,9 @@ fn test_csr_diamond_and_cycles() {
     ingest_amb.references.push(ref_amb);
 
     let amb_graph = Graph::build(&ingest_amb, &interner);
-    // 2 edges emitted: A -> helper1 and A -> helper2
     assert_eq!(amb_graph.edge_count(), 2);
-    // Each target gets confidence 1.0 / 2 = 0.5 -> weight = (0.5 / 1) * sqrt(1) = 0.5
     assert!((amb_graph.in_edges.values[0] - 0.5).abs() < 1e-6);
     assert!((amb_graph.in_edges.values[1] - 0.5).abs() < 1e-6);
-    // Caller A is flagged as ambiguous
     assert_eq!(amb_graph.ambiguity(0), 1);
     assert_eq!(amb_graph.ambiguity(1), 0);
     assert_eq!(amb_graph.ambiguity(2), 0);
