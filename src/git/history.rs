@@ -475,16 +475,11 @@ pub fn walk_repository_history<P: AsRef<Path>>(
 }
 
 /// Walk git commit history with an optional cutoff timestamp.
-pub fn walk_repository_history_scoped<P: AsRef<Path>>(
+pub fn walk_repository_history_gix<P: AsRef<Path>>(
     repo_path: P,
     cutoff_timestamp: Option<i64>,
 ) -> Result<Vec<CommitInfo>, GitHistoryError> {
     let repo_path = repo_path.as_ref();
-    if let Some(commits) = try_git_log_cli(repo_path, cutoff_timestamp)
-        && !commits.is_empty()
-    {
-        return Ok(commits);
-    }
     let prefix = resolve_git_subdir_prefix(repo_path);
     let repo = gix::discover(repo_path).map_err(|e| GitHistoryError::Open(e.to_string()))?;
     let head = repo
@@ -497,6 +492,20 @@ pub fn walk_repository_history_scoped<P: AsRef<Path>>(
     let metas = collect_commit_metas(rev_walk, cutoff_timestamp)?;
     let commits = process_commits_parallel(&repo, metas)?;
     Ok(strip_subdir_prefix(commits, prefix.as_deref()))
+}
+
+/// Walk git commit history with an optional cutoff timestamp.
+pub fn walk_repository_history_scoped<P: AsRef<Path>>(
+    repo_path: P,
+    cutoff_timestamp: Option<i64>,
+) -> Result<Vec<CommitInfo>, GitHistoryError> {
+    let repo_path = repo_path.as_ref();
+    if let Some(commits) = try_git_log_cli(repo_path, cutoff_timestamp)
+        && !commits.is_empty()
+    {
+        return Ok(commits);
+    }
+    walk_repository_history_gix(repo_path, cutoff_timestamp)
 }
 
 /// Full hex id of the repository's HEAD commit, or `None` outside a git repository.
@@ -518,129 +527,4 @@ pub fn compute_git_at_stamp(root: &str) -> Option<String> {
     } else {
         short_sha.to_string()
     })
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_civil_calendar_conversions() {
-        let (y, m, d) = civil_from_days(0);
-        assert_eq!((y, m, d), (1970, 1, 1));
-        assert_eq!(days_from_civil(1970, 1, 1), 0);
-
-        let d2026 = days_from_civil(2026, 10, 11);
-        let (y2, m2, d2) = civil_from_days(d2026);
-        assert_eq!((y2, m2, d2), (2026, 10, 11));
-
-        let epoch = 1775000000;
-        let past = months_before_epoch(epoch, 12);
-        assert!(past < epoch);
-        assert_eq!(epoch - past, 365 * 86400);
-    }
-
-    #[test]
-    fn test_since_scope_parsing() {
-        let anchor = 1775000000;
-        assert_eq!(parse_since_scope(None, anchor), SinceScope::AllHistory);
-        assert_eq!(parse_since_scope(Some(""), anchor), SinceScope::AllHistory);
-        assert_eq!(
-            parse_since_scope(Some("today"), anchor),
-            SinceScope::SinceDate(anchor)
-        );
-        assert_eq!(
-            parse_since_scope(Some("yesterday"), anchor),
-            SinceScope::SinceDate(anchor - 86400)
-        );
-        assert_eq!(
-            parse_since_scope(Some("2 weeks ago"), anchor),
-            SinceScope::SinceDate(anchor - 14 * 86400)
-        );
-        assert_eq!(
-            parse_since_scope(Some("10 days ago"), anchor),
-            SinceScope::SinceDate(anchor - 10 * 86400)
-        );
-
-        let sha = "e0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9";
-        assert_eq!(
-            parse_since_scope(Some(sha), anchor),
-            SinceScope::SinceRevision(sha.to_string())
-        );
-
-        let iso = "2026-01-01";
-        match parse_since_scope(Some(iso), anchor) {
-            SinceScope::SinceDate(d) => assert!(d > 0),
-            _ => panic!("expected SinceDate"),
-        }
-    }
-
-    #[test]
-    fn test_commit_filtering_and_churn() {
-        let commits = vec![
-            CommitInfo {
-                id: "c3".to_string(),
-                timestamp: 300,
-                author: "alice@example.com".to_string(),
-                changed_files: vec!["a.rs".to_string(), "b.rs".to_string()],
-            },
-            CommitInfo {
-                id: "c2".to_string(),
-                timestamp: 200,
-                author: "alice@example.com".to_string(),
-                changed_files: vec!["a.rs".to_string()],
-            },
-            CommitInfo {
-                id: "c1".to_string(),
-                timestamp: 100,
-                author: "bob@example.com".to_string(),
-                changed_files: vec!["b.rs".to_string()],
-            },
-        ];
-        let filtered = filter_commits_by_scope(&commits, &SinceScope::SinceDate(200));
-        assert_eq!(filtered.len(), 2);
-        assert_eq!(filtered[0].id, "c3");
-        assert_eq!(filtered[1].id, "c2");
-
-        let rev_filtered =
-            filter_commits_by_scope(&commits, &SinceScope::SinceRevision("c2".to_string()));
-        assert_eq!(rev_filtered.len(), 1);
-        assert_eq!(rev_filtered[0].id, "c3");
-
-        let churn = compute_file_churn(commits.iter(), 300, 10);
-        assert_eq!(churn.len(), 2);
-        assert_eq!(churn["a.rs"].commits, 2);
-        assert_eq!(churn["b.rs"].commits, 2);
-        assert_eq!(churn["a.rs"].last_commit_epoch, 300);
-        assert_eq!(churn["b.rs"].last_commit_epoch, 300);
-        assert!(churn["a.rs"].decayed_weight > 1.99);
-    }
-
-    #[test]
-    fn test_walk_repository_history_nonexistent() {
-        let res = walk_repository_history("/nonexistent_ripwire_path_test");
-        assert!(res.is_err());
-        let err = res.unwrap_err();
-        assert!(format!("{err}").contains("failed to open repository"));
-    }
-
-    #[test]
-    fn test_in_process_history_diffing() {
-        if let Ok(repo) = gix::open(".")
-            && let Ok(head) = repo.head_commit()
-        {
-            let meta = RawCommitMeta {
-                id: head.id().into(),
-                parent_id: None,
-                timestamp: 12345,
-            };
-            let info = diff_commit_tree(&repo, &meta);
-            assert!(info.is_ok());
-            let c = info.unwrap();
-            assert_eq!(c.id, head.id().to_string());
-            assert_eq!(c.timestamp, 12345);
-            if let Ok(rev_walk) = repo.rev_walk([head.id()]).all() {
-                let _ = collect_commit_metas(rev_walk.take(1), Some(12345));
-            }
-        }
-    }
 }

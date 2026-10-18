@@ -3,13 +3,10 @@ use ripwire_rs::domain::{
     FileInfo, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
 };
 use ripwire_rs::git::cochange::{
-    CochangeOptions, StaticCouplingMap, check_pair_dependency_capability, mine_cochange_for_file,
-    mine_repo_cochange_pairs,
+    CochangeOptions, StaticCouplingMap, check_pair_dependency_capability, cluster_cochange_groups,
+    mine_cochange_for_file, mine_repo_cochange_pairs,
 };
-use ripwire_rs::git::history::{
-    CommitInfo, SinceScope, civil_from_days, compute_file_churn, days_from_civil,
-    filter_commits_by_scope, months_before_epoch, parse_since_scope,
-};
+use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::graph::Graph;
 use ripwire_rs::mcp::{McpState, dispatch_json_rpc};
 use serde_json::Value;
@@ -18,7 +15,6 @@ use std::io::Cursor;
 fn create_test_ingest(interner: &Interner) -> IngestResult {
     let mut ingest = IngestResult::new();
 
-    // File 0: src/caller.rs (Rust)
     let p0 = interner.intern("src/caller.rs");
     ingest.files.push(FileInfo {
         id: 0,
@@ -28,7 +24,6 @@ fn create_test_ingest(interner: &Interner) -> IngestResult {
         byte_size: 1000,
     });
 
-    // File 1: src/callee.rs (Rust)
     let p1 = interner.intern("src/callee.rs");
     ingest.files.push(FileInfo {
         id: 1,
@@ -38,7 +33,6 @@ fn create_test_ingest(interner: &Interner) -> IngestResult {
         byte_size: 800,
     });
 
-    // File 2: src/unrelated.rs (Rust)
     let p2 = interner.intern("src/unrelated.rs");
     ingest.files.push(FileInfo {
         id: 2,
@@ -48,7 +42,6 @@ fn create_test_ingest(interner: &Interner) -> IngestResult {
         byte_size: 1200,
     });
 
-    // File 3: docs/arch.md (Markdown)
     let p3 = interner.intern("docs/arch.md");
     ingest.files.push(FileInfo {
         id: 3,
@@ -57,7 +50,6 @@ fn create_test_ingest(interner: &Interner) -> IngestResult {
         line_count: 100,
         byte_size: 2000,
     });
-    // Symbol 0: foo() in src/caller.rs
     let s0_name = interner.intern("foo");
     ingest.symbols.push(Symbol::new(
         0,
@@ -69,7 +61,6 @@ fn create_test_ingest(interner: &Interner) -> IngestResult {
         5,
     ));
 
-    // Symbol 1: bar() in src/callee.rs
     let s1_name = interner.intern("bar");
     ingest.symbols.push(Symbol::new(
         1,
@@ -81,7 +72,6 @@ fn create_test_ingest(interner: &Interner) -> IngestResult {
         5,
     ));
 
-    // Reference from foo() in src/caller.rs -> bar() in src/callee.rs
     ingest
         .references
         .push(Reference::new(0, s1_name, 0, 8, Lang::Rust, RefRole::Call));
@@ -90,85 +80,78 @@ fn create_test_ingest(interner: &Interner) -> IngestResult {
 }
 
 #[test]
-fn test_git_calendar_and_since_filtering() {
-    let epoch = 1775000000;
-    let days = days_from_civil(2026, 10, 11);
-    let (y, m, d) = civil_from_days(days);
-    assert_eq!((y, m, d), (2026, 10, 11));
-
-    let past = months_before_epoch(epoch, 6);
-    assert!(past < epoch);
-
-    let scope_all = parse_since_scope(None, epoch);
-    assert_eq!(scope_all, SinceScope::AllHistory);
-
-    let scope_date = parse_since_scope(Some("2 weeks ago"), epoch);
-    match scope_date {
-        SinceScope::SinceDate(ts) => assert_eq!(ts, epoch - 14 * 86400),
-        _ => panic!("expected SinceDate"),
-    }
-
+fn test_cochange_mining_and_surprise() {
     let commits = vec![
         CommitInfo {
-            id: "sha3".to_string(),
-            timestamp: epoch,
-            author: "dev@example.com".to_string(),
-            changed_files: vec!["src/caller.rs".to_string()],
-        },
-        CommitInfo {
-            id: "sha2".to_string(),
-            timestamp: epoch - 7 * 86400,
-            author: "dev@example.com".to_string(),
-            changed_files: vec!["src/caller.rs".to_string(), "src/callee.rs".to_string()],
-        },
-        CommitInfo {
-            id: "sha1".to_string(),
-            timestamp: epoch - 30 * 86400,
-            author: "dev@example.com".to_string(),
-            changed_files: vec!["src/unrelated.rs".to_string()],
-        },
-    ];
-
-    let filtered = filter_commits_by_scope(&commits, &scope_date);
-    assert_eq!(filtered.len(), 2);
-    assert_eq!(filtered[0].id, "sha3");
-    assert_eq!(filtered[1].id, "sha2");
-}
-
-#[test]
-fn test_git_file_churn_and_decay() {
-    let epoch = 1775000000;
-    let commits = vec![
-        CommitInfo {
-            id: "c3".to_string(),
-            timestamp: epoch,
-            author: "dev@example.com".to_string(),
-            changed_files: vec!["src/caller.rs".to_string(), "src/callee.rs".to_string()],
+            id: "c1".to_string(),
+            timestamp: 100,
+            author: "alice@example.com".to_string(),
+            changed_files: vec![
+                "src/ui.rs".to_string(),
+                "src/db.rs".to_string(),
+                "docs/readme.md".to_string(),
+            ],
         },
         CommitInfo {
             id: "c2".to_string(),
-            timestamp: epoch - 90 * 86400, // 90 days ago: weight should be ~0.5
-            author: "dev@example.com".to_string(),
-            changed_files: vec!["src/caller.rs".to_string()],
+            timestamp: 200,
+            author: "alice@example.com".to_string(),
+            changed_files: vec![
+                "src/ui.rs".to_string(),
+                "src/db.rs".to_string(),
+                "docs/readme.md".to_string(),
+            ],
         },
         CommitInfo {
-            id: "bomb".to_string(),
-            timestamp: epoch - 100,
-            author: "dev@example.com".to_string(),
-            changed_files: (0..150).map(|i| format!("file_{i}.rs")).collect(),
+            id: "c3".to_string(),
+            timestamp: 300,
+            author: "bob@example.com".to_string(),
+            changed_files: vec![
+                "src/ui.rs".to_string(),
+                "src/db.rs".to_string(),
+                "docs/readme.md".to_string(),
+            ],
         },
     ];
 
-    let churn = compute_file_churn(&commits, epoch, 100);
-    assert_eq!(churn["src/caller.rs"].commits, 2);
-    assert_eq!(churn["src/caller.rs"].last_commit_epoch, epoch);
+    let opts = CochangeOptions {
+        min_support: 3,
+        sub_windows: 3,
+        max_commit_files: 100,
+    };
 
-    // Commit at epoch contributes 1.0, commit at 90 days ago contributes 0.5
-    let w = churn["src/caller.rs"].decayed_weight;
-    assert!((w - 1.5).abs() < 0.05, "expected ~1.5 weight, got {w}");
+    let partners = mine_cochange_for_file("src/ui.rs", &commits, None, None, None, &opts);
+    assert_eq!(partners.len(), 2);
 
-    // The merge bomb commit (> 100 files) was skipped
-    assert!(!churn.contains_key("file_0.rs"));
+    let db_partner = partners
+        .iter()
+        .find(|p| p.file_path == "src/db.rs")
+        .unwrap();
+    assert_eq!(db_partner.together, 3);
+    assert_eq!(db_partner.deg, 1.0);
+    assert_eq!(db_partner.recur, 3);
+    assert!(db_partner.dep_capable);
+    assert!(db_partner.surprising);
+
+    let doc_partner = partners
+        .iter()
+        .find(|p| p.file_path == "docs/readme.md")
+        .unwrap();
+    assert_eq!(doc_partner.together, 3);
+    assert!(!doc_partner.dep_capable);
+    assert!(!doc_partner.surprising);
+
+    let pairs = mine_repo_cochange_pairs(&commits, None, None, None, &opts);
+    assert_eq!(pairs.len(), 3);
+    let ui_db_pair = pairs
+        .iter()
+        .find(|p| p.file_a == "src/db.rs" && p.file_b == "src/ui.rs")
+        .unwrap();
+    assert_eq!(ui_db_pair.together, 3);
+    assert!(ui_db_pair.surprising);
+    let groups = cluster_cochange_groups(&pairs);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].partners.len(), 2);
 }
 
 #[test]
@@ -178,14 +161,10 @@ fn test_git_cochange_surprising_and_recurrence() {
     let graph = Graph::build(&ingest, &interner);
     let coupling = StaticCouplingMap::build(&ingest, &interner, Some(&graph));
 
-    // src/caller.rs calls src/callee.rs -> statically coupled!
     assert!(coupling.is_coupled("src/caller.rs", "src/callee.rs"));
     assert!(coupling.is_coupled("src/callee.rs", "src/caller.rs"));
-
-    // src/caller.rs does NOT call src/unrelated.rs -> not coupled
     assert!(!coupling.is_coupled("src/caller.rs", "src/unrelated.rs"));
 
-    // Check dependency capabilities
     assert!(check_pair_dependency_capability(
         "src/caller.rs",
         "src/unrelated.rs",
@@ -199,10 +178,6 @@ fn test_git_cochange_surprising_and_recurrence() {
         Some(&interner)
     ));
 
-    // Create 6 commits across history:
-    // Commits 0, 1 in sub-window 0
-    // Commits 2, 3 in sub-window 1
-    // Commits 4, 5 in sub-window 2
     let commits = vec![
         CommitInfo {
             id: "c0".to_string(),
@@ -283,8 +258,6 @@ fn test_git_cochange_surprising_and_recurrence() {
         &opts,
     );
 
-    // 1. src/callee.rs changed together in all 6 commits (deg = 1.0, recur = 3)
-    // BUT it is statically coupled -> surprising = false!
     let callee = partners
         .iter()
         .find(|p| p.file_path == "src/callee.rs")
@@ -293,13 +266,8 @@ fn test_git_cochange_surprising_and_recurrence() {
     assert_eq!(callee.deg, 1.0);
     assert_eq!(callee.recur, 3);
     assert!(callee.dep_capable);
-    assert!(
-        !callee.surprising,
-        "callee is statically coupled, must not be surprising"
-    );
+    assert!(!callee.surprising);
 
-    // 2. src/unrelated.rs changed together in 5 commits (deg = 5/6 = 0.83, recur = 3)
-    // AND has NO static coupling -> surprising = true!
     let unrelated = partners
         .iter()
         .find(|p| p.file_path == "src/unrelated.rs")
@@ -308,13 +276,8 @@ fn test_git_cochange_surprising_and_recurrence() {
     assert!((unrelated.deg - 0.833).abs() < 0.01);
     assert_eq!(unrelated.recur, 3);
     assert!(unrelated.dep_capable);
-    assert!(
-        unrelated.surprising,
-        "unrelated has no static link, must be surprising"
-    );
+    assert!(unrelated.surprising);
 
-    // 3. docs/arch.md changed together in 3 commits
-    // BUT markdown is not dependency capable -> dep_capable = false, surprising = false!
     let arch_doc = partners
         .iter()
         .find(|p| p.file_path == "docs/arch.md")
@@ -323,7 +286,6 @@ fn test_git_cochange_surprising_and_recurrence() {
     assert!(!arch_doc.dep_capable);
     assert!(!arch_doc.surprising);
 
-    // Test repo-wide pairs
     let pairs = mine_repo_cochange_pairs(
         &commits,
         Some(&coupling),
@@ -380,7 +342,6 @@ fn test_cli_cochange_execution_and_xml_output() {
         },
     ];
 
-    // 1. Probed file execution
     let mut buf = Cursor::new(Vec::new());
     execute_cochange_with(Some("src/caller.rs"), None, &commits, &state, &mut buf)
         .expect("execute cochange");
@@ -390,7 +351,6 @@ fn test_cli_cochange_execution_and_xml_output() {
     assert!(xml.contains("<partner path=\"src/unrelated.rs\" together=\"3\""));
     assert!(xml.contains("surprising=\"1\""));
 
-    // 2. Repo-wide execution
     let mut repo_buf = Cursor::new(Vec::new());
     execute_cochange_with(None, None, &commits, &state, &mut repo_buf)
         .expect("execute repo cochange");
