@@ -1,9 +1,11 @@
+pub mod arch_xml;
 pub mod escape;
 pub mod html;
+pub mod legend;
 pub mod query_xml;
+pub mod workspace_xml;
 pub mod writer;
 pub mod xml;
-
 pub use writer::{MinifyingWriter, XmlWriter};
 
 pub use query_xml::{
