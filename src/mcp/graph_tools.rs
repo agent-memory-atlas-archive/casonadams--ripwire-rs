@@ -638,33 +638,3 @@ pub fn call_from_trace(ingest: &IngestResult, interner: &Interner, trace_text: &
         "suspects": suspects
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_path_between_not_found() {
-        let ingest = IngestResult::new();
-        let interner = Interner::new();
-        let graph = Graph::build(&ingest, &interner);
-        let res = call_path_between(&ingest, &graph, &interner, "a", "b");
-        assert_eq!(res["reachable"], false);
-    }
-
-    #[test]
-    fn test_path_between_connected() {
-        let interner = Interner::new();
-        let registry = crate::ingest::LanguageRegistry::new().unwrap();
-        let code = b"fn alpha() { beta(); } fn beta() {}";
-        let ingest = crate::ingest::ingest_in_memory_files(
-            &[("src/lib.rs", crate::domain::Lang::Rust, code)],
-            &registry,
-            &interner,
-        );
-        let graph = Graph::build(&ingest, &interner);
-        let res = call_path_between(&ingest, &graph, &interner, "alpha", "beta");
-        assert_eq!(res["reachable"], true);
-        assert_eq!(res["hops"], 1);
-    }
-}

@@ -101,7 +101,7 @@ fn write_atomic_temp_file(target_path: &Path, content: &[u8]) -> std::io::Result
     Ok(())
 }
 
-fn splice_file_bytes(
+pub fn splice_file_bytes(
     original: &[u8],
     op: EditOp,
     sig_start: usize,
@@ -378,84 +378,4 @@ pub fn execute_edit_plan_json(
         "edits_count": results.len(),
         "edits": results
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_splice_file_bytes_replace() {
-        let original = b"fn old_function() { return 1; }\n";
-        let payload = b"fn new_function() { return 2; }";
-        let (out, new_start, new_end) =
-            splice_file_bytes(original, EditOp::ReplaceBody, 0, 31, payload).unwrap();
-        assert_eq!(new_start, 0);
-        assert_eq!(new_end, payload.len());
-        assert_eq!(out, b"fn new_function() { return 2; }\n");
-    }
-
-    #[test]
-    fn test_splice_file_bytes_insert_before() {
-        let original = b"fn foo() {}\n";
-        let payload = b"// comment\n";
-        let (out, new_start, new_end) =
-            splice_file_bytes(original, EditOp::InsertBefore, 0, 11, payload).unwrap();
-        assert_eq!(new_start, 0);
-        assert_eq!(new_end, payload.len());
-        assert_eq!(out, b"// comment\nfn foo() {}\n");
-    }
-
-    #[test]
-    fn test_splice_file_bytes_insert_after() {
-        let original = b"fn foo() {}\n";
-        let payload = b"\nfn bar() {}\n";
-        let (out, new_start, new_end) =
-            splice_file_bytes(original, EditOp::InsertAfter, 0, 11, payload).unwrap();
-        assert_eq!(new_start, 11);
-        assert_eq!(new_end, 11 + payload.len());
-        assert_eq!(out, b"fn foo() {}\nfn bar() {}\n\n");
-    }
-
-    #[test]
-    fn test_perform_atomic_edit_refusals() {
-        let interner = crate::domain::Interner::new();
-        let ingest = crate::domain::IngestResult::new();
-
-        let res_nul = perform_atomic_edit(
-            &ingest,
-            &interner,
-            EditOp::ReplaceBody,
-            "sym",
-            None,
-            "fn foo\0() {}",
-        );
-        assert_eq!(res_nul["applied"], false);
-
-        let res_missing = perform_atomic_edit(
-            &ingest,
-            &interner,
-            EditOp::ReplaceBody,
-            "missing_symbol",
-            None,
-            "fn foo() {}",
-        );
-        assert_eq!(res_missing["applied"], false);
-
-        assert!(validate_payload("valid code").is_ok());
-        assert!(validate_payload("invalid \0 code").is_err());
-        assert!(validate_and_read_target(Path::new("nonexistent.rs")).is_err());
-        let bad_json = execute_edit_plan_json(".", "not json", true, &ingest, &interner);
-        assert_eq!(bad_json["applied"], false);
-        let empty_plan = execute_edit_plan_json(".", "{\"version\":1}", true, &ingest, &interner);
-        assert_eq!(empty_plan["applied"], false);
-        let missing_sym_plan = execute_edit_plan_json(
-            ".",
-            "{\"version\":1,\"edits\":[{\"op\":\"replace\",\"symbol\":\"missing\",\"new_body\":\"fn x(){}\"}]}",
-            true,
-            &ingest,
-            &interner,
-        );
-        assert_eq!(missing_sym_plan["applied"], false);
-    }
 }
