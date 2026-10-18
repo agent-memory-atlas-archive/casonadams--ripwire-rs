@@ -3,48 +3,52 @@ use crate::serialize::escape::{XmlEscapeExt, escape_xml_str};
 use serde_json::Value;
 use std::io::{self, Write};
 
-fn write_xml_envelope<W: Write, F>(
-    out: &mut W,
-    tag: &str,
-    header_attrs: &str,
-    write_children: F,
-) -> io::Result<()>
-where
-    F: FnOnce(&mut W) -> io::Result<()>,
-{
-    writeln!(out, "<{tag} {header_attrs}>")?;
-    write_children(out)?;
-    writeln!(out, "</{tag}>")
+fn write_for_sig_metrics<W: Write>(out: &mut W, it: &Value) -> io::Result<()> {
+    let ccx = it.u64_or("ccx", 0);
+    let in_deg = it.u64_or("in", 0);
+    let churn = it.u64_or("churn", 1);
+    let amp = it.u64_or("amp", 1);
+    if ccx > 0 {
+        write!(out, " ccx=\"{ccx}\"")?;
+    }
+    if in_deg > 0 {
+        write!(out, " in=\"{in_deg}\"")?;
+    }
+    if churn > 1 {
+        write!(out, " churn=\"{churn}\"")?;
+    }
+    if amp > 1 {
+        write!(out, " amp=\"{amp}\"")?;
+    }
+    if it.u64_or("tested", 0) > 0 {
+        out.write_all(b" tested=\"1\"")?;
+    }
+    Ok(())
 }
 
 /// Serialize `for` task-lens ranking result to Ripwire XML.
-fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) -> io::Result<()> {
+fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value) -> io::Result<()> {
     use crate::serialize::PathLayerExt;
     let raw_name = it.str_or("name", "");
     let path = it.str_or("path", "");
     let line = it.u64_or("line", 0);
     let end_line = it.u64_or("end_line", line);
-    let cx = it.u64_or("cx", 0);
-    let ccx = it.u64_or("ccx", 0);
-    let in_deg = it.u64_or("in", 0);
-    let churn = it.u64_or("churn", 1);
-    let amp = it.u64_or("amp", 1);
-    let tested_attr = if it.u64_or("tested", 0) > 0 {
-        " tested=\"1\""
-    } else {
-        ""
-    };
     let r = idx + 1;
+    write!(out, "<d l=\"{line}\"")?;
+    if end_line > line {
+        write!(out, " e=\"{end_line}\"")?;
+    }
     write!(
         out,
-        "<d l=\"{line}\" e=\"{end_line}\" n=\"{}\" p=\"{}\"",
+        " n=\"{}\" p=\"{}\"",
         raw_name.xml_escaped(),
         path.xml_escaped(),
     )?;
     path.write_layer_attr(out)?;
+    write_for_sig_metrics(out, it)?;
     write!(
         out,
-        " cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" churn=\"{churn}\" amp=\"{amp}\"{tested_attr} r=\"{r}\" next=\"--for={task} --limit=40\">{}</d>",
+        " r=\"{r}\">{}</d>",
         it.str_or("sig", raw_name).xml_escaped()
     )
 }
@@ -56,10 +60,19 @@ fn write_for_inner_body<W: Write>(
     raw_task: &str,
 ) -> io::Result<()> {
     let mut bodies_to_show = Vec::new();
-    write!(out, "<sigs>")?;
-    if let Some(items) = val["symbols"].as_array() {
+    let items = val["symbols"].as_array();
+    let sig_cnt = items.map_or(0, Vec::len);
+    if sig_cnt >= 25 {
+        write!(
+            out,
+            "<sigs shown=\"{sig_cnt}\" total=\"{sig_cnt}\" capped=\"1\" next=\"--for={task} --limit=40\">"
+        )?;
+    } else {
+        write!(out, "<sigs>")?;
+    }
+    if let Some(items) = items {
         for (idx, it) in items.iter().enumerate() {
-            write_for_sig_row(out, idx, it, task)?;
+            write_for_sig_row(out, idx, it)?;
             let raw_name = it.str_or("name", "");
             let b_str = it.str_any(&["body", "sig"], raw_name).to_string();
             if bodies_to_show.is_empty() {
@@ -75,7 +88,6 @@ fn write_for_inner_body<W: Write>(
     write_for_lego_section(out, val, raw_task)?;
     write_for_compose_section(out, val, raw_task)?;
     write_for_tree_and_docs(out, val)?;
-    write!(out, "<tail total=\"0\" shown=\"0\" capped=\"0\"></tail>")?;
     write_for_hops_section(out, val)?;
     let n = bodies_to_show.len();
     write!(out, "<bodies shown=\"{n}\" total=\"{n}\" capped=\"0\">")?;
@@ -88,29 +100,53 @@ fn write_for_inner_body<W: Write>(
     writeln!(out, "</bodies>")
 }
 
+pub struct ForReport<'a> {
+    pub val: &'a Value,
+    pub inner: Vec<u8>,
+}
+
+impl crate::serialize::XmlReport for ForReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "ctx"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.for/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::GitStampExt;
+        let raw_task = self.val.str_or("task", "");
+        let task = escape_xml_str(raw_task);
+        let default_route = format!("name-exact({raw_task})");
+        let route = escape_xml_str(self.val.str_or("route", &default_route));
+        let raw_root = self.val.str_or("root", ".");
+        let root = escape_xml_str(raw_root);
+        let at_stamp = raw_root.git_at_or_head();
+        let confidence = escape_xml_str(self.val.str_or("confidence", "high"));
+        let margin_pct = self.val.u64_or("margin_pct", 0);
+        let coverage = self.val.u64_or("coverage", 100);
+        let bodies_cnt = self.val.u64_or("detail", 1).max(1);
+        let computed_tokens = ((self.inner.len() + 180) / 4).max(1) as u64;
+        let est_tokens = self.val.u64_or("est_tokens", computed_tokens);
+        write!(
+            out,
+            " task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" at=\"{at_stamp}\" bundle=\"auto\" bodies=\"{bodies_cnt}\" est_tokens=\"{est_tokens}\""
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        out.write_all(&self.inner)
+    }
+}
+
 pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
     let raw_task = val.str_or("task", "");
     let task = escape_xml_str(raw_task);
-    let default_route = format!("name-exact({raw_task})");
-    let route = escape_xml_str(val.str_or("route", &default_route));
-    let raw_root = val.str_or("root", ".");
-    let root = escape_xml_str(raw_root);
-    use crate::serialize::GitStampExt;
-    let at_stamp = raw_root.git_at_or_head();
-    let confidence = escape_xml_str(val.str_or("confidence", "high"));
-    let margin_pct = val.u64_or("margin_pct", 0);
-    let coverage = val.u64_or("coverage", 100);
-    let bodies_cnt = val.u64_or("detail", 1).max(1);
     let mut inner = Vec::with_capacity(4096);
     write_for_inner_body(&mut inner, val, &task, raw_task)?;
-    let computed_tokens = ((inner.len() + 180) / 4).max(1) as u64;
-    let est_tokens = val
-        .u64_or("est_tokens", computed_tokens)
-        .max(computed_tokens);
-    let attrs = format!(
-        "task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" at=\"{at_stamp}\" schema=\"ripwire.for/v1\" bundle=\"auto\" bodies=\"{bodies_cnt}\" est_tokens=\"{est_tokens}\""
-    );
-    write_xml_envelope(out, "ctx", &attrs, |out| out.write_all(&inner))
+    ForReport { val, inner }.render_envelope(out)
 }
 
 fn for_section_requested(val: &Value, name: &str) -> bool {
@@ -314,28 +350,54 @@ fn write_grep_enc_rows<W: Write>(out: &mut W, enc_map: &GrepEncMap) -> io::Resul
     Ok(())
 }
 
-pub fn serialize_grep_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let pat = escape_xml_str(val["pattern"].as_str().unwrap_or(""));
-    let hits = val["hits"].as_array();
-    let count = hits.map_or(0, Vec::len);
-    let cap = val.u64_or("limit", 100).max(1) as usize;
-    let shown = count.min(cap);
-    let capped = u8::from(shown < count);
-    let (files_set, enc_set, first_loc) = collect_grep_summary(hits);
-    let f_cnt = files_set.len();
-    let attrs = format!(
-        "pattern=\"{pat}\" schema=\"ripwire.grep/v1\" root=\".\" files=\"{f_cnt}\" hits=\"{count}\" shown=\"{shown}\" capped=\"{capped}\" hits_capped=\"{capped}\" suppressed_comment=\"0\" suppressed_string=\"0\" tier_parsed=\"{f_cnt}\" tier_unclassified=\"0\" corpus_pruned_dirs=\"0\" unindexed_hits=\"0\" unindexed_files_scanned=\"0\" next=\"--at={}:{}\"",
-        escape_xml_str(&first_loc.0),
-        first_loc.1
-    );
-    write_xml_envelope(out, "grep", &attrs, |out| {
+pub struct GrepReport<'a> {
+    pub val: &'a Value,
+}
+
+impl crate::serialize::XmlReport for GrepReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "grep"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.grep/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let pat = escape_xml_str(self.val["pattern"].as_str().unwrap_or(""));
+        let hits = self.val["hits"].as_array();
+        let count = hits.map_or(0, Vec::len);
+        let cap = self.val.u64_or("limit", 100).max(1) as usize;
+        let shown = count.min(cap);
+        let capped = u8::from(shown < count);
+        let (files_set, _, first_loc) = collect_grep_summary(hits);
+        let f_cnt = files_set.len();
+        write!(
+            out,
+            " pattern=\"{pat}\" root=\".\" files=\"{f_cnt}\" hits=\"{count}\" shown=\"{shown}\" capped=\"{capped}\" hits_capped=\"{capped}\" suppressed_comment=\"0\" suppressed_string=\"0\" tier_parsed=\"{f_cnt}\" tier_unclassified=\"0\" corpus_pruned_dirs=\"0\" unindexed_hits=\"0\" unindexed_files_scanned=\"0\" next=\"--at={}:{}\"",
+            escape_xml_str(&first_loc.0),
+            first_loc.1
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let hits = self.val["hits"].as_array();
+        let count = hits.map_or(0, Vec::len);
+        let cap = self.val.u64_or("limit", 100).max(1) as usize;
+        let shown = count.min(cap);
+        let (_, enc_set, _) = collect_grep_summary(hits);
         if let Some(items) = hits {
             for h in items.iter().take(shown) {
                 write_grep_hit_row(out, h)?;
             }
         }
         write_grep_enc_rows(out, &enc_set)
-    })
+    }
+}
+
+pub fn serialize_grep_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    GrepReport { val }.render_envelope(out)
 }
 
 /// Serialize `whereis` branch symbol search to Ripwire XML.
@@ -380,49 +442,67 @@ fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
 }
 
 /// Serialize `whereis` branch symbol search to Ripwire XML.
-pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let sym = escape_xml_str(val.str_or("symbol", ""));
-    let hits = val.array_any(&["hits", "locations"]);
-    let count = hits.map_or(0, Vec::len);
-    let cap = 60usize;
-    let shown = count.min(cap);
-    let capped = usize::from(shown < count);
-    let page_attrs = if capped == 1 {
-        format!(
-            " shown=\"{shown}\" capped=\"1\" total=\"{count}\" has_more=\"1\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+pub struct WhereisReport<'a> {
+    pub val: &'a Value,
+}
+
+impl crate::serialize::XmlReport for WhereisReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "whereis"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.whereis/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::PaginateSlice;
+        let sym = escape_xml_str(self.val.str_or("symbol", ""));
+        let empty = Vec::new();
+        let hits = self.val.array_any(&["hits", "locations"]).unwrap_or(&empty);
+        let count = hits.len();
+        let (pw, _) = hits.paginate(60, None, None);
+        let page_attrs = pw.xml_attrs();
+        let on_head = self.val.u64_or("on_head", 1);
+        let refs_scanned = self.val.u64_or("refs_scanned", 0);
+        let blobs = self.val.u64_or("blobs", 0);
+        let at_val = self
+            .val
+            .opt_str("at")
+            .filter(|s| !s.is_empty())
+            .unwrap_or("HEAD");
+        let head_date = self.val.str_or("head_date", "2026-10-14");
+        let listing = self.val.str_or("listing", "defs");
+        let ref_labels = self.val.str_or("ref_labels", "parsed");
+        let worktree = self.val.str_or("worktree", "read");
+        write!(
+            out,
+            " sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{page_attrs} listing=\"{listing}\" ref_labels=\"{ref_labels}\" head_date=\"{head_date}\" at=\"{at_val}\" worktree=\"{worktree}\" complete=\"1\""
         )
-    } else {
-        format!(" shown=\"{shown}\" capped=\"0\"")
-    };
-    let on_head = val.u64_or("on_head", 1);
-    let refs_scanned = val.u64_or("refs_scanned", 0);
-    let blobs = val.u64_or("blobs", 0);
-    let at_val = val
-        .opt_str("at")
-        .filter(|s| !s.is_empty())
-        .unwrap_or("HEAD");
-    let head_date = val.str_or("head_date", "2026-10-14");
-    let listing = val.str_or("listing", "defs");
-    let ref_labels = val.str_or("ref_labels", "parsed");
-    let worktree = val.str_or("worktree", "read");
-    let attrs = format!(
-        "schema=\"ripwire.whereis/v1\" sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{page_attrs} listing=\"{listing}\" ref_labels=\"{ref_labels}\" head_date=\"{head_date}\" at=\"{at_val}\" worktree=\"{worktree}\" complete=\"1\""
-    );
-    write_xml_envelope(out, "whereis", &attrs, |out| {
-        if let Some(hist) = val.get("history").and_then(Value::as_object) {
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let sym = escape_xml_str(self.val.str_or("symbol", ""));
+        if let Some(hist) = self.val.get("history").and_then(Value::as_object) {
             let hist_val = Value::Object(hist.clone());
             emit_whereis_history(out, &hist_val, &sym)?;
         }
-        if let Some(items) = hits {
+        if let Some(items) = self.val.array_any(&["hits", "locations"]) {
+            let shown = items.len().min(60);
             for h in items.iter().take(shown) {
                 emit_whereis_hit(out, h)?;
             }
-            if count > shown {
-                writeln!(out, "  <more hits=\"{}\"/>", count - shown)?;
+            if items.len() > shown {
+                writeln!(out, "  <more hits=\"{}\"/>", items.len() - shown)?;
             }
         }
         Ok(())
-    })
+    }
+}
+
+pub fn serialize_whereis_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    WhereisReport { val }.render_envelope(out)
 }
 
 /// Serialize `owners` authorship to Ripwire XML.
@@ -450,26 +530,47 @@ fn collect_owner_display_items(files: &[Value], detail: bool) -> Vec<&Value> {
 }
 
 /// Serialize `owners` authorship to Ripwire XML.
-pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let files = val.array_any(&["files", "ownership"]);
-    let count = files.map_or(0, Vec::len);
-    let root = escape_xml_str(val.str_or("root", "."));
-    let at_attr = match val.opt_str("at") {
-        Some(at) if !at.is_empty() => format!(" at=\"{at}\""),
-        _ => String::new(),
-    };
-    let detail = val.bool_or("detail", false);
-    let uniform_count = files.map_or(0, |f| count_uniform_owners(f));
-    let display_items = files
-        .map(|f| collect_owner_display_items(f, detail))
-        .unwrap_or_default();
-    let (pw, page) = val.paginate_items(&display_items, 40);
-    let page_attrs = pw.xml_attrs();
+pub struct OwnersReport<'a> {
+    pub val: &'a Value,
+}
 
-    let attrs = format!(
-        "schema=\"ripwire.owners/v1\" files=\"{count}\"{page_attrs} root=\"{root}\"{at_attr}"
-    );
-    write_xml_envelope(out, "owners", &attrs, |out| {
+impl crate::serialize::XmlReport for OwnersReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "owners"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.owners/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let files = self.val.array_any(&["files", "ownership"]);
+        let count = files.map_or(0, Vec::len);
+        let root = escape_xml_str(self.val.str_or("root", "."));
+        let at_attr = match self.val.opt_str("at") {
+            Some(at) if !at.is_empty() => format!(" at=\"{at}\""),
+            _ => String::new(),
+        };
+        let detail = self.val.bool_or("detail", false);
+        let display_items = files
+            .map(|f| collect_owner_display_items(f, detail))
+            .unwrap_or_default();
+        let (pw, _) = self.val.paginate_items(&display_items, 40);
+        let page_attrs = pw.xml_attrs();
+        write!(
+            out,
+            " files=\"{count}\"{page_attrs} root=\"{root}\"{at_attr}"
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let files = self.val.array_any(&["files", "ownership"]);
+        let detail = self.val.bool_or("detail", false);
+        let uniform_count = files.map_or(0, |f| count_uniform_owners(f));
+        let display_items = files
+            .map(|f| collect_owner_display_items(f, detail))
+            .unwrap_or_default();
+        let (_, page) = self.val.paginate_items(&display_items, 40);
         if !detail && uniform_count > 0 {
             writeln!(
                 out,
@@ -480,7 +581,12 @@ pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()
             write_owner_entry(out, f)?;
         }
         Ok(())
-    })
+    }
+}
+
+pub fn serialize_owners_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    OwnersReport { val }.render_envelope(out)
 }
 
 /// Serialize `flags` environment and compile gates to Ripwire XML.
@@ -623,15 +729,9 @@ fn format_doc_drift_header_counts(val: &Value) -> String {
     format!(" clean=\"{clean}\" dated=\"{dated}\"{prose_attr}{corpus_attr}{anchor_attrs}")
 }
 
-pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let drift = val["drift"].as_array();
-    let count = drift.map_or(0, |d| d.len());
-    use crate::serialize::GitStampExt;
-    let raw_root = val["root"].as_str().unwrap_or(".");
-    let root = escape_xml_str(raw_root);
-    let at_attr = raw_root.git_at_xml_attr();
+fn group_doc_drift_items(val: &Value) -> Vec<(&str, Vec<&Value>)> {
     let mut grouped: Vec<(&str, Vec<&Value>)> = Vec::new();
-    if let Some(items) = drift {
+    if let Some(items) = val["drift"].as_array() {
         for d in items {
             let doc = d["doc"].as_str().unwrap_or("");
             if let Some((_, list)) = grouped.iter_mut().find(|(p, _)| *p == doc) {
@@ -641,16 +741,44 @@ pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result
             }
         }
     }
-    let docs_cnt = val["docs_scanned"]
-        .as_u64()
-        .map_or(grouped.len(), |n| n as usize);
-    let extra_counts = format_doc_drift_header_counts(val);
-    let (pw, page) = val.paginate_items(&grouped, 40);
-    let page_attrs = pw.xml_attrs();
-    let attrs = format!(
-        "schema=\"ripwire.doc-drift/v1\" root=\"{root}\" docs=\"{docs_cnt}\"{extra_counts} drift=\"{count}\"{page_attrs}{at_attr}"
-    );
-    write_xml_envelope(out, "doc-drift", &attrs, |out| {
+    grouped
+}
+
+pub struct DocDriftReport<'a> {
+    pub val: &'a Value,
+}
+
+impl crate::serialize::XmlReport for DocDriftReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "doc-drift"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.doc-drift/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::GitStampExt;
+        let count = self.val["drift"].as_array().map_or(0, Vec::len);
+        let raw_root = self.val["root"].as_str().unwrap_or(".");
+        let root = escape_xml_str(raw_root);
+        let at_attr = raw_root.git_at_xml_attr();
+        let grouped = group_doc_drift_items(self.val);
+        let docs_cnt = self.val["docs_scanned"]
+            .as_u64()
+            .map_or(grouped.len(), |n| n as usize);
+        let extra_counts = format_doc_drift_header_counts(self.val);
+        let (pw, _) = self.val.paginate_items(&grouped, 40);
+        let page_attrs = pw.xml_attrs();
+        write!(
+            out,
+            " root=\"{root}\" docs=\"{docs_cnt}\"{extra_counts} drift=\"{count}\"{page_attrs}{at_attr}"
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let grouped = group_doc_drift_items(self.val);
+        let (_, page) = self.val.paginate_items(&grouped, 40);
         for (doc, list) in page {
             let file = escape_xml_str(doc);
             writeln!(out, "  <doc p=\"{file}\" drift=\"{}\">", list.len())?;
@@ -660,7 +788,12 @@ pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result
             writeln!(out, "  </doc>")?;
         }
         Ok(())
-    })
+    }
+}
+
+pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    DocDriftReport { val }.render_envelope(out)
 }
 
 /// Serialize `stray_content` branch divergence to Ripwire XML.
@@ -771,60 +904,67 @@ fn write_connect_node_tag<W: Write>(out: &mut W, tag: &str, node: &Value) -> io:
     writeln!(out, "  <{tag} n=\"{n}\" t=\"{t}\" p=\"{p}:{l}\"{extra}/>")
 }
 
-pub fn serialize_connect_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let symbols = val["symbols"].as_array();
-    let count = symbols.map_or(0, |s| s.len());
-    let root = escape_xml_str(val["root"].as_str().unwrap_or("."));
-    let terminals = val["terminals"].as_array();
-    let steiner = val["steiner"].as_array();
-    let edges = val
-        .get("edges")
-        .or_else(|| val.get("connections"))
-        .and_then(Value::as_array);
-    let t_cnt = terminals.map_or(count, Vec::len);
-    let s_cnt = steiner.map_or(0, Vec::len);
-    let e_cnt = edges.map_or(0, Vec::len);
-    let nodes = t_cnt + s_cnt;
-    let attrs = format!(
-        "schema=\"ripwire.connect/v1\" root=\"{root}\" symbols=\"{count}\" terminals=\"{t_cnt}\" nodes=\"{nodes}\" edges=\"{e_cnt}\" radius=\"6\""
-    );
-    write_xml_envelope(out, "connect", &attrs, |out| {
-        if let Some(terms) = terminals {
+pub struct ConnectReport<'a> {
+    pub val: &'a Value,
+}
+
+impl crate::serialize::XmlReport for ConnectReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "connect"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.connect/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let count = self.val["symbols"].as_array().map_or(0, Vec::len);
+        let root = escape_xml_str(self.val["root"].as_str().unwrap_or("."));
+        let t_cnt = self.val["terminals"].as_array().map_or(count, Vec::len);
+        let s_cnt = self.val["steiner"].as_array().map_or(0, Vec::len);
+        let e_cnt = self
+            .val
+            .array_any(&["edges", "connections"])
+            .map_or(0, Vec::len);
+        let nodes = t_cnt + s_cnt;
+        write!(
+            out,
+            " root=\"{root}\" symbols=\"{count}\" terminals=\"{t_cnt}\" nodes=\"{nodes}\" edges=\"{e_cnt}\" radius=\"6\""
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        if let Some(terms) = self.val["terminals"].as_array() {
             for t in terms {
                 write_connect_node_tag(out, "t", t)?;
             }
         }
-        if let Some(joins) = steiner {
+        if let Some(joins) = self.val["steiner"].as_array() {
             for s in joins {
                 write_connect_node_tag(out, "s", s)?;
             }
         }
-        if let Some(edge_list) = edges {
+        if let Some(edge_list) = self.val.array_any(&["edges", "connections"]) {
             for e in edge_list {
-                writeln!(
-                    out,
-                    "  <e f=\"{}\" t=\"{}\"/>",
-                    e["from"].as_str().unwrap_or("").xml_escaped(),
-                    e["to"].as_str().unwrap_or("").xml_escaped()
-                )?;
+                let f = e["from"].as_str().unwrap_or("").xml_escaped();
+                let t = e["to"].as_str().unwrap_or("").xml_escaped();
+                writeln!(out, "  <e f=\"{f}\" t=\"{t}\"/>")?;
             }
         }
-        if let Some(conn_list) = val
-            .get("connections")
-            .or_else(|| val.get("edges"))
-            .and_then(Value::as_array)
-        {
+        if let Some(conn_list) = self.val.array_any(&["connections", "edges"]) {
             for c in conn_list {
-                writeln!(
-                    out,
-                    "  <edge from=\"{}\" to=\"{}\"/>",
-                    c["from"].as_str().unwrap_or("").xml_escaped(),
-                    c["to"].as_str().unwrap_or("").xml_escaped()
-                )?;
+                let f = c["from"].as_str().unwrap_or("").xml_escaped();
+                let t = c["to"].as_str().unwrap_or("").xml_escaped();
+                writeln!(out, "  <edge from=\"{f}\" to=\"{t}\"/>")?;
             }
         }
         Ok(())
-    })
+    }
+}
+
+pub fn serialize_connect_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    ConnectReport { val }.render_envelope(out)
 }
 
 fn write_path_step<W: Write>(step: &Value, out: &mut W) -> io::Result<()> {
