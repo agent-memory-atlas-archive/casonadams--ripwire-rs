@@ -2,7 +2,6 @@ use ripwire_rs::{Graph, IngestResult, Interner, Lang, LanguageRegistry, ingest_i
 
 #[test]
 fn test_systems_grammars() {
-    // ── 1. C++ FIXTURE: templates, classes, methods, macros, calls ────────────
     let cpp_code = r#"
 #define MAX_BUFFER 4096
 
@@ -25,7 +24,6 @@ int main() {
 }
 "#;
 
-    // ── 2. CUDA FIXTURE: kernel launch <<<...>>> and kernel definitions ───────
     let cuda_code = r#"
 __global__ void vectorAdd(const float* a, const float* b, float* c, int n) {
     int i = blockDim.x * blockIdx.x + threadIdx.x;
@@ -39,7 +37,6 @@ void launch_kernel(float* d_a, float* d_b, float* d_c, int n) {
 }
 "#;
 
-    // ── 3. JAVA FIXTURE: interfaces, classes, hierarchy, methods ─────────────
     let java_code = r#"
 package com.example;
 
@@ -55,7 +52,6 @@ public class Worker implements Service {
 }
 "#;
 
-    // ── 4. C# FIXTURE: namespaces, interfaces, methods, classes ──────────────
     let csharp_code = r#"
 namespace Enterprise.System {
     public interface IRepository {
@@ -71,7 +67,6 @@ namespace Enterprise.System {
 }
 "#;
 
-    // ── 5. SWIFT FIXTURE: protocols, structs, methods, calls ──────────────────
     let swift_code = r#"
 protocol Greeter {
     func greet()
@@ -85,7 +80,6 @@ struct ConsoleGreeter: Greeter {
 }
 "#;
 
-    // ── 6. BASH FIXTURE: function definitions and invocations ────────────────
     let bash_code = r#"
 #!/usr/bin/env bash
 
@@ -100,7 +94,6 @@ setup_paths() {
 init_environment
 "#;
 
-    // In-memory ingestion: 100% zero disk I/O, zero network
     let files: &[(&str, Lang, &[u8])] = &[
         ("engine.cpp", Lang::Cpp, cpp_code.as_bytes()),
         ("kernel.cu", Lang::Cuda, cuda_code.as_bytes()),
@@ -127,32 +120,20 @@ init_environment
         .map(|s| interner.resolve(&s.name).to_string())
         .collect();
 
-    // Assert C++ symbols
     assert!(sym_names.contains(&"Container".to_string()));
     assert!(sym_names.contains(&"add".to_string()));
     assert!(sym_names.contains(&"add_numbers".to_string()));
     assert!(sym_names.contains(&"main".to_string()));
-
-    // Assert CUDA symbols
     assert!(sym_names.contains(&"vectorAdd".to_string()));
     assert!(sym_names.contains(&"launch_kernel".to_string()));
-
-    // Assert Java symbols
     assert!(sym_names.contains(&"Service".to_string()));
     assert!(sym_names.contains(&"Worker".to_string()));
-
-    // Assert C# symbols
     assert!(sym_names.contains(&"IRepository".to_string()));
     assert!(sym_names.contains(&"SqlRepository".to_string()));
-
-    // Assert Swift symbols
     assert!(sym_names.contains(&"ConsoleGreeter".to_string()));
-
-    // Assert Bash symbols
     assert!(sym_names.contains(&"init_environment".to_string()));
     assert!(sym_names.contains(&"setup_paths".to_string()));
 
-    // Verify Graph assembly and Call Resolution across these languages
     let graph = Graph::build(&ingest, &interner);
     assert!(
         graph.edge_count() >= 5,
@@ -160,6 +141,7 @@ init_environment
         graph.edge_count()
     );
 }
+
 #[test]
 fn test_tier1_cloud_and_systems_grammars() {
     let zig_code = r#"
