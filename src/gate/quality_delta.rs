@@ -629,7 +629,7 @@ fn matches_path(path: &str, file: &str) -> bool {
     path == file || path.ends_with(file)
 }
 
-fn symbol_matches_and_changed(
+pub fn symbol_matches_and_changed(
     sym: &crate::domain::Symbol,
     file_path: &str,
     ingest: &IngestResult,
@@ -764,7 +764,7 @@ fn check_body_text_regressions(
     }
 }
 
-fn collect_changed_clone_regressions(
+pub fn collect_changed_clone_regressions(
     clones: Vec<crate::clones::CloneGroup>,
     state: &McpState,
     changed_files: &[String],
@@ -805,7 +805,7 @@ fn collect_changed_clone_regressions(
     }
 }
 
-fn is_changed_callable(
+pub fn is_changed_callable(
     sym: &crate::domain::Symbol,
     file_path: &str,
     changed_files: &[String],
@@ -917,7 +917,7 @@ fn regression_content_id(state: &McpState, r: &QualityRegression) -> Option<u64>
     ))
 }
 
-fn ack_matching_regressions<W: Write>(
+pub fn ack_matching_regressions<W: Write>(
     report: &mut QualityDeltaReport,
     ack_pats: &[&str],
     reason: &str,
@@ -939,7 +939,7 @@ fn ack_matching_regressions<W: Write>(
     Ok(())
 }
 
-fn stale_replay_for(scope: Option<&str>) -> String {
+pub fn stale_replay_for(scope: Option<&str>) -> String {
     match scope {
         Some(s) => format!("--quality-delta --scope={s}"),
         None => "--quality-delta".to_string(),
@@ -973,7 +973,7 @@ pub fn apply_cli_delta_options(
     Ok(())
 }
 
-fn split_ack_patterns(raw: &str) -> Vec<&str> {
+pub fn split_ack_patterns(raw: &str) -> Vec<&str> {
     raw.split(',')
         .map(str::trim)
         .filter(|p| !p.is_empty())
@@ -1059,309 +1059,4 @@ pub fn evaluate_quality_delta_with_basis(
         .count();
 
     Ok(report)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::serialize::ToXmlString;
-
-    #[test]
-    fn test_changed_callable_and_clone_regressions_in_memory() {
-        let interner = crate::domain::Interner::new();
-        let mut ingest = crate::domain::IngestResult::new();
-        ingest.files.push(crate::domain::FileInfo {
-            id: 0,
-            path: interner.intern("src/a.rs"),
-            lang: crate::domain::Lang::Rust,
-            line_count: 20,
-            byte_size: 200,
-        });
-        let sym = crate::domain::Symbol::new(
-            0,
-            interner.intern("dup_fn"),
-            interner.intern("src/a.rs::dup_fn"),
-            crate::domain::SymKind::Function,
-            crate::domain::Lang::Rust,
-            0,
-            5,
-        );
-        ingest.symbols.push(sym);
-        let changed = vec!["src/a.rs".to_string()];
-        assert!(is_changed_callable(&sym, "src/a.rs", &changed));
-        assert!(!is_changed_callable(&sym, "src/b.rs", &changed));
-        let state = McpState::from_ingest(":memory:", ingest, interner);
-        let cg = crate::clones::CloneGroup {
-            members: vec![0],
-            clone_type: crate::clones::CloneType::Type1,
-            token_count: 80,
-            similarity: 1.0,
-            idiom: crate::clones::CloneIdiom::None,
-            tokens_saved: 80,
-        };
-        let mut regs = Vec::new();
-        collect_changed_clone_regressions(vec![cg], &state, &changed, &mut regs);
-        assert_eq!(regs.len(), 1);
-        assert_eq!(regs[0].kind, "duplication");
-        assert_eq!(regs[0].line, 5);
-    }
-
-    #[test]
-    fn test_body_text_kinds_ignore_literals_and_read_comments_for_markers() {
-        use crate::domain::Lang;
-        use crate::metrics::source_mask::mask_source;
-        let kinds = |src: &str, lang: Lang| body_text_kinds(&mask_source(src, lang));
-
-        let quoted = "fn f() { let s = \"TODO: catch {} todo!( std::unique(\"; }";
-        assert!(kinds(quoted, Lang::Rust).is_empty());
-        assert_eq!(
-            kinds("fn f() { // TODO: wire it\n}", Lang::Rust),
-            ["placeholder"]
-        );
-        assert_eq!(kinds("fn f() { todo!() }", Lang::Rust), ["placeholder"]);
-        assert_eq!(
-            kinds(
-                "def f():\n    try:\n        g()\n    except:\n        pass\n",
-                Lang::Python
-            ),
-            ["error-masking"]
-        );
-        assert_eq!(
-            kinds("void f() { try { g(); } catch (...) { } }", Lang::Cpp),
-            ["error-masking"]
-        );
-        assert_eq!(
-            kinds("void f() { std::unique(v.begin(), v.end()); }", Lang::Cpp),
-            ["defect-shape"]
-        );
-        assert!(
-            kinds(
-                "void f() { std::sort(a, b); std::unique(a, b); }",
-                Lang::Cpp
-            )
-            .is_empty()
-        );
-    }
-
-    #[test]
-    fn test_stale_rows_collapse_unless_show_stale() {
-        let snap = QualitySnapshot::default();
-        let mut report = compute_quality_delta_with_acks(&snap, &snap, "git-HEAD", None);
-        let stale = |kind: &str, key: &str| StaleAck {
-            kind: kind.to_string(),
-            key: key.to_string(),
-            why: "finding-gone",
-            sym: key.to_string(),
-            path: "src/a.rs:1".to_string(),
-        };
-        report.stale_acks = vec![
-            stale("complexity", "k1"),
-            stale("dead-code:new-symbol", "k2"),
-            stale("complexity", "k3"),
-        ];
-
-        report.stale_collapse_replay = Some("--quality-delta --scope=src".to_string());
-        let collapsed = report.to_xml_string();
-        assert!(collapsed.contains("stale=\"3\""));
-        assert!(collapsed.contains("stale_by_kind=\"complexity:2,dead-code:1\""));
-        assert!(collapsed.contains("stale_next=\"--quality-delta --scope=src --show-stale\""));
-        assert!(!collapsed.contains("<sa "));
-
-        report.stale_collapse_replay = None;
-        let full = report.to_xml_string();
-        assert_eq!(full.matches("<sa ").count(), 3);
-        assert!(!full.contains(" stale_by_kind=\""));
-    }
-
-    #[test]
-    fn test_ack_only_filter_marks_and_records_matching_rows() {
-        let snap = QualitySnapshot::default();
-        let mut report = compute_quality_delta_with_acks(&snap, &snap, "git-HEAD", None);
-        let row = |kind: &str, sym: &str| QualityRegression {
-            kind: kind.to_string(),
-            sym_name: sym.to_string(),
-            file_path: "src/a.rs".to_string(),
-            line: 3,
-            was_val: 10,
-            now_val: 20,
-            is_gating: true,
-            is_new_symbol: false,
-        };
-        report.regressions = vec![
-            row("complexity", "calc"),
-            row("nesting", "walk"),
-            row("duplication", "calc"),
-        ];
-        let mut ledger = Vec::new();
-        let cid_for = |r: &QualityRegression| (r.kind != "duplication").then_some(0xabcu64);
-        ack_matching_regressions(
-            &mut report,
-            &split_ack_patterns(" complexity ,duplication"),
-            "why",
-            cid_for,
-            &mut ledger,
-        )
-        .unwrap();
-        let text = String::from_utf8(ledger).unwrap();
-        let lines: Vec<&str> = text.lines().collect();
-        assert_eq!(lines.len(), 2);
-        assert!(lines[0].starts_with("ack complexity calc 20 cid=0000000000000abc now=20"));
-        assert!(lines[0].ends_with("p=src/a.rs:3 why"));
-        assert!(lines[1].starts_with("ack duplication calc 20 now=20"));
-        assert!(!text.contains("cid=0000000000000000"));
-        assert_eq!(report.acked_count, 2);
-        assert!(!report.regressions[0].is_gating);
-        assert!(report.regressions[1].is_gating);
-        assert_eq!(stale_replay_for(Some("src")), "--quality-delta --scope=src");
-    }
-
-    #[test]
-    fn test_content_id_survives_reindent_and_self_rename_only() {
-        let base = content_id("fn calc(x: i32) -> i32 {\n    x + 1\n}", "calc");
-        let reindented = content_id("fn calc(x: i32) -> i32 {\n\t\tx + 1\n}", "calc");
-        let renamed = content_id("fn total(x: i32) -> i32 {\n    x + 1\n}", "total");
-        let changed = content_id("fn calc(x: i32) -> i32 {\n    x + 2\n}", "calc");
-        assert_eq!(base, reindented);
-        assert_eq!(base, renamed);
-        assert_ne!(base, changed);
-        assert_ne!(base, 0);
-    }
-
-    #[test]
-    fn test_quality_delta_complexity_regression() {
-        let mut baseline = QualitySnapshot::default();
-        baseline
-            .ccx_by_sym
-            .insert("src/math.rs::calc".to_string(), 10);
-
-        let mut working = QualitySnapshot::default();
-        // Now ccx grew from 10 to 20 (> 15 -> gating regression!)
-        working
-            .ccx_by_sym
-            .insert("src/math.rs::calc".to_string(), 20);
-        working
-            .line_by_sym
-            .insert("src/math.rs::calc".to_string(), 42);
-
-        let report = compute_quality_delta(&working, &baseline, "test-baseline");
-        assert_eq!(report.regressions.len(), 1);
-        assert_eq!(report.gating_count, 1);
-        assert!(report.has_gating_failures());
-
-        let reg = &report.regressions[0];
-        assert_eq!(reg.kind, "complexity");
-        assert_eq!(reg.sym_name, "calc");
-        assert_eq!(reg.was_val, 10);
-        assert_eq!(reg.now_val, 20);
-        assert!(reg.is_gating);
-        assert!(!reg.is_new_symbol);
-        assert_eq!(reg.line, 42);
-
-        let xml = report.to_xml_string();
-        assert!(xml.contains("gating=\"1\""));
-        assert!(xml.contains("<r kind=\"complexity\" sym=\"calc\" p=\"src/math.rs:42\""));
-    }
-    #[test]
-    fn test_quality_delta_nesting_and_params_regressions() {
-        let mut baseline = QualitySnapshot::default();
-        baseline
-            .ccx_by_sym
-            .insert("src/math.rs::deep".to_string(), 5);
-        baseline
-            .nest_by_sym
-            .insert("src/math.rs::deep".to_string(), 2);
-        baseline
-            .params_by_sym
-            .insert("src/math.rs::deep".to_string(), 2);
-
-        let mut working = QualitySnapshot::default();
-        working
-            .ccx_by_sym
-            .insert("src/math.rs::deep".to_string(), 5);
-        working
-            .nest_by_sym
-            .insert("src/math.rs::deep".to_string(), 7); // now > was and > 6 -> gating
-        working
-            .params_by_sym
-            .insert("src/math.rs::deep".to_string(), 6); // now > was and > 5 -> gating
-
-        let report = compute_quality_delta(&working, &baseline, "test-baseline");
-        assert_eq!(report.regressions.len(), 2);
-        assert_eq!(report.gating_count, 2);
-        assert!(report.has_gating_failures());
-
-        let kinds: Vec<&str> = report.regressions.iter().map(|r| r.kind.as_str()).collect();
-        assert!(kinds.contains(&"nesting"));
-        assert!(kinds.contains(&"params"));
-    }
-
-    #[test]
-    fn test_quality_delta_acks_suppression() {
-        let mut baseline = QualitySnapshot::default();
-        baseline
-            .ccx_by_sym
-            .insert("src/math.rs::deep".to_string(), 5);
-        baseline
-            .nest_by_sym
-            .insert("src/math.rs::deep".to_string(), 2);
-
-        let mut working = QualitySnapshot::default();
-        working
-            .ccx_by_sym
-            .insert("src/math.rs::deep".to_string(), 5);
-        working
-            .nest_by_sym
-            .insert("src/math.rs::deep".to_string(), 7);
-
-        let acks_content =
-            "ack nesting 70a00a1f5e885d55 10 p=src/math.rs:1 deliberate deep nesting\n";
-        let acks = parse_acks_content(acks_content);
-
-        let report =
-            compute_quality_delta_with_acks(&working, &baseline, "test-baseline", Some(&acks));
-        assert_eq!(report.regressions.len(), 1);
-        assert_eq!(report.gating_count, 0); // suppressed by ack!
-        assert!(!report.has_gating_failures());
-    }
-    #[test]
-    fn test_symbol_matches_and_changed() {
-        use crate::domain::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
-
-        let mut baseline = QualitySnapshot::default();
-        baseline
-            .ccx_by_sym
-            .insert("src/math.rs::calc".to_string(), 10);
-        baseline
-            .loc_by_sym
-            .insert("src/math.rs::calc".to_string(), 20);
-
-        let interner = Interner::new();
-        let sym_name = interner.intern("calc");
-        let path = interner.intern("src/math.rs");
-        let mut sym = Symbol::new(
-            0,
-            sym_name,
-            interner.intern("src/math.rs::calc"),
-            SymKind::Function,
-            Lang::Rust,
-            0,
-            10,
-        );
-        sym.loc = 30; // changed from 20!
-        sym.ccx = 10;
-        let ingest = IngestResult {
-            files: vec![FileInfo {
-                id: 0,
-                path,
-                lang: Lang::Rust,
-                byte_size: 100,
-                line_count: 100,
-            }],
-            symbols: vec![sym],
-            references: Vec::new(),
-        };
-        let changed =
-            symbol_matches_and_changed(&sym, "src/math.rs", &ingest, &interner, &baseline);
-        assert!(changed.is_some());
-    }
 }

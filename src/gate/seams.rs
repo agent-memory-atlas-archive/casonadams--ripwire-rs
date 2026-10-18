@@ -247,14 +247,3 @@ pub fn serialize_seams_xml<W: Write>(root: &str, rep: &SeamsReport, out: &mut W)
     use crate::serialize::XmlReport;
     rep.write_xml_report(root, out)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_compute_directory() {
-        assert_eq!(compute_directory("src/gate/seams.rs"), "src/gate");
-        assert_eq!(compute_directory("lib.rs"), ".");
-    }
-}
