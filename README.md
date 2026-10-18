@@ -16,7 +16,6 @@ ripwire-rs . --top-k=200
 
 # 2. Navigation: query direct callers, uses, or database table lineage
 ripwire-rs . --callers="Interner::len"
-ripwire-rs . --uses="carrier_sim_swap"   # cross-language embedded SQL table lineage
 # 3. Pre-Commit Gate: name tests to run and check untested blast radius (exit 4 on failure)
 ripwire-rs . --test-gate
 
