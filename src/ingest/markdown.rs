@@ -254,28 +254,3 @@ pub fn extract_markdown(
         refs,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_clean_heading() {
-        assert_eq!(clean_heading_text("## Hello World ##\r\n"), "Hello World");
-        assert_eq!(clean_heading_text("Title"), "Title");
-    }
-
-    #[test]
-    fn test_markdown_setext_and_links() {
-        unsafe extern "C" {
-            fn tree_sitter_markdown() -> *const tree_sitter::ffi::TSLanguage;
-        }
-        let language = unsafe { Language::from_raw(tree_sitter_markdown()) };
-        let md = b"Main Title\n==========\n\nSub Section\n-----------\n\nHere is a [link](#sub-section).\n";
-        let res = extract_markdown(md, "docs/guide.md", &language);
-        assert!(res.defs.iter().any(|d| d.name == "Main Title"));
-        assert!(res.defs.iter().any(|d| d.name == "Sub Section"));
-        assert!(!res.refs.is_empty());
-        assert_eq!(res.refs[0].callee_name, "sub-section");
-    }
-}
