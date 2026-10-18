@@ -1,9 +1,14 @@
 use ripwire_rs::{
-    FileInfo, Graph, IngestResult, Interner, Lang, PageRankResult, RefRole, Reference,
-    SerializeOptions, SymKind, Symbol, escape_xml_str, serialize_connect_xml,
-    serialize_doc_drift_xml, serialize_flags_xml, serialize_for_xml, serialize_grep_xml,
-    serialize_mentions_xml, serialize_owners_xml, serialize_path_between_xml,
-    serialize_stray_content_xml, serialize_whereis_xml, serialize_xml_to_string,
+    CommunityModule, FileInfo, Graph, IngestResult, Interner, Lang, PageRankResult,
+    QualitySnapshot, RefRole, Reference, SerializeOptions, SymKind, Symbol, ToXmlString,
+    TreeFileSymbols, escape_xml_str, serialize_around_xml, serialize_communities_xml,
+    serialize_connect_xml, serialize_dead_code_xml, serialize_deps_xml, serialize_doc_drift_xml,
+    serialize_exemplar_xml, serialize_exercises_xml, serialize_expand_xml,
+    serialize_external_surface_xml, serialize_flags_xml, serialize_for_xml,
+    serialize_from_trace_xml, serialize_grep_xml, serialize_lego_xml, serialize_mentions_xml,
+    serialize_owners_xml, serialize_pack_top_n_xml, serialize_path_between_xml,
+    serialize_recall_xml, serialize_safe_delete_xml, serialize_stray_content_xml,
+    serialize_test_gate_xml, serialize_tree_xml, serialize_whereis_xml, serialize_xml_to_string,
 };
 use serde_json::json;
 
@@ -34,7 +39,6 @@ fn validate_xml_well_formed(raw_xml: &str) {
                 let expected = tag_stack.pop().expect("unexpected closing tag");
                 assert_eq!(closing_tag, expected, "closing tag mismatch");
             } else if tag_content.ends_with('/') {
-                // Self-closing tag like <c n="..."/>
                 assert!(tag_content.starts_with("c "));
             } else {
                 let tag_name = tag_content
@@ -83,7 +87,6 @@ fn test_streaming_xml_serializer() {
     let sym_helper = Symbol::new(1, name_helper, canon, SymKind::Function, Lang::Rust, 0, 20);
     let sym_util = Symbol::new(2, name_util, canon, SymKind::Function, Lang::Rust, 1, 5);
 
-    // main calls helper; helper calls util
     let ref01 = Reference::new(0, name_helper, 0, 11, Lang::Rust, RefRole::Call);
     let ref12 = Reference::new(1, name_util, 0, 21, Lang::Rust, RefRole::Call);
 
@@ -101,7 +104,6 @@ fn test_streaming_xml_serializer() {
         ranks: vec![0.20, 0.35, 0.45],
     };
 
-    // ── 1. XML WELL-FORMEDNESS VALIDATION ────────────────────────────────────
     let options = SerializeOptions {
         root: ".".into(),
         top_k: None,
@@ -112,7 +114,6 @@ fn test_streaming_xml_serializer() {
     let xml = serialize_xml_to_string(&ingest, &graph, &pr, &interner, &options);
     validate_xml_well_formed(&xml);
 
-    // ── 2. ESCAPE VALIDATION ─────────────────────────────────────────────────
     assert!(xml.contains("p=\"src/app &amp; test.rs\""));
     assert!(xml.contains("n=\"compute&lt;T&gt; &amp; log\""));
     assert!(xml.contains("n=\"init &quot;core&quot;\""));
@@ -120,7 +121,6 @@ fn test_streaming_xml_serializer() {
     assert!(!xml.contains("&amp;lt;"));
     assert!(!xml.contains("&amp;gt;"));
 
-    // ── 3. RANK ORDERING & FILE BUCKETING ────────────────────────────────────
     let pos_f1 = xml.find("p=\"src/util.rs\"").unwrap();
     let pos_f0 = xml.find("p=\"src/app &amp; test.rs\"").unwrap();
     assert!(
@@ -135,14 +135,12 @@ fn test_streaming_xml_serializer() {
         "Higher-rank symbol must appear before lower-rank symbol in file"
     );
 
-    // ── 4. CALL EDGES ────────────────────────────────────────────────────────
     assert!(
         xml.contains(
             "<s t=\"fn\" n=\"main\" k=\"0.2000\"><c n=\"compute&lt;T&gt; &amp; log\"/></s>"
         )
     );
 
-    // ── 5. NON-CONVERGENCE ATTRIBUTE ─────────────────────────────────────────
     let pr_unconverged = PageRankResult {
         iterations: 100,
         converged: false,
@@ -152,7 +150,6 @@ fn test_streaming_xml_serializer() {
         serialize_xml_to_string(&ingest, &graph, &pr_unconverged, &interner, &options);
     assert!(xml_unconverged.contains("pr_converged=\"0\""));
 
-    // ── 6. TOP-K FILTERING ───────────────────────────────────────────────────
     let top1_opts = SerializeOptions {
         root: ".".into(),
         top_k: Some(1),
@@ -163,11 +160,11 @@ fn test_streaming_xml_serializer() {
     assert!(xml_top1.contains("p=\"src/util.rs\""));
     assert!(!xml_top1.contains("src/app &amp; test.rs"));
 
-    // ── 7. ZERO-ALLOC ESCAPE TEST ────────────────────────────────────────────
     let clean = "clean_func_name";
     let cow = escape_xml_str(clean);
     assert!(matches!(cow, std::borrow::Cow::Borrowed(_)));
 }
+
 #[test]
 fn test_streaming_xml_layer_test_prov_split_and_shown() {
     let interner = Interner::new();
@@ -305,11 +302,9 @@ fn test_query_xml_retrieval_and_git() {
     serialize_mentions_xml(&val_mentions, &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.mentions/v1\""));
 }
+
 #[test]
 fn test_query_xml_detail_ladder() {
-    use ripwire_rs::{
-        TreeFileSymbols, serialize_expand_xml, serialize_pack_top_n_xml, serialize_tree_xml,
-    };
     let mut buf = Vec::new();
     let interner = Interner::new();
     let sym = Symbol::new(
@@ -342,9 +337,9 @@ fn test_query_xml_detail_ladder() {
     serialize_pack_top_n_xml(".", &[("src/main.rs", "fn run() {}")], &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.pack-top-n/v1\""));
 }
+
 #[test]
 fn test_query_xml_safety_family() {
-    use ripwire_rs::{serialize_exercises_xml, serialize_safe_delete_xml, serialize_test_gate_xml};
     let mut buf = Vec::new();
 
     let tests = [ripwire_rs::gate::affected::AffectedTest {
@@ -363,12 +358,9 @@ fn test_query_xml_safety_family() {
     serialize_exercises_xml(".", "tests/foo.rs", &[("src/lib.rs", "target")], &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.exercises/v1\""));
 }
+
 #[test]
 fn test_query_xml_architecture_family() {
-    use ripwire_rs::{
-        CommunityModule, serialize_around_xml, serialize_communities_xml, serialize_dead_code_xml,
-        serialize_deps_xml, serialize_external_surface_xml,
-    };
     let mut buf = Vec::new();
 
     serialize_dead_code_xml(".", &[("unused", "fn", "src/lib.rs", 10)], &mut buf).unwrap();
@@ -441,11 +433,9 @@ fn test_query_xml_architecture_family() {
     assert!(deps_xml.contains("<cycle size=\"2\" cost=\"4\""));
     assert!(deps_xml.contains("<inc t=\"./b.rs\"/>"));
 }
+
 #[test]
 fn test_query_xml_task_retrieval_family() {
-    use ripwire_rs::{
-        serialize_exemplar_xml, serialize_from_trace_xml, serialize_lego_xml, serialize_recall_xml,
-    };
     let mut buf = Vec::new();
 
     let val_ex = json!({
@@ -568,10 +558,9 @@ fn test_page_window_and_xml_report_trait() {
     assert!(xml.contains("<item n=\"b\"/>"));
     assert!(!xml.contains("<item n=\"c\"/>"));
 
-    use ripwire_rs::serialize::ToXmlString;
-    let ingest = ripwire_rs::domain::IngestResult::new();
-    let interner = ripwire_rs::domain::Interner::new();
-    let graph = ripwire_rs::graph::Graph::build(&ingest, &interner);
+    let ingest = IngestResult::new();
+    let interner = Interner::new();
+    let graph = Graph::build(&ingest, &interner);
     let qp = ripwire_rs::metrics::compute_quality_panel_report(&ingest, &graph, &interner, None);
     assert!(qp.to_xml_string().contains("ripwire.quality-panel/v1"));
     let cr = ripwire_rs::metrics::compute_context_ratio(&ingest, &graph, &interner);
@@ -587,7 +576,7 @@ fn test_page_window_and_xml_report_trait() {
     let pr_ctx =
         ripwire_rs::gate::pr_context::compute_pr_context(&[], &ingest, &graph, &interner, "HEAD");
     assert!(pr_ctx.to_xml_string().contains("ripwire.pr-context/v1"));
-    let snap = ripwire_rs::gate::QualitySnapshot::default();
+    let snap = QualitySnapshot::default();
     let dmm = ripwire_rs::metrics::compute_dmm_report(&snap, &snap, "worktree", "HEAD");
     assert!(dmm.to_xml_string().contains("ripwire.dmm/v1"));
 }
