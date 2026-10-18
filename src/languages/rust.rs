@@ -9,6 +9,143 @@ use std::path::Path;
 pub struct RustLanguage;
 pub static RUST_LANG: RustLanguage = RustLanguage;
 
+const RUST_BUILTIN_MACROS: &[&str] = &[
+    "matches",
+    "write",
+    "writeln",
+    "print",
+    "println",
+    "eprint",
+    "eprintln",
+    "format",
+    "format_args",
+    "vec",
+    "panic",
+    "assert",
+    "assert_eq",
+    "assert_ne",
+    "debug_assert",
+    "debug_assert_eq",
+    "debug_assert_ne",
+    "todo",
+    "unimplemented",
+    "unreachable",
+    "cfg",
+    "env",
+    "option_env",
+    "include",
+    "include_str",
+    "include_bytes",
+    "concat",
+    "stringify",
+    "line",
+    "column",
+    "file",
+    "module_path",
+    "compile_error",
+    "thread_local",
+];
+
+const RUST_STD_MEMBERS: &[&str] = &[
+    "len",
+    "is_empty",
+    "push",
+    "push_str",
+    "pop",
+    "clear",
+    "get",
+    "get_mut",
+    "insert",
+    "remove",
+    "contains",
+    "contains_key",
+    "iter",
+    "iter_mut",
+    "into_iter",
+    "as_slice",
+    "as_mut_slice",
+    "as_str",
+    "as_bytes",
+    "as_ref",
+    "as_mut",
+    "as_deref",
+    "as_deref_mut",
+    "clone",
+    "to_string",
+    "to_owned",
+    "to_vec",
+    "unwrap",
+    "unwrap_or",
+    "unwrap_or_default",
+    "unwrap_or_else",
+    "expect",
+    "ok",
+    "err",
+    "map",
+    "and_then",
+    "or_else",
+    "filter",
+    "collect",
+    "extend",
+    "reserve",
+    "with_capacity",
+    "default",
+    "from",
+    "into",
+    "fmt",
+    "eq",
+    "cmp",
+    "partial_cmp",
+    "hash",
+    "index",
+    "deref",
+    "next",
+];
+
+const RUST_STD_QUALIFIERS: &[&str] = &[
+    "std",
+    "core",
+    "alloc",
+    "Vec",
+    "String",
+    "Option",
+    "Result",
+    "Box",
+    "Arc",
+    "Rc",
+    "Mutex",
+    "RwLock",
+    "HashMap",
+    "HashSet",
+    "BTreeMap",
+    "BTreeSet",
+    "VecDeque",
+    "Path",
+    "PathBuf",
+    "OsStr",
+    "OsString",
+    "CStr",
+    "CString",
+    "File",
+    "Command",
+    "Instant",
+    "Duration",
+    "SystemTime",
+    "env",
+    "fs",
+    "io",
+    "mem",
+    "ptr",
+    "slice",
+    "str",
+    "fmt",
+    "iter",
+    "cmp",
+    "ops",
+    "sync",
+    "thread",
+];
+
 impl LanguageSemantics for RustLanguage {
     fn tag(&self) -> &'static str {
         "rs"
@@ -30,15 +167,15 @@ impl LanguageSemantics for RustLanguage {
         let is_macro_inv = name_node
             .and_then(|n| n.parent())
             .is_some_and(|p| p.kind() == "macro_invocation");
-        is_macro_inv && is_rust_builtin_macro_name(name)
+        is_macro_inv && RUST_BUILTIN_MACROS.contains(&name)
     }
 
-    fn is_std_or_builtin_member(&self, name: &str) -> bool {
-        is_rust_std_member_name(name)
+    fn std_member_names(&self) -> &'static [&'static str] {
+        RUST_STD_MEMBERS
     }
 
-    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
-        is_rust_std_qualifier_name(qualifier)
+    fn std_qualifier_names(&self) -> &'static [&'static str] {
+        RUST_STD_QUALIFIERS
     }
 
     fn resolve_import_target(
@@ -49,152 +186,6 @@ impl LanguageSemantics for RustLanguage {
     ) -> Option<u32> {
         resolve_rust_use_target(importer_path, raw_target, file_index)
     }
-}
-
-fn is_rust_builtin_macro_name(name: &str) -> bool {
-    matches!(
-        name,
-        "matches"
-            | "write"
-            | "writeln"
-            | "print"
-            | "println"
-            | "eprint"
-            | "eprintln"
-            | "format"
-            | "format_args"
-            | "vec"
-            | "panic"
-            | "assert"
-            | "assert_eq"
-            | "assert_ne"
-            | "debug_assert"
-            | "debug_assert_eq"
-            | "debug_assert_ne"
-            | "todo"
-            | "unimplemented"
-            | "unreachable"
-            | "cfg"
-            | "env"
-            | "option_env"
-            | "include"
-            | "include_str"
-            | "include_bytes"
-            | "concat"
-            | "stringify"
-            | "line"
-            | "column"
-            | "file"
-            | "module_path"
-            | "compile_error"
-            | "thread_local"
-    )
-}
-
-fn is_rust_std_member_name(name: &str) -> bool {
-    matches!(
-        name,
-        "len"
-            | "is_empty"
-            | "push"
-            | "push_str"
-            | "pop"
-            | "clear"
-            | "get"
-            | "get_mut"
-            | "insert"
-            | "remove"
-            | "contains"
-            | "contains_key"
-            | "iter"
-            | "iter_mut"
-            | "into_iter"
-            | "as_slice"
-            | "as_mut_slice"
-            | "as_str"
-            | "as_bytes"
-            | "as_ref"
-            | "as_mut"
-            | "as_deref"
-            | "as_deref_mut"
-            | "clone"
-            | "to_string"
-            | "to_owned"
-            | "to_vec"
-            | "unwrap"
-            | "unwrap_or"
-            | "unwrap_or_default"
-            | "unwrap_or_else"
-            | "expect"
-            | "ok"
-            | "err"
-            | "map"
-            | "and_then"
-            | "or_else"
-            | "filter"
-            | "collect"
-            | "extend"
-            | "reserve"
-            | "with_capacity"
-            | "default"
-            | "from"
-            | "into"
-            | "fmt"
-            | "eq"
-            | "cmp"
-            | "partial_cmp"
-            | "hash"
-            | "index"
-            | "deref"
-            | "next"
-    )
-}
-
-fn is_rust_std_qualifier_name(name: &str) -> bool {
-    matches!(
-        name,
-        "std"
-            | "core"
-            | "alloc"
-            | "Vec"
-            | "String"
-            | "Option"
-            | "Result"
-            | "Box"
-            | "Arc"
-            | "Rc"
-            | "Mutex"
-            | "RwLock"
-            | "HashMap"
-            | "HashSet"
-            | "BTreeMap"
-            | "BTreeSet"
-            | "VecDeque"
-            | "Path"
-            | "PathBuf"
-            | "OsStr"
-            | "OsString"
-            | "CStr"
-            | "CString"
-            | "File"
-            | "Command"
-            | "Instant"
-            | "Duration"
-            | "SystemTime"
-            | "env"
-            | "fs"
-            | "io"
-            | "mem"
-            | "ptr"
-            | "slice"
-            | "str"
-            | "fmt"
-            | "iter"
-            | "cmp"
-            | "ops"
-            | "sync"
-            | "thread"
-    )
 }
 
 fn find_rust_crate_src_dir(importer_path: &str) -> &str {

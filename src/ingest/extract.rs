@@ -103,21 +103,34 @@ fn extract_impl_scope(parent: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Opt
     }
 }
 
+fn distinct_scope_tail(
+    cand: tree_sitter::Node<'_>,
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+    sep: &str,
+) -> Option<String> {
+    if cand == name_node {
+        return None;
+    }
+    let text = cand.utf8_text(source_bytes).ok()?.trim();
+    let tail = if sep.is_empty() {
+        text
+    } else {
+        text.rsplit(sep).next().unwrap_or(text)
+    };
+    let clean = tail.split('<').next().unwrap_or(tail).trim();
+    (!clean.is_empty()).then(|| clean.to_string())
+}
+
 pub fn find_positional_type_ident(
     parent: tree_sitter::Node<'_>,
     name_node: tree_sitter::Node<'_>,
     source_bytes: &[u8],
 ) -> Option<String> {
-    for i in 0..parent.named_child_count() {
-        let child = parent.named_child(i)?;
-        if child.kind() == "type_identifier" && child != name_node {
-            let text = child.utf8_text(source_bytes).ok()?.trim();
-            if !text.is_empty() {
-                return Some(text.to_string());
-            }
-        }
-    }
-    None
+    let first = (0..parent.named_child_count())
+        .filter_map(|i| parent.named_child(i))
+        .find(|c| matches!(c.kind(), "type_identifier" | "identifier"))?;
+    distinct_scope_tail(first, name_node, source_bytes, "")
 }
 
 fn extract_named_container_scope(
@@ -126,15 +139,7 @@ fn extract_named_container_scope(
     source_bytes: &[u8],
 ) -> Option<String> {
     if let Some(name_child) = parent.child_by_field_name("name") {
-        if name_child == name_node {
-            return None;
-        }
-        let text = name_child.utf8_text(source_bytes).ok()?.trim();
-        return if text.is_empty() {
-            None
-        } else {
-            Some(text.to_string())
-        };
+        return distinct_scope_tail(name_child, name_node, source_bytes, "::");
     }
     find_positional_type_ident(parent, name_node, source_bytes)
 }
@@ -145,13 +150,7 @@ fn extract_qualified_scope(
     source_bytes: &[u8],
 ) -> Option<String> {
     let scope_node = parent.child_by_field_name("scope")?;
-    if scope_node == name_node {
-        return None;
-    }
-    let text = scope_node.utf8_text(source_bytes).ok()?.trim();
-    let last = text.rsplit("::").next().unwrap_or(text);
-    let base = last.split('<').next().unwrap_or(last).trim();
-    (!base.is_empty()).then(|| base.to_string())
+    distinct_scope_tail(scope_node, name_node, source_bytes, "::")
 }
 
 fn extract_go_receiver_scope(parent: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
@@ -168,6 +167,70 @@ fn extract_go_receiver_scope(parent: tree_sitter::Node<'_>, source_bytes: &[u8])
     (!base.is_empty()).then(|| base.to_string())
 }
 
+fn extract_elixir_module_scope(
+    parent: tree_sitter::Node<'_>,
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+) -> Option<String> {
+    let target = parent
+        .child_by_field_name("target")?
+        .utf8_text(source_bytes)
+        .ok()?;
+    if !matches!(target, "defmodule" | "defprotocol") {
+        return None;
+    }
+    distinct_scope_tail(elixir_first_arg(parent)?, name_node, source_bytes, ".")
+}
+
+fn extract_lua_table_scope(
+    parent: tree_sitter::Node<'_>,
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+) -> Option<String> {
+    let gp_kind = parent.parent()?.kind();
+    if !matches!(gp_kind, "function_declaration" | "variable_list") {
+        return None;
+    }
+    distinct_scope_tail(
+        parent.child_by_field_name("table")?,
+        name_node,
+        source_bytes,
+        "",
+    )
+}
+
+fn is_named_container_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "mod_item"
+            | "trait_item"
+            | "trait_definition"
+            | "trait_declaration"
+            | "class"
+            | "class_declaration"
+            | "abstract_class_declaration"
+            | "class_definition"
+            | "class_specifier"
+            | "class_interface"
+            | "class_implementation"
+            | "struct_specifier"
+            | "struct_declaration"
+            | "record_declaration"
+            | "enum_declaration"
+            | "interface_declaration"
+            | "protocol_declaration"
+            | "contract_declaration"
+            | "library_declaration"
+            | "namespace_definition"
+            | "module"
+            | "object_declaration"
+            | "object_definition"
+            | "companion_object"
+            | "mixin_declaration"
+            | "extension_declaration"
+    )
+}
+
 fn extract_node_scope(
     parent: tree_sitter::Node<'_>,
     name_node: tree_sitter::Node<'_>,
@@ -177,22 +240,13 @@ fn extract_node_scope(
         "impl_item" => extract_impl_scope(parent, source_bytes),
         "method_declaration" => extract_go_receiver_scope(parent, source_bytes),
         "qualified_identifier" => extract_qualified_scope(parent, name_node, source_bytes),
-        "mod_item"
-        | "trait_item"
-        | "trait_definition"
-        | "class_declaration"
-        | "abstract_class_declaration"
-        | "interface_declaration"
-        | "contract_declaration"
-        | "library_declaration"
-        | "class_definition"
-        | "class_specifier"
-        | "struct_specifier"
-        | "namespace_definition"
-        | "module"
-        | "object_declaration"
-        | "object_definition"
-        | "companion_object" => extract_named_container_scope(parent, name_node, source_bytes),
+        "call" => extract_elixir_module_scope(parent, name_node, source_bytes),
+        "dot_index_expression" | "method_index_expression" => {
+            extract_lua_table_scope(parent, name_node, source_bytes)
+        }
+        k if is_named_container_kind(k) => {
+            extract_named_container_scope(parent, name_node, source_bytes)
+        }
         _ => None,
     }
 }
@@ -213,11 +267,14 @@ fn is_member_receiver_parent(kind: &str) -> bool {
         kind,
         "field_expression"
             | "member_expression"
+            | "member_access_expression"
             | "attribute"
             | "navigation_expression"
+            | "navigation_suffix"
             | "method_invocation"
             | "selector_expression"
             | "call"
+            | "dot"
             | "dot_index_expression"
             | "method_index_expression"
             | "unconditional_assignable_selector"
@@ -226,20 +283,32 @@ fn is_member_receiver_parent(kind: &str) -> bool {
     )
 }
 
-fn find_member_receiver_node(parent: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
-    if matches!(
-        parent.kind(),
-        "unconditional_assignable_selector" | "conditional_assignable_selector"
-    ) {
-        return parent.parent().and_then(|sel| sel.prev_named_sibling());
-    }
-    if parent.kind() == "remote" {
-        return parent
+fn find_parent_sibling_receiver(parent: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    match parent.kind() {
+        "unconditional_assignable_selector" | "conditional_assignable_selector" => {
+            parent.parent().and_then(|sel| sel.prev_named_sibling())
+        }
+        "navigation_suffix" => parent.parent().and_then(|nav| nav.named_child(0)),
+        "remote" => parent
             .child_by_field_name("module")
-            .and_then(|m| m.child_by_field_name("module"));
+            .and_then(|m| m.child_by_field_name("module")),
+        _ => None,
+    }
+}
+
+fn find_member_receiver_node(parent: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    if let Some(node) = find_parent_sibling_receiver(parent) {
+        return Some(node);
     }
     for field in [
-        "argument", "object", "value", "operand", "receiver", "table",
+        "argument",
+        "object",
+        "value",
+        "operand",
+        "receiver",
+        "table",
+        "left",
+        "expression",
     ] {
         if let Some(n) = parent.child_by_field_name(field) {
             return Some(n);
@@ -555,6 +624,13 @@ fn is_body_block_kind(kind: &str) -> bool {
             | "field_declaration_list"
             | "class_body"
             | "enum_class_body"
+            | "do_block"
+            | "body_statement"
+            | "clause_body"
+            | "template_body"
+            | "indented_block"
+            | "implementation_definition"
+            | "protocol_body"
     )
 }
 
@@ -571,10 +647,15 @@ fn is_callable_wrapper_kind(kind: &str) -> bool {
             | "arrow_function"
             | "function_expression"
             | "function"
+            | "function_definition"
             | "generator_function"
             | "as_expression"
             | "satisfies_expression"
             | "parenthesized_expression"
+            | "assignment_statement"
+            | "expression_list"
+            | "table_constructor"
+            | "field"
     )
 }
 
@@ -699,8 +780,14 @@ fn record_ref_item(
         .map(count_call_arguments)
         .unwrap_or((0, false));
 
+    let callee_name = if role == RefRole::Call {
+        lang.semantics()
+            .format_callee_name(name, arg_count, arg_count_known)
+    } else {
+        name.to_string()
+    };
     refs.push(RawRef {
-        callee_name: name.to_string(),
+        callee_name,
         qualifier,
         line,
         start_byte: start,

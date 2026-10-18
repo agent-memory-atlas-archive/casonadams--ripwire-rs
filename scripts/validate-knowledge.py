@@ -52,26 +52,46 @@ def discover_seeds(rw_bin, repo):
     return sym1, sym2
 
 
-def verify_computed_check(name, out_rs, out_cpp):
-    if name == "report":
-        if "## Cross-module bridges" not in out_rs or "## God files" not in out_rs:
-            return "report missing bridges or god files section"
-        return None
-    r_rs = parse_root(out_rs)
-    if r_rs is None:
-        return "invalid XML output from ripwire-rs"
+def verify_warm_map_graph(r_rs):
+    if not r_rs.findall("f") or not r_rs.findall(".//s") or not r_rs.findall(".//c"):
+        return "warm-map graph missing <f>, <s>, or <c> elements"
+    return None
+
+
+def verify_deps_graph(r_rs):
+    health = r_rs.find("health")
+    if health is None or float(health.attrib.get("ccd", "0")) <= 0:
+        return "deps <health> missing or ccd <= 0"
+    return None
+
+
+def verify_lens_xml_invariants(name, r_rs):
+    if name == "warm-map":
+        return verify_warm_map_graph(r_rs)
+    if name == "deps":
+        return verify_deps_graph(r_rs)
     if name == "comment-coherence":
         fns = r_rs.findall("fn")
-        if len(fns) > 2 and len({f.attrib.get("words") for f in fns}) == 1:
-            return "comment-coherence <fn> words= is hardcoded"
-    elif name == "context-ratio":
+        return "comment-coherence <fn> words= is hardcoded" if len(fns) > 2 and len({f.attrib.get("words") for f in fns}) == 1 else None
+    if name == "context-ratio":
         syms = r_rs.findall("s")
-        if len(syms) > 2 and len({s.attrib.get("rtok") for s in syms}) == 1:
-            return "context-ratio <s> rtok= is hardcoded"
-    elif name == "handoff" and r_rs.attrib.get("subject") == "head":
+        return "context-ratio <s> rtok= is hardcoded" if len(syms) > 2 and len({s.attrib.get("rtok") for s in syms}) == 1 else None
+    if name == "handoff" and r_rs.attrib.get("subject") == "head":
         return "handoff subject= is hardcoded to 'head'"
     return None
 
+
+def verify_computed_check(name, out_rs, out_cpp):
+    if name == "report":
+        ok = "## Cross-module bridges" in out_rs and "## God files" in out_rs
+        return None if ok else "report missing bridges or god files section"
+    r_rs = parse_root(out_rs)
+    if r_rs is None:
+        return "invalid XML output from ripwire-rs"
+    schema = r_rs.attrib.get("schema", "")
+    if schema and not schema.startswith("ripwire-rs."):
+        return f"expected ripwire-rs. schema prefix, got {schema}"
+    return verify_lens_xml_invariants(name, r_rs)
 
 def evaluate_repo(rw_bin, rip_bin, repo):
     sym1, sym2 = discover_seeds(rw_bin, repo)

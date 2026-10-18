@@ -1,10 +1,39 @@
-pub mod c_family;
-pub mod data_and_markup;
-pub mod functional_and_systems;
-pub mod jvm;
+pub mod bash;
+pub mod c;
+pub mod cpp;
+pub mod csharp;
+pub mod css;
+pub mod cuda;
+pub mod dart;
+pub mod dockerfile;
+pub mod elixir;
+pub mod erlang;
+pub mod gdscript;
+pub mod go;
+pub mod graphql;
+pub mod hcl;
+pub mod html;
+pub mod java;
+pub mod javascript;
+pub mod json;
+pub mod kotlin;
+pub mod lua;
+pub mod markdown;
+pub mod metal;
+pub mod objc;
+pub mod php;
+pub mod proto;
+pub mod python;
+pub mod ruby;
 pub mod rust;
-pub mod scripting;
-pub mod web;
+pub mod scala;
+pub mod solidity;
+pub mod sql;
+pub mod swift;
+pub mod toml;
+pub mod typescript;
+pub mod yaml;
+pub mod zig;
 
 use crate::domain::{Lang, SymKind};
 use crate::ingest::FileParseResult;
@@ -162,6 +191,11 @@ pub trait LanguageSemantics: Sync {
         (params, orig_name.to_string())
     }
 
+    /// Format a call reference's target name (e.g., Elixir `name/arity`).
+    fn format_callee_name(&self, name: &str, _arg_count: u16, _arg_count_known: bool) -> String {
+        name.to_string()
+    }
+
     /// True if a captured identifier is a language keyword or cast operator that must not be indexed.
     fn is_builtin_keyword(&self, _name: &str) -> bool {
         false
@@ -172,14 +206,24 @@ pub trait LanguageSemantics: Sync {
         self.is_builtin_keyword(name)
     }
 
+    /// Standard library / builtin member names declined on untyped receivers.
+    fn std_member_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Standard library / runtime namespace qualifiers classified as `External`.
+    fn std_qualifier_names(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// True if a method name belongs to the language's standard container/string/builtin types (declined on untyped receivers).
-    fn is_std_or_builtin_member(&self, _name: &str) -> bool {
-        false
+    fn is_std_or_builtin_member(&self, name: &str) -> bool {
+        self.std_member_names().contains(&name)
     }
 
     /// True if an explicit call qualifier names a standard library or builtin runtime namespace/type.
-    fn is_std_or_builtin_qualifier(&self, _qualifier: &str) -> bool {
-        false
+    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
+        self.std_qualifier_names().contains(&qualifier)
     }
 
     /// Optional byte-preserving macro-blanking pass invoked only when the primary tree-sitter parse contains syntax errors.
@@ -222,44 +266,65 @@ pub trait LanguageSemantics: Sync {
     }
 }
 
+pub struct UnknownLanguage;
+pub static UNKNOWN_LANG: UnknownLanguage = UnknownLanguage;
+
+impl LanguageSemantics for UnknownLanguage {
+    fn tag(&self) -> &'static str {
+        "?"
+    }
+
+    fn dialect_group(&self) -> DialectGroup {
+        DialectGroup::Isolated(Lang::Unknown)
+    }
+
+    fn is_dependency_capable(&self) -> bool {
+        false
+    }
+
+    fn supports_slice(&self) -> bool {
+        false
+    }
+}
+
 static SEMANTICS_TABLE: [&dyn LanguageSemantics; 37] = [
     &rust::RUST_LANG,
-    &web::TYPESCRIPT_LANG,
-    &web::JAVASCRIPT_LANG,
-    &scripting::PYTHON_LANG,
-    &functional_and_systems::GO_LANG,
-    &c_family::C_LANG,
-    &c_family::CPP_LANG,
-    &c_family::CUDA_LANG,
-    &c_family::METAL_LANG,
-    &jvm::JAVA_LANG,
-    &jvm::CSHARP_LANG,
-    &jvm::SWIFT_LANG,
-    &scripting::BASH_LANG,
-    &scripting::RUBY_LANG,
-    &jvm::PHP_LANG,
-    &scripting::LUA_LANG,
-    &functional_and_systems::ELIXIR_LANG,
-    &functional_and_systems::DART_LANG,
-    &jvm::KOTLIN_LANG,
-    &scripting::GDSCRIPT_LANG,
-    &data_and_markup::JSON_LANG,
-    &data_and_markup::TOML_LANG,
-    &data_and_markup::YAML_LANG,
-    &data_and_markup::MARKDOWN_LANG,
-    &functional_and_systems::ZIG_LANG,
-    &functional_and_systems::SOLIDITY_LANG,
-    &data_and_markup::HCL_LANG,
-    &jvm::SCALA_LANG,
-    &functional_and_systems::ERLANG_LANG,
-    &web::HTML_LANG,
-    &web::CSS_LANG,
-    &data_and_markup::SQL_LANG,
-    &data_and_markup::PROTO_LANG,
-    &data_and_markup::GRAPHQL_LANG,
-    &data_and_markup::DOCKERFILE_LANG,
-    &c_family::OBJC_LANG,
-    &data_and_markup::UNKNOWN_LANG,
+    &typescript::TYPESCRIPT_LANG,
+    &javascript::JAVASCRIPT_LANG,
+    &python::PYTHON_LANG,
+    &go::GO_LANG,
+    &c::C_LANG,
+    &cpp::CPP_LANG,
+    &cuda::CUDA_LANG,
+    &metal::METAL_LANG,
+    &java::JAVA_LANG,
+    &csharp::CSHARP_LANG,
+    &swift::SWIFT_LANG,
+    &bash::BASH_LANG,
+    &ruby::RUBY_LANG,
+    &php::PHP_LANG,
+    &lua::LUA_LANG,
+    &elixir::ELIXIR_LANG,
+    &dart::DART_LANG,
+    &kotlin::KOTLIN_LANG,
+    &gdscript::GDSCRIPT_LANG,
+    &json::JSON_LANG,
+    &toml::TOML_LANG,
+    &yaml::YAML_LANG,
+    &markdown::MARKDOWN_LANG,
+    &zig::ZIG_LANG,
+    &solidity::SOLIDITY_LANG,
+    &hcl::HCL_LANG,
+    &scala::SCALA_LANG,
+    &erlang::ERLANG_LANG,
+    &html::HTML_LANG,
+    &css::CSS_LANG,
+    &sql::SQL_LANG,
+    &proto::PROTO_LANG,
+    &graphql::GRAPHQL_LANG,
+    &dockerfile::DOCKERFILE_LANG,
+    &objc::OBJC_LANG,
+    &UNKNOWN_LANG,
 ];
 
 impl Lang {

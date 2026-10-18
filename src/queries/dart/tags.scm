@@ -85,9 +85,8 @@
 (mixins
   (type_identifier) @name) @reference.implementation
 
-(import_specification
-  (uri
-    (string_literal) @name)) @reference.import
+(uri
+  (string_literal) @name) @reference.import
 
 ; ── stated floors ─────────────────────────────────────────────────────────────────────
 ; * Named constructors and factories index under the CLASS name, not `Class.name`: `C()`,

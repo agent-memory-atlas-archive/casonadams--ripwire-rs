@@ -6,46 +6,22 @@ use crate::domain::SymKind;
 use std::collections::HashMap;
 
 pub struct CLanguage;
-pub struct CppLanguage;
-pub struct CudaLanguage;
-pub struct MetalLanguage;
-pub struct ObjCLanguage;
-
 pub static C_LANG: CLanguage = CLanguage;
-pub static CPP_LANG: CppLanguage = CppLanguage;
-pub static CUDA_LANG: CudaLanguage = CudaLanguage;
-pub static METAL_LANG: MetalLanguage = MetalLanguage;
-pub static OBJC_LANG: ObjCLanguage = ObjCLanguage;
 
-fn resolve_c_family_include(
-    importer_path: &str,
-    raw_target: &str,
-    file_index: &HashMap<&str, u32>,
-) -> Option<u32> {
-    let trimmed = raw_target.trim();
-    if trimmed.starts_with('<') {
-        return None;
-    }
-    let clean = strip_import_quotes(trimmed);
-    resolve_relative_or_exact(importer_path, clean, file_index, &[".h", ".hpp", ".hh"])
-}
-fn is_c_family_keyword(name: &str) -> bool {
-    matches!(
-        name,
-        "static_cast"
-            | "dynamic_cast"
-            | "const_cast"
-            | "reinterpret_cast"
-            | "sizeof"
-            | "alignof"
-            | "decltype"
-            | "typeid"
-            | "static_assert"
-            | "noexcept"
-    )
-}
+pub(super) const C_FAMILY_KEYWORDS: &[&str] = &[
+    "static_cast",
+    "dynamic_cast",
+    "const_cast",
+    "reinterpret_cast",
+    "sizeof",
+    "alignof",
+    "decltype",
+    "typeid",
+    "static_assert",
+    "noexcept",
+];
 
-const CPP_STD_MEMBER_NAMES: &[&str] = &[
+pub(super) const CPP_STD_MEMBERS: &[&str] = &[
     "append",
     "append_range",
     "assign",
@@ -128,84 +104,37 @@ const CPP_STD_MEMBER_NAMES: &[&str] = &[
     "value_or",
 ];
 
-fn is_cpp_std_member(name: &str) -> bool {
-    CPP_STD_MEMBER_NAMES.binary_search(&name).is_ok()
-}
+pub(super) const CPP_STD_QUALIFIERS: &[&str] = &[
+    "std",
+    "boost",
+    "chrono",
+    "filesystem",
+    "fs",
+    "ranges",
+    "views",
+    "this_thread",
+    "metal",
+];
 
-fn is_cpp_std_qualifier(name: &str) -> bool {
-    matches!(
-        name,
-        "std"
-            | "boost"
-            | "chrono"
-            | "filesystem"
-            | "fs"
-            | "ranges"
-            | "views"
-            | "this_thread"
-            | "metal"
-    )
-}
+const TEST_BLOCK_MACRO_NAMES: &[&str] = &[
+    "TEST_CASE",
+    "TEST_CASE_FIXTURE",
+    "TEST_CASE_METHOD",
+    "SCENARIO",
+    "TEST_SUITE",
+];
 
-fn is_objc_foundation_member(name: &str) -> bool {
-    is_cpp_std_member(name)
-        || matches!(
-            name,
-            "alloc"
-                | "init"
-                | "new"
-                | "copy"
-                | "mutableCopy"
-                | "description"
-                | "hash"
-                | "isEqual"
-                | "count"
-                | "objectForKey"
-                | "setObject"
-                | "addObject"
-                | "removeObject"
-                | "removeAllObjects"
-                | "containsObject"
-                | "firstObject"
-                | "lastObject"
-                | "stringWithFormat"
-                | "UTF8String"
-                | "length"
-                | "boolValue"
-                | "intValue"
-                | "integerValue"
-                | "doubleValue"
-        )
-}
-
-fn is_objc_foundation_qualifier(name: &str) -> bool {
-    is_cpp_std_qualifier(name)
-        || matches!(
-            name,
-            "NSObject"
-                | "NSString"
-                | "NSMutableString"
-                | "NSArray"
-                | "NSMutableArray"
-                | "NSDictionary"
-                | "NSMutableDictionary"
-                | "NSSet"
-                | "NSMutableSet"
-                | "NSNumber"
-                | "NSData"
-                | "NSMutableData"
-                | "NSURL"
-                | "NSURLRequest"
-                | "NSURLSession"
-                | "NSFileManager"
-                | "NSBundle"
-                | "NSThread"
-                | "NSNotificationCenter"
-                | "NSUserDefaults"
-                | "NSDate"
-                | "NSError"
-                | "NSJSONSerialization"
-        )
+pub(super) fn resolve_c_family_include(
+    importer_path: &str,
+    raw_target: &str,
+    file_index: &HashMap<&str, u32>,
+) -> Option<u32> {
+    let trimmed = raw_target.trim();
+    if trimmed.starts_with('<') {
+        return None;
+    }
+    let clean = strip_import_quotes(trimmed);
+    resolve_relative_or_exact(importer_path, clean, file_index, &[".h", ".hpp", ".hh"])
 }
 
 fn strip_cpp_attribute_prefix(slice: &[u8]) -> &[u8] {
@@ -262,7 +191,7 @@ fn is_semicolonless_macro_line(line: &[u8]) -> Option<(usize, usize)> {
     is_screaming_snake(macro_name).then_some((start, trimmed_end))
 }
 
-fn blank_c_family_macro_lines(source_bytes: &[u8]) -> Option<Vec<u8>> {
+pub(super) fn blank_c_family_macro_lines(source_bytes: &[u8]) -> Option<Vec<u8>> {
     let mut out = source_bytes.to_vec();
     let mut changed = false;
     let mut offset = 0usize;
@@ -275,14 +204,6 @@ fn blank_c_family_macro_lines(source_bytes: &[u8]) -> Option<Vec<u8>> {
     }
     changed.then_some(out)
 }
-
-const TEST_BLOCK_MACRO_NAMES: &[&str] = &[
-    "TEST_CASE",
-    "TEST_CASE_FIXTURE",
-    "TEST_CASE_METHOD",
-    "SCENARIO",
-    "TEST_SUITE",
-];
 
 fn matches_child_token(
     ch: tree_sitter::Node<'_>,
@@ -451,7 +372,7 @@ fn has_cpp_header_markers(text: &str) -> bool {
         || text.contains("noexcept")
 }
 
-fn refine_c_header_dialect(
+pub(super) fn refine_c_header_dialect(
     base_lang: crate::domain::Lang,
     rel_path: &str,
     source_bytes: &[u8],
@@ -479,7 +400,7 @@ fn is_empty_preproc_function_macro(name_node: Option<tree_sitter::Node<'_>>) -> 
         && define_node.child_by_field_name("value").is_none()
 }
 
-fn is_c_family_def_allowed(ctx: &DefCaptureGateContext<'_>, is_cpp: bool) -> bool {
+pub(super) fn is_c_family_def_allowed(ctx: &DefCaptureGateContext<'_>, is_cpp: bool) -> bool {
     match ctx.sub {
         Some("testmacroblock") => TEST_BLOCK_MACRO_NAMES.contains(&ctx.name),
         Some("constant") => is_c_constant_allowed(ctx, is_cpp),
@@ -497,7 +418,7 @@ fn is_c_family_def_allowed(ctx: &DefCaptureGateContext<'_>, is_cpp: bool) -> boo
     }
 }
 
-fn resolve_c_family_def_body_and_end<'a>(
+pub(super) fn resolve_c_family_def_body_and_end<'a>(
     def_node: Option<tree_sitter::Node<'a>>,
     default_end: usize,
 ) -> (Option<tree_sitter::Node<'a>>, usize) {
@@ -532,6 +453,7 @@ impl LanguageSemantics for CLanguage {
     fn supports_c_layout(&self) -> bool {
         true
     }
+
     fn refine_dialect(
         &self,
         base_lang: crate::domain::Lang,
@@ -540,15 +462,19 @@ impl LanguageSemantics for CLanguage {
     ) -> crate::domain::Lang {
         refine_c_header_dialect(base_lang, rel_path, source_bytes)
     }
+
     fn is_builtin_keyword(&self, name: &str) -> bool {
-        is_c_family_keyword(name)
+        C_FAMILY_KEYWORDS.contains(&name)
     }
-    fn is_std_or_builtin_member(&self, name: &str) -> bool {
-        is_cpp_std_member(name)
+
+    fn std_member_names(&self) -> &'static [&'static str] {
+        CPP_STD_MEMBERS
     }
-    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
-        is_cpp_std_qualifier(qualifier)
+
+    fn std_qualifier_names(&self) -> &'static [&'static str] {
+        CPP_STD_QUALIFIERS
     }
+
     fn blank_error_macros(&self, source_bytes: &[u8]) -> Option<Vec<u8>> {
         blank_c_family_macro_lines(source_bytes)
     }
@@ -563,197 +489,6 @@ impl LanguageSemantics for CLanguage {
         default_end: usize,
     ) -> (Option<tree_sitter::Node<'a>>, usize) {
         resolve_c_family_def_body_and_end(def_node, default_end)
-    }
-    fn resolve_import_target(
-        &self,
-        importer_path: &str,
-        raw_target: &str,
-        file_index: &HashMap<&str, u32>,
-    ) -> Option<u32> {
-        resolve_c_family_include(importer_path, raw_target, file_index)
-    }
-}
-
-impl LanguageSemantics for CppLanguage {
-    fn tag(&self) -> &'static str {
-        "cpp"
-    }
-
-    fn display_color(&self) -> &'static str {
-        "#f34b7d"
-    }
-
-    fn dialect_group(&self) -> DialectGroup {
-        DialectGroup::CFamily
-    }
-
-    fn supports_c_layout(&self) -> bool {
-        true
-    }
-    fn refine_dialect(
-        &self,
-        base_lang: crate::domain::Lang,
-        rel_path: &str,
-        source_bytes: &[u8],
-    ) -> crate::domain::Lang {
-        refine_c_header_dialect(base_lang, rel_path, source_bytes)
-    }
-    fn is_builtin_keyword(&self, name: &str) -> bool {
-        is_c_family_keyword(name)
-    }
-    fn is_std_or_builtin_member(&self, name: &str) -> bool {
-        is_cpp_std_member(name)
-    }
-    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
-        is_cpp_std_qualifier(qualifier)
-    }
-    fn blank_error_macros(&self, source_bytes: &[u8]) -> Option<Vec<u8>> {
-        blank_c_family_macro_lines(source_bytes)
-    }
-
-    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
-        is_c_family_def_allowed(ctx, true)
-    }
-
-    fn resolve_def_body_and_end<'a>(
-        &self,
-        def_node: Option<tree_sitter::Node<'a>>,
-        default_end: usize,
-    ) -> (Option<tree_sitter::Node<'a>>, usize) {
-        resolve_c_family_def_body_and_end(def_node, default_end)
-    }
-
-    fn resolve_import_target(
-        &self,
-        importer_path: &str,
-        raw_target: &str,
-        file_index: &HashMap<&str, u32>,
-    ) -> Option<u32> {
-        resolve_c_family_include(importer_path, raw_target, file_index)
-    }
-}
-
-impl LanguageSemantics for CudaLanguage {
-    fn tag(&self) -> &'static str {
-        "cuda"
-    }
-
-    fn display_color(&self) -> &'static str {
-        "#3a87ad"
-    }
-
-    fn dialect_group(&self) -> DialectGroup {
-        DialectGroup::CFamily
-    }
-
-    fn supports_c_layout(&self) -> bool {
-        true
-    }
-    fn is_builtin_keyword(&self, name: &str) -> bool {
-        is_c_family_keyword(name)
-    }
-    fn is_std_or_builtin_member(&self, name: &str) -> bool {
-        is_cpp_std_member(name)
-    }
-    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
-        is_cpp_std_qualifier(qualifier)
-    }
-    fn blank_error_macros(&self, source_bytes: &[u8]) -> Option<Vec<u8>> {
-        blank_c_family_macro_lines(source_bytes)
-    }
-
-    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
-        is_c_family_def_allowed(ctx, true)
-    }
-
-    fn resolve_def_body_and_end<'a>(
-        &self,
-        def_node: Option<tree_sitter::Node<'a>>,
-        default_end: usize,
-    ) -> (Option<tree_sitter::Node<'a>>, usize) {
-        resolve_c_family_def_body_and_end(def_node, default_end)
-    }
-
-    fn resolve_import_target(
-        &self,
-        importer_path: &str,
-        raw_target: &str,
-        file_index: &HashMap<&str, u32>,
-    ) -> Option<u32> {
-        resolve_c_family_include(importer_path, raw_target, file_index)
-    }
-}
-
-impl LanguageSemantics for MetalLanguage {
-    fn tag(&self) -> &'static str {
-        "metal"
-    }
-
-    fn display_color(&self) -> &'static str {
-        "#3a87ad"
-    }
-
-    fn dialect_group(&self) -> DialectGroup {
-        DialectGroup::CFamily
-    }
-
-    fn is_builtin_keyword(&self, name: &str) -> bool {
-        is_c_family_keyword(name)
-    }
-
-    fn is_std_or_builtin_member(&self, name: &str) -> bool {
-        is_cpp_std_member(name)
-    }
-
-    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
-        is_cpp_std_qualifier(qualifier)
-    }
-
-    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
-        is_c_family_def_allowed(ctx, true)
-    }
-
-    fn resolve_def_body_and_end<'a>(
-        &self,
-        def_node: Option<tree_sitter::Node<'a>>,
-        default_end: usize,
-    ) -> (Option<tree_sitter::Node<'a>>, usize) {
-        resolve_c_family_def_body_and_end(def_node, default_end)
-    }
-
-    fn resolve_import_target(
-        &self,
-        importer_path: &str,
-        raw_target: &str,
-        file_index: &HashMap<&str, u32>,
-    ) -> Option<u32> {
-        resolve_c_family_include(importer_path, raw_target, file_index)
-    }
-}
-
-impl LanguageSemantics for ObjCLanguage {
-    fn tag(&self) -> &'static str {
-        "m"
-    }
-
-    fn dialect_group(&self) -> DialectGroup {
-        DialectGroup::CFamily
-    }
-
-    fn supports_c_layout(&self) -> bool {
-        true
-    }
-
-    fn is_builtin_keyword(&self, name: &str) -> bool {
-        is_c_family_keyword(name)
-    }
-
-    fn is_std_or_builtin_member(&self, name: &str) -> bool {
-        is_objc_foundation_member(name)
-    }
-
-    fn is_std_or_builtin_qualifier(&self, qualifier: &str) -> bool {
-        is_objc_foundation_qualifier(qualifier)
     }
 
     fn resolve_import_target(
