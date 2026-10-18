@@ -1,0 +1,3 @@
+mod skills {
+    mod install;
+}
