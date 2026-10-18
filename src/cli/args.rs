@@ -711,10 +711,10 @@ pub struct TopWorkspaceArgs {
     /// Continuation packet for interrupted agent sessions
     #[arg(long)]
     pub handoff: bool,
-    /// View pinned session gotchas and invariants (.ripwire_notes)
+    /// View pinned session gotchas and invariants (.ripwire-rs_notes)
     #[arg(long)]
     pub notes: bool,
-    /// Pin gotcha note to .ripwire_notes (e.g. --note-add="SYM: text")
+    /// Pin gotcha note to .ripwire-rs_notes (e.g. --note-add="SYM: text")
     #[arg(long = "note-add", value_name = "NOTE")]
     pub note_add: Option<String>,
     /// Scan blast radius of toggling a feature flag

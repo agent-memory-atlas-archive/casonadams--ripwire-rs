@@ -129,9 +129,6 @@ fn test_all_scm_capture_vocabulary_and_patterns_valid() {
     for lang in all_langs {
         let (_, query) = reg.get(lang).expect("registered language");
         for cap_name in query.capture_names() {
-            if *cap_name == "elixir.context" {
-                continue;
-            }
             assert!(
                 classify_capture(cap_name).is_some(),
                 "Lang {:?} tags.scm contains unrecognized capture '@{}'",

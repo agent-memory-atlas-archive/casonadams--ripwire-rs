@@ -28,7 +28,7 @@ impl crate::serialize::XmlReport for AffectedReport {
         "affected"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.affected/v1"
+        "ripwire-rs.affected/v1"
     }
     fn include_root_attr(&self) -> bool {
         false

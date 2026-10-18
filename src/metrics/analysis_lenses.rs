@@ -123,10 +123,10 @@ impl crate::serialize::XmlReport for ContextRatioReport {
         "contextratio"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.context-ratio/v1"
+        "ripwire-rs.context-ratio/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire context-ratio schema=ripwire.context-ratio/v1: LOCAL-REASONING lens.")
+        Some("ripwire-rs context-ratio schema=ripwire-rs.context-ratio/v1: LOCAL-REASONING lens.")
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
@@ -288,11 +288,11 @@ impl crate::serialize::XmlReport for EnsembleReport {
         "ensemble"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.ensemble/v1"
+        "ripwire-rs.ensemble/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire ensemble schema=ripwire.ensemble/v1: four orthogonal evidence families joined.",
+            "ripwire-rs ensemble schema=ripwire-rs.ensemble/v1: four orthogonal evidence families joined.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
@@ -551,11 +551,11 @@ impl crate::serialize::XmlReport for CommentCoherenceReport {
         "comment_coherence"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.comment-coherence/v1"
+        "ripwire-rs.comment-coherence/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire comment-coherence schema=ripwire.comment-coherence/v1: two comment/name content measures per documented function.",
+            "ripwire-rs comment-coherence schema=ripwire-rs.comment-coherence/v1: two comment/name content measures per documented function.",
         )
     }
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
@@ -646,9 +646,9 @@ pub fn serialize_naming_consistency_xml<W: Write>(
         *counts.entry((sym.kind.tag(), style)).or_insert(0) += 1;
     }
     let schema = if include_locals {
-        "ripwire.naming-locals/v1"
+        "ripwire-rs.naming-locals/v1"
     } else {
-        "ripwire.naming-consistency/v1"
+        "ripwire-rs.naming-consistency/v1"
     };
     let tag = if include_locals {
         "naming-locals"
@@ -678,7 +678,7 @@ pub fn serialize_naming_calibration_xml<W: Write>(
 ) -> io::Result<()> {
     writeln!(
         out,
-        "<naming-calibration schema=\"ripwire.naming-calibration/v1\" root=\"{}\" symbols=\"{}\">",
+        "<naming-calibration schema=\"ripwire-rs.naming-calibration/v1\" root=\"{}\" symbols=\"{}\">",
         root.xml_escaped(),
         ingest.symbols.len()
     )?;

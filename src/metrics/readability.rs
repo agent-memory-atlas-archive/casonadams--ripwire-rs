@@ -147,11 +147,11 @@ impl crate::serialize::XmlReport for ReadabilityReport<'_> {
         "readability"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.readability/v1"
+        "ripwire-rs.readability/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire readability schema=ripwire.readability/v1: Posnett/Hindle/Devanbu lens, largest Halstead volume first: <fn p= n= lines= toks= ops= vocab= vol= ent= posnett=>.",
+            "ripwire-rs readability schema=ripwire-rs.readability/v1: Posnett/Hindle/Devanbu lens, largest Halstead volume first: <fn p= n= lines= toks= ops= vocab= vol= ent= posnett=>.",
         )
     }
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {

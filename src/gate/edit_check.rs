@@ -50,13 +50,13 @@ impl crate::serialize::XmlReport for EditCheckReport {
         "edit-check"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.edit-check/v1"
+        "ripwire-rs.edit-check/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire edit-check schema=ripwire.edit-check/v1: sym='s contract NOW vs HEAD.")
+        Some("ripwire-rs edit-check schema=ripwire-rs.edit-check/v1: sym='s contract NOW vs HEAD.")
     }
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
         Some(self.gauges)

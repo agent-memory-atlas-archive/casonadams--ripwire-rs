@@ -225,7 +225,7 @@ fn test_streaming_xml_layer_test_prov_split_and_shown() {
     let xml = serialize_xml_to_string(&ingest, &graph, &pr, &interner, &options);
     validate_xml_well_formed(&xml);
 
-    assert!(xml.starts_with("<!-- ripwire map schema=ripwire.map/v1"));
+    assert!(xml.starts_with("<!-- ripwire-rs map schema=ripwire-rs.map/v1"));
     assert!(xml.contains("<f p=\"tests/t1.rs\" layer=\"test\">"));
     assert!(xml.contains("<f p=\"lib/core.rs\">"));
     assert!(xml.contains("shown=\"4\""));
@@ -241,7 +241,7 @@ fn test_query_xml_retrieval_and_git() {
         "symbols": [{"name": "auth", "path": "src/auth.rs", "line": 10, "score": 2.0, "kind": "fn"}]
     });
     serialize_for_xml(&val_for, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.for/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.for/v1\""));
     buf.clear();
 
     let val_grep = json!({
@@ -250,7 +250,7 @@ fn test_query_xml_retrieval_and_git() {
         "hits": [{"file": "src/main.rs", "line": 42, "enclosing": "main", "text": "login()"}]
     });
     serialize_grep_xml(&val_grep, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.grep/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.grep/v1\""));
     buf.clear();
 
     let val_whereis = json!({
@@ -263,7 +263,7 @@ fn test_query_xml_retrieval_and_git() {
     });
     serialize_whereis_xml(&val_whereis, &mut buf).unwrap();
     let whereis_xml = String::from_utf8_lossy(&buf);
-    assert!(whereis_xml.contains("schema=\"ripwire.whereis/v1\""));
+    assert!(whereis_xml.contains("schema=\"ripwire-rs.whereis/v1\""));
     assert!(whereis_xml.contains("folded=\"1\""));
     buf.clear();
 
@@ -271,28 +271,28 @@ fn test_query_xml_retrieval_and_git() {
         "files": [{"path": "src/auth.rs", "authors": 1, "top_author": "Alice", "top_share": 1.0}]
     });
     serialize_owners_xml(&val_owners, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.owners/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.owners/v1\""));
     buf.clear();
 
     let val_flags = json!({
         "gates": [{"name": "FEATURE_X", "kind": "env", "file": "src/lib.rs", "line": 5}]
     });
     serialize_flags_xml(&val_flags, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.flags/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.flags/v1\""));
     buf.clear();
 
     let val_doc = json!({
         "drift": [{"doc": "docs/arch.md", "line": 12, "referenced": "old_api"}]
     });
     serialize_doc_drift_xml(&val_doc, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.doc-drift/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.doc-drift/v1\""));
     buf.clear();
 
     let val_stray = json!({
         "branches": [{"branch": "feature", "unmerged_commits": 1}]
     });
     serialize_stray_content_xml(&val_stray, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.stray-content/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.stray-content/v1\""));
     buf.clear();
 
     let val_mentions = json!({
@@ -300,7 +300,7 @@ fn test_query_xml_retrieval_and_git() {
         "docs": [{"path": "README.md", "mentions": 3}]
     });
     serialize_mentions_xml(&val_mentions, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.mentions/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.mentions/v1\""));
 }
 
 #[test]
@@ -322,7 +322,7 @@ fn test_query_xml_detail_ladder() {
         &mut buf,
     )
     .unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.expand/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.expand/v1\""));
     buf.clear();
 
     let tree_files = [TreeFileSymbols {
@@ -331,11 +331,11 @@ fn test_query_xml_detail_ladder() {
         top_symbols: vec![("fn", "run")],
     }];
     serialize_tree_xml(".", &tree_files, 16, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.tree/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.tree/v1\""));
     buf.clear();
 
     serialize_pack_top_n_xml(".", &[("src/main.rs", "fn run() {}")], &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.pack-top-n/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.pack-top-n/v1\""));
 }
 
 #[test]
@@ -348,15 +348,15 @@ fn test_query_xml_safety_family() {
         is_direct_change: false,
     }];
     serialize_test_gate_xml(".", &tests, 2, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.test-gate/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.test-gate/v1\""));
     buf.clear();
 
     serialize_safe_delete_xml(".", "sym", &[("src/lib.rs", "caller")], 3, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.safe-delete/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.safe-delete/v1\""));
     buf.clear();
 
     serialize_exercises_xml(".", "tests/foo.rs", &[("src/lib.rs", "target")], &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.exercises/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.exercises/v1\""));
 }
 
 #[test]
@@ -364,7 +364,7 @@ fn test_query_xml_architecture_family() {
     let mut buf = Vec::new();
 
     serialize_dead_code_xml(".", &[("unused", "fn", "src/lib.rs", 10)], &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.dead-code/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.dead-code/v1\""));
     buf.clear();
 
     let mods = [CommunityModule {
@@ -375,7 +375,7 @@ fn test_query_xml_architecture_family() {
         members: vec![("fn", "run", "src/lib.rs", 1)],
     }];
     serialize_communities_xml(".", &mods, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.communities/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.communities/v1\""));
     buf.clear();
 
     serialize_around_xml(
@@ -387,15 +387,15 @@ fn test_query_xml_architecture_family() {
         &mut buf,
     )
     .unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.around/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.around/v1\""));
     buf.clear();
 
     serialize_external_surface_xml(".", &[("extern_fn", "rs", 5)], &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.external-surface/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.external-surface/v1\""));
     buf.clear();
 
     serialize_deps_xml(".", &[("src/lib.rs", 2, 1)], &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.deps/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.deps/v1\""));
     buf.clear();
 
     let deps_rep = ripwire_rs::serialize::DepsReport {
@@ -443,7 +443,7 @@ fn test_query_xml_task_retrieval_family() {
         "exemplar": { "name": "run", "path": "src/main.rs", "line": 1, "body": "fn run() {}", "ccx": 0, "callers": 1 }
     });
     serialize_exemplar_xml(".", &val_ex, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.exemplar/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.exemplar/v1\""));
     buf.clear();
 
     let val_lego = json!({
@@ -451,21 +451,21 @@ fn test_query_xml_task_retrieval_family() {
         "implementors": [{ "name": "AffectedReport", "path": "src/gate/affected.rs" }]
     });
     serialize_lego_xml(".", &val_lego, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.lego/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.lego/v1\""));
     buf.clear();
 
     let val_recall = json!({
         "matches": [{ "path": "README.md", "snippet": "context router" }]
     });
     serialize_recall_xml(".", "router", &val_recall, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.recall/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.recall/v1\""));
     buf.clear();
 
     let val_trace = json!({
         "suspects": [{ "name": "run", "path": "src/main.rs", "line": 10 }]
     });
     serialize_from_trace_xml(&val_trace, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.from-trace/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.from-trace/v1\""));
 }
 
 #[test]
@@ -477,7 +477,7 @@ fn test_query_xml_graph_paths() {
         "edges": [{"from": "a", "to": "b"}]
     });
     serialize_connect_xml(&val_connect, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.connect/v1\""));
+    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.connect/v1\""));
     buf.clear();
 
     let val_path_reach = json!({
@@ -490,7 +490,7 @@ fn test_query_xml_graph_paths() {
     serialize_path_between_xml(&val_path_reach, &mut buf).unwrap();
     let s = String::from_utf8_lossy(&buf);
     assert!(s.contains(
-        "<path schema=\"ripwire.path/v1\" from=\"a\" to=\"b\" from_defs=\"1\" to_defs=\"1\" reachable=\"1\" hops=\"1\">"
+        "<path schema=\"ripwire-rs.path/v1\" from=\"a\" to=\"b\" from_defs=\"1\" to_defs=\"1\" reachable=\"1\" hops=\"1\">"
     ));
     buf.clear();
 
@@ -503,7 +503,7 @@ fn test_query_xml_graph_paths() {
     serialize_path_between_xml(&val_path_unreach, &mut buf).unwrap();
     let s_unreach = String::from_utf8_lossy(&buf);
     assert!(s_unreach.contains(
-        "<path schema=\"ripwire.path/v1\" from=\"x\" to=\"y\" from_defs=\"1\" to_defs=\"1\" reachable=\"0\" hops=\"0\""
+        "<path schema=\"ripwire-rs.path/v1\" from=\"x\" to=\"y\" from_defs=\"1\" to_defs=\"1\" reachable=\"0\" hops=\"0\""
     ));
     assert!(s_unreach.contains("hint="));
 }
@@ -522,13 +522,13 @@ fn test_page_window_and_xml_report_trait() {
             "sample"
         }
         fn schema_version(&self) -> &'static str {
-            "ripwire.sample/v1"
+            "ripwire-rs.sample/v1"
         }
         fn root_path(&self) -> &str {
             "pkg/sub"
         }
         fn legend_comment(&self) -> Option<&'static str> {
-            Some("ripwire sample schema=ripwire.sample/v1")
+            Some("ripwire-rs sample schema=ripwire-rs.sample/v1")
         }
         fn page_window(&self) -> Option<PageWindow> {
             Some(self.pw)
@@ -552,8 +552,8 @@ fn test_page_window_and_xml_report_trait() {
     let mut buf = Vec::new();
     rep.render_envelope(&mut buf).unwrap();
     let xml = String::from_utf8(buf).unwrap();
-    assert!(xml.contains("<!-- ripwire sample schema=ripwire.sample/v1 -->"));
-    assert!(xml.contains("<sample schema=\"ripwire.sample/v1\" root=\"pkg/sub\" shown=\"2\" capped=\"1\" total=\"5\" has_more=\"1\" next_offset=\"2\" offset=\"0\" limit=\"0\">"));
+    assert!(xml.contains("<!-- ripwire-rs sample schema=ripwire-rs.sample/v1 -->"));
+    assert!(xml.contains("<sample schema=\"ripwire-rs.sample/v1\" root=\"pkg/sub\" shown=\"2\" capped=\"1\" total=\"5\" has_more=\"1\" next_offset=\"2\" offset=\"0\" limit=\"0\">"));
     assert!(xml.contains("<item n=\"a\"/>"));
     assert!(xml.contains("<item n=\"b\"/>"));
     assert!(!xml.contains("<item n=\"c\"/>"));
@@ -562,21 +562,24 @@ fn test_page_window_and_xml_report_trait() {
     let interner = Interner::new();
     let graph = Graph::build(&ingest, &interner);
     let qp = ripwire_rs::metrics::compute_quality_panel_report(&ingest, &graph, &interner, None);
-    assert!(qp.to_xml_string().contains("ripwire.quality-panel/v1"));
+    assert!(qp.to_xml_string().contains("ripwire-rs.quality-panel/v1"));
     let cr = ripwire_rs::metrics::compute_context_ratio(&ingest, &graph, &interner);
-    assert!(cr.to_xml_string().contains("ripwire.context-ratio/v1"));
+    assert!(cr.to_xml_string().contains("ripwire-rs.context-ratio/v1"));
     let ens = ripwire_rs::metrics::compute_ensemble(&ingest, &graph, &interner);
-    assert!(ens.to_xml_string().contains("ripwire.ensemble/v1"));
+    assert!(ens.to_xml_string().contains("ripwire-rs.ensemble/v1"));
     let cc = ripwire_rs::metrics::compute_comment_coherence(&ingest, &interner);
-    assert!(cc.to_xml_string().contains("ripwire.comment-coherence/v1"));
+    assert!(
+        cc.to_xml_string()
+            .contains("ripwire-rs.comment-coherence/v1")
+    );
     let seams = ripwire_rs::gate::seams::find_integration_seams(&ingest, &graph, &interner);
-    assert!(seams.to_xml_string().contains("ripwire.seams/v1"));
+    assert!(seams.to_xml_string().contains("ripwire-rs.seams/v1"));
     let scout = ripwire_rs::gate::merge_scout::evaluate_merge_scout("main", &ingest, &interner);
-    assert!(scout.to_xml_string().contains("ripwire.merge-scout/v1"));
+    assert!(scout.to_xml_string().contains("ripwire-rs.merge-scout/v1"));
     let pr_ctx =
         ripwire_rs::gate::pr_context::compute_pr_context(&[], &ingest, &graph, &interner, "HEAD");
-    assert!(pr_ctx.to_xml_string().contains("ripwire.pr-context/v1"));
+    assert!(pr_ctx.to_xml_string().contains("ripwire-rs.pr-context/v1"));
     let snap = QualitySnapshot::default();
     let dmm = ripwire_rs::metrics::compute_dmm_report(&snap, &snap, "worktree", "HEAD");
-    assert!(dmm.to_xml_string().contains("ripwire.dmm/v1"));
+    assert!(dmm.to_xml_string().contains("ripwire-rs.dmm/v1"));
 }

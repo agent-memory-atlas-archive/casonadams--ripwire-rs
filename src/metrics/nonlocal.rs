@@ -87,11 +87,11 @@ impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
         "nonlocal_state"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.nonlocal-state/v1"
+        "ripwire-rs.nonlocal-state/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire nonlocal-state schema=ripwire.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches.",
+            "ripwire-rs nonlocal-state schema=ripwire-rs.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches.",
         )
     }
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {

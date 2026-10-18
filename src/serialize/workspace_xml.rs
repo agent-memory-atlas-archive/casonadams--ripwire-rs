@@ -68,7 +68,7 @@ impl crate::serialize::XmlReport for WhereisReport<'_> {
         "whereis"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.whereis/v1"
+        "ripwire-rs.whereis/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -162,7 +162,7 @@ impl crate::serialize::XmlReport for OwnersReport<'_> {
         "owners"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.owners/v1"
+        "ripwire-rs.owners/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -268,7 +268,7 @@ impl crate::serialize::XmlReport for FlagsReport<'_> {
         "flags"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.flags/v1"
+        "ripwire-rs.flags/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -376,7 +376,7 @@ impl crate::serialize::XmlReport for DocDriftReport<'_> {
         "doc-drift"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.doc-drift/v1"
+        "ripwire-rs.doc-drift/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -429,7 +429,7 @@ impl crate::serialize::XmlReport for StrayContentReport<'_> {
         "stray-content"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.stray-content/v1"
+        "ripwire-rs.stray-content/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -484,7 +484,7 @@ impl crate::serialize::XmlReport for MentionsReport<'_> {
         "mentions"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.mentions/v1"
+        "ripwire-rs.mentions/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -519,7 +519,7 @@ pub fn serialize_expand_xml<W: Write>(
 ) -> io::Result<()> {
     writeln!(
         out,
-        "<ctx schema=\"ripwire.expand/v1\" root=\"{root}\"><bodies shown=\"{}\" total=\"{}\">",
+        "<ctx schema=\"ripwire-rs.expand/v1\" root=\"{root}\"><bodies shown=\"{}\" total=\"{}\">",
         items.len(),
         items.len()
     )?;
@@ -557,7 +557,7 @@ impl crate::serialize::XmlReport for TreeReport<'_> {
         "tree"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.tree/v1"
+        "ripwire-rs.tree/v1"
     }
     fn root_path(&self) -> &str {
         self.root
@@ -567,7 +567,7 @@ impl crate::serialize::XmlReport for TreeReport<'_> {
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire tree schema=ripwire.tree/v1: each file with its top 3 symbols by rank, files by best symbol: <file p= symbols=> of <s t= n=>.",
+            "ripwire-rs tree schema=ripwire-rs.tree/v1: each file with its top 3 symbols by rank, files by best symbol: <file p= symbols=> of <s t= n=>.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -637,7 +637,7 @@ pub fn serialize_pack_top_n_xml<W: Write>(
 ) -> io::Result<()> {
     writeln!(
         out,
-        "<ctx schema=\"ripwire.pack-top-n/v1\" root=\"{root}\">"
+        "<ctx schema=\"ripwire-rs.pack-top-n/v1\" root=\"{root}\">"
     )?;
     for (path, body) in bodies {
         writeln!(out, "<src p=\"{}\">\n{body}\n</src>", path.xml_escaped())?;

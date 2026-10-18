@@ -7,7 +7,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, BufWriter};
 use std::path::{Path, PathBuf};
 
-pub const CACHE_VERSION: u32 = 15;
+pub const CACHE_VERSION: u32 = 16;
 
 /// Serialized binary cache payload for fast warm repository queries.
 #[derive(Serialize, Deserialize)]
@@ -70,7 +70,7 @@ pub fn auto_cache_path(root: &str) -> PathBuf {
     let abs = fs::canonicalize(root).unwrap_or_else(|_| PathBuf::from(root));
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     abs.to_string_lossy().hash(&mut hasher);
-    std::env::temp_dir().join(format!("ripwire-cache-{:x}.json", hasher.finish()))
+    std::env::temp_dir().join(format!("ripwire-rs-cache-{:x}.json", hasher.finish()))
 }
 
 /// Attempt to load cached repository analysis if validation key matches.

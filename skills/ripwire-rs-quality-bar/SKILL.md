@@ -32,7 +32,7 @@ Measure the quality delta your change introduced with a deterministic oracle in 
 ## 1. Wide-Angle Read (`--quality-panel`) vs Pre-Commit Gate (`--quality-delta`)
 
 - **`--quality-panel[=strict|default|lenient]` is a lens (always exits 0)**: ranks functions across six orthogonal evidence families (`structural`, `lexical`, `confusion`, `historical`, `colocation`, `state`). Use it to inspect the area you touched or pick refactoring targets.
-- **`--quality-delta` is the pre-commit gate (exits 2 on gating regressions)**: compares your working tree against `git HEAD` (or a pinned `.ripwire_quality_baseline`) and reports only what your diff made worse.
+- **`--quality-delta` is the pre-commit gate (exits 2 on gating regressions)**: compares your working tree against `git HEAD` (or a pinned `.ripwire-rs_quality_baseline`) and reports only what your diff made worse.
 
 ### Reading the Structural Profile (`humps`, `deep`, `ev`, `locals`)
 
@@ -56,7 +56,7 @@ Measure the quality delta your change introduced with a deterministic oracle in 
    - `--quality-delta` **exits 2** only when `gating > 0` (unacked, major regressions on preexisting symbols, plus `defect-shape` `format-arity`).
    - Always inspect `origin="new-symbol"` rows even when the command exits 0, so newly authored functions do not introduce avoidable complexity or parameter spill.
 3. **Acknowledge deliberate trade-offs narrowly**:
-   - Use `--ack-only=SUBSTR[,SUBSTR]` with `--quality-ack="reason"` to record specific accepted trade-offs in `.ripwire_quality_acks` without rubber-stamping unrelated findings:
+   - Use `--ack-only=SUBSTR[,SUBSTR]` with `--quality-ack="reason"` to record specific accepted trade-offs in `.ripwire-rs_quality_acks` without rubber-stamping unrelated findings:
      ```bash
      ripwire-rs <dir> --quality-delta --ack-only=contract-change --quality-ack="arity change required by <fix>"
      ```

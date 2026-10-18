@@ -555,7 +555,7 @@ pub fn render_clones_xml(
     );
 
     let mut out = format!(
-        "<!-- ripwire clones schema=ripwire.clones/v1: similar normalized-token bodies: <group type=2|3 gid= tokens= n= similarity=> of <f n= p=>; dup_loc=/dup_pct=. -->\n<clones schema=\"ripwire.clones/v1\" groups=\"{exact_count}\" type3=\"{type3_count}\" exempt_groups=\"0\" idiom_groups=\"{idiom_groups}\" demoted_groups=\"{idiom_groups}\" clone_groups=\"{clone_groups}\" dup_loc=\"{dup_loc}\" total_loc=\"{total_loc}\" dup_pct=\"{dup_pct:.1}\"{page_attrs} root=\".\">\n"
+        "<!-- ripwire-rs clones schema=ripwire-rs.clones/v1: similar normalized-token bodies: <group type=2|3 gid= tokens= n= similarity=> of <f n= p=>; dup_loc=/dup_pct=. -->\n<clones schema=\"ripwire-rs.clones/v1\" groups=\"{exact_count}\" type3=\"{type3_count}\" exempt_groups=\"0\" idiom_groups=\"{idiom_groups}\" demoted_groups=\"{idiom_groups}\" clone_groups=\"{clone_groups}\" dup_loc=\"{dup_loc}\" total_loc=\"{total_loc}\" dup_pct=\"{dup_pct:.1}\"{page_attrs} root=\".\">\n"
     );
 
     for idx in shown_indices {

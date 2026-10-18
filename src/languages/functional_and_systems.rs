@@ -177,6 +177,14 @@ impl LanguageSemantics for ElixirLanguage {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
     }
 
+    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        is_elixir_def_allowed(ctx)
+    }
+
+    fn should_ignore_call(&self, _name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {
+        is_elixir_ignored_call(name)
+    }
+
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
         is_beam_std_member_name(name)
     }
@@ -543,6 +551,112 @@ fn is_beam_std_qualifier_name(name: &str) -> bool {
             | "file"
             | "timer"
     )
+}
+
+fn is_elixir_fn_keyword(target: &str) -> bool {
+    matches!(
+        target,
+        "def" | "defp" | "defmacro" | "defmacrop" | "defguard" | "defguardp" | "defdelegate"
+    )
+}
+
+fn is_elixir_typed_attr(name: &str) -> bool {
+    matches!(
+        name,
+        "type" | "typep" | "opaque" | "callback" | "macrocallback"
+    )
+}
+
+fn is_elixir_metadata_attr(name: &str) -> bool {
+    is_elixir_typed_attr(name)
+        || matches!(
+            name,
+            "doc"
+                | "moduledoc"
+                | "typedoc"
+                | "spec"
+                | "impl"
+                | "behaviour"
+                | "behavior"
+                | "derive"
+                | "enforce_keys"
+                | "dialyzer"
+                | "on_load"
+                | "before_compile"
+                | "after_compile"
+                | "after_verify"
+                | "optional_callbacks"
+                | "compile"
+                | "external_resource"
+                | "vsn"
+                | "file"
+        )
+}
+
+fn is_elixir_ignored_call(name: &str) -> bool {
+    is_elixir_fn_keyword(name)
+        || matches!(
+            name,
+            "defmodule"
+                | "defprotocol"
+                | "defimpl"
+                | "defstruct"
+                | "defexception"
+                | "defoverridable"
+                | "alias"
+                | "import"
+                | "require"
+                | "use"
+                | "quote"
+                | "unquote"
+                | "unquote_splicing"
+                | "case"
+                | "cond"
+                | "for"
+                | "if"
+                | "unless"
+                | "with"
+                | "receive"
+                | "try"
+                | "test"
+        )
+}
+
+fn is_elixir_call_def_allowed(dn: tree_sitter::Node<'_>, ctx: &DefCaptureGateContext<'_>) -> bool {
+    let Some(target) = dn
+        .child_by_field_name("target")
+        .and_then(|t| t.utf8_text(ctx.source_bytes).ok())
+    else {
+        return false;
+    };
+    if ctx.kind == SymKind::Section {
+        return matches!(target, "defmodule" | "defprotocol" | "defimpl");
+    }
+    if target == "test" {
+        return ctx.name_node.is_some_and(|n| n.kind() == "string");
+    }
+    is_elixir_fn_keyword(target) && !matches!(ctx.name, "unquote" | "when")
+}
+
+fn is_elixir_attr_def_allowed(dn: tree_sitter::Node<'_>, ctx: &DefCaptureGateContext<'_>) -> bool {
+    if ctx.sub == Some("attribute") {
+        return !is_elixir_metadata_attr(ctx.name);
+    }
+    dn.child_by_field_name("operand")
+        .and_then(|op| op.child_by_field_name("target"))
+        .and_then(|t| t.utf8_text(ctx.source_bytes).ok())
+        .is_some_and(is_elixir_typed_attr)
+}
+
+fn is_elixir_def_allowed(ctx: &DefCaptureGateContext<'_>) -> bool {
+    let Some(dn) = ctx.def_node else {
+        return false;
+    };
+    match dn.kind() {
+        "call" => is_elixir_call_def_allowed(dn, ctx),
+        "unary_operator" => is_elixir_attr_def_allowed(dn, ctx),
+        _ => true,
+    }
 }
 
 fn is_zig_std_member_name(name: &str) -> bool {

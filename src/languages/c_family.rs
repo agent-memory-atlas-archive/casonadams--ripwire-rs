@@ -1,6 +1,6 @@
 use super::{
-    DefCaptureGateContext, DialectGroup, LanguageSemantics, resolve_relative_or_exact,
-    strip_import_quotes,
+    DefCaptureGateContext, DialectGroup, LanguageSemantics, is_screaming_snake,
+    resolve_relative_or_exact, strip_import_quotes,
 };
 use crate::domain::SymKind;
 use std::collections::HashMap;
@@ -284,15 +284,6 @@ const TEST_BLOCK_MACRO_NAMES: &[&str] = &[
     "TEST_SUITE",
 ];
 
-fn is_screaming_snake(name: &str) -> bool {
-    let bytes = name.as_bytes();
-    bytes.len() >= 2
-        && bytes[0].is_ascii_uppercase()
-        && bytes
-            .iter()
-            .all(|&b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
-}
-
 fn matches_child_token(
     ch: tree_sitter::Node<'_>,
     src: &[u8],
@@ -480,6 +471,14 @@ fn refine_c_header_dialect(
     crate::domain::Lang::Cpp
 }
 
+fn is_empty_preproc_function_macro(name_node: Option<tree_sitter::Node<'_>>) -> bool {
+    let Some(define_node) = name_node.and_then(|n| n.parent()) else {
+        return false;
+    };
+    define_node.kind() == "preproc_function_def"
+        && define_node.child_by_field_name("value").is_none()
+}
+
 fn is_c_family_def_allowed(ctx: &DefCaptureGateContext<'_>, is_cpp: bool) -> bool {
     match ctx.sub {
         Some("testmacroblock") => TEST_BLOCK_MACRO_NAMES.contains(&ctx.name),
@@ -492,6 +491,7 @@ fn is_c_family_def_allowed(ctx: &DefCaptureGateContext<'_>, is_cpp: bool) -> boo
             SymKind::Field => ctx
                 .def_node
                 .is_none_or(|dn| !has_static_storage(dn, ctx.source_bytes)),
+            SymKind::Macro => !is_empty_preproc_function_macro(ctx.name_node),
             _ => true,
         },
     }

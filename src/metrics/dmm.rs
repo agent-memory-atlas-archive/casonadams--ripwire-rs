@@ -147,13 +147,13 @@ impl crate::serialize::XmlReport for DmmReport {
         "dmm"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.dmm/v1"
+        "ripwire-rs.dmm/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire dmm schema=ripwire.dmm/v1: Delta Maintainability Model.")
+        Some("ripwire-rs dmm schema=ripwire-rs.dmm/v1: Delta Maintainability Model.")
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let at_attr = if !self.at_stamp.is_empty() {

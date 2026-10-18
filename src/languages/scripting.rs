@@ -1,7 +1,8 @@
 use super::{
-    DialectGroup, LanguageSemantics, VisibilityMode, resolve_relative_or_exact, strip_import_quotes,
+    DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+    resolve_relative_or_exact, strip_import_quotes,
 };
-use crate::domain::Lang;
+use crate::domain::{Lang, SymKind};
 use std::collections::HashMap;
 
 pub struct PythonLanguage;
@@ -39,6 +40,10 @@ impl LanguageSemantics for PythonLanguage {
 
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
+    }
+
+    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        is_python_def_allowed(ctx)
     }
 
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
@@ -91,6 +96,10 @@ impl LanguageSemantics for RubyLanguage {
 
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
+    }
+
+    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        ctx.sub != Some("constant") || super::is_screaming_snake(ctx.name)
     }
 
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
@@ -194,6 +203,90 @@ impl LanguageSemantics for GDScriptLanguage {
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
         is_gdscript_std_member_name(name)
     }
+}
+
+fn has_enclosing_method_in_class(node: tree_sitter::Node<'_>) -> bool {
+    let mut saw_fn = false;
+    let mut curr = node.parent();
+    while let Some(up) = curr {
+        match up.kind() {
+            "function_definition" => saw_fn = true,
+            "class_definition" => return saw_fn,
+            _ => {}
+        }
+        curr = up.parent();
+    }
+    false
+}
+
+fn is_py_self_field_capture(
+    name_node: Option<tree_sitter::Node<'_>>,
+    def_node: Option<tree_sitter::Node<'_>>,
+    src: &[u8],
+) -> bool {
+    let (Some(nn), Some(dn)) = (name_node, def_node) else {
+        return false;
+    };
+    let Some(attr) = nn.parent().filter(|p| p.kind() == "attribute") else {
+        return false;
+    };
+    let is_self = attr
+        .child_by_field_name("object")
+        .is_some_and(|o| o.kind() == "identifier" && o.utf8_text(src) == Ok("self"));
+    is_self && has_enclosing_method_in_class(dn)
+}
+
+fn is_py_enum_base_node(base: tree_sitter::Node<'_>, src: &[u8]) -> bool {
+    let ident = if base.kind() == "attribute" {
+        base.child_by_field_name("attribute")
+    } else {
+        Some(base)
+    };
+    let Some(node) = ident.filter(|n| n.kind() == "identifier") else {
+        return false;
+    };
+    node.utf8_text(src).is_ok_and(|name| {
+        matches!(
+            name,
+            "Enum"
+                | "IntEnum"
+                | "StrEnum"
+                | "Flag"
+                | "IntFlag"
+                | "ReprEnum"
+                | "Choices"
+                | "TextChoices"
+                | "IntegerChoices"
+        )
+    })
+}
+
+fn is_py_enum_member_target(name_node: Option<tree_sitter::Node<'_>>, src: &[u8]) -> bool {
+    let Some(cls) = name_node
+        .and_then(|n| n.parent())
+        .and_then(|n| n.parent())
+        .and_then(|n| n.parent())
+        .and_then(|n| n.parent())
+        .filter(|c| c.kind() == "class_definition")
+    else {
+        return false;
+    };
+    let Some(bases) = cls.child_by_field_name("superclasses") else {
+        return false;
+    };
+    (0..bases.named_child_count())
+        .filter_map(|i| bases.named_child(i))
+        .any(|b| is_py_enum_base_node(b, src))
+}
+
+fn is_python_def_allowed(ctx: &DefCaptureGateContext<'_>) -> bool {
+    if ctx.kind == SymKind::Field {
+        return is_py_self_field_capture(ctx.name_node, ctx.def_node, ctx.source_bytes);
+    }
+    if ctx.sub == Some("enummember") {
+        return is_py_enum_member_target(ctx.name_node, ctx.source_bytes);
+    }
+    true
 }
 
 fn is_python_std_member_name(name: &str) -> bool {

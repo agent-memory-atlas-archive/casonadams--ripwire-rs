@@ -2,7 +2,7 @@ use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
 use std::io::{self, Write};
 
-pub const DEFAULT_ARCH_BASELINE: &str = ".ripwire_arch_baseline";
+pub const DEFAULT_ARCH_BASELINE: &str = ".ripwire-rs_arch_baseline";
 
 /// A declared architectural rule.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,7 +174,7 @@ impl crate::serialize::XmlReport for ArchReport<'_> {
         "arch"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.arch/v1"
+        "ripwire-rs.arch/v1"
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         write!(out, " violations=\"{}\"", self.violations.len())

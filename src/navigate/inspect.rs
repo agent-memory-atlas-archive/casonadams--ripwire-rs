@@ -60,25 +60,25 @@ pub fn serialize_at_xml<W: Write>(
 
     if suffix_matches.is_empty() {
         return Err(io::Error::other(format!(
-            "ripwire: the at flag's seed '{file_spec}:{line_num}' named no location"
+            "ripwire-rs: the at flag's seed '{file_spec}:{line_num}' named no location"
         )));
     }
     if suffix_matches.len() > 1 && !exact_match {
         return Err(io::Error::other(format!(
-            "ripwire: the at flag's seed '{file_spec}:{line_num}' named no location (ambiguous)"
+            "ripwire-rs: the at flag's seed '{file_spec}:{line_num}' named no location (ambiguous)"
         )));
     }
     let chain = resolve_symbol_chain_at(file_spec, line_num, ingest, interner);
     let Some(&innermost) = chain.last() else {
         return Err(io::Error::other(format!(
-            "ripwire: the at flag's seed '{file_spec}:{line_num}' named no location (no indexed symbol spans line {line_num})"
+            "ripwire-rs: the at flag's seed '{file_spec}:{line_num}' named no location (no indexed symbol spans line {line_num})"
         )));
     };
     let name = interner.resolve(&innermost.name);
     let chain_len = chain.len();
     write!(
         out,
-        "<!-- ripwire at schema=ripwire.at/v1: enclosing-definition chain at p=:l=. -->\n<at schema=\"ripwire.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"{name}\" chain=\"{chain_len}\" root=\".\">",
+        "<!-- ripwire-rs at schema=ripwire-rs.at/v1: enclosing-definition chain at p=:l=. -->\n<at schema=\"ripwire-rs.at/v1\" p=\"{file_spec}\" l=\"{line_num}\" sym=\"{name}\" chain=\"{chain_len}\" root=\".\">",
     )?;
     for sym in chain {
         let sn = interner.resolve(&sym.name);
@@ -129,11 +129,11 @@ impl crate::serialize::XmlReport for VerifyReport<'_> {
         "verify"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.verify/v1"
+        "ripwire-rs.verify/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire verify schema=ripwire.verify/v1: ONE structured claim, verdict=confirmed|refuted|unknown.",
+            "ripwire-rs verify schema=ripwire-rs.verify/v1: ONE structured claim, verdict=confirmed|refuted|unknown.",
         )
     }
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
@@ -356,7 +356,7 @@ pub fn execute_pack_task<W: Write>(
     let est_tokens = ((sigs_buf.len() + body_bytes + aux_bytes) / 4).max(120);
     write!(
         out,
-        "<!-- ripwire pack-task schema=ripwire.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire.pack-task/v1\" task=\"{}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"{est_tokens}\" budget_tokens=\"6000\"><sigs>",
+        "<!-- ripwire-rs pack-task schema=ripwire-rs.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire-rs.pack-task/v1\" task=\"{}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"{est_tokens}\" budget_tokens=\"6000\"><sigs>",
         task.xml_escaped()
     )?;
     out.write_all(&sigs_buf)?;

@@ -188,7 +188,7 @@ impl crate::serialize::XmlReport for StructLayoutReport {
         "layout"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.layout/v1"
+        "ripwire-rs.layout/v1"
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::XmlEscapeExt;
@@ -285,11 +285,11 @@ impl crate::serialize::XmlReport for FieldAffinityReport {
         "fieldaffinity"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.field-affinity/v1"
+        "ripwire-rs.field-affinity/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire field-affinity schema=ripwire.field-affinity/v1: fields read together vs 64-byte lines.",
+            "ripwire-rs field-affinity schema=ripwire-rs.field-affinity/v1: fields read together vs 64-byte lines.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {

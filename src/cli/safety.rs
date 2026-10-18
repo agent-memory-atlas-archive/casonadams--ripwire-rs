@@ -86,12 +86,12 @@ fn load_gate_state(root: &str, is_delta: bool) -> io::Result<crate::mcp::McpStat
 pub fn validate_gate_modifiers(args: &GateDispatchArgs<'_>) -> io::Result<()> {
     if args.allow_dirty && !args.quality_baseline {
         return Err(io::Error::other(
-            "ripwire: --allow-dirty modifies --quality-baseline; pass it too",
+            "ripwire-rs: --allow-dirty modifies --quality-baseline; pass it too",
         ));
     }
     if args.show_stale && !args.quality_delta {
         return Err(io::Error::other(
-            "ripwire: --show-stale modifies --quality-delta; pass it too",
+            "ripwire-rs: --show-stale modifies --quality-delta; pass it too",
         ));
     }
     Ok(())
@@ -301,7 +301,7 @@ pub fn execute_situ_query<W: Write>(
     );
     writeln!(
         out,
-        "ripwire situational-awareness — {} changed file(s)",
+        "ripwire-rs situational-awareness — {} changed file(s)",
         files.len()
     )?;
     writeln!(out, "root: {root}")?;
@@ -327,7 +327,7 @@ pub fn execute_safe_delete_query<W: Write>(
     let view = (ingest, interner);
     let sym = view.find_first_symbol(sym_name).ok_or_else(|| {
         io::Error::other(format!(
-            "ripwire: --safe-delete symbol not found: {sym_name}"
+            "ripwire-rs: --safe-delete symbol not found: {sym_name}"
         ))
     })?;
     let sym_id = sym.id;
@@ -403,7 +403,7 @@ fn validate_merge_scout_branches(root: &str, branches: &str) -> bool {
                 .map(|o| o.status.success())
                 .unwrap_or(false);
         if !git_ok {
-            eprintln!("ripwire: --merge-scout: unknown ref '{branch}'");
+            eprintln!("ripwire-rs: --merge-scout: unknown ref '{branch}'");
             return false;
         }
     }
@@ -513,7 +513,7 @@ fn execute_partition_or_baseline_queries<W: Write>(
         crate::gate::baseline::write_baseline_file(&snap, &baseline_path)?;
         writeln!(
             out,
-            "ripwire: pinned quality baseline stamped at {short_sha} -> {}",
+            "ripwire-rs: pinned quality baseline stamped at {short_sha} -> {}",
             baseline_path.display()
         )?;
         return Ok(Some(0));
@@ -716,7 +716,7 @@ pub fn print_cochange_pairs_paged<W: Write>(
     let page_attrs = pw.xml_attrs();
     writeln!(
         out,
-        "<cochange schema=\"ripwire.cochange/v1\" pairs=\"{total}\" window=\"18mo@HEAD\" sub_windows=\"3\"{page_attrs} root=\"{root}\"{at_attr}>",
+        "<cochange schema=\"ripwire-rs.cochange/v1\" pairs=\"{total}\" window=\"18mo@HEAD\" sub_windows=\"3\"{page_attrs} root=\"{root}\"{at_attr}>",
     )?;
     for p in page {
         writeln!(out, "{}", format_copair_row(p))?;
@@ -746,7 +746,7 @@ pub fn print_cochange_groups_paged<W: Write>(
     let page_attrs = pw.xml_attrs();
     writeln!(
         out,
-        "<cochange-groups schema=\"ripwire.cochange-groups/v1\" groups=\"{total}\" window=\"18mo@HEAD\"{page_attrs} root=\"{root}\"{at_attr}>",
+        "<cochange-groups schema=\"ripwire-rs.cochange-groups/v1\" groups=\"{total}\" window=\"18mo@HEAD\"{page_attrs} root=\"{root}\"{at_attr}>",
     )?;
     for g in page {
         let partners_joined = g
@@ -966,7 +966,7 @@ pub fn execute_quality_baseline_with<W: Write>(
     if !in_memory && let Some((absorbed, first_row)) = dirty_pin_absorbed_gating(state)? {
         if !allow_dirty {
             return Err(io::Error::other(format!(
-                "ripwire: --quality-baseline: this tree already holds {absorbed} gating finding(s) against HEAD; pinning here would absorb them into the floor. First: {first_row}\n  Commit the tree first, or pass --allow-dirty to pin anyway (the sidecar then records absorbed={absorbed})."
+                "ripwire-rs: --quality-baseline: this tree already holds {absorbed} gating finding(s) against HEAD; pinning here would absorb them into the floor. First: {first_row}\n  Commit the tree first, or pass --allow-dirty to pin anyway (the sidecar then records absorbed={absorbed})."
             )));
         }
         snap.dirty = true;
@@ -975,7 +975,7 @@ pub fn execute_quality_baseline_with<W: Write>(
     if in_memory {
         writeln!(
             out,
-            "ripwire: pinned quality baseline stamped at {stamp_label} -> in-memory"
+            "ripwire-rs: pinned quality baseline stamped at {stamp_label} -> in-memory"
         )?;
         return Ok(());
     }
@@ -983,7 +983,7 @@ pub fn execute_quality_baseline_with<W: Write>(
     crate::gate::baseline::write_baseline_file(&snap, &baseline_path)?;
     writeln!(
         out,
-        "ripwire: pinned quality baseline stamped at {stamp_label} -> {}",
+        "ripwire-rs: pinned quality baseline stamped at {stamp_label} -> {}",
         baseline_path.display()
     )?;
     Ok(())

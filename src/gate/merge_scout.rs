@@ -89,14 +89,14 @@ impl crate::serialize::XmlReport for MergeScoutReport {
         "merge-scout"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.merge-scout/v1"
+        "ripwire-rs.merge-scout/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire merge-scout schema=ripwire.merge-scout/v1: cross-branch overlap of arms= refs.",
+            "ripwire-rs merge-scout schema=ripwire-rs.merge-scout/v1: cross-branch overlap of arms= refs.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {

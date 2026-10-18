@@ -45,7 +45,7 @@ fn test_handoff_xml_branches() {
     let ch_rows = build_handoff_verified_rows(&["src/lib.rs".to_string()], &ingest, &interner);
     assert!(ch_rows.contains("overview"));
     let xml = build_handoff_xml(".", &ingest, &interner);
-    assert!(xml.contains("ripwire.handoff/v1"));
+    assert!(xml.contains("ripwire-rs.handoff/v1"));
     let (b, s, d) = resolve_git_branch_and_subject("/nonexistent_repo_path_xyz");
     assert_eq!((b.as_str(), s.as_str(), d), ("main", "head", false));
 }

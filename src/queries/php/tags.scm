@@ -105,3 +105,10 @@
 
 (class_interface_clause
   (name) @name) @reference.implementation
+
+(namespace_use_clause
+  (name) @name) @reference.import
+
+(namespace_use_clause
+  (qualified_name
+    (name) @name .)) @reference.import

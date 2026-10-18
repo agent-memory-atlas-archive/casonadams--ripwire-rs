@@ -23,9 +23,9 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
     }
     fn schema_version(&self) -> &'static str {
         if self.tag == "callers" {
-            "ripwire.callers/v1"
+            "ripwire-rs.callers/v1"
         } else {
-            "ripwire.callees/v1"
+            "ripwire-rs.callees/v1"
         }
     }
     fn include_root_attr(&self) -> bool {
@@ -33,9 +33,9 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
     }
     fn legend_comment(&self) -> Option<&'static str> {
         if self.tag == "callers" {
-            Some("ripwire callers schema=ripwire.callers/v1: 1-hop callers of of=.")
+            Some("ripwire-rs callers schema=ripwire-rs.callers/v1: 1-hop callers of of=.")
         } else {
-            Some("ripwire callees schema=ripwire.callees/v1: 1-hop callees of of=.")
+            Some("ripwire-rs callees schema=ripwire-rs.callees/v1: 1-hop callees of of=.")
         }
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -242,13 +242,13 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
         "impact"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.impact/v1"
+        "ripwire-rs.impact/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire impact schema=ripwire.impact/v1: transitive blast radius of of=.")
+        Some("ripwire-rs impact schema=ripwire-rs.impact/v1: transitive blast radius of of=.")
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let reaches = self.nodes.len();
@@ -353,7 +353,7 @@ pub fn serialize_impact_with_importers_xml<'a, W: Write>(
 pub fn serialize_find_symbol_xml<W: Write>(nav: &NavNeighborhood, out: &mut W) -> io::Result<()> {
     writeln!(
         out,
-        "<find-symbol schema=\"ripwire.find-symbol/v1\" of=\"{}\" p=\"{}:{}\" callers=\"{}\" callees=\"{}\">",
+        "<find-symbol schema=\"ripwire-rs.find-symbol/v1\" of=\"{}\" p=\"{}:{}\" callers=\"{}\" callees=\"{}\">",
         nav.target.name,
         nav.target.path,
         nav.target.line,
@@ -420,13 +420,13 @@ impl crate::serialize::XmlReport for UsesReport<'_> {
         "uses"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.uses/v1"
+        "ripwire-rs.uses/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire uses schema=ripwire.uses/v1: resolvable use-sites of of=.")
+        Some("ripwire-rs uses schema=ripwire-rs.uses/v1: resolvable use-sites of of=.")
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let total = self.sites.len();

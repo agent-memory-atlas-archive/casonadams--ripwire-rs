@@ -48,7 +48,7 @@ fn test_mcp_json_rpc_suite() {
     let init_resp = dispatch_json_rpc(init_req, &mut state, ".").expect("must reply to initialize");
     let init_val: Value = serde_json::from_str(&init_resp).unwrap();
     assert_eq!(init_val["id"], 1);
-    assert_eq!(init_val["result"]["serverInfo"]["name"], "ripwire");
+    assert_eq!(init_val["result"]["serverInfo"]["name"], "ripwire-rs");
     assert_eq!(init_val["result"]["protocolVersion"], "2024-11-05");
 
     let notif = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
@@ -81,7 +81,7 @@ fn test_mcp_json_rpc_suite() {
     let text = explore_val["result"]["content"][0]["text"]
         .as_str()
         .unwrap();
-    assert!(text.contains("<r schema=\"ripwire.map/v1\""));
+    assert!(text.contains("<r schema=\"ripwire-rs.map/v1\""));
 
     let find_call = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"find_symbol","arguments":{"symbol":"run_cli"}}}"#;
     let find_resp =
@@ -216,27 +216,27 @@ fn test_cli_execution_modes() {
     let mut callers_buf = Vec::new();
     execute_navigate_with(&nav_modes[0], &ctx, &mut callers_buf).unwrap();
     let callers_xml = String::from_utf8(callers_buf).unwrap();
-    assert!(callers_xml.contains("<callers schema=\"ripwire.callers/v1\" of=\"run_cli\""));
+    assert!(callers_xml.contains("<callers schema=\"ripwire-rs.callers/v1\" of=\"run_cli\""));
 
     let mut callees_buf = Vec::new();
     execute_navigate_with(&nav_modes[1], &ctx, &mut callees_buf).unwrap();
     let callees_xml = String::from_utf8(callees_buf).unwrap();
-    assert!(callees_xml.contains("<callees schema=\"ripwire.callees/v1\" of=\"run_cli\""));
+    assert!(callees_xml.contains("<callees schema=\"ripwire-rs.callees/v1\" of=\"run_cli\""));
 
     let mut impact_buf = Vec::new();
     execute_navigate_with(&nav_modes[2], &ctx, &mut impact_buf).unwrap();
     let impact_xml = String::from_utf8(impact_buf).unwrap();
-    assert!(impact_xml.contains("<impact schema=\"ripwire.impact/v1\" of=\"run_cli\""));
+    assert!(impact_xml.contains("<impact schema=\"ripwire-rs.impact/v1\" of=\"run_cli\""));
 
     let mut sym_buf = Vec::new();
     execute_navigate_with(&nav_modes[3], &ctx, &mut sym_buf).unwrap();
     let sym_xml = String::from_utf8(sym_buf).unwrap();
-    assert!(sym_xml.contains("<find-symbol schema=\"ripwire.find-symbol/v1\" of=\"run_cli\""));
+    assert!(sym_xml.contains("<find-symbol schema=\"ripwire-rs.find-symbol/v1\" of=\"run_cli\""));
 
     let mut uses_buf = Vec::new();
     serialize_uses_xml("helper", &ingest, &interner, &mut uses_buf).unwrap();
     let uses_xml = String::from_utf8(uses_buf).unwrap();
-    assert!(uses_xml.contains("<uses schema=\"ripwire.uses/v1\" of=\"helper\""));
+    assert!(uses_xml.contains("<uses schema=\"ripwire-rs.uses/v1\" of=\"helper\""));
 
     assert!(
         run_cli_args(Cli {
@@ -277,23 +277,23 @@ fn test_top_nav_queries() {
     let modes = [
         (
             NavMode::Callers,
-            "<callers schema=\"ripwire.callers/v1\" of=\"run_cli\"",
+            "<callers schema=\"ripwire-rs.callers/v1\" of=\"run_cli\"",
         ),
         (
             NavMode::Callees,
-            "<callees schema=\"ripwire.callees/v1\" of=\"run_cli\"",
+            "<callees schema=\"ripwire-rs.callees/v1\" of=\"run_cli\"",
         ),
         (
             NavMode::Impact,
-            "<impact schema=\"ripwire.impact/v1\" of=\"run_cli\"",
+            "<impact schema=\"ripwire-rs.impact/v1\" of=\"run_cli\"",
         ),
         (
             NavMode::Uses,
-            "<uses schema=\"ripwire.uses/v1\" of=\"run_cli\"",
+            "<uses schema=\"ripwire-rs.uses/v1\" of=\"run_cli\"",
         ),
         (
             NavMode::FindSymbol,
-            "<find-symbol schema=\"ripwire.find-symbol/v1\" of=\"run_cli\"",
+            "<find-symbol schema=\"ripwire-rs.find-symbol/v1\" of=\"run_cli\"",
         ),
     ];
     for (mode, expected) in modes {
@@ -318,7 +318,7 @@ fn test_top_nav_queries() {
     );
     assert!(err.is_err());
     let err_msg = err.unwrap_err().to_string();
-    assert!(err_msg.contains("ripwire: --callers symbol not found: missing_sym_404"));
+    assert!(err_msg.contains("ripwire-rs: --callers symbol not found: missing_sym_404"));
 }
 
 fn setup_in_memory_fixture() -> (IngestResult, Graph, Interner) {

@@ -91,7 +91,7 @@ fn render_locals_xml(
     use crate::serialize::GitStampExt;
     let at_stamp = root.git_at_or_head();
     let mut out = format!(
-        "<!-- ripwire slice schema=ripwire.slice/v1: name-based def-use rows of one variable in one definition. -->\n<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" t=\"{kind_tag}\" lang=\"{lang_tag}\" vars=\"{}\" at=\"{at_stamp}\" root=\"{root}\" counts=\"as-classified\">\n",
+        "<!-- ripwire-rs slice schema=ripwire-rs.slice/v1: name-based def-use rows of one variable in one definition. -->\n<slice schema=\"ripwire-rs.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" t=\"{kind_tag}\" lang=\"{lang_tag}\" vars=\"{}\" at=\"{at_stamp}\" root=\"{root}\" counts=\"as-classified\">\n",
         locals.len()
     );
     for (name, line, role) in locals {
@@ -147,7 +147,7 @@ fn render_flow_xml(ctx: &FlowRenderCtx<'_>, steps: &[SliceStep]) -> String {
     use crate::serialize::GitStampExt;
     let at_stamp = ctx.root.git_at_or_head();
     let mut out = format!(
-        "<slice schema=\"ripwire.slice/v1\" sym=\"{}\" var=\"{}\" p=\"{}\" t=\"{}\" lang=\"{}\" defs=\"{defs_cnt}\" uses=\"{uses_cnt}\" flow=\"{}\" depth=\"{}\" steps=\"{}\" at=\"{at_stamp}\" root=\"{}\" counts=\"as-classified\">\n",
+        "<slice schema=\"ripwire-rs.slice/v1\" sym=\"{}\" var=\"{}\" p=\"{}\" t=\"{}\" lang=\"{}\" defs=\"{defs_cnt}\" uses=\"{uses_cnt}\" flow=\"{}\" depth=\"{}\" steps=\"{}\" at=\"{at_stamp}\" root=\"{}\" counts=\"as-classified\">\n",
         ctx.sym_name,
         ctx.var_name,
         ctx.path_line,
@@ -366,7 +366,7 @@ pub fn execute_slice_command_with_depth(
     max_depth: u32,
 ) -> std::io::Result<()> {
     let Some(target) = target else {
-        eprintln!("ripwire: target required (e.g. ripwire slice sym:var)");
+        eprintln!("ripwire-rs: target required (e.g. ripwire-rs slice sym:var)");
         return Ok(());
     };
 
@@ -390,7 +390,7 @@ pub fn execute_slice_command_with_depth(
             writer.flush()
         }
         Err(e) => {
-            eprintln!("ripwire: {e}");
+            eprintln!("ripwire-rs: {e}");
             Ok(())
         }
     }

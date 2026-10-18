@@ -112,3 +112,10 @@
 
 (base_list
   (identifier) @name) @reference.extends
+
+(using_directive
+  (identifier) @name) @reference.import
+
+(using_directive
+  (qualified_name
+    name: (identifier) @name)) @reference.import

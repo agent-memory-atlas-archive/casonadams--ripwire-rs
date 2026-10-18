@@ -47,7 +47,7 @@ fn test_serialize_layout_and_affinity() {
     assert!(
         String::from_utf8(buf)
             .unwrap()
-            .contains("schema=\"ripwire.layout/v1\"")
+            .contains("schema=\"ripwire-rs.layout/v1\"")
     );
 
     let mut buf2 = Vec::new();
@@ -55,6 +55,6 @@ fn test_serialize_layout_and_affinity() {
     assert!(
         String::from_utf8(buf2)
             .unwrap()
-            .contains("schema=\"ripwire.field-affinity/v1\"")
+            .contains("schema=\"ripwire-rs.field-affinity/v1\"")
     );
 }

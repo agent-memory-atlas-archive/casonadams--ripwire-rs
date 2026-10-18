@@ -24,5 +24,5 @@ fn test_dmm_calculations() {
     let mut buf = Vec::new();
     serialize_dmm_xml(&report, &mut buf).unwrap();
     let xml = String::from_utf8(buf).unwrap();
-    assert!(xml.contains("schema=\"ripwire.dmm/v1\""));
+    assert!(xml.contains("schema=\"ripwire-rs.dmm/v1\""));
 }

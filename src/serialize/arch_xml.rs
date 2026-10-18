@@ -29,13 +29,13 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
         "test-gate"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.test-gate/v1"
+        "ripwire-rs.test-gate/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire test-gate schema=ripwire.test-gate/v1: tests + untested blast radius.")
+        Some("ripwire-rs test-gate schema=ripwire-rs.test-gate/v1: tests + untested blast radius.")
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let t_len = self.tests.len();
@@ -113,14 +113,14 @@ impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
         "safe-delete"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.safe-delete/v1"
+        "ripwire-rs.safe-delete/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire safe-delete schema=ripwire.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=.",
+            "ripwire-rs safe-delete schema=ripwire-rs.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -209,7 +209,7 @@ impl crate::serialize::XmlReport for ExercisesReport<'_> {
         "exercises"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.exercises/v1"
+        "ripwire-rs.exercises/v1"
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         write!(
@@ -278,11 +278,11 @@ impl crate::serialize::XmlReport for DeadCodeReport<'_> {
         "dead-code"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.dead-code/v1"
+        "ripwire-rs.dead-code/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire dead-code schema=ripwire.dead-code/v1: internal-linkage functions with no caller found in the index: <d n= t= p= l=>.",
+            "ripwire-rs dead-code schema=ripwire-rs.dead-code/v1: internal-linkage functions with no caller found in the index: <d n= t= p= l=>.",
         )
     }
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
@@ -367,11 +367,11 @@ impl crate::serialize::XmlReport for CommunitiesReport<'_> {
         "communities"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.communities/v1"
+        "ripwire-rs.communities/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire communities schema=ripwire.communities/v1: call-graph modules (Louvain): <community id= size= dir= label=> of <member t= n= p=>.",
+            "ripwire-rs communities schema=ripwire-rs.communities/v1: call-graph modules (Louvain): <community id= size= dir= label=> of <member t= n= p=>.",
         )
     }
     fn pr_iters(&self) -> Option<u32> {
@@ -488,11 +488,11 @@ impl crate::serialize::XmlReport for AroundReport<'_> {
         "r"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.around/v1"
+        "ripwire-rs.around/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire around schema=ripwire.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop.",
+            "ripwire-rs around schema=ripwire-rs.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -598,14 +598,14 @@ impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
         "external-surface"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.external-surface/v1"
+        "ripwire-rs.external-surface/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire external-surface schema=ripwire.external-surface/v1: names used but never defined in the index: <x n= lang= refs= calls=>.",
+            "ripwire-rs external-surface schema=ripwire-rs.external-surface/v1: names used but never defined in the index: <x n= lang= refs= calls=>.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -752,11 +752,11 @@ impl crate::serialize::XmlReport for DepsReport<'_> {
         "deps"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.deps/v1"
+        "ripwire-rs.deps/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire deps schema=ripwire.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>.",
+            "ripwire-rs deps schema=ripwire-rs.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>.",
         )
     }
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {

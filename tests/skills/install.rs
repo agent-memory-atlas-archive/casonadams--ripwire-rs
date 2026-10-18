@@ -48,7 +48,7 @@ fn test_scan_skills() {
     assert!(
         String::from_utf8(buf)
             .unwrap()
-            .contains("schema=\"ripwire.scan-skills/v1\"")
+            .contains("schema=\"ripwire-rs.scan-skills/v1\"")
     );
 }
 

@@ -189,10 +189,12 @@ impl crate::serialize::XmlReport for SeamsReport {
         "seams"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.seams/v1"
+        "ripwire-rs.seams/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire seams schema=ripwire.seams/v1: cross-directory call edges NO test reaches.")
+        Some(
+            "ripwire-rs seams schema=ripwire-rs.seams/v1: cross-directory call edges NO test reaches.",
+        )
     }
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
         Some(crate::serialize::PageWindow::compute(

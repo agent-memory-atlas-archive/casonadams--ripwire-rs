@@ -197,7 +197,7 @@ fn test_edit_check_arity_break() {
     assert!(modern_caller.sites.is_empty());
 
     let xml = report.to_xml_string();
-    assert!(xml.contains("<edit-check schema=\"ripwire.edit-check/v1\" sym=\"compute\" t=\"fn\" p=\"src/service.rs\" status=\"contract-change\" defs=\"1\" callers=\"2\" incompatible=\"1\""));
+    assert!(xml.contains("<edit-check schema=\"ripwire-rs.edit-check/v1\" sym=\"compute\" t=\"fn\" p=\"src/service.rs\" status=\"contract-change\" defs=\"1\" callers=\"2\" incompatible=\"1\""));
     assert!(
         xml.contains("<c n=\"legacy_worker\" p=\"src/legacy_caller.rs:15\" incompatible=\"1\">")
     );
@@ -222,7 +222,7 @@ fn test_affected_tests_transitive_reachability() {
 
     assert_eq!(report.reached_symbols, 4);
     let xml = report.to_xml_string();
-    assert!(xml.contains("<affected schema=\"ripwire.affected/v1\" files=\"src/service.rs\""));
+    assert!(xml.contains("<affected schema=\"ripwire-rs.affected/v1\" files=\"src/service.rs\""));
     assert!(xml.contains("<test p=\"tests/test_service.rs\" hops=\"2\"/>"));
 }
 
@@ -235,12 +235,14 @@ fn test_cli_gate_execution_and_xml_output() {
     let mut out_edit = Cursor::new(Vec::new());
     execute_edit_check_with("compute", &state, &mut out_edit).expect("execute edit-check");
     let xml_edit = String::from_utf8(out_edit.into_inner()).unwrap();
-    assert!(xml_edit.contains("<edit-check schema=\"ripwire.edit-check/v1\" sym=\"compute\""));
+    assert!(xml_edit.contains("<edit-check schema=\"ripwire-rs.edit-check/v1\" sym=\"compute\""));
 
     let mut out_aff = Cursor::new(Vec::new());
     execute_affected_with("src/service.rs", &state, &mut out_aff).expect("execute affected");
     let xml_aff = String::from_utf8(out_aff.into_inner()).unwrap();
-    assert!(xml_aff.contains("<affected schema=\"ripwire.affected/v1\" files=\"src/service.rs\""));
+    assert!(
+        xml_aff.contains("<affected schema=\"ripwire-rs.affected/v1\" files=\"src/service.rs\"")
+    );
     assert!(xml_aff.contains("<test p=\"tests/test_service.rs\""));
 }
 

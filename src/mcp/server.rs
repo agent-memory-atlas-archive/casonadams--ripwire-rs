@@ -13,7 +13,7 @@ pub fn handle_initialize(id: &Value) -> Value {
         "result": {
             "protocolVersion": "2024-11-05",
             "serverInfo": {
-                "name": "ripwire",
+                "name": "ripwire-rs",
                 "version": "0.1.0"
             },
             "capabilities": {
@@ -94,7 +94,7 @@ pub fn dispatch_json_rpc(
             "id": id,
             "result": {
                 "resources": [{
-                    "uri": "ripwire://legend-dict/full",
+                    "uri": "ripwire-rs://legend-dict/full",
                     "name": "Ripwire Schema & Attribute Encyclopedia",
                     "mimeType": "application/xml"
                 }]
@@ -109,7 +109,7 @@ pub fn dispatch_json_rpc(
                 "id": id,
                 "result": {
                     "contents": [{
-                        "uri": "ripwire://legend-dict/full",
+                        "uri": "ripwire-rs://legend-dict/full",
                         "mimeType": "application/xml",
                         "text": xml
                     }]
@@ -250,7 +250,7 @@ pub fn dispatch_lsp_json_rpc(
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
-                    "serverInfo": { "name": "ripwire-lsp", "version": env!("CARGO_PKG_VERSION") },
+                    "serverInfo": { "name": "ripwire-rs-lsp", "version": env!("CARGO_PKG_VERSION") },
                     "capabilities": {
                         "definitionProvider": true,
                         "referencesProvider": true,

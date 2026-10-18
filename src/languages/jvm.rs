@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct JavaLanguage;
@@ -40,6 +40,9 @@ impl LanguageSemantics for JavaLanguage {
         rel_path: &str,
     ) -> bool {
         kind.is_callable() && !super::is_non_entrypoint_path(rel_path) && sym_name == "main"
+    }
+    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        ctx.sub != Some("constant") || super::is_screaming_snake(ctx.name)
     }
     fn is_std_or_builtin_member(&self, name: &str) -> bool {
         is_jvm_std_member_name(name)
@@ -121,6 +124,9 @@ impl LanguageSemantics for CSharpLanguage {
         kind.is_callable()
             && !super::is_non_entrypoint_path(rel_path)
             && (sym_name == "main" || sym_name == "Main")
+    }
+    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        ctx.sub != Some("constant") || super::is_screaming_snake(ctx.name)
     }
 
     fn is_std_or_builtin_member(&self, name: &str) -> bool {

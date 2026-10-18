@@ -555,7 +555,7 @@ impl McpToolHandler for QualityBaselineTool {
         "quality_baseline"
     }
     fn description(&self) -> &'static str {
-        "PIN the quality floor: writes .ripwire_quality_baseline stamped with git HEAD sha"
+        "PIN the quality floor: writes .ripwire-rs_quality_baseline stamped with git HEAD sha"
     }
     fn params(&self) -> &'static [(&'static str, &'static str, &'static str)] {
         &[(

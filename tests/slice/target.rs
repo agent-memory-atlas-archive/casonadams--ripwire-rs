@@ -33,7 +33,7 @@ fn test_execute_slice_e2e() {
         Some(code),
     )
     .unwrap();
-    assert!(locals_res.contains("<slice schema=\"ripwire.slice/v1\" sym=\"compute\""));
+    assert!(locals_res.contains("<slice schema=\"ripwire-rs.slice/v1\" sym=\"compute\""));
     assert!(locals_res.contains("<v n=\"x\""));
     assert!(locals_res.contains("<v n=\"y\""));
 

@@ -55,7 +55,7 @@ fn test_serialize_xml_structure() {
         &SerializeOptions::default(),
     );
 
-    assert!(xml.starts_with("<r schema=\"ripwire.map/v1\" root=\".\" files=\"1\" symbols=\"2\" edges=\"1\" shown=\"2\" ambiguous=\"0\" unresolved=\"0\" pr_iters=\"12\">"));
+    assert!(xml.starts_with("<r schema=\"ripwire-rs.map/v1\" root=\".\" files=\"1\" symbols=\"2\" edges=\"1\" shown=\"2\" ambiguous=\"0\" unresolved=\"0\" pr_iters=\"12\">"));
     assert!(xml.contains("<f p=\"src/main.rs\">"));
     assert!(xml.contains("<s t=\"fn\" n=\"run\" k=\"0.6500\"></s>"));
     assert!(xml.contains("<s t=\"fn\" n=\"start\" k=\"0.3500\"><c n=\"run\"/></s>"));

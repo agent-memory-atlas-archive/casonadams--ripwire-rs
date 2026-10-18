@@ -5,7 +5,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
 
-pub const DEFAULT_BASELINE_FILE: &str = ".ripwire_quality_baseline";
+pub const DEFAULT_BASELINE_FILE: &str = ".ripwire-rs_quality_baseline";
 
 /// Snapshot of repository code quality metrics at a specific commit.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -102,7 +102,7 @@ pub fn compute_snapshot(
 #[must_use]
 pub fn serialize_snapshot_to_string(s: &QualitySnapshot) -> String {
     let mut out = String::new();
-    out.push_str("# ripwire quality baseline v1 — do not hand-edit\n");
+    out.push_str("# ripwire-rs quality baseline v1 — do not hand-edit\n");
     if !s.head_sha.is_empty() {
         out.push_str(&format!("head {}\n", s.head_sha));
     }

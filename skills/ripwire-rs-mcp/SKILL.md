@@ -92,7 +92,7 @@ enclosing-chain report) and `@FILE:LINE` in any SYM selector; contract gate: `te
 |---|---|---|
 | `exemplar` (`kind` or `task`) | `--exemplar` | BEFORE you write a fn/class/… — the repo's best-in-class instance to imitate, chosen by ROLE (fan-in / cognitive-cx / tested), with its body |
 | `quality_delta` (`path`) | `--quality-delta` | BEFORE you call it DONE — only what the working tree made WORSE vs the baseline (auto-compares vs git-HEAD; a non-empty `regressions` array is the exit-2-equivalent) |
-| `quality_baseline` (`path`) | `--quality-baseline` | pin the quality floor (writes the HEAD-stamped `.ripwire_quality_baseline`) — a side-effect verb |
+| `quality_baseline` (`path`) | `--quality-baseline` | pin the quality floor (writes the HEAD-stamped `.ripwire-rs_quality_baseline`) — a side-effect verb |
 | `impact` (`symbol`, `limit`/`offset` optional) | `--impact=SYM [--limit=N --offset=M]` | "is it safe to change X" — the TRANSITIVE blast radius (beats `find_referencing_symbols`, which is 1-hop). `reaches=` is the true radius; the listing shows 40 by rank unless you raise it, and a paged answer carries `has_more`/`next_offset` so a loop can terminate |
 | `uses` (`symbol`) | `--uses=SYM` | the resolvable USE-SITES — call/read/write/import/extends, not just calls (`count=0` is a real answer; `counts_floor="1"` — a floor, never a total) |
 | `path_between` (`from`, `to`) | `--path=A,B` | does A reach B, and the shortest call path (named `path_between` — `path` is the root-arg key) |
@@ -138,11 +138,11 @@ the kit-style default-lean posture (measured ~90% cut on comparable extract-symb
 ## The per-session legend: each definition once per session
 
 On the stdio server the legend session opens with the first answer that carries a legend (served inline) or
-with a read of the MCP resource `ripwire://legend-dict` (`initialize` names it). After that, the verbs that take
+with a read of the MCP resource `ripwire-rs://legend-dict` (`initialize` names it). After that, the verbs that take
 `legend` (and `for`) answer rows first and end with `<about … legend="ref" dict= dictv=/>`, which carries the
 root attributes; a definition arrives once per session, in a comment after the rows of the first answer that
 needs it (an answer whose ref form would be longer stays inline). Lost the definitions (a compacted context)?
-Read `ripwire://legend-dict/full` for all of them, or print them with `ripwire-rs --legend-dict`.
+Read `ripwire-rs://legend-dict/full` for all of them, or print them with `ripwire-rs --legend-dict`.
 `legend:"compact"` on one call keeps that answer's legend inline; a server started with
 `--mcp --mcp-legend=inline` keeps every answer's legend inline. The HTTP transport (`--listen`) keeps every
 legend inline.

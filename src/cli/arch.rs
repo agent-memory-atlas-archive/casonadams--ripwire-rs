@@ -320,7 +320,7 @@ pub fn execute_around_query<W: Write>(
     let ids = view.find_symbols(sym_name);
     if ids.is_empty() {
         return Err(io::Error::other(format!(
-            "ripwire: --around symbol not found: {sym_name}"
+            "ripwire-rs: --around symbol not found: {sym_name}"
         )));
     }
     let sym_id = ids

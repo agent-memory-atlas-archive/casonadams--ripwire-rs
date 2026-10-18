@@ -28,11 +28,6 @@
 ]) @reference.call
 (binary_operator operator: "|>" right: (identifier) @name) @reference.call
 
-; Context and bare-name candidates share the query engine. The Elixir capture filter
-; resolves lexical aliases/imports and excludes bound variables, patterns and quoted AST.
-(call) @elixir.context
-(identifier) @name @reference.bare
-
 ; Types and callbacks are declarations; ordinary attributes may evaluate expressions.
 (unary_operator operator: "@" operand:
   (call target: (identifier) @name)) @definition.attribute

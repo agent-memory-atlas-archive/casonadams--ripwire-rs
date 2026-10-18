@@ -340,17 +340,19 @@ pub fn parse_for_sections(raw: &str) -> Result<Vec<&'static str>, String> {
             "lego" => "lego",
             "compose" => "compose",
             "" => return Err(
-                "ripwire: --sections= names an empty section; use lego, compose, or lego,compose"
+                "ripwire-rs: --sections= names an empty section; use lego, compose, or lego,compose"
                     .to_string(),
             ),
             other => {
                 return Err(format!(
-                    "ripwire: --sections={raw}: unknown section `{other}`; use lego, compose, or lego,compose"
+                    "ripwire-rs: --sections={raw}: unknown section `{other}`; use lego, compose, or lego,compose"
                 ));
             }
         };
         if out.contains(&name) {
-            return Err(format!("ripwire: --sections={raw}: `{name}` named twice"));
+            return Err(format!(
+                "ripwire-rs: --sections={raw}: `{name}` named twice"
+            ));
         }
         out.push(name);
     }

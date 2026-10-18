@@ -9,7 +9,7 @@ use serde_json::json;
 fn test_mcp_initialize_and_tools_list() {
     let id = json!(1);
     let init_resp = handle_initialize(&id);
-    assert_eq!(init_resp["result"]["serverInfo"]["name"], "ripwire");
+    assert_eq!(init_resp["result"]["serverInfo"]["name"], "ripwire-rs");
 
     let list_resp = handle_tools_list(&id);
     let tools = list_resp["result"]["tools"].as_array().unwrap();
@@ -35,7 +35,7 @@ fn test_lsp_json_rpc_dispatch() {
         ".",
     )
     .unwrap();
-    assert!(init.contains("ripwire-lsp"));
+    assert!(init.contains("ripwire-rs-lsp"));
 
     let def = dispatch_lsp_json_rpc(
         r#"{"jsonrpc":"2.0","id":2,"method":"textDocument/definition","params":{"textDocument":{"uri":"file://src/lib.rs"},"position":{"line":0,"character":7}}}"#,
@@ -73,21 +73,21 @@ fn test_lsp_json_rpc_dispatch() {
     );
     let mut stream_out = Vec::new();
     run_lsp_stream(stream_in, &mut stream_out, ".").unwrap();
-    assert!(String::from_utf8_lossy(&stream_out).contains("ripwire-lsp"));
+    assert!(String::from_utf8_lossy(&stream_out).contains("ripwire-rs-lsp"));
     let res_list = dispatch_json_rpc(
         r#"{"jsonrpc":"2.0","id":10,"method":"resources/list","params":{}}"#,
         &mut state,
         ".",
     )
     .unwrap();
-    assert!(res_list.contains("ripwire://legend-dict/full"));
+    assert!(res_list.contains("ripwire-rs://legend-dict/full"));
     let res_read = dispatch_json_rpc(
-        r#"{"jsonrpc":"2.0","id":11,"method":"resources/read","params":{"uri":"ripwire://legend-dict/full"}}"#,
+        r#"{"jsonrpc":"2.0","id":11,"method":"resources/read","params":{"uri":"ripwire-rs://legend-dict/full"}}"#,
         &mut state,
         ".",
     )
     .unwrap();
-    assert!(res_read.contains("ripwire.legend-dict/v1"));
+    assert!(res_read.contains("ripwire-rs.legend-dict/v1"));
     let call1 = dispatch_json_rpc(
         r#"{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":"callers","arguments":{"symbol":"beta"}}}"#,
         &mut state,

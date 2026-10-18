@@ -160,11 +160,11 @@ impl crate::serialize::XmlReport for PrContextReport {
         "pr-context"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.pr-context/v1"
+        "ripwire-rs.pr-context/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire pr-context schema=ripwire.pr-context/v1: review bundle per changed file vs base=.",
+            "ripwire-rs pr-context schema=ripwire-rs.pr-context/v1: review bundle per changed file vs base=.",
         )
     }
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {

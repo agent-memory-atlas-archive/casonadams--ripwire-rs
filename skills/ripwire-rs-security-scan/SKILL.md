@@ -39,7 +39,7 @@ boundary — and want structural signal on where the risk concentrates before yo
 ripwire-rs --scan-skills=skills          # bare --scan-skills scans ./skills or ~/.agents/skills
 ripwire-rs --scan-skills=PATH/TO/DIR
 ```
-Output: `<skillscan schema="ripwire.scan-skills/v1" files="N" findings="M" verdict="clean|warn|critical">` with `<f p="file:line" rule="…" sev="warn|critical"/>` rows detecting prompt injection (`ignore-previous-instructions`, `system-prompt-override`), shell exfiltration (`curl`/`wget` piped to `sh`/`bash`), and credential path traversal (`~/.ssh`, `~/.aws`). Run this before adopting external skills.
+Output: `<skillscan schema="ripwire-rs.scan-skills/v1" files="N" findings="M" verdict="clean|warn|critical">` with `<f p="file:line" rule="…" sev="warn|critical"/>` rows detecting prompt injection (`ignore-previous-instructions`, `system-prompt-override`), shell exfiltration (`curl`/`wget` piped to `sh`/`bash`), and credential path traversal (`~/.ssh`, `~/.aws`). Run this before adopting external skills.
 **Exit codes:** `0` = clean · `1` = WARN (review before installing) · `2` = CRITICAL (do not install). The
 exit code for a directory scan is the worst severity found. A CRITICAL exit is a hard block.
 

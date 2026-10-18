@@ -46,7 +46,7 @@ fn execute_doc_search_query<W: Write>(
     } else if let Some(sym) = ws.mentions.as_deref() {
         if crate::navigate::find_symbols_by_name(sym, ingest, interner).is_empty() {
             return Err(io::Error::other(format!(
-                "ripwire: --mentions symbol not found: {sym}"
+                "ripwire-rs: --mentions symbol not found: {sym}"
             )));
         }
         let val = crate::mcp::doc_tools::call_mentions_in_root(root, ingest, interner, sym);
@@ -66,7 +66,7 @@ impl crate::serialize::XmlReport for NotesReport<'_> {
         "ctx"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.notes/v1"
+        "ripwire-rs.notes/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -83,13 +83,13 @@ impl crate::serialize::XmlReport for NotesReport<'_> {
 
 fn execute_notes_display<W: Write>(root: &str, out: &mut W) -> io::Result<()> {
     use crate::serialize::XmlReport;
-    let notes_path = Path::new(root).join(".ripwire_notes");
+    let notes_path = Path::new(root).join(".ripwire-rs_notes");
     let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
     NotesReport { content: &content }.render_envelope(out)
 }
 
 fn execute_note_append<W: Write>(root: &str, note: &str, out: &mut W) -> io::Result<()> {
-    let notes_path = Path::new(root).join(".ripwire_notes");
+    let notes_path = Path::new(root).join(".ripwire-rs_notes");
     let mut file = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -224,7 +224,7 @@ pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner)
     let candidates = (partners.len() + doc_cnt).max(heur_cnt);
     let est_tokens = (verified_rows.len() + heur_rows.len() + 240) / 4;
     format!(
-        "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{}\"{detached_attr} subject=\"{}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{candidates}\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
+        "<!-- ripwire-rs handoff schema=ripwire-rs.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire-rs.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{}\"{detached_attr} subject=\"{}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{candidates}\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
         branch.xml_escaped(),
         subject.xml_escaped(),
     )
@@ -244,7 +244,7 @@ fn execute_skipped_census_query<W: Write>(
     let total_skipped = oversize_cnt + excluded_cnt + unsupported_cnt;
     writeln!(
         out,
-        "<ctx schema=\"ripwire.skipped/v1\" root=\"{root_esc}\"><skipped schema=\"ripwire.skipped/v1\" root=\"{root_esc}\" indexed=\"{}\" oversize=\"{oversize_cnt}\" excluded=\"{excluded_cnt}\" unsupported_ext=\"{unsupported_cnt}\" max_file_size=\"{}\" json_ceiling=\"{}\" yaml_ceiling=\"{}\" count=\"{total_skipped}\">",
+        "<ctx schema=\"ripwire-rs.skipped/v1\" root=\"{root_esc}\"><skipped schema=\"ripwire-rs.skipped/v1\" root=\"{root_esc}\" indexed=\"{}\" oversize=\"{oversize_cnt}\" excluded=\"{excluded_cnt}\" unsupported_ext=\"{unsupported_cnt}\" max_file_size=\"{}\" json_ceiling=\"{}\" yaml_ceiling=\"{}\" count=\"{total_skipped}\">",
         ingest.files.len(),
         opts.max_file_size,
         crate::crawler::DEFAULT_JSON_CEILING,
@@ -297,7 +297,7 @@ fn execute_flip_or_plan_query<W: Write>(
         let val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
         writeln!(
             out,
-            "<flip schema=\"ripwire.flip/v1\" gate=\"{}\" root=\"{}\">",
+            "<flip schema=\"ripwire-rs.flip/v1\" gate=\"{}\" root=\"{}\">",
             gate.xml_escaped(),
             root.xml_escaped()
         )?;
@@ -323,7 +323,7 @@ fn execute_flip_or_plan_query<W: Write>(
         let tasks = content.lines().filter(|l| l.contains("- [")).count();
         writeln!(
             out,
-            "<plan-lint schema=\"ripwire.plan-lint/v1\" file=\"{}\" headings=\"{headings}\" tasks=\"{tasks}\" ok=\"{}\"/>",
+            "<plan-lint schema=\"ripwire-rs.plan-lint/v1\" file=\"{}\" headings=\"{headings}\" tasks=\"{tasks}\" ok=\"{}\"/>",
             plan_file.xml_escaped(),
             usize::from(headings > 0)
         )?;
@@ -353,7 +353,7 @@ fn execute_session_tools_query<W: Write>(
         let exe_esc = exe_name.xml_escaped();
         writeln!(
             out,
-            "<!-- ripwire doctor schema=ripwire.doctor/v1: setup health: <c n= ok=> checks. -->\n<doctor schema=\"ripwire.doctor/v1\" checks=\"9\" passed=\"9\" at=\"{at_stamp}\" built_from=\"ripwire-rs\"><c n=\"binary-path\" ok=\"1\" self=\"{exe_esc}\" which=\"{exe_esc}\" on_path=\"1\" same_file=\"1\"/></doctor>"
+            "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. -->\n<doctor schema=\"ripwire-rs.doctor/v1\" checks=\"9\" passed=\"9\" at=\"{at_stamp}\" built_from=\"ripwire-rs\"><c n=\"binary-path\" ok=\"1\" self=\"{exe_esc}\" which=\"{exe_esc}\" on_path=\"1\" same_file=\"1\"/></doctor>"
         )?;
         Ok(true)
     } else if ws.handoff {

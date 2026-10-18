@@ -766,7 +766,7 @@ fn dispatch_lens_queries<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W) -
             .any(|s| ctx.sym_name(s) == sym && s.lang.semantics().supports_c_layout());
         if !has_c_agg {
             return Err(io::Error::other(format!(
-                "ripwire: --layout: '{sym}' is indexed but has no C-family aggregate body — this verb models C/C++/ObjC byte layout only"
+                "ripwire-rs: --layout: '{sym}' is indexed but has no C-family aggregate body — this verb models C/C++/ObjC byte layout only"
             )));
         }
         let rep = crate::metrics::compute_layout_report(sym, ingest, interner, root);
@@ -967,7 +967,7 @@ fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 fn validate_arch_modifiers(a: &TopArchitectureArgs) -> io::Result<()> {
     if a.zoom_levels.is_some() && a.zoom.is_none() {
         return Err(io::Error::other(
-            "ripwire: --zoom-levels=N modifies --zoom; pass it too (e.g. --zoom --zoom-levels=0 prints every level)",
+            "ripwire-rs: --zoom-levels=N modifies --zoom; pass it too (e.g. --zoom --zoom-levels=0 prints every level)",
         ));
     }
     Ok(())
@@ -979,7 +979,7 @@ fn validate_retrieval_modifiers(r: &TopRetrievalArgs) -> io::Result<()> {
     };
     if r.task_for.is_none() {
         return Err(io::Error::other(
-            "ripwire: --sections= modifies --for=TASK; pass it too",
+            "ripwire-rs: --sections= modifies --for=TASK; pass it too",
         ));
     }
     crate::mcp::retrieval::parse_for_sections(raw)

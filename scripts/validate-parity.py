@@ -303,8 +303,13 @@ def check_xml_parity(cmd, out_rw, out_rip):
         return f"ripwire {err_rip}"
     if root_rw.tag != root_rip.tag:
         return f"root tag mismatch: rw=<{root_rw.tag}> vs rip=<{root_rip.tag}>"
-    if root_rw.attrib.get("schema") != root_rip.attrib.get("schema"):
-        return f"schema mismatch: rw={root_rw.attrib.get('schema')} vs rip={root_rip.attrib.get('schema')}"
+    schema_rw = root_rw.attrib.get("schema", "")
+    schema_rip = root_rip.attrib.get("schema", "")
+    if (schema_rw or schema_rip) and (
+        not schema_rw.startswith("ripwire-rs.")
+        or schema_rw.replace("ripwire-rs.", "ripwire.", 1) != schema_rip
+    ):
+        return f"schema mismatch: rw={schema_rw} vs rip={schema_rip}"
     req_rip = set(root_rip.attrib.keys()) - OPTIONAL_ATTRS
     req_rw = set(root_rw.attrib.keys()) - OPTIONAL_ATTRS
     if req_rw != req_rip:

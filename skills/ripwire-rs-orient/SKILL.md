@@ -185,7 +185,7 @@ so every spelling they accept works here — a bare name, `file:name`, `Scope::n
 notes are keyed by; the rewrite is echoed on stderr). A name matching several definitions is refused, naming
 each; a name matching none is refused with a did-you-mean. A path is written even when nothing indexed
 matches it yet — a note on a file you are about to add is legal — with a loud warning that it is dangling.
-Notes live in committed `.ripwire_notes` and **surface on their own** — whenever `--for`/`--expand` emit that
+Notes live in committed `.ripwire-rs_notes` and **surface on their own** — whenever `--for`/`--expand` emit that
 symbol/file, the note rides along as a `<note d="date">…</note>` child. `ripwire-rs . --notes` lists every note
 (`dangling="1"` = target no longer in the tree). `--recall=TASK` is the doc-level complement.
 `--note-add` nudges (stderr, non-blocking) toward writing the decision, not a description — a note that
@@ -222,7 +222,7 @@ current one, so trust `--situ`'s working-tree facts over a doc when they disagre
 HEAD` yourself before you quote anything from it.
 
 **Before the next compaction, spend the note.** The compaction you are recovering from is the argument for
-`--note-add`: a gotcha written to `.ripwire_notes` survives a context reset; one held only in context does
+`--note-add`: a gotcha written to `.ripwire-rs_notes` survives a context reset; one held only in context does
 not. When you are deep in a task and learn something non-obvious, pin it *then* — not at the end.
 
 ## Output

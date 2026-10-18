@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::Path;
 
-pub const DEFAULT_ACKS_FILE: &str = ".ripwire_quality_acks";
+pub const DEFAULT_ACKS_FILE: &str = ".ripwire-rs_quality_acks";
 
-/// Acknowledged quality regressions from `.ripwire_quality_acks`.
+/// Acknowledged quality regressions from `.ripwire-rs_quality_acks`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AckEntry {
     pub kind: String,
@@ -203,7 +203,7 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
         if verdict_only {
             return writeln!(
                 out,
-                "<!-- ripwire quality-delta schema=ripwire.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. -->\n<quality-delta schema=\"ripwire.quality-delta/v1\" baseline=\"{}\" regressions=\"0\" gating=\"0\" stale=\"{}\" at=\"{}\"{hb_attr}{stale_attr}></quality-delta>",
+                "<!-- ripwire-rs quality-delta schema=ripwire-rs.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. -->\n<quality-delta schema=\"ripwire-rs.quality-delta/v1\" baseline=\"{}\" regressions=\"0\" gating=\"0\" stale=\"{}\" at=\"{}\"{hb_attr}{stale_attr}></quality-delta>",
                 self.baseline_source,
                 self.stale_acks.len(),
                 self.at_stamp
@@ -211,7 +211,7 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
         }
         writeln!(
             out,
-            "<!-- ripwire quality-delta schema=ripwire.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. baseline_absorbed=N: the pinned sidecar was taken on a dirty tree that already held N gating findings, so a green exit means clean since the pin. -->\n<quality-delta schema=\"ripwire.quality-delta/v1\" baseline=\"{}\" regressions=\"{}\" minor=\"{}\" acked=\"{}\" stale=\"{}\" preexisting-worse=\"{}\" new-symbol=\"{}\" gating=\"{}\" register-macro-excluded=\"0\" api-new-surface=\"{}\" at=\"{}\" renames=\"0\" rename_window_commits=\"0\" acked_by_rename=\"0\" acked_by_content=\"0\"{hb_attr}{stale_attr}>",
+            "<!-- ripwire-rs quality-delta schema=ripwire-rs.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. baseline_absorbed=N: the pinned sidecar was taken on a dirty tree that already held N gating findings, so a green exit means clean since the pin. -->\n<quality-delta schema=\"ripwire-rs.quality-delta/v1\" baseline=\"{}\" regressions=\"{}\" minor=\"{}\" acked=\"{}\" stale=\"{}\" preexisting-worse=\"{}\" new-symbol=\"{}\" gating=\"{}\" register-macro-excluded=\"0\" api-new-surface=\"{}\" at=\"{}\" renames=\"0\" rename_window_commits=\"0\" acked_by_rename=\"0\" acked_by_content=\"0\"{hb_attr}{stale_attr}>",
             self.baseline_source,
             self.regressions.len(),
             self.minor_count,

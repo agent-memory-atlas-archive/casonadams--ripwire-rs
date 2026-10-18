@@ -133,11 +133,11 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
         if let Some(near) = crate::navigate::find_nearest_symbol_name(sym, ctx.ingest, ctx.interner)
         {
             return Err(io::Error::other(format!(
-                "ripwire: {flag} symbol not found: {sym} (did you mean '{near}'?)"
+                "ripwire-rs: {flag} symbol not found: {sym} (did you mean '{near}'?)"
             )));
         }
         return Err(io::Error::other(format!(
-            "ripwire: {flag} symbol not found: {sym}"
+            "ripwire-rs: {flag} symbol not found: {sym}"
         )));
     }
     let gauge_attrs = ctx.graph.xml_gauge_attrs();
@@ -229,7 +229,7 @@ pub fn execute_connect_query_with_radius<W: Write>(
     for s in &sym_list {
         if crate::navigate::find_symbols_by_name(s, ingest, interner).is_empty() {
             return Err(io::Error::other(format!(
-                "ripwire: --connect symbol not found: {s}"
+                "ripwire-rs: --connect symbol not found: {s}"
             )));
         }
     }
@@ -266,12 +266,12 @@ pub fn execute_path_query<W: Write>(
     let (from, to) = split_endpoint_pair(pair);
     if crate::navigate::find_symbols_by_name(from, ingest, interner).is_empty() {
         return Err(io::Error::other(format!(
-            "ripwire: --path endpoint not found: {from}"
+            "ripwire-rs: --path endpoint not found: {from}"
         )));
     }
     if crate::navigate::find_symbols_by_name(to, ingest, interner).is_empty() {
         return Err(io::Error::other(format!(
-            "ripwire: --path endpoint not found: {to}"
+            "ripwire-rs: --path endpoint not found: {to}"
         )));
     }
     let val = crate::mcp::graph_tools::call_path_between(ingest, graph, interner, from, to);
@@ -352,7 +352,7 @@ pub fn execute_expand_or_outline_query<W: Write>(
         if ids.is_empty() {
             let flag = if is_outline { "--outline" } else { "--expand" };
             return Err(io::Error::other(format!(
-                "ripwire: {flag} symbol not found: {sym_name}"
+                "ripwire-rs: {flag} symbol not found: {sym_name}"
             )));
         }
         for &id in &ids {
@@ -555,7 +555,7 @@ pub fn execute_batch_content<W: Write>(
 
     writeln!(
         out,
-        "<batch schema=\"ripwire.batch/v1\" root=\"{root}\" dictv=\"{}\" count=\"{}\">",
+        "<batch schema=\"ripwire-rs.batch/v1\" root=\"{root}\" dictv=\"{}\" count=\"{}\">",
         crate::serialize::LEGEND_DICT_VERSION,
         lines.len()
     )?;
@@ -630,7 +630,7 @@ fn execute_task_or_signatures<W: Write>(
         return Ok(true);
     }
     if ret.pack_signatures {
-        writeln!(out, "<ctx schema=\"ripwire.pack-signatures/v1\">")?;
+        writeln!(out, "<ctx schema=\"ripwire-rs.pack-signatures/v1\">")?;
         let opts = crate::serialize::SerializeOptions {
             root: root.to_string(),
             ..Default::default()
@@ -700,7 +700,7 @@ fn execute_pattern_or_match<W: Write>(
         let t_esc = crate::serialize::escape::escape_xml_str(task);
         writeln!(
             out,
-            "<help-task schema=\"ripwire.help-task/v1\" task=\"{t_esc}\" recommended=\"{verb}\" why=\"{reason}\"/>"
+            "<help-task schema=\"ripwire-rs.help-task/v1\" task=\"{t_esc}\" recommended=\"{verb}\" why=\"{reason}\"/>"
         )?;
     } else if let Some(handle) = ret.refetch.as_deref() {
         execute_expand_or_outline_query(root, handle, false, ingest, interner, out)?;
@@ -815,13 +815,15 @@ pub fn execute_retrieval_dispatch<W: Write>(
             Some(graph),
         );
         if val.get("error").is_some() {
-            return Err(io::Error::other("ripwire: --exemplar: no candidate found"));
+            return Err(io::Error::other(
+                "ripwire-rs: --exemplar: no candidate found",
+            ));
         }
         crate::serialize::serialize_exemplar_xml(root, &val, out)
     } else if let Some(iface) = ret.lego.as_deref() {
         if crate::navigate::find_symbols_by_name(iface, ingest, interner).is_empty() {
             return Err(io::Error::other(format!(
-                "ripwire: --lego type not found: {iface}"
+                "ripwire-rs: --lego type not found: {iface}"
             )));
         }
         use crate::serialize::JsonValueExt;

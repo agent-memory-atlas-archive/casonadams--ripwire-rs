@@ -41,14 +41,14 @@ impl crate::serialize::XmlReport for HotspotsReport {
         "hotspots"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.hotspots/v1"
+        "ripwire-rs.hotspots/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire hotspots schema=ripwire.hotspots/v1: maintenance pain = churn x ccx over window=.",
+            "ripwire-rs hotspots schema=ripwire-rs.hotspots/v1: maintenance pain = churn x ccx over window=.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {

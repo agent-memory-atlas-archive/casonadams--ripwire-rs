@@ -15,7 +15,7 @@ fn test_quality_panel_computation() {
     let mut buf = Vec::new();
     serialize_quality_panel_xml(&rep, &mut buf).unwrap();
     let xml = String::from_utf8(buf).unwrap();
-    assert!(xml.contains("schema=\"ripwire.quality-panel/v1\""));
+    assert!(xml.contains("schema=\"ripwire-rs.quality-panel/v1\""));
 }
 
 #[test]

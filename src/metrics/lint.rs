@@ -626,7 +626,7 @@ pub fn run_lint_scan_in_root(
 pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(
         out,
-        "<!-- ripwire lint-catalog schema=ripwire.lint-catalog/v1: the built-in lint rule registry: <rule name= sev= cat= lang= since=>. -->\n<lintcatalog schema=\"ripwire.lint-catalog/v1\" rules=\"{}\">",
+        "<!-- ripwire-rs lint-catalog schema=ripwire-rs.lint-catalog/v1: the built-in lint rule registry: <rule name= sev= cat= lang= since=>. -->\n<lintcatalog schema=\"ripwire-rs.lint-catalog/v1\" rules=\"{}\">",
         LINT_RULES.len()
     )?;
     for r in LINT_RULES {
@@ -664,11 +664,11 @@ impl crate::serialize::XmlReport for LintReport<'_> {
         "lint"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.lint/v1"
+        "ripwire-rs.lint/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire lint schema=ripwire.lint/v1: AST-only checks, facts not gates: <rule name= count= shown_rows= rows_capped= count_capped=> of <f rule= p= in=>.",
+            "ripwire-rs lint schema=ripwire-rs.lint/v1: AST-only checks, facts not gates: <rule name= count= shown_rows= rows_capped= count_capped=> of <f rule= p= in=>.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {

@@ -54,5 +54,5 @@ fn test_compute_cache_key_non_empty() {
     let key = compute_cache_key(".");
     assert!(!key.is_empty());
     let path = auto_cache_path(".");
-    assert!(path.to_string_lossy().contains("ripwire-cache-"));
+    assert!(path.to_string_lossy().contains("ripwire-rs-cache-"));
 }

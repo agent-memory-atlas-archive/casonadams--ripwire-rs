@@ -102,6 +102,6 @@ fn test_affected_transitive_reachability() {
     assert_eq!(report.tests[0].hops, 2);
 
     let xml = report.to_xml_string();
-    assert!(xml.contains("<affected schema=\"ripwire.affected/v1\""));
+    assert!(xml.contains("<affected schema=\"ripwire-rs.affected/v1\""));
     assert!(xml.contains("<test p=\"tests/test_service.rs\" hops=\"2\"/>"));
 }

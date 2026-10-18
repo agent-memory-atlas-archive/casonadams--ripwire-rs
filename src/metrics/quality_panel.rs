@@ -265,11 +265,11 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         "quality_panel"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.quality-panel/v1"
+        "ripwire-rs.quality-panel/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire quality-panel schema=ripwire.quality-panel/v1: every quality family in ONE report.",
+            "ripwire-rs quality-panel schema=ripwire-rs.quality-panel/v1: every quality family in ONE report.",
         )
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {

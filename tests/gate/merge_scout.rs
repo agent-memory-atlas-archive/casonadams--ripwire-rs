@@ -32,7 +32,7 @@ fn test_merge_scout_evaluation_and_serialization() {
     let mut out = Vec::new();
     serialize_merge_scout_xml(&report, &mut out).expect("serialize should succeed");
     let xml = String::from_utf8(out).expect("valid utf-8");
-    assert!(xml.contains("schema=\"ripwire.merge-scout/v1\""));
+    assert!(xml.contains("schema=\"ripwire-rs.merge-scout/v1\""));
     assert!(xml.contains("arms=\"2\""));
     assert!(xml.contains("<arm ref=\"feature_a\""));
     assert!(xml.contains("<arm ref=\"feature_b\""));

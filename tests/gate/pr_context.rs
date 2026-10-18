@@ -26,7 +26,7 @@ fn test_serialize_pr_context_xml() {
     let mut out = Vec::new();
     serialize_pr_context_xml(&report, &mut out).expect("serialize should succeed");
     let xml = String::from_utf8(out).expect("valid utf-8");
-    assert!(xml.contains("schema=\"ripwire.pr-context/v1\""));
+    assert!(xml.contains("schema=\"ripwire-rs.pr-context/v1\""));
     assert!(xml.contains("base=\"main\""));
     assert!(xml.contains("<file p=\"src/lib.rs\" symbols=\"5\">"));
     assert!(xml.contains("<s n=\"run_cli\"/>"));

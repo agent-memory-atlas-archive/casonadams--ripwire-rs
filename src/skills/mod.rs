@@ -77,7 +77,7 @@ pub fn get_skill_names() -> Vec<&'static str> {
     names.into_iter().collect()
 }
 
-/// Generate `.ripwire-manifest-v1` format content.
+/// Generate `.ripwire-rs-manifest-v1` format content.
 pub fn generate_manifest_content(skills: &[&str]) -> String {
     let mut out = String::from("version=1\n");
     for skill in skills {
@@ -211,7 +211,7 @@ impl crate::serialize::XmlReport for SkillScanReport {
         "skillscan"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.scan-skills/v1"
+        "ripwire-rs.scan-skills/v1"
     }
     fn include_root_attr(&self) -> bool {
         false

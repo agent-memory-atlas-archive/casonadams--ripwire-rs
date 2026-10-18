@@ -596,7 +596,7 @@ pub fn call_ast_match(
     }
     if !compiled_any && !ingest.files.is_empty() {
         return Err(format!(
-            "ripwire: --match: invalid S-expression query '{query_str}'"
+            "ripwire-rs: --match: invalid S-expression query '{query_str}'"
         ));
     }
     Ok(json!({

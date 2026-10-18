@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics};
+use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics};
 use crate::domain::Lang;
 use crate::ingest::{FileParseResult, markdown, yaml_guard};
 use tree_sitter::{Language, Query};
@@ -118,6 +118,9 @@ impl LanguageSemantics for YamlLanguage {
         default_max.min(crate::crawler::DEFAULT_YAML_CEILING)
     }
 
+    fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        ctx.sub != Some("yamlkey") || is_yaml_key_allowed(ctx.name, ctx.def_node)
+    }
     fn parse_file_override(
         &self,
         source_bytes: &[u8],
@@ -182,6 +185,9 @@ impl LanguageSemantics for HclLanguage {
         DialectGroup::Isolated(Lang::Hcl)
     }
 
+    fn is_dependency_capable(&self) -> bool {
+        false
+    }
     fn supports_slice(&self) -> bool {
         false
     }
@@ -196,6 +202,9 @@ impl LanguageSemantics for SqlLanguage {
         DialectGroup::Isolated(Lang::Sql)
     }
 
+    fn is_dependency_capable(&self) -> bool {
+        false
+    }
     fn supports_slice(&self) -> bool {
         false
     }
@@ -232,6 +241,9 @@ impl LanguageSemantics for GraphqlLanguage {
         DialectGroup::Isolated(Lang::Graphql)
     }
 
+    fn is_dependency_capable(&self) -> bool {
+        false
+    }
     fn supports_slice(&self) -> bool {
         false
     }
@@ -271,4 +283,18 @@ impl LanguageSemantics for UnknownLanguage {
     fn supports_slice(&self) -> bool {
         false
     }
+}
+
+fn yaml_mapping_depth(mut curr: Option<tree_sitter::Node<'_>>) -> u32 {
+    let mut depth = 0u32;
+    while let Some(node) = curr {
+        let k = node.kind();
+        depth += u32::from(k == "block_mapping" || k == "flow_mapping");
+        curr = node.parent();
+    }
+    depth
+}
+
+fn is_yaml_key_allowed(name: &str, def_node: Option<tree_sitter::Node<'_>>) -> bool {
+    name != "<<" && yaml_mapping_depth(def_node) <= 2
 }

@@ -85,7 +85,7 @@ fn test_naming_and_executive_report() {
     assert!(String::from_utf8_lossy(&buf).contains("snake_case"));
     buf.clear();
     serialize_naming_calibration_xml(".", &ingest, &interner, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("ripwire.naming-calibration/v1"));
+    assert!(String::from_utf8_lossy(&buf).contains("ripwire-rs.naming-calibration/v1"));
     buf.clear();
     serialize_executive_report_md(".", &ingest, &graph, &[1.0], &interner, &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("# Architecture & Quality Report"));

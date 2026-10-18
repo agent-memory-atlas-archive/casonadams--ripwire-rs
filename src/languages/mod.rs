@@ -360,6 +360,16 @@ pub fn strip_import_quotes(raw: &str) -> &str {
 }
 
 #[must_use]
+pub(crate) fn is_screaming_snake(name: &str) -> bool {
+    let bytes = name.as_bytes();
+    bytes.len() >= 2
+        && bytes[0].is_ascii_uppercase()
+        && bytes
+            .iter()
+            .all(|&b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+}
+
+#[must_use]
 pub fn normalize_lexical_path(base_dir: &str, rel: &str) -> String {
     let combined = if base_dir.is_empty() {
         rel.to_string()

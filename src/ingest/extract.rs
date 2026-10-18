@@ -65,7 +65,8 @@ pub fn classify_capture(name: &str) -> Option<Capture> {
             "interface" => (SymKind::Interface, None),
             "constant" => (SymKind::Var, Some("constant")),
             "enummember" => (SymKind::Var, Some("enummember")),
-            "type" | "var" | "attribute" | "property" => (SymKind::Var, None),
+            "attribute" => (SymKind::Var, Some("attribute")),
+            "type" | "var" | "property" => (SymKind::Var, None),
             "macro" => (SymKind::Macro, None),
             "testmacroblock" => (SymKind::Macro, Some("testmacroblock")),
             "yamlkey" => (SymKind::Section, Some("yamlkey")),
@@ -153,6 +154,20 @@ fn extract_qualified_scope(
     (!base.is_empty()).then(|| base.to_string())
 }
 
+fn extract_go_receiver_scope(parent: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
+    let recv_list = parent.child_by_field_name("receiver")?;
+    let param = recv_list.named_child(0)?;
+    let type_node = param.child_by_field_name("type")?;
+    let text = type_node.utf8_text(source_bytes).ok()?;
+    let base = text
+        .trim_start_matches('*')
+        .split('[')
+        .next()
+        .unwrap_or("")
+        .trim();
+    (!base.is_empty()).then(|| base.to_string())
+}
+
 fn extract_node_scope(
     parent: tree_sitter::Node<'_>,
     name_node: tree_sitter::Node<'_>,
@@ -160,17 +175,23 @@ fn extract_node_scope(
 ) -> Option<String> {
     match parent.kind() {
         "impl_item" => extract_impl_scope(parent, source_bytes),
+        "method_declaration" => extract_go_receiver_scope(parent, source_bytes),
         "qualified_identifier" => extract_qualified_scope(parent, name_node, source_bytes),
         "mod_item"
         | "trait_item"
+        | "trait_definition"
         | "class_declaration"
         | "abstract_class_declaration"
         | "interface_declaration"
+        | "contract_declaration"
+        | "library_declaration"
         | "class_definition"
         | "class_specifier"
         | "struct_specifier"
         | "namespace_definition"
+        | "module"
         | "object_declaration"
+        | "object_definition"
         | "companion_object" => extract_named_container_scope(parent, name_node, source_bytes),
         _ => None,
     }
@@ -201,6 +222,7 @@ fn is_member_receiver_parent(kind: &str) -> bool {
             | "method_index_expression"
             | "unconditional_assignable_selector"
             | "conditional_assignable_selector"
+            | "remote"
     )
 }
 
@@ -210,6 +232,11 @@ fn find_member_receiver_node(parent: tree_sitter::Node<'_>) -> Option<tree_sitte
         "unconditional_assignable_selector" | "conditional_assignable_selector"
     ) {
         return parent.parent().and_then(|sel| sel.prev_named_sibling());
+    }
+    if parent.kind() == "remote" {
+        return parent
+            .child_by_field_name("module")
+            .and_then(|m| m.child_by_field_name("module"));
     }
     for field in [
         "argument", "object", "value", "operand", "receiver", "table",
@@ -298,7 +325,7 @@ fn split_top_level_qualified(raw: &str) -> (&str, Option<String>) {
         }
         None => (None, raw),
     };
-    let bare = if tail.starts_with("operator") {
+    let bare = if tail.starts_with("operator") || tail.starts_with('<') {
         tail.trim()
     } else {
         tail.split('<').next().unwrap_or(tail).trim()

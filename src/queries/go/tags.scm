@@ -22,6 +22,9 @@
 (type_spec
   name: (type_identifier) @name) @definition.type
 
+(type_alias
+  name: (type_identifier) @name) @definition.type
+
 (type_declaration (type_spec name: (type_identifier) @name type: (interface_type))) @definition.interface
 
 (type_declaration (type_spec name: (type_identifier) @name type: (struct_type))) @definition.struct
@@ -58,3 +61,6 @@
 ; it parses as a plain call_expression and is captured by the pattern above. This widening was
 ; REJECTED on the evidence above rather than shipped, per this project's own rule for false-positive
 ; risk: reject with the evidence instead of shipping it.
+
+(import_spec
+  path: (interpreted_string_literal) @import.path)

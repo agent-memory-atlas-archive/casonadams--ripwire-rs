@@ -9,7 +9,7 @@
 Verifies whether an edited symbol's signature changed in parameters, arity, or public visibility compared to git `HEAD`. Detects and reports all 1-hop callers incompatible with the new contract.
 
 ```xml
-<edit-check schema="ripwire.edit-check/v1" sym="compute" p="src/service.rs" status="contract-change" callers="2" incompatible="1">
+<edit-check schema="ripwire-rs.edit-check/v1" sym="compute" p="src/service.rs" status="contract-change" callers="2" incompatible="1">
   <c n="legacy_worker" p="src/legacy_caller.rs:15" incompatible="1">
     <site line="18" args="2" required="3"/>
   </c>
@@ -27,7 +27,7 @@ Verifies whether an edited symbol's signature changed in parameters, arity, or p
 Maps modified files and symbols to transitively reachable test files across the in-process call graph.
 
 ```xml
-<affected schema="ripwire.affected/v1" files="src/service.rs" seeds="1" seed_test_files="0" tests="1" reached="4">
+<affected schema="ripwire-rs.affected/v1" files="src/service.rs" seeds="1" seed_test_files="0" tests="1" reached="4">
   <test p="tests/test_service.rs" hops="2"/>
 </affected>
 ```
@@ -49,16 +49,16 @@ Enforces regression-free commits across 10 architectural quality dimensions agai
 7. **Dead Code Detection** (unreachable internal symbols)
 8. **Short-Horizon Churn Spans** (frequently touched code regions)
 9. **New Public API Surface**
-10. **Baseline Regression Tracking** (supports `.ripwire_quality_acks` suppression ledger)
+10. **Baseline Regression Tracking** (supports `.ripwire-rs_quality_acks` suppression ledger)
 
 ```xml
-<quality-delta schema="ripwire.quality-delta/v1" baseline="git-HEAD" regressions="0" minor="0" acked="0" stale="0" preexisting-worse="0" new-symbol="0" gating="0" register-macro-excluded="0" api-new-surface="0" at="9e5c9d5+dirty">
+<quality-delta schema="ripwire-rs.quality-delta/v1" baseline="git-HEAD" regressions="0" minor="0" acked="0" stale="0" preexisting-worse="0" new-symbol="0" gating="0" register-macro-excluded="0" api-new-surface="0" at="9e5c9d5+dirty">
 </quality-delta>
 ```
 
 - **Radical Honesty**: Discloses working copy status (`+dirty`), new public API surface, and separates non-blocking new-symbol debt from blocking pre-existing regressions.
 - **Dirty Pins**: `--quality-baseline` refuses on a dirty tree that already gates against `HEAD`; `--allow-dirty` pins anyway, stamps the absorbed count, and later deltas carry `baseline_absorbed="N"` (green then means clean since the pin).
-- **Stale Acks**: a regression-free delta collapses stale `.ripwire_quality_acks` rows to `stale_by_kind=` plus a `stale_next=` replay; `--show-stale` prints every row.
+- **Stale Acks**: a regression-free delta collapses stale `.ripwire-rs_quality_acks` rows to `stale_by_kind=` plus a `stale_next=` replay; `--show-stale` prints every row.
 - **Exit Code**: Returns exit code 2 if blocking quality regressions exist (`gating > 0`).
 
 ---
@@ -68,7 +68,7 @@ Enforces regression-free commits across 10 architectural quality dimensions agai
 The definitive pre-commit verification gate combining changed symbols, affected test discovery, and untested blast radius analysis.
 
 ```xml
-<test-gate schema="ripwire.test-gate/v1" changed_files="1" changed_symbols="2" tests="1" untested_symbols="1">
+<test-gate schema="ripwire-rs.test-gate/v1" changed_files="1" changed_symbols="2" tests="1" untested_symbols="1">
   <test p="tests/test_service.rs"/>
   <untested p="src/service.rs" n="new_helper"/>
 </test-gate>
@@ -83,7 +83,7 @@ The definitive pre-commit verification gate combining changed symbols, affected 
 Identifies call edges crossing module or directory boundaries that have zero direct test coverage.
 
 ```xml
-<seams schema="ripwire.seams/v1" root="." seams="12">
+<seams schema="ripwire-rs.seams/v1" root="." seams="12">
   <seam caller="src/api::handle" callee="src/db::query" cross="api->db"/>
 </seams>
 ```
@@ -109,7 +109,7 @@ ripwire-rs . --map-diff --top-k=30
 Assembles a complete pull request review context bundle against a base git reference (defaulting to `main` or `master`).
 
 ```xml
-<pr-context schema="ripwire.pr-context/v1" base="main" files="2">
+<pr-context schema="ripwire-rs.pr-context/v1" base="main" files="2">
   <file p="src/service.rs" symbols="14">
     <changed-symbols count="1">
       <s n="execute"/>
@@ -131,7 +131,7 @@ Assembles a complete pull request review context bundle against a base git refer
 Predicts semantic and symbol merge conflicts across concurrent divergent branches before attempting a git merge or rebase.
 
 ```xml
-<merge-scout schema="ripwire.merge-scout/v1" base="main" branches="feature-a,feature-b" conflicts="1">
+<merge-scout schema="ripwire-rs.merge-scout/v1" base="main" branches="feature-a,feature-b" conflicts="1">
   <conflict sym="Interner::len" file="src/domain.rs" branches="feature-a,feature-b"/>
 </merge-scout>
 ```

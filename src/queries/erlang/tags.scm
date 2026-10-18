@@ -3,4 +3,8 @@
   name: (atom) @name) @definition.function
 
 (call
-  (atom) @name) @reference.call
+  expr: (atom) @name) @reference.call
+
+(call
+  expr: (remote
+    fun: (atom) @name)) @reference.call

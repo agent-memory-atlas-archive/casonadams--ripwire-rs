@@ -100,7 +100,7 @@ pub fn write_root_open_with_rank_by<W: Write>(
     w: &mut W,
     ctx: &RootElementContext<'_>,
 ) -> io::Result<()> {
-    let schema = ctx.schema.unwrap_or("ripwire.map/v1");
+    let schema = ctx.schema.unwrap_or("ripwire-rs.map/v1");
     write!(w, "<r schema=\"{schema}\" root=\"")?;
     escape_xml_write(w, ctx.root)?;
     write!(
@@ -309,8 +309,8 @@ pub fn serialize_xml<W: Write>(
     )
 }
 
-pub const SCHEMA_COMMENT: &[u8] = b"<!-- ripwire map schema=ripwire.map/v1: ranked symbol map: <f p= layer=> groups <s t= n= sc= k= amb=> rows (k= rank), <c n=> resolved callees; the header comment is data. est_tokens=: price as emitted (an upper bound under compact). root=: p= relative to it. pr_iters=N: PageRank iterations. declined=K: K calls left unbound (no evidence chose one def). prov=scip|binding|import|split|final-segment: how that <c> edge bound (absent: one unique name); split = one arm of an amb= pick; final-segment = a qualified type matched by last name only. files=/symbols=: files and symbols indexed; edges= distinct call edges; shown= symbols printed, a merged row counting each def; ambiguous= calls split over several defs, corpus-wide; unresolved= calls with in-tree evidence and no edge (defs all language-filtered, or import/pointer binding refused); order= rows by rank (important-first, important-last; (auto:fill) = flipped past a size threshold) or by path (stable). unindexed=ext:N: N text files of that extension no grammar reads (6 extensions at most). sc=: enclosing scope; the full id is p::sc::n (p= of the row or its <f>) and selectors take it. amb=K: K calls split over several defs.";
-pub const SCHEMA_COMMENT_COMPACT: &[u8] = b"<!-- ripwire map schema=ripwire.map/v1: <f p= layer=> <s t= n= sc= k= amb=> <c n=> (dictv=80b7e589253a8e76; full dict: --legend-dict)";
+pub const SCHEMA_COMMENT: &[u8] = b"<!-- ripwire-rs map schema=ripwire-rs.map/v1: ranked symbol map: <f p= layer=> groups <s t= n= sc= k= amb=> rows (k= rank), <c n=> resolved callees; the header comment is data. est_tokens=: price as emitted (an upper bound under compact). root=: p= relative to it. pr_iters=N: PageRank iterations. declined=K: K calls left unbound (no evidence chose one def). prov=scip|binding|import|split|final-segment: how that <c> edge bound (absent: one unique name); split = one arm of an amb= pick; final-segment = a qualified type matched by last name only. files=/symbols=: files and symbols indexed; edges= distinct call edges; shown= symbols printed, a merged row counting each def; ambiguous= calls split over several defs, corpus-wide; unresolved= calls with in-tree evidence and no edge (defs all language-filtered, or import/pointer binding refused); order= rows by rank (important-first, important-last; (auto:fill) = flipped past a size threshold) or by path (stable). unindexed=ext:N: N text files of that extension no grammar reads (6 extensions at most). sc=: enclosing scope; the full id is p::sc::n (p= of the row or its <f>) and selectors take it. amb=K: K calls split over several defs.";
+pub const SCHEMA_COMMENT_COMPACT: &[u8] = b"<!-- ripwire-rs map schema=ripwire-rs.map/v1: <f p= layer=> <s t= n= sc= k= amb=> <c n=> (dictv=80b7e589253a8e76; full dict: --legend-dict)";
 
 fn build_symbol_row_context<'a>(
     sym: &'a Symbol,
@@ -507,11 +507,11 @@ fn write_inv_section<W: Write>(
 /// Stream minified XML with custom ranks and budget enforcement.
 fn resolve_cli_map_schema(options: &SerializeOptions) -> &'static str {
     if options.map_diff_at.is_some() {
-        "ripwire.map-diff/v1"
+        "ripwire-rs.map-diff/v1"
     } else if options.metrics {
-        "ripwire.metrics/v1"
+        "ripwire-rs.metrics/v1"
     } else {
-        "ripwire.map/v1"
+        "ripwire-rs.map/v1"
     }
 }
 

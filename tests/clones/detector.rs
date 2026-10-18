@@ -33,7 +33,7 @@ fn test_clone_type1_and_type2_detection() {
     assert_eq!(clones[0].members.len(), 3);
     assert_eq!(clones[0].clone_type, CloneType::Type2);
     let xml = render_clones_xml(&clones, &ingest, &interner);
-    assert!(xml.contains("<clones schema=\"ripwire.clones/v1\""));
+    assert!(xml.contains("<clones schema=\"ripwire-rs.clones/v1\""));
     assert!(xml.contains("<f n=\"func_one\""));
     assert!(xml.contains("<group type=\"2\""));
     assert_eq!(CloneIdiom::None.as_str(), None);

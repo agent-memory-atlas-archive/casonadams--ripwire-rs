@@ -113,7 +113,7 @@ impl crate::serialize::XmlReport for ForReport<'_> {
         "ctx"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.for/v1"
+        "ripwire-rs.for/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -362,7 +362,7 @@ impl crate::serialize::XmlReport for GrepReport<'_> {
         "grep"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.grep/v1"
+        "ripwire-rs.grep/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -428,7 +428,7 @@ impl crate::serialize::XmlReport for ConnectReport<'_> {
         "connect"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.connect/v1"
+        "ripwire-rs.connect/v1"
     }
     fn include_root_attr(&self) -> bool {
         false
@@ -509,7 +509,7 @@ pub fn serialize_path_between_xml<W: Write>(val: &Value, out: &mut W) -> io::Res
     let hops = val["hops"].as_u64().unwrap_or(0);
     write!(
         out,
-        "<path schema=\"ripwire.path/v1\" from=\"{from}\" to=\"{to}\" from_defs=\"{from_defs}\" to_defs=\"{to_defs}\" reachable=\"{reachable}\" hops=\"{hops}\""
+        "<path schema=\"ripwire-rs.path/v1\" from=\"{from}\" to=\"{to}\" from_defs=\"{from_defs}\" to_defs=\"{to_defs}\" reachable=\"{reachable}\" hops=\"{hops}\""
     )?;
     if !is_reach {
         write!(
@@ -561,7 +561,7 @@ pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) ->
 
     write!(
         out,
-        "<!-- ripwire exemplar schema=ripwire.exemplar/v1: the best-in-class instance of kind= for the task. -->\n<exemplar schema=\"ripwire.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]>",
+        "<!-- ripwire-rs exemplar schema=ripwire-rs.exemplar/v1: the best-in-class instance of kind= for the task. -->\n<exemplar schema=\"ripwire-rs.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]>",
     )?;
     write_exemplar_calls_xml(out, ex)?;
     writeln!(out, "</b></bodies></exemplar>")
@@ -586,7 +586,7 @@ pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io:
     let lego_attrs = val.xml_opt_gauge_attrs();
     writeln!(
         out,
-        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego{lego_attrs}><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{}\">",
+        "<ctx schema=\"ripwire-rs.lego/v1\" root=\"{root}\"><lego{lego_attrs}><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{}\">",
         impls.len()
     )?;
     for m in methods {
@@ -619,7 +619,7 @@ pub fn serialize_recall_xml<W: Write>(
     let matches = val.array_any(&["docs", "matches"]).unwrap_or(&empty);
     writeln!(
         out,
-        "<recall schema=\"ripwire.recall/v1\" root=\"{root}\" query=\"{query}\" docs=\"{}\">",
+        "<recall schema=\"ripwire-rs.recall/v1\" root=\"{root}\" query=\"{query}\" docs=\"{}\">",
         matches.len()
     )?;
     for d in matches {
@@ -636,7 +636,7 @@ pub fn serialize_from_trace_xml<W: Write>(val: &Value, out: &mut W) -> io::Resul
     let suspects = val["suspects"].as_array().unwrap_or(&empty);
     writeln!(
         out,
-        "<from-trace schema=\"ripwire.from-trace/v1\" count=\"{}\">",
+        "<from-trace schema=\"ripwire-rs.from-trace/v1\" count=\"{}\">",
         suspects.len()
     )?;
     for s in suspects {

@@ -40,7 +40,7 @@ reviewing whether the codebase is trending toward or away from clean layering.
 
    **Adopting rules on a codebase with existing debt** — the baseline workflow:
    - `ripwire-rs <dir> --arch=rules.txt --baseline` — accept every CURRENT violation as known
-     debt: writes a `.ripwire_arch_baseline` sidecar in the CWD (commit it), exits 0.
+     debt: writes a `.ripwire-rs_arch_baseline` sidecar in the CWD (commit it), exits 0.
    - From then on, plain `--arch=rules.txt` suppresses baselined violations and exits 2 only
      on NEW ones — the gate stops the bleeding without demanding an up-front cleanup.
    - `--arch=rules.txt --baseline-update` — deliberately accept new debt by merging current

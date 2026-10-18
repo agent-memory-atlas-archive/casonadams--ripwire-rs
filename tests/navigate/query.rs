@@ -54,7 +54,7 @@ fn test_graph_query_execution() {
     )
     .unwrap();
     let out_str = String::from_utf8(out).unwrap();
-    assert!(out_str.contains("<query schema=\"ripwire.graph-query/v1\""));
+    assert!(out_str.contains("<query schema=\"ripwire-rs.graph-query/v1\""));
     assert!(out_str.contains("count=\"1\""));
     assert!(out_str.contains("n=\"foo\""));
 

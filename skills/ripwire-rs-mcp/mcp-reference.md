@@ -75,6 +75,6 @@ signature-through-closing-brace or nothing).
 ## Server Behavior Worth Knowing
 
 - **Single `McpToolHandler` registry**: all 35 tools (`33` tools + `callers`/`callees` aliases) implement the `McpToolHandler` trait in `src/mcp/schema.rs` and `src/mcp/dispatch.rs`, guaranteeing 1:1 parity between `tools/list` schemas and `tools/call` execution.
-- **Session legend deduplication**: the first tool response in an MCP session attaches `"dictv": "ripwire.legend-dict/v1"`, and subsequent responses attach `"about": { "legend": "ref", "dictv": "ripwire.legend-dict/v1" }` unless `"legend": "compact"` is passed explicitly.
+- **Session legend deduplication**: the first tool response in an MCP session attaches `"dictv": "ripwire-rs.legend-dict/v1"`, and subsequent responses attach `"about": { "legend": "ref", "dictv": "ripwire-rs.legend-dict/v1" }` unless `"legend": "compact"` is passed explicitly.
 - **Automatic cache invalidation on edit**: `replace_symbol_body`, `insert_before_symbol`, and `insert_after_symbol` perform atomic write-rename operations and keep the workspace consistent.
 - **Graceful JSON-RPC errors**: unknown tools, missing parameters, or unresolvable symbols return structured JSON-RPC `-32602` / `-32603` error objects without terminating the stdio server.

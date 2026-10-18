@@ -553,11 +553,11 @@ impl crate::serialize::XmlReport for GraphQueryReport<'_> {
         "query"
     }
     fn schema_version(&self) -> &'static str {
-        "ripwire.graph-query/v1"
+        "ripwire-rs.graph-query/v1"
     }
     fn legend_comment(&self) -> Option<&'static str> {
         Some(
-            "ripwire graph-query schema=ripwire.graph-query/v1: graph-query expression over the symbol graph.",
+            "ripwire-rs graph-query schema=ripwire-rs.graph-query/v1: graph-query expression over the symbol graph.",
         )
     }
     fn pr_iters(&self) -> Option<u32> {
