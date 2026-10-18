@@ -1,0 +1,60 @@
+use ripwire_rs::metrics::layout::parse_struct_fields;
+use ripwire_rs::metrics::{
+    FieldLayout, StructLayoutDef, StructLayoutReport, serialize_field_affinity_xml,
+    serialize_layout_xml,
+};
+
+#[test]
+fn test_layout_parsing() {
+    let body = "struct Foo {\n  pub a: u64,\n  pub b: u32,\n  pub c: u8,\n}";
+    let fields = parse_struct_fields(body);
+    assert_eq!(fields.len(), 3);
+    assert_eq!(fields[0].offset, 0);
+    assert_eq!(fields[1].offset, 8);
+    assert_eq!(fields[2].offset, 12);
+}
+
+#[test]
+fn test_serialize_layout_and_affinity() {
+    let def = StructLayoutDef {
+        path: "src/test.rs".into(),
+        line: 10,
+        agg_kind: "struct",
+        fields: vec![
+            FieldLayout {
+                name: "a".into(),
+                ty: "u64".into(),
+                size: 8,
+                align: 8,
+                offset: 0,
+            },
+            FieldLayout {
+                name: "b".into(),
+                ty: "u32".into(),
+                size: 4,
+                align: 4,
+                offset: 8,
+            },
+        ],
+    };
+    let rep = StructLayoutReport {
+        sym: "Foo".into(),
+        found: true,
+        defs: vec![def],
+    };
+    let mut buf = Vec::new();
+    serialize_layout_xml(&rep, ".", &mut buf).unwrap();
+    assert!(
+        String::from_utf8(buf)
+            .unwrap()
+            .contains("schema=\"ripwire.layout/v1\"")
+    );
+
+    let mut buf2 = Vec::new();
+    serialize_field_affinity_xml(&rep, ".", &mut buf2).unwrap();
+    assert!(
+        String::from_utf8(buf2)
+            .unwrap()
+            .contains("schema=\"ripwire.field-affinity/v1\"")
+    );
+}

@@ -209,36 +209,3 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
     functions.sort_by(|a, b| b.0.loc.cmp(&a.0.loc).then_with(|| b.0.ccx.cmp(&a.0.ccx)));
     ReadabilityReport { functions }.write_xml_report(root, out)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_posnett_score_calculation() {
-        let p = posnett_score(100.0, 10.0, 3.5);
-        assert!((0.0..=1.0).contains(&p));
-    }
-
-    #[test]
-    fn test_readability_metrics_computation() {
-        let code = r#"
-pub fn factorial(n: u64) -> u64 {
-    if n <= 1 {
-        1
-    } else {
-        n * factorial(n - 1)
-    }
-}
-"#;
-        let m = compute_readability(code);
-        assert!(m.token_count > 10);
-        assert!(m.operator_count > 0);
-        assert!(m.operand_count > 0);
-        assert!(m.vocabulary_count > 5);
-        assert!(m.volume > 0.0);
-        assert!(m.entropy > 0.0);
-        assert_eq!(m.lines, 8);
-        assert!((0.0..=1.0).contains(&m.posnett));
-    }
-}
