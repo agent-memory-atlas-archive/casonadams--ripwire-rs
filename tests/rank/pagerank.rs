@@ -4,6 +4,46 @@ use ripwire_rs::{
 };
 
 #[test]
+fn test_uniform_and_biased_teleport() {
+    let u = uniform_teleport(4);
+    assert_eq!(u.len(), 4);
+    assert!((u.iter().sum::<f64>() - 1.0).abs() < 1e-9);
+
+    let biased = biased_teleport(&[1.0, 2.0, 1.0]);
+    assert_eq!(biased.len(), 3);
+    assert!((biased[0] - 0.25).abs() < 1e-9);
+    assert!((biased[1] - 0.50).abs() < 1e-9);
+    assert!((biased[2] - 0.25).abs() < 1e-9);
+
+    let empty = uniform_teleport(0);
+    assert!(empty.is_empty());
+}
+
+#[test]
+fn test_empty_graph_pagerank() {
+    let empty_csr = CsrMatrix::empty(0, 0);
+    let res = page_rank(&empty_csr, &[], &[], &PageRankConfig::default());
+    assert_eq!(res.iterations, 0);
+    assert!(res.converged);
+    assert!(res.ranks.is_empty());
+}
+
+#[test]
+fn test_truncated_iterations() {
+    let csr = CsrMatrix::new(2, 2, vec![0, 0, 1], vec![0], vec![1.0]);
+    let w_out = vec![1.0, 0.0];
+    let teleport = uniform_teleport(2);
+    let cfg = PageRankConfig {
+        max_iterations: 1,
+        tolerance: 1e-12,
+        alpha: 0.85,
+    };
+    let res = page_rank(&csr, &w_out, &teleport, &cfg);
+    assert_eq!(res.iterations, 1);
+    assert!(!res.converged);
+}
+
+#[test]
 fn test_pagerank_numerical_accuracy() {
     let interner = Interner::new();
     let file = FileInfo {
@@ -14,18 +54,6 @@ fn test_pagerank_numerical_accuracy() {
         byte_size: 500,
     };
 
-    // ── 1. TWO-NODE ANALYTICAL SINK GRAPH ────────────────────────────────────
-    // Graph: 0 -> 1 (where 1 is a dangling sink with zero out-edges).
-    // Uniform prior: p = [0.5, 0.5], alpha = 0.85
-    // Analytical derivation:
-    //   D = r1
-    //   r0 = (alpha * D + 1 - alpha) * p0 = (alpha * r1 + 1 - alpha) * 0.5
-    //   r1 = alpha * r0 + (alpha * r1 + 1 - alpha) * 0.5 = alpha * r0 + r0 = (1 + alpha) * r0
-    //   r0 + r1 = 1  =>  r0 * (1 + 1 + alpha) = 1  =>  r0 = 1 / (2 + alpha)
-    //   r1 = (1 + alpha) / (2 + alpha)
-    // With alpha = 0.85:
-    //   r0 = 1 / 2.85 ≈ 0.3508771929824561
-    //   r1 = 1.85 / 2.85 ≈ 0.6491228070175439
     let sym0 = Symbol::new(
         0,
         interner.intern("n0"),
@@ -76,23 +104,9 @@ fn test_pagerank_numerical_accuracy() {
         expected_r1
     );
 
-    // Sum of probability vector must equal 1.0
     let sum_2node: f64 = res_2node.ranks.iter().sum();
     assert!((sum_2node - 1.0).abs() < 1e-9);
 
-    // ── 2. THREE-NODE ANALYTICAL SINK LINE GRAPH ─────────────────────────────
-    // Graph: 0 -> 1 -> 2 (where 2 is a dangling sink).
-    // Uniform prior: p = [1/3, 1/3, 1/3], alpha = 0.85
-    // Analytical derivation:
-    //   D = r2
-    //   r0 = (alpha * D + 1 - alpha) * (1/3)
-    //   r1 = alpha * r0 + r0 = (1 + alpha) * r0
-    //   r2 = alpha * r1 + r0 = (1 + alpha + alpha^2) * r0
-    //   r0 + r1 + r2 = 1  =>  r0 * (3 + 2*alpha + alpha^2) = 1
-    // Denominator = 3 + 2*(0.85) + 0.85^2 = 3 + 1.70 + 0.7225 = 5.4225
-    //   r0 = 1 / 5.4225 ≈ 0.1844167819
-    //   r1 = 1.85 / 5.4225 ≈ 0.3411710466
-    //   r2 = 2.5725 / 5.4225 ≈ 0.4744121715
     let sym2 = Symbol::new(
         2,
         interner.intern("n2"),
@@ -143,9 +157,6 @@ fn test_pagerank_numerical_accuracy() {
     let sum_3node: f64 = res_3node.ranks.iter().sum();
     assert!((sum_3node - 1.0).abs() < 1e-9);
 
-    // ── 3. THREE-NODE CYCLE GRAPH ────────────────────────────────────────────
-    // Graph: 0 -> 1 -> 2 -> 0.
-    // By symmetry, all nodes must have rank exactly 1/3 ≈ 0.33333333.
     let ref20 = Reference::new(2, interner.intern("n0"), 0, 3, Lang::Rust, RefRole::Call);
     let mut ingest_cycle = IngestResult::new();
     ingest_cycle.files.push(file);
@@ -167,7 +178,6 @@ fn test_pagerank_numerical_accuracy() {
         );
     }
 
-    // ── 4. TRUNCATED ITERATIONS & HONEST DISCLOSURE ──────────────────────────
     let trunc_config = PageRankConfig {
         alpha: 0.85,
         tolerance: 1e-15,
@@ -177,25 +187,19 @@ fn test_pagerank_numerical_accuracy() {
     assert_eq!(res_trunc.iterations, 2);
     assert!(!res_trunc.converged);
 
-    // ── 5. BIASED TELEPORT PRIOR (PERSONALIZATION) ───────────────────────────
     let biased_prior = biased_teleport(&[9.0, 1.0]);
     assert!((biased_prior[0] - 0.9).abs() < 1e-9);
     assert!((biased_prior[1] - 0.1).abs() < 1e-9);
 
     let res_biased = graph_2node.page_rank_custom(&config, &biased_prior);
     assert!(res_biased.converged);
-    // When teleport is heavily biased to node 0, node 0 has higher rank than with uniform prior
     assert!(res_biased.ranks[0] > res_2node.ranks[0]);
 
-    // ── 6. 1024-BLOCK REDUCTION AND LARGE GRAPH DETERMINISM ──────────────────
-    // Construct a synthetic CSR graph with 1200 nodes (> 1024 block reduction size).
-    // Node i calls Node (i + 1) % 1200 (a large 1200-cycle).
     let n = 1200;
     let mut row_offsets = vec![0u32; n + 1];
     for i in 0..n {
         row_offsets[i + 1] = (i + 1) as u32;
     }
-    // In-edge: target t has caller (t + n - 1) % n
     let col_indices: Vec<u32> = (0..n as u32)
         .map(|t| (t + n as u32 - 1) % n as u32)
         .collect();
@@ -210,9 +214,7 @@ fn test_pagerank_numerical_accuracy() {
 
     assert!(res1.converged);
     assert_eq!(res1.iterations, res2.iterations);
-    // Bit-identical run-to-run determinism across 1024-block reduction boundaries
     assert_eq!(res1.ranks, res2.ranks);
-    // Every node in a uniform cycle has rank 1/N
     let expected_cycle_rank = 1.0 / (n as f64);
     for r in &res1.ranks {
         assert!((r - expected_cycle_rank).abs() < 1e-5);
