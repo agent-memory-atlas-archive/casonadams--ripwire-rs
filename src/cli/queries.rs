@@ -370,7 +370,7 @@ fn execute_note_append<W: Write>(root: &str, note: &str, out: &mut W) -> io::Res
     writeln!(out, "pinned note: {note}")
 }
 
-fn resolve_git_branch_and_subject(root: &str) -> (String, String, bool) {
+pub fn resolve_git_branch_and_subject(root: &str) -> (String, String, bool) {
     let Ok(repo) = gix::open(root) else {
         return ("main".to_string(), "head".to_string(), false);
     };
@@ -394,7 +394,7 @@ fn resolve_git_branch_and_subject(root: &str) -> (String, String, bool) {
     (branch, subject, detached)
 }
 
-fn build_handoff_verified_rows(
+pub fn build_handoff_verified_rows(
     changed: &[String],
     ingest: &IngestResult,
     interner: &Interner,
@@ -451,7 +451,7 @@ fn build_handoff_doc_rows(
     (rows, cnt)
 }
 
-fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> String {
+pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> String {
     use crate::serialize::GitStampExt;
     let at_stamp = root.git_at_or_head();
     let (branch, subject, detached) = resolve_git_branch_and_subject(root);
@@ -775,7 +775,7 @@ pub fn extract_symbol_body<'a>(
     Some((sym, name, rel_path, body))
 }
 
-fn skeletonize_body(body: &str) -> String {
+pub fn skeletonize_body(body: &str) -> String {
     let mut out = Vec::new();
     let mut depth = 0i32;
     let mut elided = false;
@@ -945,7 +945,7 @@ fn is_header_path(p: &str) -> bool {
     p.ends_with(".h") || p.ends_with(".hpp") || p.ends_with(".hh") || p.ends_with(".hxx")
 }
 
-fn sig_has_static_token(source: &[u8], start: u32, end: u32) -> bool {
+pub fn sig_has_static_token(source: &[u8], start: u32, end: u32) -> bool {
     let s = (start as usize).min(source.len());
     let e = (end as usize).min(source.len());
     if s >= e {
@@ -2029,60 +2029,5 @@ pub fn execute_retrieval_dispatch<W: Write>(
         crate::serialize::serialize_recall_xml(root, rec, &val, out)
     } else {
         execute_advanced_retrieval(ret, root, ingest, graph, interner, out)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sig_has_static_token() {
-        assert!(sig_has_static_token(b"static void foo()", 0, 17));
-        assert!(sig_has_static_token(b"inline static int bar()", 0, 23));
-        assert!(sig_has_static_token(b"static", 0, 6));
-        assert!(sig_has_static_token(b"foo static bar", 0, 14));
-        assert!(!sig_has_static_token(b"mystatic void foo()", 0, 19));
-        assert!(!sig_has_static_token(b"static_fn void foo()", 0, 20));
-        assert!(!sig_has_static_token(b"void foo()", 0, 10));
-        assert!(!sig_has_static_token(b"static void foo()", 10, 5));
-        assert!(!sig_has_static_token(b"", 0, 0));
-        assert!(sig_has_static_token(b"static", 0, 100));
-    }
-
-    #[test]
-    fn test_skeletonize_body() {
-        let body = "fn run() {\n    if x {\n        let a = 1;\n        let b = 2;\n    }\n}";
-        let skel = skeletonize_body(body);
-        assert!(skel.contains("..."));
-        assert!(!skel.contains("let a = 1"));
-        let interner = Interner::new();
-        let ingest = IngestResult::new();
-        let mut buf = Vec::new();
-        assert!(execute_expand_query(".", "missing", &ingest, &interner, &mut buf).is_err());
-        assert!(
-            execute_expand_or_outline_query(".", "missing", true, &ingest, &interner, &mut buf)
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn test_handoff_xml_branches() {
-        let reg = crate::LanguageRegistry::new().unwrap();
-        let interner = Interner::new();
-        let fixtures: &[(&str, crate::domain::Lang, &[u8])] = &[(
-            "src/lib.rs",
-            crate::domain::Lang::Rust,
-            b"pub fn overview() {}\n",
-        )];
-        let ingest = crate::ingest::ingest_in_memory_files(fixtures, &reg, &interner);
-        let empty_rows = build_handoff_verified_rows(&[], &ingest, &interner);
-        assert!(empty_rows.contains("src/lib.rs"));
-        let ch_rows = build_handoff_verified_rows(&["src/lib.rs".to_string()], &ingest, &interner);
-        assert!(ch_rows.contains("overview"));
-        let xml = build_handoff_xml(".", &ingest, &interner);
-        assert!(xml.contains("ripwire.handoff/v1"));
-        let (b, s, d) = resolve_git_branch_and_subject("/nonexistent_repo_path_xyz");
-        assert_eq!((b.as_str(), s.as_str(), d), ("main", "head", false));
     }
 }

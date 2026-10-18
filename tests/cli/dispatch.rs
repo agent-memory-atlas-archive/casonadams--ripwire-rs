@@ -1,10 +1,18 @@
 use ripwire_rs::cli::{
-    GateArgs, MetricsArgs, NavMode, NavigateArgs, SliceArgs, execute_nav_symbol_query,
-    execute_navigate_with, execute_stream_xml_with,
+    AroundConfig, GateArgs, MetricsArgs, NavContext, NavMode, NavigateArgs, OrientArgs, SliceArgs,
+    TopArchitectureArgs, TopRetrievalArgs, TopSafetyArgs, TopWorkspaceArgs, dispatch_top_arch,
+    dispatch_top_detail, execute_around_query, execute_batch_content, execute_communities_query,
+    execute_connect_query, execute_dead_code_query, execute_deps_query, execute_exercises_query,
+    execute_external_surface_query, execute_html_export, execute_nav_symbol_query,
+    execute_navigate_with, execute_path_query, execute_retrieval_dispatch,
+    execute_safe_delete_query, execute_safety_dispatch, execute_situ_query,
+    execute_stream_xml_with, execute_test_gate_query, execute_workspace_doc_query,
+    print_cochange_groups,
 };
 use ripwire_rs::{
-    Cli, Commands, Graph, Interner, Lang, LanguageRegistry, McpState, PageRankConfig,
-    dispatch_json_rpc, ingest_in_memory_files, run_cli_args, run_mcp_stream,
+    Cli, Commands, Graph, IngestResult, Interner, Lang, LanguageRegistry, McpState, PageRankConfig,
+    PageRankResult, dispatch_json_rpc, ingest_in_memory_files, run_cli_args, run_mcp_stream,
+    serialize_uses_xml,
 };
 use serde_json::Value;
 use std::io::Cursor;
@@ -16,7 +24,6 @@ fn test_cli_help_categories() {
     let mut cmd = Cli::command();
     let help_str = cmd.render_help().to_string();
 
-    // Verify all 6 categorized workflow groups are present
     assert!(help_str.contains("orient"), "must contain 'orient'");
     assert!(help_str.contains("navigate"), "must contain 'navigate'");
     assert!(help_str.contains("gate"), "must contain 'gate'");
@@ -27,7 +34,6 @@ fn test_cli_help_categories() {
 
 #[test]
 fn test_mcp_json_rpc_suite() {
-    // 100% in-memory fixture: zero disk I/O, zero network
     let fixtures: &[(&str, Lang, &[u8])] = &[(
         "lib.rs",
         Lang::Rust,
@@ -38,7 +44,6 @@ fn test_mcp_json_rpc_suite() {
     let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
     let mut state = Some(McpState::from_ingest(".", ingest, interner));
 
-    // ── 1. INITIALIZE ────────────────────────────────────────────────────────
     let init_req = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}"#;
     let init_resp = dispatch_json_rpc(init_req, &mut state, ".").expect("must reply to initialize");
     let init_val: Value = serde_json::from_str(&init_resp).unwrap();
@@ -46,11 +51,9 @@ fn test_mcp_json_rpc_suite() {
     assert_eq!(init_val["result"]["serverInfo"]["name"], "ripwire");
     assert_eq!(init_val["result"]["protocolVersion"], "2024-11-05");
 
-    // ── 2. NOTIFICATION: notifications/initialized (no reply) ────────────────
     let notif = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
     assert!(dispatch_json_rpc(notif, &mut state, ".").is_none());
 
-    // ── 3. TOOLS/LIST ────────────────────────────────────────────────────────
     let list_req = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#;
     let list_resp = dispatch_json_rpc(list_req, &mut state, ".").expect("must reply to tools/list");
     let list_val: Value = serde_json::from_str(&list_resp).unwrap();
@@ -70,7 +73,6 @@ fn test_mcp_json_rpc_suite() {
     assert!(tool_names.contains(&"quality_baseline"));
     assert!(tool_names.contains(&"quality_delta"));
 
-    // ── 4. TOOLS/CALL: explore ───────────────────────────────────────────────
     let explore_call = r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"explore","arguments":{"top_k":5}}}"#;
     let explore_resp =
         dispatch_json_rpc(explore_call, &mut state, ".").expect("must reply to explore");
@@ -81,7 +83,6 @@ fn test_mcp_json_rpc_suite() {
         .unwrap();
     assert!(text.contains("<r schema=\"ripwire.map/v1\""));
 
-    // ── 5. TOOLS/CALL: find_symbol ───────────────────────────────────────────
     let find_call = r#"{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"find_symbol","arguments":{"symbol":"run_cli"}}}"#;
     let find_resp =
         dispatch_json_rpc(find_call, &mut state, ".").expect("must reply to find_symbol");
@@ -90,7 +91,6 @@ fn test_mcp_json_rpc_suite() {
     let find_text = find_val["result"]["content"][0]["text"].as_str().unwrap();
     assert!(find_text.contains("run_cli") || find_text.contains("found"));
 
-    // ── 6. TOOLS/CALL: callers & callees ─────────────────────────────────────
     let callers_call = r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"callers","arguments":{"symbol":"run_cli"}}}"#;
     let callers_resp =
         dispatch_json_rpc(callers_call, &mut state, ".").expect("must reply to callers");
@@ -103,14 +103,12 @@ fn test_mcp_json_rpc_suite() {
     let callees_val: Value = serde_json::from_str(&callees_resp).unwrap();
     assert_eq!(callees_val["id"], 6);
 
-    // ── 7. TOOLS/CALL: impact ────────────────────────────────────────────────
     let impact_call = r#"{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"impact","arguments":{"symbol":"run_cli","max_depth":3}}}"#;
     let impact_resp =
         dispatch_json_rpc(impact_call, &mut state, ".").expect("must reply to impact");
     let impact_val: Value = serde_json::from_str(&impact_resp).unwrap();
     assert_eq!(impact_val["id"], 7);
 
-    // ── 8. ERROR CASES ───────────────────────────────────────────────────────
     let unknown_tool =
         r#"{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"unknown_tool"}}"#;
     let err_resp = dispatch_json_rpc(unknown_tool, &mut state, ".").expect("must reply error");
@@ -142,7 +140,6 @@ fn test_mcp_stream_execution() {
 
 #[test]
 fn test_cli_execution_modes() {
-    // In-memory test fixture: zero disk I/O, zero network
     let fixtures: &[(&str, Lang, &[u8])] = &[(
         "lib.rs",
         Lang::Rust,
@@ -156,11 +153,9 @@ fn test_cli_execution_modes() {
 
     let mut out = Vec::new();
 
-    // 1. Stream XML
     assert!(execute_stream_xml_with(".", &ingest, &graph, &pr, &interner, &mut out).is_ok());
     assert!(!out.is_empty());
 
-    // 2. Navigate with callers, callees, impact, and standard
     let nav_modes = [
         NavigateArgs {
             path: None,
@@ -206,7 +201,7 @@ fn test_cli_execution_modes() {
         },
     ];
 
-    let ctx = ripwire_rs::cli::NavContext {
+    let ctx = NavContext {
         ingest: &ingest,
         graph: &graph,
         ranks: &pr.ranks,
@@ -239,11 +234,10 @@ fn test_cli_execution_modes() {
     assert!(sym_xml.contains("<find-symbol schema=\"ripwire.find-symbol/v1\" of=\"run_cli\""));
 
     let mut uses_buf = Vec::new();
-    ripwire_rs::serialize_uses_xml("helper", &ingest, &interner, &mut uses_buf).unwrap();
+    serialize_uses_xml("helper", &ingest, &interner, &mut uses_buf).unwrap();
     let uses_xml = String::from_utf8(uses_buf).unwrap();
     assert!(uses_xml.contains("<uses schema=\"ripwire.uses/v1\" of=\"helper\""));
 
-    // 3. Subcommand stubs
     assert!(
         run_cli_args(Cli {
             command: Some(Commands::Gate(GateArgs::default())),
@@ -327,7 +321,7 @@ fn test_top_nav_queries() {
     assert!(err_msg.contains("ripwire: --callers symbol not found: missing_sym_404"));
 }
 
-fn setup_in_memory_fixture() -> (ripwire_rs::domain::IngestResult, Graph, Interner) {
+fn setup_in_memory_fixture() -> (IngestResult, Graph, Interner) {
     let reg = LanguageRegistry::new().unwrap();
     let interner = Interner::new();
     let ingest = ingest_in_memory_files(
@@ -345,10 +339,6 @@ fn setup_in_memory_fixture() -> (ripwire_rs::domain::IngestResult, Graph, Intern
 
 #[test]
 fn test_top_retrieval_and_workspace_queries() {
-    use ripwire_rs::cli::{
-        TopRetrievalArgs, TopWorkspaceArgs, execute_connect_query, execute_path_query,
-        execute_retrieval_dispatch, execute_workspace_doc_query,
-    };
     let (ingest, graph, interner) = setup_in_memory_fixture();
 
     let mut out = Vec::new();
@@ -397,7 +387,7 @@ fn test_top_retrieval_and_workspace_queries() {
         )
         .is_err()
     );
-    let pr = ripwire_rs::PageRankResult {
+    let pr = PageRankResult {
         iterations: 1,
         converged: true,
         ranks: vec![0.5, 0.5],
@@ -479,10 +469,6 @@ fn test_top_retrieval_and_workspace_queries() {
 
 #[test]
 fn test_top_safety_queries() {
-    use ripwire_rs::cli::{
-        TopSafetyArgs, execute_exercises_query, execute_safe_delete_query, execute_safety_dispatch,
-        execute_situ_query, execute_test_gate_query,
-    };
     let (ingest, graph, interner) = setup_in_memory_fixture();
     let mut out = Vec::new();
 
@@ -595,13 +581,9 @@ fn test_top_safety_queries() {
     };
     assert!(execute_safety_dispatch(&edit_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
 }
+
 #[test]
 fn test_top_architecture_queries() {
-    use ripwire_rs::cli::{
-        AroundConfig, TopArchitectureArgs, execute_around_query, execute_batch_content,
-        execute_communities_query, execute_dead_code_query, execute_deps_query,
-        execute_external_surface_query,
-    };
     let (ingest, graph, interner) = setup_in_memory_fixture();
     let mut out = Vec::new();
 
@@ -620,7 +602,7 @@ fn test_top_architecture_queries() {
     assert!(execute_external_surface_query(".", &ingest, &interner, &mut out).is_ok());
     assert!(execute_deps_query(".", &ingest, &graph, &interner, &mut out).is_ok());
 
-    let pr = ripwire_rs::PageRankResult {
+    let pr = PageRankResult {
         iterations: 1,
         converged: true,
         ranks: vec![0.5, 0.5],
@@ -663,9 +645,10 @@ fn test_top_architecture_queries() {
             arch: a,
             ..Default::default()
         };
-        let _ = ripwire_rs::cli::dispatch_top_arch(&cli, ".");
+        let _ = dispatch_top_arch(&cli, ".");
     }
 }
+
 #[test]
 fn test_all_new_feature_coverage() {
     let (ingest, graph, interner) = setup_in_memory_fixture();
@@ -680,7 +663,7 @@ fn test_all_new_feature_coverage() {
     let _ = ripwire_rs::metrics::serialize_lint_xml(".", &findings, &mut out);
     let _ = ripwire_rs::metrics::serialize_lint_catalog(&mut out);
     let _ = ripwire_rs::metrics::serialize_lint_sarif(&findings, &mut out);
-    let _ = ripwire_rs::cli::print_cochange_groups(".", &[], &mut out);
+    let _ = print_cochange_groups(".", &[], &mut out);
 
     let arch_cfg = ripwire_rs::gate::arch::ArchConfig::parse(
         "layer src = src\nlayer tests = tests\ndeny src -> tests\ndeny tests -> src\n",
@@ -689,80 +672,68 @@ fn test_all_new_feature_coverage() {
         ripwire_rs::gate::arch::check_architecture_rules(&arch_cfg, &ingest, &graph, &interner);
     let _ = ripwire_rs::gate::arch::serialize_arch_xml(".", &viols, &mut out);
 
-    let mut ws = ripwire_rs::cli::TopWorkspaceArgs {
+    let mut ws = TopWorkspaceArgs {
         doctor: true,
         ..Default::default()
     };
-    let _ =
-        ripwire_rs::cli::execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
+    let _ = execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
     ws.doctor = false;
     ws.handoff = true;
-    let _ =
-        ripwire_rs::cli::execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
+    let _ = execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
     ws.handoff = false;
     ws.notes = true;
-    let _ =
-        ripwire_rs::cli::execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
+    let _ = execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
     ws.notes = false;
     ws.replace_symbol_body = Some("run:test".into());
-    let _ =
-        ripwire_rs::cli::execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
-    let mut cli = ripwire_rs::cli::Cli::default();
+    let _ = execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
+    let mut cli = Cli::default();
     cli.arch.communities = true;
-    let _ = ripwire_rs::cli::dispatch_top_arch(&cli, ".");
+    let _ = dispatch_top_arch(&cli, ".");
     cli.arch.communities = false;
     cli.arch.mermaid = true;
-    let _ = ripwire_rs::cli::dispatch_top_arch(&cli, ".");
+    let _ = dispatch_top_arch(&cli, ".");
 
     cli.detail.tree = true;
-    let _ = ripwire_rs::cli::dispatch_top_detail(&cli, ".");
+    let _ = dispatch_top_detail(&cli, ".");
     cli.detail.tree = false;
     cli.detail.biggest_first = true;
-    let _ = ripwire_rs::cli::dispatch_top_detail(&cli, ".");
+    let _ = dispatch_top_detail(&cli, ".");
 
-    let ret = ripwire_rs::cli::TopRetrievalArgs {
+    let ret = TopRetrievalArgs {
         at: Some("src/lib.rs:1".into()),
         ..Default::default()
     };
-    let pr = ripwire_rs::PageRankResult {
+    let pr = PageRankResult {
         iterations: 1,
         converged: true,
         ranks: vec![1.0],
     };
-    let _ = ripwire_rs::cli::execute_retrieval_dispatch(
-        &ret, ".", &ingest, &graph, &pr, &interner, &mut out,
-    );
+    let _ = execute_retrieval_dispatch(&ret, ".", &ingest, &graph, &pr, &interner, &mut out);
 
     let _ = ripwire_rs::navigate::resolve_symbol_at("src/lib.rs", 1, &ingest, &interner);
     let _ = ripwire_rs::metrics::execute_biggest_first_query(".", &ingest, &interner, &mut out);
-    assert!(ripwire_rs::cli::execute_html_export(".", None, "lang").is_ok());
-    let mut detail_cli = ripwire_rs::cli::Cli::default();
+    assert!(execute_html_export(".", None, "lang").is_ok());
+    let mut detail_cli = Cli::default();
     detail_cli.detail.naming_consistency = true;
-    let _ = ripwire_rs::cli::dispatch_top_detail(&detail_cli, ".");
+    let _ = dispatch_top_detail(&detail_cli, ".");
     detail_cli.detail.naming_consistency = false;
     detail_cli.detail.report = true;
-    let _ = ripwire_rs::cli::dispatch_top_detail(&detail_cli, ".");
+    let _ = dispatch_top_detail(&detail_cli, ".");
     detail_cli.detail.report = false;
     detail_cli.detail.legend_dict = true;
-    let _ = ripwire_rs::cli::dispatch_top_detail(&detail_cli, ".");
+    let _ = dispatch_top_detail(&detail_cli, ".");
 
-    let mut ws2 = ripwire_rs::cli::TopWorkspaceArgs {
+    let mut ws2 = TopWorkspaceArgs {
         skipped: true,
         ..Default::default()
     };
-    let _ = ripwire_rs::cli::execute_workspace_doc_query(
-        &ws2, ".", &ingest, &interner, false, &mut out,
-    );
+    let _ = execute_workspace_doc_query(&ws2, ".", &ingest, &interner, false, &mut out);
     ws2.skipped = false;
     ws2.flip = Some("DEBUG".into());
-    let _ = ripwire_rs::cli::execute_workspace_doc_query(
-        &ws2, ".", &ingest, &interner, false, &mut out,
-    );
+    let _ = execute_workspace_doc_query(&ws2, ".", &ingest, &interner, false, &mut out);
     ws2.flip = None;
     ws2.plan_lint = Some("README.md".into());
-    let _ = ripwire_rs::cli::execute_workspace_doc_query(
-        &ws2, ".", &ingest, &interner, false, &mut out,
-    );
+    let _ = execute_workspace_doc_query(&ws2, ".", &ingest, &interner, false, &mut out);
 
     for h_task in [
         "who calls foo",
@@ -772,57 +743,33 @@ fn test_all_new_feature_coverage() {
         "run tests",
         "general",
     ] {
-        let r_help = ripwire_rs::cli::TopRetrievalArgs {
+        let r_help = TopRetrievalArgs {
             help_task: Some(h_task.into()),
             ..Default::default()
         };
-        let _ = ripwire_rs::cli::execute_retrieval_dispatch(
-            &r_help, ".", &ingest, &graph, &pr, &interner, &mut out,
-        );
+        let _ = execute_retrieval_dispatch(&r_help, ".", &ingest, &graph, &pr, &interner, &mut out);
     }
-    let r_grep_ctx = ripwire_rs::cli::TopRetrievalArgs {
+    let r_grep_ctx = TopRetrievalArgs {
         grep: Some("fn".into()),
         grep_context: Some(1),
         ..Default::default()
     };
-    let _ = ripwire_rs::cli::execute_retrieval_dispatch(
-        &r_grep_ctx,
-        ".",
-        &ingest,
-        &graph,
-        &pr,
-        &interner,
-        &mut out,
-    );
+    let _ = execute_retrieval_dispatch(&r_grep_ctx, ".", &ingest, &graph, &pr, &interner, &mut out);
     let orient_cli = Cli {
-        command: Some(Commands::Orient(ripwire_rs::cli::OrientArgs {
+        command: Some(Commands::Orient(OrientArgs {
             path: Some(".".into()),
             for_task: Some("Interner".into()),
         })),
         ..Default::default()
     };
     assert!(run_cli_args(orient_cli).is_ok());
-    let mut part_safety = ripwire_rs::cli::TopSafetyArgs {
+    let mut part_safety = TopSafetyArgs {
         partition: Some(None),
         ..Default::default()
     };
-    let _ = ripwire_rs::cli::execute_safety_dispatch(
-        &part_safety,
-        ".",
-        &ingest,
-        &graph,
-        &interner,
-        &mut out,
-    );
+    let _ = execute_safety_dispatch(&part_safety, ".", &ingest, &graph, &interner, &mut out);
     part_safety.partition = None;
     part_safety.edit_plan = Some("{\"version\":1,\"edits\":[]}".into());
     part_safety.dry_run = true;
-    let _ = ripwire_rs::cli::execute_safety_dispatch(
-        &part_safety,
-        ".",
-        &ingest,
-        &graph,
-        &interner,
-        &mut out,
-    );
+    let _ = execute_safety_dispatch(&part_safety, ".", &ingest, &graph, &interner, &mut out);
 }
