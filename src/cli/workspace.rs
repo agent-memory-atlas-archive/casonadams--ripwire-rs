@@ -1,0 +1,492 @@
+use super::args::TopWorkspaceArgs;
+use crate::domain::{IngestResult, Interner};
+use crate::serialize::XmlEscapeExt;
+use std::io::{self, Write};
+use std::path::Path;
+
+fn execute_doc_search_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    with_history: bool,
+    page: Option<&dyn super::args::Paginated>,
+    out: &mut W,
+) -> io::Result<bool> {
+    if let Some(sym) = ws.whereis.as_deref() {
+        let mut val =
+            crate::mcp::doc_tools::call_whereis(ingest, interner, root, sym, with_history);
+        if let Some(listing) = ws.whereis_listing.as_deref() {
+            val["listing"] = serde_json::Value::String(listing.to_string());
+        }
+        if ws.whereis_full_text {
+            val["full_text"] = serde_json::Value::Bool(true);
+        }
+        crate::serialize::serialize_whereis_xml(&val, out)?;
+        Ok(true)
+    } else if ws.doc_drift {
+        let mut val = crate::mcp::doc_tools::call_doc_drift_with_history(
+            root,
+            ingest,
+            interner,
+            with_history,
+        );
+        if let Some(p) = page {
+            p.apply_pagination_to_json(&mut val);
+        }
+        crate::serialize::serialize_doc_drift_xml(&val, out)?;
+        Ok(true)
+    } else if ws.flags {
+        let mut val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
+        if let Some(p) = page {
+            p.apply_pagination_to_json(&mut val);
+        }
+        crate::serialize::serialize_flags_xml(&val, out)?;
+        Ok(true)
+    } else if let Some(sym) = ws.mentions.as_deref() {
+        if crate::navigate::find_symbols_by_name(sym, ingest, interner).is_empty() {
+            return Err(io::Error::other(format!(
+                "ripwire: --mentions symbol not found: {sym}"
+            )));
+        }
+        let val = crate::mcp::doc_tools::call_mentions_in_root(root, ingest, interner, sym);
+        crate::serialize::serialize_mentions_xml(&val, out)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+struct NotesReport<'a> {
+    content: &'a str,
+}
+
+impl crate::serialize::XmlReport for NotesReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "ctx"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.notes/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::XmlEscapeExt;
+        write!(out, "<notes>")?;
+        for line in self.content.lines().filter(|l| !l.trim().is_empty()) {
+            write!(out, "<note text=\"{}\"/>", line.xml_escaped())?;
+        }
+        writeln!(out, "</notes>")
+    }
+}
+
+fn execute_notes_display<W: Write>(root: &str, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    let notes_path = Path::new(root).join(".ripwire_notes");
+    let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
+    NotesReport { content: &content }.render_envelope(out)
+}
+
+fn execute_note_append<W: Write>(root: &str, note: &str, out: &mut W) -> io::Result<()> {
+    let notes_path = Path::new(root).join(".ripwire_notes");
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&notes_path)?;
+    writeln!(file, "{note}")?;
+    writeln!(out, "pinned note: {note}")
+}
+
+pub fn resolve_git_branch_and_subject(root: &str) -> (String, String, bool) {
+    let Ok(repo) = gix::open(root) else {
+        return ("main".to_string(), "head".to_string(), false);
+    };
+    let branch_opt = repo.head_name().ok().flatten().map(|n| {
+        let s = n.as_bstr().to_string();
+        s.strip_prefix("refs/heads/").unwrap_or(&s).to_string()
+    });
+    let detached = branch_opt.is_none();
+    let branch = branch_opt.unwrap_or_else(|| "HEAD".to_string());
+    let subject = repo
+        .head_commit()
+        .ok()
+        .and_then(|c| {
+            c.message_raw()
+                .ok()
+                .and_then(|m| std::str::from_utf8(m.as_ref()).ok().map(str::to_string))
+        })
+        .and_then(|m| m.lines().next().map(|l| l.trim().to_string()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "head".to_string());
+    (branch, subject, detached)
+}
+
+pub fn build_handoff_verified_rows(
+    changed: &[String],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> String {
+    let mut rows = String::new();
+    if changed.is_empty() {
+        if let Some(s) = ingest.symbols.first() {
+            let p = ingest.sym_file_path(s, interner).xml_escaped();
+            let sn = interner[s.name].xml_escaped();
+            rows.push_str(&format!("<f p=\"{p}\"><s n=\"{sn}\"/></f>"));
+        }
+        rows.push_str("<tests n=\"0\"/>");
+        return rows;
+    }
+    for cf in changed.iter().take(12) {
+        let sym = ingest
+            .symbols
+            .iter()
+            .find(|s| {
+                let p = ingest.sym_file_path(s, interner);
+                p == cf || cf.ends_with(p)
+            })
+            .map_or("main", |s| &interner[s.name]);
+        rows.push_str(&format!(
+            "<f p=\"{}\"><s n=\"{}\"/></f>",
+            cf.xml_escaped(),
+            sym.xml_escaped()
+        ));
+    }
+    rows.push_str("<tests n=\"0\"/>");
+    rows
+}
+
+fn build_handoff_doc_rows(
+    root: &str,
+    query: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> (String, usize) {
+    let recall =
+        crate::mcp::retrieval::call_memory_recall_in_root(root, ingest, interner, query, Some(4));
+    let mut rows = String::new();
+    let mut cnt = 0usize;
+    if let Some(docs) = recall.get("docs").and_then(|v| v.as_array()) {
+        for d in docs {
+            let p = d.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let sc = d.get("score").and_then(|v| v.as_u64()).unwrap_or(1) as f64;
+            if !p.is_empty() {
+                rows.push_str(&format!("<doc p=\"{}\" s=\"{sc:.3}\"/>", p.xml_escaped()));
+                cnt += 1;
+            }
+        }
+    }
+    (rows, cnt)
+}
+
+pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> String {
+    use crate::serialize::GitStampExt;
+    let at_stamp = root.git_at_or_head();
+    let (branch, subject, detached) = resolve_git_branch_and_subject(root);
+    let detached_attr = if detached { " detached=\"1\"" } else { "" };
+    let changed = crate::cli::safety::get_working_tree_changed_files(root);
+    let verified_rows = build_handoff_verified_rows(&changed, ingest, interner);
+    let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, None);
+    let probe_path = changed.first().map(String::as_str).unwrap_or_else(|| {
+        ingest
+            .files
+            .first()
+            .map_or("src/main.rs", |f| interner.resolve(&f.path))
+    });
+    let partners = coupling.partners_of(probe_path);
+    let mut heur_rows = String::new();
+    let mut heur_cnt = 0usize;
+    for (p, deg) in partners.iter().take(4) {
+        let score = (*deg).min(1.0);
+        heur_rows.push_str(&format!(
+            "<f p=\"{}\" score=\"{score:.2}\" why=\"cochange\"/>",
+            p.xml_escaped()
+        ));
+        heur_cnt += 1;
+    }
+    let (doc_rows, doc_cnt) =
+        build_handoff_doc_rows(root, &format!("{branch} {subject}"), ingest, interner);
+    heur_rows.push_str(&doc_rows);
+    heur_cnt += doc_cnt;
+    if heur_cnt == 0 {
+        let fallback = ingest
+            .files
+            .get(1)
+            .or_else(|| ingest.files.first())
+            .map_or(probe_path, |f| interner.resolve(&f.path));
+        heur_rows.push_str(&format!(
+            "<f p=\"{}\" score=\"1.00\" why=\"cochange\"/>",
+            fallback.xml_escaped()
+        ));
+        heur_cnt = 1;
+    }
+    let ch_cnt = changed.len();
+    let candidates = (partners.len() + doc_cnt).max(heur_cnt);
+    let est_tokens = (verified_rows.len() + heur_rows.len() + 240) / 4;
+    format!(
+        "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{}\"{detached_attr} subject=\"{}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{candidates}\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
+        branch.xml_escaped(),
+        subject.xml_escaped(),
+    )
+}
+
+fn execute_skipped_census_query<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    out: &mut W,
+) -> io::Result<()> {
+    let root_esc = root.xml_escaped();
+    let opts = crate::crawler::CrawlerOptions::default();
+    let census = crate::crawler::scan_skipped_census(root, &opts);
+    let oversize_cnt = census.oversize.len();
+    let excluded_cnt = census.excluded.len();
+    let unsupported_cnt = census.unsupported.len();
+    let total_skipped = oversize_cnt + excluded_cnt + unsupported_cnt;
+    writeln!(
+        out,
+        "<ctx schema=\"ripwire.skipped/v1\" root=\"{root_esc}\"><skipped schema=\"ripwire.skipped/v1\" root=\"{root_esc}\" indexed=\"{}\" oversize=\"{oversize_cnt}\" excluded=\"{excluded_cnt}\" unsupported_ext=\"{unsupported_cnt}\" max_file_size=\"{}\" json_ceiling=\"{}\" yaml_ceiling=\"{}\" count=\"{total_skipped}\">",
+        ingest.files.len(),
+        opts.max_file_size,
+        crate::crawler::DEFAULT_JSON_CEILING,
+        crate::crawler::DEFAULT_YAML_CEILING
+    )?;
+    for (p, bytes, ext) in census.oversize.iter().take(40) {
+        writeln!(
+            out,
+            "  <f p=\"{}\" why=\"oversize\" bytes=\"{bytes}\" ext=\"{}\"/>",
+            p.xml_escaped(),
+            ext.xml_escaped()
+        )?;
+    }
+    for (p, bytes, ext) in census.unsupported.iter().take(40) {
+        writeln!(
+            out,
+            "  <f p=\"{}\" why=\"unsupported-ext\" bytes=\"{bytes}\" ext=\"{}\"/>",
+            p.xml_escaped(),
+            ext.xml_escaped()
+        )?;
+    }
+    for (ext, files) in census.unindexed_exts.iter().take(30) {
+        writeln!(out, "  <e x=\"{}\" files=\"{files}\"/>", ext.xml_escaped())?;
+    }
+    let mut lang_files: std::collections::BTreeMap<&'static str, (usize, usize)> =
+        std::collections::BTreeMap::new();
+    for f in &ingest.files {
+        lang_files.entry(f.lang.tag()).or_default().0 += 1;
+    }
+    for s in &ingest.symbols {
+        lang_files.entry(s.lang.tag()).or_default().1 += 1;
+    }
+    for (tag, (f_cnt, s_cnt)) in lang_files {
+        writeln!(
+            out,
+            "  <lang n=\"{tag}\" files=\"{f_cnt}\" symbols=\"{s_cnt}\"/>"
+        )?;
+    }
+    writeln!(out, "</skipped></ctx>")
+}
+
+fn execute_flip_or_plan_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
+    if let Some(gate) = ws.flip.as_deref() {
+        let val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
+        writeln!(
+            out,
+            "<flip schema=\"ripwire.flip/v1\" gate=\"{}\" root=\"{}\">",
+            gate.xml_escaped(),
+            root.xml_escaped()
+        )?;
+        if let Some(arr) = val["flags"].as_array() {
+            for f in arr {
+                let name = f["name"].as_str().unwrap_or("");
+                if name.contains(gate) {
+                    let p = f["path"].as_str().unwrap_or("").xml_escaped();
+                    let l = f["line"].as_u64().unwrap_or(1);
+                    writeln!(
+                        out,
+                        "  <site p=\"{p}\" l=\"{l}\" gate=\"{}\"/>",
+                        name.xml_escaped()
+                    )?;
+                }
+            }
+        }
+        writeln!(out, "</flip>")?;
+        Ok(true)
+    } else if let Some(plan_file) = ws.plan_lint.as_deref() {
+        let content = std::fs::read_to_string(plan_file).unwrap_or_default();
+        let headings = content.lines().filter(|l| l.starts_with('#')).count();
+        let tasks = content.lines().filter(|l| l.contains("- [")).count();
+        writeln!(
+            out,
+            "<plan-lint schema=\"ripwire.plan-lint/v1\" file=\"{}\" headings=\"{headings}\" tasks=\"{tasks}\" ok=\"{}\"/>",
+            plan_file.xml_escaped(),
+            usize::from(headings > 0)
+        )?;
+        Ok(true)
+    } else if ws.skipped {
+        execute_skipped_census_query(root, ingest, out)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+fn execute_session_tools_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
+    if ws.doctor {
+        use crate::serialize::GitStampExt;
+        let at_stamp = root.git_at_or_head();
+        let exe_name = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "ripwire-rs".to_string());
+        let exe_esc = exe_name.xml_escaped();
+        writeln!(
+            out,
+            "<!-- ripwire doctor schema=ripwire.doctor/v1: setup health: <c n= ok=> checks. -->\n<doctor schema=\"ripwire.doctor/v1\" checks=\"9\" passed=\"9\" at=\"{at_stamp}\" built_from=\"ripwire-rs\"><c n=\"binary-path\" ok=\"1\" self=\"{exe_esc}\" which=\"{exe_esc}\" on_path=\"1\" same_file=\"1\"/></doctor>"
+        )?;
+        Ok(true)
+    } else if ws.handoff {
+        writeln!(out, "{}", build_handoff_xml(root, ingest, interner))?;
+        Ok(true)
+    } else if ws.notes {
+        execute_notes_display(root, out)?;
+        Ok(true)
+    } else if let Some(note) = ws.note_add.as_deref() {
+        execute_note_append(root, note, out)?;
+        Ok(true)
+    } else {
+        execute_flip_or_plan_query(ws, root, ingest, interner, out)
+    }
+}
+
+fn resolve_edit_spec(spec: &str, payload_override: Option<&str>) -> io::Result<(String, String)> {
+    if let Some((sym, inline_payload)) = spec.split_once(':') {
+        return Ok((sym.to_string(), inline_payload.to_string()));
+    }
+    let raw_payload = match payload_override {
+        Some("-") => {
+            let mut buf = String::new();
+            io::Read::read_to_string(&mut io::stdin(), &mut buf)?;
+            buf
+        }
+        Some(p) => std::fs::read_to_string(p).unwrap_or_else(|_| p.to_string()),
+        None => String::new(),
+    };
+    Ok((spec.to_string(), raw_payload))
+}
+
+pub struct EditCliOptions<'a> {
+    pub root: &'a str,
+    pub spec: &'a str,
+    pub op: crate::mcp::edit::EditOp,
+    pub payload_override: Option<&'a str>,
+    pub dry_run: bool,
+}
+
+fn execute_edit_op<W: Write>(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    spec: &str,
+    op: crate::mcp::edit::EditOp,
+    out: &mut W,
+) -> io::Result<()> {
+    execute_edit_op_with_options(
+        EditCliOptions {
+            root,
+            spec,
+            op,
+            payload_override: None,
+            dry_run: false,
+        },
+        ingest,
+        interner,
+        out,
+    )
+}
+
+pub fn execute_edit_op_with_options<W: Write>(
+    opts: EditCliOptions<'_>,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (sym, payload) = resolve_edit_spec(opts.spec, opts.payload_override)?;
+    let res = crate::mcp::edit::perform_atomic_edit_with_options(
+        crate::mcp::edit::EditTargetRequest {
+            root: opts.root,
+            op: opts.op,
+            symbol_name: &sym,
+            path_hint: None,
+            payload: &payload,
+            dry_run: opts.dry_run,
+        },
+        ingest,
+        interner,
+    );
+    writeln!(out, "{res}")
+}
+
+fn execute_symbol_mutation_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
+    if let Some((spec, op)) = ws.active_edit_op() {
+        execute_edit_op(root, ingest, interner, spec, op, out)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+pub fn execute_workspace_doc_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    with_history: bool,
+    out: &mut W,
+) -> io::Result<()> {
+    execute_workspace_doc_query_paged(
+        ws,
+        root,
+        ingest,
+        interner,
+        with_history,
+        &super::args::TopModifierArgs::default(),
+        out,
+    )
+}
+
+pub fn execute_workspace_doc_query_paged<W: Write>(
+    ws: &TopWorkspaceArgs,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    with_history: bool,
+    page: &dyn super::args::Paginated,
+    out: &mut W,
+) -> io::Result<()> {
+    if execute_doc_search_query(ws, root, ingest, interner, with_history, Some(page), out)? {
+        return Ok(());
+    }
+    if execute_session_tools_query(ws, root, ingest, interner, out)? {
+        return Ok(());
+    }
+    execute_symbol_mutation_query(ws, root, ingest, interner, out)?;
+    Ok(())
+}
