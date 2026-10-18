@@ -208,6 +208,32 @@ fn is_objc_foundation_qualifier(name: &str) -> bool {
         )
 }
 
+fn strip_cpp_attribute_prefix(slice: &[u8]) -> &[u8] {
+    let s = slice.trim_ascii_start();
+    if s.starts_with(b"[[")
+        && let Some(close) = s.windows(2).position(|w| w == b"]]")
+    {
+        return s[close + 2..].trim_ascii_start();
+    }
+    s
+}
+
+fn trailing_macro_before_semicolon(line: &[u8], trimmed_end: usize) -> Option<(usize, usize)> {
+    if trimmed_end < 4 || line[trimmed_end - 1] != b';' {
+        return None;
+    }
+    let before_semi = &line[..trimmed_end - 1];
+    let tok_end = before_semi.iter().rposition(|&b| b != b' ' && b != b'\t')? + 1;
+    let tok_start = before_semi[..tok_end]
+        .iter()
+        .rposition(|&b| !b.is_ascii_alphanumeric() && b != b'_')
+        .map_or(0, |p| p + 1);
+    let prefix = before_semi[..tok_start].trim_ascii_end();
+    let after_sig = prefix.ends_with(b")") || prefix.ends_with(b"noexcept");
+    let tok = std::str::from_utf8(&before_semi[tok_start..tok_end]).ok()?;
+    (after_sig && is_screaming_snake(tok)).then_some((tok_start, tok_end))
+}
+
 fn is_semicolonless_macro_line(line: &[u8]) -> Option<(usize, usize)> {
     let start = line.iter().position(|&b| b != b' ' && b != b'\t')?;
     let trimmed_end = line
@@ -215,15 +241,25 @@ fn is_semicolonless_macro_line(line: &[u8]) -> Option<(usize, usize)> {
         .rposition(|&b| !matches!(b, b' ' | b'\t' | b'\r' | b'\n'))?
         + 1;
     let slice = &line[start..trimmed_end];
-    if slice.first() == Some(&b'#') || !slice.ends_with(b")") {
+    if slice.first() == Some(&b'#') {
+        return None;
+    }
+    if let Some(span) = trailing_macro_before_semicolon(line, trimmed_end) {
+        return Some(span);
+    }
+    let attr_tail = strip_cpp_attribute_prefix(slice);
+    if let Ok(tok) = std::str::from_utf8(attr_tail)
+        && is_screaming_snake(tok.trim())
+    {
+        let tail_start = trimmed_end - attr_tail.len();
+        return Some((tail_start, trimmed_end));
+    }
+    if !slice.ends_with(b")") {
         return None;
     }
     let open_pos = slice.iter().position(|&b| b == b'(')?;
     let macro_name = std::str::from_utf8(&slice[..open_pos]).ok()?.trim();
-    if !is_screaming_snake(macro_name) {
-        return None;
-    }
-    Some((start, trimmed_end))
+    is_screaming_snake(macro_name).then_some((start, trimmed_end))
 }
 
 fn blank_c_family_macro_lines(source_bytes: &[u8]) -> Option<Vec<u8>> {
@@ -846,5 +882,36 @@ int countMoorings(int a) {
             .iter()
             .any(|r| r.from_symbol == assume_sym.id && &interner[r.callee_name] == "RW_CHECK_");
         assert!(has_macro_edge);
+    }
+
+    #[test]
+    fn test_cpp_attribute_macro_decorated_methods_extracted() {
+        let registry = LanguageRegistry::new().unwrap();
+        let interner = crate::domain::Interner::new();
+        let hdr = br#"
+class ConsoleLog {
+public:
+    RW_COLD_NOINLINE
+    static void handleAssert(int kind, const char* expr) noexcept DIAGNOSTICS_ANALYZER_NORETURN;
+    [[noreturn]] RW_COLD_NOINLINE
+    static void handlePanic(const char* file, int line) noexcept;
+};
+"#;
+        let cpp = br#"
+RW_COLD_NOINLINE
+void ConsoleLog::handleAssert(int kind, const char* expr) noexcept {
+}
+"#;
+        let ingest = ingest_in_memory_files(
+            &[
+                ("src/infra/Diagnostics.h", Lang::Cpp, hdr),
+                ("src/infra/diagnostics.cpp", Lang::Cpp, cpp),
+            ],
+            &registry,
+            &interner,
+        );
+        let lego = crate::mcp::retrieval::call_lego(&ingest, &interner, "ConsoleLog");
+        let methods = lego["methods"].as_array().unwrap();
+        assert_eq!(methods.len(), 2);
     }
 }

@@ -576,6 +576,12 @@ fn format_doc_drift_header_counts(val: &Value) -> String {
         return String::new();
     };
     let dated = val.u64_or("dated_docs", 0);
+    let prose_attr = val["prose_docs"]
+        .as_u64()
+        .map_or_else(String::new, |p| format!(" prose=\"{p}\""));
+    let corpus_attr = val["corpus"]
+        .as_u64()
+        .map_or_else(String::new, |c| format!(" corpus=\"{c}\""));
     let anchor_attrs = match val["anchors"].as_u64() {
         Some(anchors) => {
             let checked = val.u64_or("checked", 0);
@@ -584,7 +590,7 @@ fn format_doc_drift_header_counts(val: &Value) -> String {
         }
         None => String::new(),
     };
-    format!(" clean=\"{clean}\" dated=\"{dated}\"{anchor_attrs}")
+    format!(" clean=\"{clean}\" dated=\"{dated}\"{prose_attr}{corpus_attr}{anchor_attrs}")
 }
 
 pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
@@ -903,7 +909,7 @@ pub fn serialize_test_gate_xml<W: Write>(
         root,
         tests,
         untested,
-        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        crate::serialize::GraphGauges::ZERO_XML_ATTRS,
         out,
     )
 }
@@ -1085,7 +1091,7 @@ pub fn serialize_safe_delete_at_xml<W: Write>(
         def_loc,
         callers,
         blast_radius,
-        gauge_attrs: "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        gauge_attrs: crate::serialize::GraphGauges::ZERO_XML_ATTRS,
     }
     .render_envelope(out)
 }
@@ -1802,8 +1808,17 @@ pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io:
     } else {
         format!(" methods=\"{}\"", methods.len())
     };
+    let lego_attrs = if let Some(amb) = val["graph_ambiguous"].as_u64() {
+        let unres = val.u64_or("graph_unresolved", 0);
+        let unidx = val.u64_or("graph_unindexed", 0);
+        format!(
+            " graph_ambiguous=\"{amb}\" graph_unresolved=\"{unres}\" graph_unindexed=\"{unidx}\" counts_floor=\"1\""
+        )
+    } else {
+        String::new()
+    };
     let mut buf = format!(
-        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{}\">\n",
+        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego{lego_attrs}><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{}\">\n",
         impls.len()
     );
     for m in methods {

@@ -1057,28 +1057,29 @@ fn collect_interface_methods(
     ingest: &IngestResult,
     interner: &Interner,
     iface_file_id: Option<u32>,
+    unique_def: bool,
     interface_name: &str,
 ) -> Vec<Value> {
     let Some(fid) = iface_file_id else {
         return Vec::new();
     };
-    ingest
-        .symbols
-        .iter()
-        .filter(|s| {
-            s.file_id == fid
-                && s.kind == SymKind::Method
-                && s.scope
-                    .is_some_and(|sc| interner.resolve(&sc) == interface_name)
-        })
-        .map(|s| {
-            json!({
+    let mut seen_names = std::collections::HashSet::new();
+    let mut methods = Vec::new();
+    for s in &ingest.symbols {
+        let in_scope = s
+            .scope
+            .is_some_and(|sc| interner.resolve(&sc) == interface_name);
+        let is_member = (s.file_id == fid && matches!(s.kind, SymKind::Method | SymKind::Function))
+            || (unique_def && s.kind == SymKind::Method);
+        if in_scope && is_member && seen_names.insert(s.name) {
+            methods.push(json!({
                 "name": interner.resolve(&s.name),
                 "line": s.line,
                 "params": s.params
-            })
-        })
-        .collect()
+            }));
+        }
+    }
+    methods
 }
 
 pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &str) -> Value {
@@ -1100,9 +1101,9 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
         ingest,
         interner,
         iface_sym.map(|s| s.file_id),
+        iface_defs.len() <= 1,
         interface_name,
     );
-
     let mut implementors = Vec::new();
     let mut seen_impls = std::collections::HashSet::new();
     for r in &ingest.references {
@@ -1742,5 +1743,62 @@ mod tests {
             0.001,
         );
         assert!(s_discover > s_reload);
+    }
+
+    #[test]
+    fn test_call_lego_includes_out_of_line_methods_for_unique_class() {
+        let interner = Interner::new();
+        let mut ingest = IngestResult::new();
+        ingest.files.push(crate::domain::FileInfo {
+            id: 0,
+            path: interner.intern("src/infra/Diagnostics.h"),
+            lang: crate::domain::Lang::Cpp,
+            line_count: 50,
+            byte_size: 500,
+        });
+        ingest.files.push(crate::domain::FileInfo {
+            id: 1,
+            path: interner.intern("src/infra/diagnostics.cpp"),
+            lang: crate::domain::Lang::Cpp,
+            line_count: 50,
+            byte_size: 500,
+        });
+        let cls_spur = interner.intern("ConsoleLog");
+        ingest.symbols.push(crate::domain::Symbol::new(
+            0,
+            cls_spur,
+            interner.intern("src/infra/Diagnostics.h::ConsoleLog"),
+            SymKind::Class,
+            crate::domain::Lang::Cpp,
+            0,
+            10,
+        ));
+        ingest.symbols.push(
+            crate::domain::Symbol::new(
+                1,
+                interner.intern("handlePanic"),
+                interner.intern("src/infra/Diagnostics.h::ConsoleLog::handlePanic"),
+                SymKind::Function,
+                crate::domain::Lang::Cpp,
+                0,
+                15,
+            )
+            .with_scope(cls_spur),
+        );
+        ingest.symbols.push(
+            crate::domain::Symbol::new(
+                2,
+                interner.intern("handleAssert"),
+                interner.intern("src/infra/diagnostics.cpp::ConsoleLog::handleAssert"),
+                SymKind::Method,
+                crate::domain::Lang::Cpp,
+                1,
+                25,
+            )
+            .with_scope(cls_spur),
+        );
+        let lego = call_lego(&ingest, &interner, "ConsoleLog");
+        let methods = lego["methods"].as_array().unwrap();
+        assert_eq!(methods.len(), 2);
     }
 }

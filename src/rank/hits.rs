@@ -157,6 +157,8 @@ mod tests {
             )]),
             amb_out: vec![0, 0],
             unresolved: 0,
+            external: 0,
+            declined: 0,
         };
         let graph = Graph::from_resolution(2, resolution);
         let res = compute_hits(&graph, &HitsConfig::default());

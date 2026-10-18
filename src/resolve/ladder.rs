@@ -97,6 +97,16 @@ pub struct ResolvedRef {
     pub is_ambiguous: bool,
 }
 
+/// Triage classification for a reference during call-graph resolution.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RefOutcome {
+    Ignored,
+    Resolved(ResolvedRef),
+    Unresolved,
+    External,
+    Declined,
+}
+
 /// Assign integer directory IDs based on the parent directory of each file.
 #[must_use]
 pub fn compute_file_dirs(files: &[FileInfo], interner: &Interner) -> Vec<u32> {
@@ -243,6 +253,36 @@ pub fn index_file_scope_mentions(
     sets
 }
 
+fn is_non_table_read_write(r: &Reference) -> bool {
+    matches!(r.role, RefRole::Read | RefRole::Write)
+        && !r.lang.semantics().is_table_read_write_target()
+}
+
+fn classify_rejected_with_interner(r: &Reference, interner: &Interner) -> RefOutcome {
+    if r.qualifier
+        .and_then(|q| interner.try_resolve(&q))
+        .is_some_and(|qs| r.lang.semantics().is_std_or_builtin_qualifier(qs))
+    {
+        return RefOutcome::External;
+    }
+    if interner
+        .try_resolve(&r.callee_name)
+        .is_some_and(|cs| r.lang.semantics().is_std_or_builtin_member(cs))
+    {
+        return RefOutcome::Declined;
+    }
+    RefOutcome::Unresolved
+}
+
+fn classify_rejected_candidates(r: &Reference, interner: Option<&Interner>) -> RefOutcome {
+    if is_non_table_read_write(r) {
+        return RefOutcome::Ignored;
+    }
+    interner.map_or(RefOutcome::Unresolved, |i| {
+        classify_rejected_with_interner(r, i)
+    })
+}
+
 /// Trait encapsulating symbol table and directory context for call resolution.
 pub trait ResolutionLookup {
     fn symbols(&self) -> &[Symbol];
@@ -345,46 +385,74 @@ pub trait ResolutionLookup {
     }
 
     #[must_use]
-    fn resolve_ref(&self, r: &Reference) -> Option<ResolvedRef> {
-        if r.from_symbol == NO_NODE
-            || !matches!(
-                r.role,
-                RefRole::Call | RefRole::Macro | RefRole::Read | RefRole::Write
-            )
-        {
-            return None;
+    fn is_call_like_ref(&self, r: &Reference) -> bool {
+        if r.from_symbol == NO_NODE {
+            return false;
         }
-        let all_cands = self.by_name().get(&r.callee_name)?;
-        let cands = self.filter_ref_candidates(all_cands, r)?;
+        match r.role {
+            RefRole::Call | RefRole::Macro => true,
+            RefRole::Read | RefRole::Write => {
+                r.lang.semantics().is_table_read_write_target()
+                    || self.by_name().contains_key(&r.callee_name)
+            }
+            _ => false,
+        }
+    }
+
+    #[must_use]
+    fn classify_ref(&self, r: &Reference) -> RefOutcome {
+        if !self.is_call_like_ref(r) {
+            return RefOutcome::Ignored;
+        }
+        let Some(all_cands) = self.by_name().get(&r.callee_name) else {
+            return RefOutcome::External;
+        };
+        let Some(cands) = self.filter_ref_candidates(all_cands, r) else {
+            return classify_rejected_candidates(r, self.interner());
+        };
         let caller_file_id = r.file_id;
         let caller_dir_id = self
             .file_dirs()
             .get(caller_file_id as usize)
             .copied()
             .unwrap_or(u32::MAX);
-        let (tier, conf) = select_precedence_tier(
+        let Some((tier, conf)) = select_precedence_tier(
             &cands,
             caller_file_id,
             caller_dir_id,
             self.symbols(),
             self.file_dirs(),
         )
-        .or_else(|| self.select_interface_contract_tier(&cands))?;
+        .or_else(|| self.select_interface_contract_tier(&cands)) else {
+            return if is_non_table_read_write(r) {
+                RefOutcome::Ignored
+            } else {
+                RefOutcome::Declined
+            };
+        };
         let real_targets: Vec<NodeId> = tier
             .into_iter()
             .filter(|&target| target != r.from_symbol)
             .collect();
         if real_targets.is_empty() {
-            return None;
+            return RefOutcome::Ignored;
         }
         let is_ambiguous = real_targets.len() > 1;
         let conf_per_target = conf / (real_targets.len() as f32);
-        Some(ResolvedRef {
+        RefOutcome::Resolved(ResolvedRef {
             from: r.from_symbol,
             targets: real_targets,
             conf_per_target,
             is_ambiguous,
         })
+    }
+
+    #[must_use]
+    fn resolve_ref(&self, r: &Reference) -> Option<ResolvedRef> {
+        match self.classify_ref(r) {
+            RefOutcome::Resolved(res) => Some(res),
+            _ => None,
+        }
     }
 }
 

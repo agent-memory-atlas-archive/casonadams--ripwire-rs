@@ -255,6 +255,40 @@ struct DocAnchorCounts {
     checked: usize,
 }
 
+fn is_counted_backtick_anchor(span: &str) -> bool {
+    let t = span.trim();
+    !t.is_empty()
+        && !t.starts_with('-')
+        && !t.starts_with('@')
+        && !t
+            .bytes()
+            .any(|b| matches!(b, b' ' | b'\t' | b'<' | b'>' | b'='))
+        && t.bytes().any(|b| b.is_ascii_alphabetic())
+}
+
+fn record_backtick_span<'a>(
+    span: &'a str,
+    doc_line: usize,
+    sym_set: &std::collections::HashSet<&str>,
+    counts: &mut DocAnchorCounts,
+    resolving_lines: &mut Vec<usize>,
+    pending_missing: &mut Vec<(usize, &'a str, bool)>,
+) {
+    if !is_counted_backtick_anchor(span) {
+        return;
+    }
+    counts.total += 1;
+    let Some(sym) = is_candidate_symbol_anchor(span) else {
+        return;
+    };
+    counts.checked += 1;
+    if !sym_set.contains(sym) {
+        pending_missing.push((doc_line, sym, span.trim().ends_with("()")));
+    } else if resolving_lines.last().copied() != Some(doc_line) {
+        resolving_lines.push(doc_line);
+    }
+}
+
 fn collect_line_backtick_candidates<'a>(
     line: &'a str,
     doc_line: usize,
@@ -272,18 +306,14 @@ fn collect_line_backtick_candidates<'a>(
         let Some(end) = after_open.find('`') else {
             break;
         };
-        let span = &after_open[..end];
-        counts.total += 1;
-        if let Some(sym) = is_candidate_symbol_anchor(span) {
-            counts.checked += 1;
-            if sym_set.contains(sym) {
-                if resolving_lines.last().copied() != Some(doc_line) {
-                    resolving_lines.push(doc_line);
-                }
-            } else {
-                pending_missing.push((doc_line, sym, span.trim().ends_with("()")));
-            }
-        }
+        record_backtick_span(
+            &after_open[..end],
+            doc_line,
+            sym_set,
+            &mut counts,
+            resolving_lines,
+            pending_missing,
+        );
         rest = &after_open[end + 1..];
     }
     counts
@@ -513,6 +543,7 @@ fn filter_present_in_code_drift(
 struct CorpusDocSummary {
     docs_scanned: usize,
     dated_docs: usize,
+    prose_docs: usize,
     anchors: usize,
     checked: usize,
 }
@@ -547,6 +578,7 @@ fn scan_corpus_markdown_docs(
                 interner,
                 drift_items,
             );
+            summary.prose_docs += usize::from(c.checked == 0);
             summary.anchors += c.total;
             summary.checked += c.checked;
         }
@@ -598,6 +630,8 @@ pub fn call_doc_drift_with_history(
         "docs_scanned": summary.docs_scanned,
         "clean_docs": clean_docs,
         "dated_docs": summary.dated_docs,
+        "prose_docs": summary.prose_docs,
+        "corpus": ingest.files.len(),
         "anchors": summary.anchors,
         "checked": summary.checked,
         "unchecked": unchecked,
@@ -1722,8 +1756,8 @@ mod tests {
         ingest.symbols.push(sym);
 
         let mut drift = Vec::new();
-        scan_doc_text_for_drift(
-            "See `existingFn` at src/lib.rs:3 and `deletedFunction` at src/lib.rs:50\n```rust\n`ignoredInFence`\n```",
+        let counts = scan_doc_text_for_drift(
+            "See `existingFn` at src/lib.rs:3 and `deletedFunction` at src/lib.rs:50 (`--flag` `<s t=\"fn\">` `multi word`)\n```rust\n`ignoredInFence`\n```",
             "README.md",
             &file_map,
             &sym_set,
@@ -1731,6 +1765,8 @@ mod tests {
             &interner,
             &mut drift,
         );
+        assert_eq!(counts.total, 4);
+        assert_eq!(counts.checked, 4);
         assert_eq!(drift.len(), 3);
         assert!(
             drift
@@ -1754,8 +1790,22 @@ mod tests {
         enrich_drift_item_history(".", &mut drift[1], "HEAD");
         assert!(drift[1].get("fate").is_some());
         let mut xml_buf = Vec::new();
-        crate::serialize::serialize_doc_drift_xml(&json!({"drift": drift}), &mut xml_buf).unwrap();
+        crate::serialize::serialize_doc_drift_xml(
+            &json!({
+                "clean_docs": 2,
+                "dated_docs": 1,
+                "prose_docs": 1,
+                "corpus": 10,
+                "anchors": 4,
+                "checked": 4,
+                "unchecked": 0,
+                "drift": drift
+            }),
+            &mut xml_buf,
+        )
+        .unwrap();
         let xml_str = String::from_utf8(xml_buf).unwrap();
         assert!(xml_str.contains("fate=\""));
+        assert!(xml_str.contains("prose=\"1\" corpus=\"10\""));
     }
 }

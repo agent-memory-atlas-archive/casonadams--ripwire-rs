@@ -590,14 +590,14 @@ pub fn serialize_xml_with_ranks<W: Write>(
         counter.write_all(header_prefix)?;
         write!(
             counter,
-            " files={} symbols={} edges={} shown=\"{}\" ambiguous={} unresolved={} -->",
+            " files={} symbols={} edges={} shown=\"{}\"",
             ctx.ingest.file_count(),
             ctx.ingest.symbol_count(),
             ctx.graph.edge_count(),
             symbols_shown,
-            ambiguous,
-            ctx.graph.total_unresolved()
         )?;
+        crate::serialize::GraphGaugeProvider::write_summary_counts(ctx.graph, &mut counter)?;
+        counter.write_all(b" -->")?;
         let est_tokens = (body_buf.len() + 1200) * 2 / 5;
         let data_sections_cut = ctx
             .ingest

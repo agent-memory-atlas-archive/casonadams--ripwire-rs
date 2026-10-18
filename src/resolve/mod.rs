@@ -21,6 +21,8 @@ pub struct ResolutionResult {
     pub edge_accumulators: HashMap<(NodeId, NodeId), EdgeAcc>,
     pub amb_out: Vec<u32>,
     pub unresolved: usize,
+    pub external: usize,
+    pub declined: usize,
 }
 
 /// Resolve all call references from an ingestion result into edge accumulators and ambiguity metrics.
@@ -45,19 +47,26 @@ pub fn resolve_reference_chunk_with_context<L: ResolutionLookup>(
     chunk: &[Reference],
     lookup: &L,
     num_symbols: usize,
-) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize) {
-    let mut edge_accumulators: HashMap<(NodeId, NodeId), EdgeAcc> = HashMap::new();
-    let mut amb_out = vec![0u32; num_symbols];
-    let mut unresolved = 0usize;
+) -> ResolutionResult {
+    let mut res = ResolutionResult {
+        edge_accumulators: HashMap::new(),
+        amb_out: vec![0u32; num_symbols],
+        unresolved: 0,
+        external: 0,
+        declined: 0,
+    };
     for r in chunk {
-        if let Some(resolved) = lookup.resolve_ref(r) {
-            record_resolved_ref(resolved, &mut edge_accumulators, &mut amb_out);
-        } else if r.from_symbol != crate::domain::NO_NODE {
-            unresolved += 1;
+        match lookup.classify_ref(r) {
+            RefOutcome::Resolved(resolved) => {
+                record_resolved_ref(resolved, &mut res.edge_accumulators, &mut res.amb_out);
+            }
+            RefOutcome::Unresolved => res.unresolved += 1,
+            RefOutcome::External => res.external += 1,
+            RefOutcome::Declined => res.declined += 1,
+            RefOutcome::Ignored => {}
         }
     }
-
-    (edge_accumulators, amb_out, unresolved)
+    res
 }
 
 #[must_use]
@@ -67,7 +76,7 @@ pub fn resolve_reference_chunk(
     file_dirs: &[u32],
     by_name: &HashMap<Spur, Vec<NodeId>>,
     num_symbols: usize,
-) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize) {
+) -> ResolutionResult {
     let ctx = ResolutionContext {
         symbols,
         file_dirs,
@@ -78,20 +87,20 @@ pub fn resolve_reference_chunk(
     resolve_reference_chunk_with_context(chunk, &ctx, num_symbols)
 }
 
-pub fn merge_resolutions(
-    mut a: (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize),
-    b: (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize),
-) -> (HashMap<(NodeId, NodeId), EdgeAcc>, Vec<u32>, usize) {
-    for (k, acc_b) in b.0 {
-        let acc_a = a.0.entry(k).or_default();
+#[must_use]
+pub fn merge_resolutions(mut a: ResolutionResult, b: ResolutionResult) -> ResolutionResult {
+    for (k, acc_b) in b.edge_accumulators {
+        let acc_a = a.edge_accumulators.entry(k).or_default();
         acc_a.conf_sum += acc_b.conf_sum;
         acc_a.n_ref += acc_b.n_ref;
         acc_a.is_split |= acc_b.is_split;
     }
-    for (i, val) in b.1.into_iter().enumerate() {
-        a.1[i] += val;
+    for (i, val) in b.amb_out.into_iter().enumerate() {
+        a.amb_out[i] += val;
     }
-    a.2 += b.2;
+    a.unresolved += b.unresolved;
+    a.external += b.external;
+    a.declined += b.declined;
     a
 }
 
@@ -108,7 +117,7 @@ pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> Res
         file_scopes: Some(&file_scopes),
     };
 
-    let (edge_accumulators, amb_out, unresolved) = if ingest.references.len() < 256 {
+    if ingest.references.len() < 256 {
         resolve_reference_chunk_with_context(&ingest.references, &ctx, num_symbols)
     } else {
         ingest
@@ -116,14 +125,15 @@ pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> Res
             .par_chunks(512)
             .map(|chunk| resolve_reference_chunk_with_context(chunk, &ctx, num_symbols))
             .reduce(
-                || (HashMap::new(), vec![0u32; num_symbols], 0usize),
+                || ResolutionResult {
+                    edge_accumulators: HashMap::new(),
+                    amb_out: vec![0u32; num_symbols],
+                    unresolved: 0,
+                    external: 0,
+                    declined: 0,
+                },
                 merge_resolutions,
             )
-    };
-    ResolutionResult {
-        edge_accumulators,
-        amb_out,
-        unresolved,
     }
 }
 
@@ -433,7 +443,8 @@ mod tests {
             .push(Reference::new(0, name, 0, 3, Lang::Rust, RefRole::Call));
         let res = resolve_all_references(&ingest, &interner);
         assert!(res.edge_accumulators.is_empty());
-        assert_eq!(res.unresolved, 1);
+        assert_eq!(res.declined, 1);
+        assert_eq!(res.unresolved, 0);
     }
 
     #[test]
@@ -601,5 +612,95 @@ mod tests {
             .push(Reference::new(5, m_name, 4, 3, Lang::Rust, RefRole::Call));
         let res = resolve_all_references(&ingest, &interner);
         assert!(res.edge_accumulators.contains_key(&(5, 1)));
+    }
+
+    #[test]
+    fn test_triage_external_declined_and_unresolved_counts() {
+        let interner = Interner::new();
+        let mut ingest = IngestResult::new();
+        ingest.files.push(FileInfo {
+            id: 0,
+            path: interner.intern("src/main.rs"),
+            lang: Lang::Rust,
+            line_count: 20,
+            byte_size: 200,
+        });
+        ingest.files.push(FileInfo {
+            id: 1,
+            path: interner.intern("scripts/helper.py"),
+            lang: Lang::Python,
+            line_count: 10,
+            byte_size: 100,
+        });
+        let caller = Symbol::new(
+            0,
+            interner.intern("caller"),
+            interner.intern("src/main.rs::caller"),
+            SymKind::Function,
+            Lang::Rust,
+            0,
+            1,
+        );
+        let py_only = Symbol::new(
+            1,
+            interner.intern("py_target"),
+            interner.intern("scripts/helper.py::py_target"),
+            SymKind::Function,
+            Lang::Python,
+            1,
+            1,
+        );
+        let len_sym = Symbol::new(
+            2,
+            interner.intern("len"),
+            interner.intern("src/main.rs::Other::len"),
+            SymKind::Method,
+            Lang::Rust,
+            0,
+            10,
+        )
+        .with_scope(interner.intern("Other"));
+        ingest
+            .symbols
+            .extend_from_slice(&[caller, py_only, len_sym]);
+        ingest.references.extend_from_slice(&[
+            Reference::new(
+                0,
+                interner.intern("println"),
+                0,
+                2,
+                Lang::Rust,
+                RefRole::Call,
+            ),
+            Reference::new(
+                0,
+                interner.intern("py_target"),
+                0,
+                3,
+                Lang::Rust,
+                RefRole::Call,
+            ),
+            Reference::new(0, interner.intern("len"), 0, 4, Lang::Rust, RefRole::Call),
+            Reference::new(
+                0,
+                interner.intern("local_var"),
+                0,
+                5,
+                Lang::Rust,
+                RefRole::Read,
+            ),
+            Reference::new(
+                0,
+                interner.intern("py_target"),
+                0,
+                6,
+                Lang::Rust,
+                RefRole::Read,
+            ),
+        ]);
+        let res = resolve_all_references(&ingest, &interner);
+        assert_eq!(res.external, 1);
+        assert_eq!(res.unresolved, 1);
+        assert_eq!(res.declined, 1);
     }
 }

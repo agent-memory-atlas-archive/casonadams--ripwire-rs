@@ -141,9 +141,54 @@ impl<T: XmlReport + ?Sized> ToXmlString for T {
 pub struct GraphGauges {
     pub ambiguous: usize,
     pub unresolved: usize,
+    pub external: usize,
+    pub declined: usize,
     pub unindexed: usize,
 }
 
+impl GraphGauges {
+    pub const ZERO_XML_ATTRS: &'static str =
+        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"";
+}
+
+/// Trait unifying resolver gauge extraction and XML attribute formatting.
+pub trait GraphGaugeProvider {
+    fn gauges(&self) -> GraphGauges;
+
+    #[must_use]
+    fn xml_gauge_attrs(&self) -> String {
+        let g = self.gauges();
+        format!(
+            "graph_ambiguous=\"{}\" graph_unresolved=\"{}\" graph_unindexed=\"{}\" counts_floor=\"1\"",
+            g.ambiguous, g.unresolved, g.unindexed
+        )
+    }
+
+    fn write_xml_gauge_attrs<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        let g = self.gauges();
+        write!(
+            out,
+            " graph_ambiguous=\"{}\" graph_unresolved=\"{}\" graph_unindexed=\"{}\" counts_floor=\"1\"",
+            g.ambiguous, g.unresolved, g.unindexed
+        )
+    }
+
+    fn write_summary_counts<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        let g = self.gauges();
+        write!(
+            out,
+            " ambiguous={} unresolved={} external={} declined={}",
+            g.ambiguous, g.unresolved, g.external, g.declined
+        )
+    }
+}
+
+impl GraphGaugeProvider for GraphGauges {
+    #[inline]
+    fn gauges(&self) -> GraphGauges {
+        *self
+    }
+}
 /// Unified XML envelope trait for structured Ripwire reports.
 pub trait XmlReport {
     fn schema_tag(&self) -> &'static str;
@@ -194,11 +239,7 @@ pub trait XmlReport {
         }
         self.write_extra_attrs(out)?;
         if let Some(g) = self.graph_gauges() {
-            write!(
-                out,
-                " graph_ambiguous=\"{}\" graph_unresolved=\"{}\" graph_unindexed=\"{}\" counts_floor=\"1\"",
-                g.ambiguous, g.unresolved, g.unindexed
-            )?;
+            g.write_xml_gauge_attrs(out)?;
         }
         writeln!(out, ">")?;
         self.write_body(out)?;

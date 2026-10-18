@@ -113,6 +113,10 @@ pub struct Graph {
     #[serde(default)]
     pub unresolved: usize,
     #[serde(default)]
+    pub external: usize,
+    #[serde(default)]
+    pub declined: usize,
+    #[serde(default)]
     pub unindexed: usize,
     #[serde(default)]
     pub prior_weights: Vec<f64>,
@@ -188,23 +192,31 @@ impl Graph {
     pub fn total_unindexed(&self) -> usize {
         self.unindexed
     }
+
+    #[must_use]
+    pub fn total_external(&self) -> usize {
+        self.external
+    }
+
+    #[must_use]
+    pub fn total_declined(&self) -> usize {
+        self.declined
+    }
+
     #[must_use]
     pub fn gauges(&self) -> crate::serialize::GraphGauges {
         crate::serialize::GraphGauges {
             ambiguous: self.total_ambiguous(),
             unresolved: self.total_unresolved(),
+            external: self.total_external(),
+            declined: self.total_declined(),
             unindexed: self.total_unindexed(),
         }
     }
 
     #[must_use]
     pub fn xml_gauge_attrs(&self) -> String {
-        format!(
-            "graph_ambiguous=\"{}\" graph_unresolved=\"{}\" graph_unindexed=\"{}\" counts_floor=\"1\"",
-            self.total_ambiguous(),
-            self.total_unresolved(),
-            self.total_unindexed()
-        )
+        crate::serialize::GraphGaugeProvider::xml_gauge_attrs(self)
     }
 
     #[must_use]
@@ -284,9 +296,18 @@ impl Graph {
             out_split: out.split,
             amb_out: resolution.amb_out,
             unresolved: resolution.unresolved,
+            external: resolution.external,
+            declined: resolution.declined,
             unindexed: 0,
             prior_weights: Vec::new(),
         }
+    }
+}
+
+impl crate::serialize::GraphGaugeProvider for Graph {
+    #[inline]
+    fn gauges(&self) -> crate::serialize::GraphGauges {
+        self.gauges()
     }
 }
 

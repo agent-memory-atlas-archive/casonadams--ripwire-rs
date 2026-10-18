@@ -527,7 +527,7 @@ pub fn serialize_callers_in_root_xml<W: Write>(
         sym_name,
         callers,
         "--uses",
-        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        crate::serialize::GraphGauges::ZERO_XML_ATTRS,
         out,
     )
 }
@@ -571,7 +571,7 @@ pub fn serialize_callees_in_root_xml<W: Write>(
         sym_name,
         callees,
         "--expand",
-        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        crate::serialize::GraphGauges::ZERO_XML_ATTRS,
         out,
     )
 }
@@ -613,7 +613,7 @@ pub fn serialize_impact_in_root_xml<W: Write>(
         root,
         sym_name,
         nodes,
-        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        crate::serialize::GraphGauges::ZERO_XML_ATTRS,
         1,
         out,
     )
@@ -806,7 +806,7 @@ pub fn serialize_uses_in_root_xml<W: Write>(
         sym_name,
         ingest,
         interner,
-        "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+        crate::serialize::GraphGauges::ZERO_XML_ATTRS,
         out,
     )
 }
@@ -2010,7 +2010,7 @@ mod tests {
             "c",
             &impact,
             vec!["src/main.rs"],
-            "graph_ambiguous=\"0\" graph_unresolved=\"0\" graph_unindexed=\"0\" counts_floor=\"1\"",
+            crate::serialize::GraphGauges::ZERO_XML_ATTRS,
             1,
             &mut imp_xml,
         )

@@ -1910,7 +1910,11 @@ pub fn execute_retrieval_dispatch<W: Write>(
                 "ripwire: --lego type not found: {iface}"
             )));
         }
-        let val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
+        let mut val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
+        let g = graph.gauges();
+        val["graph_ambiguous"] = serde_json::json!(g.ambiguous);
+        val["graph_unresolved"] = serde_json::json!(g.unresolved);
+        val["graph_unindexed"] = serde_json::json!(g.unindexed);
         crate::serialize::serialize_lego_xml(root, &val, out)
     } else if let Some(rec) = ret.recall.as_deref() {
         let val =
