@@ -213,6 +213,7 @@ const BUILTIN_LAYERS: &[(&str, &str)] = &[
 /// Extension trait for built-in architectural layer inference and `<f p=... layer=...>` tag emission.
 pub trait PathLayerExt {
     fn builtin_layer(&self) -> Option<&'static str>;
+    fn write_layer_attr<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()>;
     fn write_file_open_tag<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()>;
 }
 
@@ -229,14 +230,20 @@ impl PathLayerExt for str {
         crate::gate::affected::is_test_path(self).then_some("test")
     }
 
+    fn write_layer_attr<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        if let Some(layer) = self.builtin_layer() {
+            write!(out, " layer=\"{layer}\"")
+        } else {
+            Ok(())
+        }
+    }
+
     fn write_file_open_tag<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
         out.write_all(b"<f p=\"")?;
         escape_xml_write(out, self)?;
-        if let Some(layer) = self.builtin_layer() {
-            write!(out, "\" layer=\"{layer}\">")
-        } else {
-            out.write_all(b"\">")
-        }
+        out.write_all(b"\"")?;
+        self.write_layer_attr(out)?;
+        out.write_all(b">")
     }
 }
 

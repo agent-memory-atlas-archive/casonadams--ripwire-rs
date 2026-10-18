@@ -19,7 +19,9 @@ where
 
 /// Serialize `for` task-lens ranking result to Ripwire XML.
 fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) -> io::Result<()> {
+    use crate::serialize::PathLayerExt;
     let raw_name = it.str_or("name", "");
+    let path = it.str_or("path", "");
     let line = it.u64_or("line", 0);
     let end_line = it.u64_or("end_line", line);
     let cx = it.u64_or("cx", 0);
@@ -35,9 +37,14 @@ fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value, task: &str) 
     let r = idx + 1;
     write!(
         out,
-        "<d l=\"{line}\" e=\"{end_line}\" n=\"{}\" p=\"{}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" churn=\"{churn}\" amp=\"{amp}\"{tested_attr} r=\"{r}\" next=\"--for={task} --limit=40\">{}</d>",
+        "<d l=\"{line}\" e=\"{end_line}\" n=\"{}\" p=\"{}\"",
         raw_name.xml_escaped(),
-        it.str_or("path", "").xml_escaped(),
+        path.xml_escaped(),
+    )?;
+    path.write_layer_attr(out)?;
+    write!(
+        out,
+        " cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" churn=\"{churn}\" amp=\"{amp}\"{tested_attr} r=\"{r}\" next=\"--for={task} --limit=40\">{}</d>",
         it.str_or("sig", raw_name).xml_escaped()
     )
 }
@@ -841,6 +848,7 @@ pub struct TreeFileSymbols<'a> {
 pub struct TreeReport<'a> {
     pub root: &'a str,
     pub file_symbols: &'a [TreeFileSymbols<'a>],
+    pub files_unlisted: usize,
     pub pr_iters: u32,
 }
 
@@ -864,7 +872,7 @@ impl crate::serialize::XmlReport for TreeReport<'_> {
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::PaginateSlice;
-        let total_files = self.file_symbols.len();
+        let total_files = self.file_symbols.len() + self.files_unlisted;
         let (pw, shown_slice) = self.file_symbols.paginate(80, None, None);
         let total_shown: usize = shown_slice.iter().map(|f| f.top_symbols.len()).sum();
         let symbols_capped = usize::from(
@@ -880,7 +888,8 @@ impl crate::serialize::XmlReport for TreeReport<'_> {
         };
         write!(
             out,
-            " files=\"{total_files}\" files_unlisted=\"0\"{page_attrs} pr_iters=\"{}\" root=\"{}\" shown_symbols=\"{total_shown}\" symbols_capped=\"{symbols_capped}\"{next_attr}",
+            " files=\"{total_files}\" files_unlisted=\"{}\"{page_attrs} pr_iters=\"{}\" root=\"{}\" shown_symbols=\"{total_shown}\" symbols_capped=\"{symbols_capped}\"{next_attr}",
+            self.files_unlisted,
             self.pr_iters,
             self.root.xml_escaped()
         )
@@ -914,6 +923,7 @@ pub fn serialize_tree_xml<W: Write>(
     TreeReport {
         root,
         file_symbols,
+        files_unlisted: 0,
         pr_iters,
     }
     .render_envelope(out)
@@ -1612,12 +1622,15 @@ fn write_deps_godfiles<W: Write>(out: &mut W, active: &[&DepsFileRow<'_>]) -> io
         "  <godfiles total=\"{god_total}\" shown=\"{god_shown}\" capped=\"{god_capped}\">"
     )?;
     for g in god.iter().take(god_shown) {
-        writeln!(
+        use crate::serialize::PathLayerExt;
+        write!(
             out,
-            "    <f p=\"{}\" afferent=\"{}\"/>",
+            "    <f p=\"{}\" afferent=\"{}\"",
             g.path.xml_escaped(),
             g.afferent
         )?;
+        g.path.write_layer_attr(out)?;
+        writeln!(out, "/>")?;
     }
     writeln!(out, "  </godfiles>")
 }
@@ -1809,19 +1822,18 @@ pub fn serialize_deps_xml<W: Write>(
     serialize_deps_report_xml(root, &rep, out)
 }
 /// Serialize `--exemplar` to Ripwire XML.
-fn format_exemplar_calls_xml(ex: &Value) -> String {
+fn write_exemplar_calls_xml<W: Write>(out: &mut W, ex: &Value) -> io::Result<()> {
     let Some(calls) = ex["calls"].as_array().filter(|a| !a.is_empty()) else {
-        return String::new();
+        return Ok(());
     };
-    let mut out = format!("<calls total=\"{}\">", calls.len());
+    write!(out, "<calls total=\"{}\">", calls.len())?;
     for c in calls {
         let cn = c.str_or("name", "").xml_escaped();
         let cl = c.u64_or("line", 1);
         let sig = c.str_or("sig", "").xml_escaped();
-        out.push_str(&format!("<c n=\"{cn}\" l=\"{cl}\">{sig}</c>"));
+        write!(out, "<c n=\"{cn}\" l=\"{cl}\">{sig}</c>")?;
     }
-    out.push_str("</calls>");
-    out
+    out.write_all(b"</calls>")
 }
 
 pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
@@ -1838,13 +1850,15 @@ pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) ->
     };
     let tested = ex.u64_or("tested", 0);
     let b = ex.str_or("body", "");
-    let calls_xml = format_exemplar_calls_xml(ex);
 
-    writeln!(
+    write!(
         out,
-        "<!-- ripwire exemplar schema=ripwire.exemplar/v1: the best-in-class instance of kind= for the task. -->\n<exemplar schema=\"ripwire.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]>{calls_xml}</b></bodies></exemplar>"
-    )
+        "<!-- ripwire exemplar schema=ripwire.exemplar/v1: the best-in-class instance of kind= for the task. -->\n<exemplar schema=\"ripwire.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]>",
+    )?;
+    write_exemplar_calls_xml(out, ex)?;
+    writeln!(out, "</b></bodies></exemplar>")
 }
+
 /// Serialize `--lego` to Ripwire XML.
 pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
     let iface = val.str_or("interface", "");
@@ -1862,28 +1876,28 @@ pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io:
         format!(" methods=\"{}\"", methods.len())
     };
     let lego_attrs = val.xml_opt_gauge_attrs();
-    let mut buf = format!(
-        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego{lego_attrs}><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{}\">\n",
+    writeln!(
+        out,
+        "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego{lego_attrs}><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{}\">",
         impls.len()
-    );
+    )?;
     for m in methods {
         let mn = m.str_or("name", "").xml_escaped();
         let ml = m.u64_or("line", 0);
         let mp = m.u64_or("params", 0);
-        buf.push_str(&format!("  <m n=\"{mn}\" l=\"{ml}\" params=\"{mp}\"/>\n"));
+        writeln!(out, "  <m n=\"{mn}\" l=\"{ml}\" params=\"{mp}\"/>")?;
     }
     for it in impls {
         let n = it.str_or("name", "");
         let p = it.str_or("path", "");
         let l = it.u64_or("line", 0);
         if l > 0 {
-            buf.push_str(&format!("  <impl n=\"{n}\" p=\"{p}:{l}\"/>\n"));
+            writeln!(out, "  <impl n=\"{n}\" p=\"{p}:{l}\"/>")?;
         } else {
-            buf.push_str(&format!("  <impl n=\"{n}\" p=\"{p}\"/>\n"));
+            writeln!(out, "  <impl n=\"{n}\" p=\"{p}\"/>")?;
         }
     }
-    buf.push_str("</iface></lego></ctx>\n");
-    out.write_all(buf.as_bytes())
+    writeln!(out, "</iface></lego></ctx>")
 }
 
 /// Serialize `--recall` to Ripwire XML.
@@ -1895,35 +1909,35 @@ pub fn serialize_recall_xml<W: Write>(
 ) -> io::Result<()> {
     let empty = Vec::new();
     let matches = val.array_any(&["docs", "matches"]).unwrap_or(&empty);
-    let mut buf = format!(
-        "<recall schema=\"ripwire.recall/v1\" root=\"{root}\" query=\"{query}\" docs=\"{}\">\n",
+    writeln!(
+        out,
+        "<recall schema=\"ripwire.recall/v1\" root=\"{root}\" query=\"{query}\" docs=\"{}\">",
         matches.len()
-    );
+    )?;
     for d in matches {
         let p = d.str_or("path", "");
         let text = d.str_any(&["content", "snippet"], "");
-        buf.push_str(&format!("  <doc p=\"{p}\"><![CDATA[{text}]]></doc>\n"));
+        writeln!(out, "  <doc p=\"{p}\"><![CDATA[{text}]]></doc>")?;
     }
-    buf.push_str("</recall>\n");
-    out.write_all(buf.as_bytes())
+    writeln!(out, "</recall>")
 }
 
 /// Serialize `--from-trace` to Ripwire XML.
 pub fn serialize_from_trace_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let empty = Vec::new();
     let suspects = val["suspects"].as_array().unwrap_or(&empty);
-    let mut buf = format!(
-        "<from-trace schema=\"ripwire.from-trace/v1\" count=\"{}\">\n",
+    writeln!(
+        out,
+        "<from-trace schema=\"ripwire.from-trace/v1\" count=\"{}\">",
         suspects.len()
-    );
+    )?;
     for s in suspects {
         let n = s.str_or("name", "");
         let p = s.str_any(&["path", "file"], "");
         let l = s.u64_or("line", 0);
-        buf.push_str(&format!("  <suspect n=\"{n}\" p=\"{p}\" l=\"{l}\"/>\n"));
+        writeln!(out, "  <suspect n=\"{n}\" p=\"{p}\" l=\"{l}\"/>")?;
     }
-    buf.push_str("</from-trace>\n");
-    out.write_all(buf.as_bytes())
+    writeln!(out, "</from-trace>")
 }
 
 pub const LEGEND_DICT_VERSION: &str = "80b7e589253a8e76";

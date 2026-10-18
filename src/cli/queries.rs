@@ -873,7 +873,15 @@ pub fn execute_tree_query<W: Write>(
         });
     }
 
-    crate::serialize::serialize_tree_xml(root, &file_symbols, pr.iterations, out)
+    use crate::serialize::XmlReport;
+    let files_unlisted = ingest.files.len().saturating_sub(file_symbols.len());
+    crate::serialize::query_xml::TreeReport {
+        root,
+        file_symbols: &file_symbols,
+        files_unlisted,
+        pr_iters: pr.iterations,
+    }
+    .render_envelope(out)
 }
 
 fn is_header_path(p: &str) -> bool {
