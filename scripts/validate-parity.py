@@ -96,6 +96,7 @@ OPTIONAL_ATTRS = {
     "doc_mentions_capped",
     "doc_mentions_total",
     "importers_next",
+    "rows_next",
     "coverage",
     "tier_budget",
     "tier_files",
