@@ -20,6 +20,28 @@
   layer tags (`layer=`), and causal def-use order (`--slice`) directly into the
   response so an agent does not need follow-up round trips.
 
+## Runtime performance and memory discipline
+
+- **Latency targets**: Warm queries must complete in `< 50ms` on medium
+  repositories (~10k symbols) and `< 500ms` on large polyglot monorepos (100k+
+  symbols). Cold indexing, `--hotspots`, `--cochange`, and `--for` must remain
+  strictly faster than upstream C++ `ripwire`.
+- **Interned identifiers and flat data structures**: Keep hot-path comparisons on
+  32-bit `Spur` (`Interner`) and `NodeId` integers; resolve strings only at the
+  serialization boundary or when subtoken inspection is required. Represent
+  graphs in contiguous CSR arrays (`CsrMatrix`, `Graph`) and use stack-inlined
+  buffers (`CandBuffer`) in candidate resolution to avoid per-reference heap
+  allocations.
+- **Zero-buffer streaming output**: Write XML and JSON directly to `io::Write`
+  sinks via `XmlReport` and `XmlEscapeExt` (`XmlEscaped` `Display` adapter)
+  rather than building intermediate `String`s with `format!` or `push_str` in
+  loops.
+- **Parallelism and single-pass git mining**: Use Rayon (`par_iter`,
+  `par_chunks`) with thread-local `tree_sitter::Parser` state (`PARSER_STATE`)
+  and chunk-reduced aggregation (`merge_resolutions`). Walk git history in
+  process in a single pass; never spawn `git` subprocesses inside per-file or
+  per-commit loops.
+
 ## Code structure
 
 - Prioritize cohesion and natural readability over artificial file length
