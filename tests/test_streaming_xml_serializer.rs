@@ -258,10 +258,16 @@ fn test_query_xml_retrieval_and_git() {
 
     let val_whereis = json!({
         "symbol": "auth",
-        "hits": [{"path": "src/auth.rs", "line": 1, "kind": "def", "text": "fn auth()"}]
+        "hits": [
+            {"ref": "HEAD", "path": "src/auth.rs", "line": 1, "kind": "def", "text": "fn auth()"},
+            {"ref": "feat-1", "path": "src/auth.rs", "line": 1, "kind": "def", "text": "fn auth()"},
+            {"ref": "feat-2", "path": "src/auth.rs", "line": 1, "kind": "def", "text": "fn auth()"}
+        ]
     });
     serialize_whereis_xml(&val_whereis, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire.whereis/v1\""));
+    let whereis_xml = String::from_utf8_lossy(&buf);
+    assert!(whereis_xml.contains("schema=\"ripwire.whereis/v1\""));
+    assert!(whereis_xml.contains("folded=\"1\""));
     buf.clear();
 
     let val_owners = json!({

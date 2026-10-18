@@ -39,6 +39,28 @@ impl Default for SerializeOptions {
     }
 }
 
+const INVENTORY_NAME_CEILING: usize = 2000;
+
+impl SerializeOptions {
+    #[inline]
+    #[must_use]
+    pub fn has_full_pack_budget(&self) -> bool {
+        self.pack_budget_bytes
+            .is_none_or(|b| b >= DEFAULT_PACK_BUDGET_BYTES)
+    }
+
+    #[inline]
+    #[must_use]
+    pub fn allows_inventory_tier(&self) -> bool {
+        self.emit_legend
+            && !self.no_inventory
+            && !self.metrics
+            && self.map_diff_at.is_none()
+            && self.rank_by.is_none()
+            && self.has_full_pack_budget()
+    }
+}
+
 /// Metadata and callee context for serializing a single symbol row.
 pub struct SymbolRowContext<'a> {
     pub sym: &'a Symbol,
@@ -382,12 +404,8 @@ fn serialize_symbol_buckets(
 }
 
 fn is_inv_code_file(lang: crate::domain::Lang, path: &str) -> bool {
-    !lang.semantics().is_prose_document()
-        && !matches!(
-            lang,
-            crate::domain::Lang::Json | crate::domain::Lang::Toml | crate::domain::Lang::Yaml
-        )
-        && !crate::gate::affected::is_test_or_bench_path(path)
+    use crate::serialize::PathLayerExt;
+    path.is_inventory_code_file(lang)
 }
 
 fn write_inv_entries<W: Write>(w: &mut W, ctx: &StreamXmlContext<'_>) -> io::Result<()> {
@@ -421,6 +439,34 @@ fn write_inv_entries<W: Write>(w: &mut W, ctx: &StreamXmlContext<'_>) -> io::Res
     Ok(())
 }
 
+fn collect_inv_dir_map<'a>(
+    ctx: &StreamXmlContext<'a>,
+    listed_files: &[bool],
+) -> (
+    std::collections::BTreeMap<&'a str, (usize, Vec<&'a str>)>,
+    usize,
+) {
+    let mut dir_map: std::collections::BTreeMap<&'a str, (usize, Vec<&'a str>)> =
+        std::collections::BTreeMap::new();
+    let mut names_total = 0usize;
+    for (idx, f) in ctx.ingest.files.iter().enumerate() {
+        if listed_files.get(idx).copied().unwrap_or(false) {
+            continue;
+        }
+        let p = ctx.interner.resolve(&f.path);
+        let (dir, fname) = p.rsplit_once('/').unwrap_or((".", p));
+        let entry = dir_map.entry(dir).or_insert_with(|| (0, Vec::new()));
+        entry.0 += 1;
+        if is_inv_code_file(f.lang, p) {
+            names_total += 1;
+            if entry.1.len() < 8 {
+                entry.1.push(fname);
+            }
+        }
+    }
+    (dir_map, names_total)
+}
+
 fn write_inv_section<W: Write>(
     w: &mut W,
     ctx: &StreamXmlContext<'_>,
@@ -431,22 +477,17 @@ fn write_inv_section<W: Write>(
     if unlisted == 0 {
         return Ok(());
     }
-    write!(w, "<inv listed=\"{listed}\" unlisted=\"{unlisted}\">")?;
-    write_inv_entries(w, ctx)?;
-    let mut dir_map: std::collections::BTreeMap<&str, (usize, Vec<&str>)> =
-        std::collections::BTreeMap::new();
-    for (idx, f) in ctx.ingest.files.iter().enumerate() {
-        if listed_files.get(idx).copied().unwrap_or(false) {
-            continue;
-        }
-        let p = ctx.interner.resolve(&f.path);
-        let (dir, fname) = p.rsplit_once('/').unwrap_or((".", p));
-        let entry = dir_map.entry(dir).or_insert_with(|| (0, Vec::new()));
-        entry.0 += 1;
-        if entry.1.len() < 8 && is_inv_code_file(f.lang, p) {
-            entry.1.push(fname);
-        }
+    let (dir_map, names_total) = collect_inv_dir_map(ctx, listed_files);
+    if names_total > INVENTORY_NAME_CEILING {
+        write!(
+            w,
+            "<inv listed=\"{listed}\" unlisted=\"{unlisted}\" names_capped=\"1\" names_total=\"{names_total}\" names_next=\"--tree --limit={}\">",
+            ctx.ingest.files.len()
+        )?;
+    } else {
+        write!(w, "<inv listed=\"{listed}\" unlisted=\"{unlisted}\">")?;
     }
+    write_inv_entries(w, ctx)?;
     for (dir, (cnt, code_files)) in dir_map.into_iter().take(60) {
         if code_files.is_empty() {
             write!(w, "<ls p=\"{}\" n=\"{cnt}\"/>", dir.xml_escaped())?;
@@ -479,9 +520,7 @@ fn should_emit_data_sections_cut(options: &SerializeOptions, data_sections_cut: 
     data_sections_cut > 0
         && options.map_diff_at.is_none()
         && k_lim >= 100
-        && options
-            .pack_budget_bytes
-            .is_none_or(|b| b >= DEFAULT_PACK_BUDGET_BYTES)
+        && options.has_full_pack_budget()
 }
 
 fn write_cli_root_open<W: Write>(
@@ -623,12 +662,7 @@ pub fn serialize_xml_with_ranks<W: Write>(
         write_root_open(&mut counter, &root_ctx)?;
     }
     counter.write_all(&body_buf)?;
-    if options.emit_legend
-        && !options.no_inventory
-        && !options.metrics
-        && options.map_diff_at.is_none()
-        && options.rank_by.is_none()
-    {
+    if options.allows_inventory_tier() {
         write_inv_section(&mut counter, ctx, &listed_files)?;
     }
     counter.write_all(b"</r>\n")?;
@@ -778,5 +812,18 @@ mod tests {
         assert!(xml.contains("<entry p=\"src/main.rs\" n=\"main\"></entry>"));
         assert!(xml.contains("<ls p=\"src\" n=\"1\" f=\"helper.rs\"/>"));
         assert!(xml.contains("<ls p=\"docs\" n=\"1\"/>"));
+        let small_budget_xml = serialize_xml_to_string(
+            &ingest,
+            &graph,
+            &pr,
+            &interner,
+            &SerializeOptions {
+                top_k: Some(1),
+                emit_legend: true,
+                pack_budget_bytes: Some(2000),
+                ..Default::default()
+            },
+        );
+        assert!(!small_budget_xml.contains("<inv "));
     }
 }

@@ -329,14 +329,35 @@ fn execute_doc_search_query<W: Write>(
     }
 }
 
+struct NotesReport<'a> {
+    content: &'a str,
+}
+
+impl crate::serialize::XmlReport for NotesReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "ctx"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.notes/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::XmlEscapeExt;
+        write!(out, "<notes>")?;
+        for line in self.content.lines().filter(|l| !l.trim().is_empty()) {
+            write!(out, "<note text=\"{}\"/>", line.xml_escaped())?;
+        }
+        writeln!(out, "</notes>")
+    }
+}
+
 fn execute_notes_display<W: Write>(root: &str, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
     let notes_path = Path::new(root).join(".ripwire_notes");
     let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
-    write!(out, "<ctx schema=\"ripwire.notes/v1\"><notes>")?;
-    for line in content.lines().filter(|l| !l.trim().is_empty()) {
-        write!(out, "<note text=\"{}\"/>", line.replace('"', "&quot;"))?;
-    }
-    writeln!(out, "</notes></ctx>")
+    NotesReport { content: &content }.render_envelope(out)
 }
 
 fn execute_note_append<W: Write>(root: &str, note: &str, out: &mut W) -> io::Result<()> {

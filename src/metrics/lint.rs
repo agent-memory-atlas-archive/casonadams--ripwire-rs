@@ -1,4 +1,4 @@
-use crate::domain::{IngestResult, Interner, SymKind};
+use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
 use std::io::{self, Write};
 
@@ -585,10 +585,12 @@ fn run_symbol_lint_rules(
     interner: &Interner,
     findings: &mut Vec<LintFinding>,
 ) {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     for sym in &ingest.symbols {
-        if sym.kind == SymKind::Function || sym.kind == SymKind::Method {
-            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
-            let n = interner.resolve(&sym.name);
+        if sym.is_callable() && !view.is_test_symbol(sym) {
+            let p = view.sym_path(sym);
+            let n = view.sym_name(sym);
             findings.extend(
                 SYMBOL_LINT_RULES
                     .iter()
@@ -644,6 +646,19 @@ pub struct LintReport<'a> {
     pub findings: &'a [LintFinding],
 }
 
+impl LintReport<'_> {
+    fn capped_rule_names(&self) -> Vec<&'static str> {
+        if self.findings.len() < 5000 {
+            return Vec::new();
+        }
+        LINT_RULES
+            .iter()
+            .filter(|r| self.findings.iter().filter(|f| f.rule == r.name).count() >= 500)
+            .map(|r| r.name)
+            .collect()
+    }
+}
+
 impl crate::serialize::XmlReport for LintReport<'_> {
     fn schema_tag(&self) -> &'static str {
         "lint"
@@ -663,16 +678,26 @@ impl crate::serialize::XmlReport for LintReport<'_> {
             .filter(|r| self.findings.iter().any(|f| f.rule == r.name))
             .count();
         let inert_rules = LINT_RULES.len().saturating_sub(active_rules);
+        let capped_rules = self.capped_rule_names();
         write!(
             w,
             " findings=\"{}\" shown=\"{}\" capped=\"{}\" inert_rules=\"{inert_rules}\"",
             pw.total,
             pw.shown,
             usize::from(pw.capped)
-        )
+        )?;
+        if !capped_rules.is_empty() {
+            write!(
+                w,
+                " counts_floor=\"1\" findings_capped=\"1\" findings_next=\"--lint --lint-select={} --lint-max-per-rule=50000\"",
+                capped_rules.join(",")
+            )?;
+        }
+        Ok(())
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let shown = self.findings.len().min(100);
+        let capped_rules = self.capped_rule_names();
         for r in LINT_RULES {
             let r_cnt = self.findings.iter().filter(|f| f.rule == r.name).count();
             if r_cnt == 0 && !SYMBOL_LINT_RULES.iter().any(|sr| sr.desc().name == r.name) {
@@ -680,9 +705,14 @@ impl crate::serialize::XmlReport for LintReport<'_> {
             }
             let r_shown = r_cnt.min(20);
             let r_cap = usize::from(r_shown < r_cnt);
+            let count_cap_attr = if capped_rules.contains(&r.name) {
+                " count_capped=\"1\""
+            } else {
+                ""
+            };
             writeln!(
                 w,
-                "  <rule name=\"{}\" count=\"{r_cnt}\" shown_rows=\"{r_shown}\" rows_capped=\"{r_cap}\" applicable=\"1\"/>",
+                "  <rule name=\"{}\" count=\"{r_cnt}\" shown_rows=\"{r_shown}\" rows_capped=\"{r_cap}\"{count_cap_attr} applicable=\"1\"/>",
                 r.name
             )?;
         }
@@ -767,7 +797,7 @@ pub fn serialize_lint_sarif<W: Write>(findings: &[LintFinding], out: &mut W) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::Lang;
+    use crate::domain::{Lang, SymKind};
 
     #[test]
     fn test_every_catalog_rule_is_backed_by_a_trait_evaluator() {
@@ -785,6 +815,28 @@ mod tests {
         trait_names.sort_unstable();
         catalog_names.sort_unstable();
         assert_eq!(trait_names, catalog_names);
+    }
+
+    #[test]
+    fn test_lint_report_capped_rule_names() {
+        let findings: Vec<LintFinding> = (0..5000)
+            .map(|i| LintFinding {
+                rule: "magic-number".to_string(),
+                message: "magic".to_string(),
+                path: "src/a.rs".to_string(),
+                line: i,
+                severity: "info".to_string(),
+                enclosing: "main".to_string(),
+            })
+            .collect();
+        let mut buf = Vec::new();
+        serialize_lint_xml(".", &findings, &mut buf).unwrap();
+        let xml = String::from_utf8(buf).unwrap();
+        assert!(xml.contains("findings_capped=\"1\""));
+        assert!(xml.contains(
+            "findings_next=\"--lint --lint-select=magic-number --lint-max-per-rule=50000\""
+        ));
+        assert!(xml.contains("count_capped=\"1\""));
     }
 
     #[test]

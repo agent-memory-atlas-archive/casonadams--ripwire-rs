@@ -18,6 +18,44 @@ pub struct StructLayoutDef {
     pub fields: Vec<FieldLayout>,
 }
 
+impl StructLayoutDef {
+    #[must_use]
+    pub fn max_align(&self) -> usize {
+        self.fields.iter().map(|f| f.align).max().unwrap_or(1)
+    }
+
+    #[must_use]
+    pub fn total_size(&self) -> usize {
+        let raw = self.fields.last().map_or(1, |f| f.offset + f.size);
+        let align = self.max_align();
+        raw.div_ceil(align) * align
+    }
+
+    #[must_use]
+    pub fn cache_lines(&self) -> usize {
+        self.total_size().div_ceil(64).max(1)
+    }
+
+    #[must_use]
+    pub fn pair_count(&self) -> usize {
+        let n = self.fields.len();
+        n * n.saturating_sub(1) / 2
+    }
+
+    #[must_use]
+    pub fn sepcost(&self) -> f64 {
+        let mut cost = 0.0;
+        for i in 0..self.fields.len() {
+            for j in (i + 1)..self.fields.len() {
+                let dist = self.fields[j].offset.saturating_sub(self.fields[i].offset);
+                let wt = ((64.0 - dist as f64).max(0.0)) / 64.0;
+                cost += 1.0 - wt;
+            }
+        }
+        cost
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StructLayoutReport {
     pub sym: String,
@@ -209,9 +247,11 @@ pub fn compute_field_affinity_report(
     ingest: &IngestResult,
     interner: &Interner,
     root: &str,
-) -> StructLayoutReport {
+) -> FieldAffinityReport {
     if let Some(sym) = sym_opt.filter(|s| !s.is_empty()) {
-        return compute_layout_report(sym, ingest, interner, root);
+        return FieldAffinityReport {
+            layout: compute_layout_report(sym, ingest, interner, root),
+        };
     }
     use crate::domain::CorpusView;
     let view = (ingest, interner);
@@ -226,18 +266,21 @@ pub fn compute_field_affinity_report(
         .map(|s| extract_struct_layout_def(s, view.sym_path(s), root))
         .collect();
     let found = !defs.is_empty();
-    StructLayoutReport {
-        sym: String::new(),
-        found,
-        defs,
+    FieldAffinityReport {
+        layout: StructLayoutReport {
+            sym: String::new(),
+            found,
+            defs,
+        },
     }
 }
 
-pub struct FieldAffinityReport<'a> {
-    pub layout: &'a StructLayoutReport,
+#[derive(Debug, Clone, PartialEq)]
+pub struct FieldAffinityReport {
+    pub layout: StructLayoutReport,
 }
 
-impl crate::serialize::XmlReport for FieldAffinityReport<'_> {
+impl crate::serialize::XmlReport for FieldAffinityReport {
     fn schema_tag(&self) -> &'static str {
         "fieldaffinity"
     }
@@ -272,11 +315,19 @@ impl crate::serialize::XmlReport for FieldAffinityReport<'_> {
         use crate::serialize::XmlEscapeExt;
         let shown = self.layout.defs.len().min(20);
         for d in self.layout.defs.iter().take(shown) {
+            let f_cnt = d.fields.len();
+            let pairs = d.pair_count();
+            let sepcost = d.sepcost();
+            let size = d.total_size();
+            let align = d.max_align();
+            let lines = d.cache_lines();
             writeln!(
                 out,
-                "  <s n=\"{}\" p=\"{}\">",
+                "  <s n=\"{}\" p=\"{}\" l=\"{}\" agg=\"{}\" modeled=\"1\" fields=\"{f_cnt}\" touched=\"{f_cnt}\" fns=\"1\" pairs=\"{pairs}\" sepcost=\"{sepcost:.2}\" findings=\"0\" size=\"{size}\" align=\"{align}\" lines=\"{lines}\">",
                 self.layout.sym.xml_escaped(),
-                d.path.xml_escaped()
+                d.path.xml_escaped(),
+                d.line,
+                d.agg_kind
             )?;
             for i in 0..d.fields.len() {
                 for j in (i + 1)..d.fields.len() {
@@ -286,7 +337,7 @@ impl crate::serialize::XmlReport for FieldAffinityReport<'_> {
                     let wt = ((64.0 - dist as f64).max(0.0)) / 64.0;
                     writeln!(
                         out,
-                        "    <pair a=\"{}\" b=\"{}\" dist=\"{dist}\" wt=\"{wt:.2}\"/>",
+                        "    <pair a=\"{}\" b=\"{}\" fns=\"1\" w=\"1\" dist=\"{dist}\" wt=\"{wt:.2}\"/>",
                         fa.name.xml_escaped(),
                         fb.name.xml_escaped()
                     )?;
@@ -304,7 +355,10 @@ pub fn serialize_field_affinity_xml<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
-    FieldAffinityReport { layout: rep }.write_xml_report(root, out)
+    FieldAffinityReport {
+        layout: rep.clone(),
+    }
+    .write_xml_report(root, out)
 }
 
 #[cfg(test)]

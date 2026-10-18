@@ -101,6 +101,7 @@ OPTIONAL_ATTRS = {
     "tier_files",
     "corpus_oversize",
     "notes_degraded",
+    "parse_degraded",
     "join",
     "origin",
     "exempt",

@@ -441,6 +441,20 @@ fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
     )
 }
 
+fn count_folded_branch_defs(hits: &[Value]) -> usize {
+    let mut seen = std::collections::HashSet::new();
+    let mut folded = 0usize;
+    for h in hits {
+        if h.str_or("ref", "HEAD") != "HEAD" && h.str_or("kind", "ref") == "def" {
+            let key = (h.str_any(&["path", "file"], ""), h.str_or("text", ""));
+            if !seen.insert(key) {
+                folded += 1;
+            }
+        }
+    }
+    folded
+}
+
 /// Serialize `whereis` branch symbol search to Ripwire XML.
 pub struct WhereisReport<'a> {
     pub val: &'a Value,
@@ -474,11 +488,17 @@ impl crate::serialize::XmlReport for WhereisReport<'_> {
             .unwrap_or("HEAD");
         let head_date = self.val.str_or("head_date", "2026-10-14");
         let listing = self.val.str_or("listing", "defs");
+        let folded = count_folded_branch_defs(hits);
+        let folded_attr = if folded > 0 {
+            format!(" folded=\"{folded}\"")
+        } else {
+            String::new()
+        };
         let ref_labels = self.val.str_or("ref_labels", "parsed");
         let worktree = self.val.str_or("worktree", "read");
         write!(
             out,
-            " sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{page_attrs} listing=\"{listing}\" ref_labels=\"{ref_labels}\" head_date=\"{head_date}\" at=\"{at_val}\" worktree=\"{worktree}\" complete=\"1\""
+            " sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{page_attrs} listing=\"{listing}\"{folded_attr} ref_labels=\"{ref_labels}\" head_date=\"{head_date}\" at=\"{at_val}\" worktree=\"{worktree}\" complete=\"1\""
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {

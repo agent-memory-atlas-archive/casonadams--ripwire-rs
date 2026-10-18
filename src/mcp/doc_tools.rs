@@ -1055,9 +1055,43 @@ fn get_line_snippet(path: &str, line: u32, fallback: &str) -> String {
     fallback.to_string()
 }
 
+fn strip_decl_modifiers(mut s: &str) -> &str {
+    const MODIFIERS: &[&str] = &[
+        "pub(crate) ",
+        "pub(super) ",
+        "pub ",
+        "export ",
+        "default ",
+        "async ",
+        "inline ",
+        "constexpr ",
+        "static ",
+        "virtual ",
+        "unsafe ",
+        "const ",
+    ];
+    while let Some(&m) = MODIFIERS.iter().find(|&&m| s.starts_with(m)) {
+        s = s[m.len()..].trim_start();
+    }
+    s
+}
+
 fn classify_code_line(code: &str) -> &'static str {
-    const DEF_PREFIXES: [&str; 5] = ["fn ", "pub fn ", "def ", "class ", "struct "];
-    if DEF_PREFIXES.iter().any(|&p| code.starts_with(p)) {
+    const DEF_PREFIXES: &[&str] = &[
+        "fn ",
+        "func ",
+        "function ",
+        "def ",
+        "class ",
+        "struct ",
+        "enum ",
+        "trait ",
+        "interface ",
+        "type ",
+        "#define ",
+    ];
+    let stripped = strip_decl_modifiers(code.trim_start());
+    if DEF_PREFIXES.iter().any(|&p| stripped.starts_with(p)) {
         "def"
     } else {
         "ref"
@@ -1708,6 +1742,8 @@ mod tests {
     fn test_branch_grep_parsing() {
         assert_eq!(classify_code_line("fn foo()"), "def");
         assert_eq!(classify_code_line("pub fn bar()"), "def");
+        assert_eq!(classify_code_line("pub(crate) async fn baz()"), "def");
+        assert_eq!(classify_code_line("export async function qux()"), "def");
         assert_eq!(classify_code_line("let x = foo();"), "ref");
         assert!(should_scan_branch("feature-1", true));
         assert!(!should_scan_branch("HEAD", true));
