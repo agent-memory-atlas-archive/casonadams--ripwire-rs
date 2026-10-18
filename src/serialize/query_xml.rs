@@ -530,27 +530,50 @@ fn write_flag_gate_entry<W: Write>(out: &mut W, g: &Value) -> io::Result<()> {
     }
 }
 
-pub fn serialize_flags_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let gates = val.array_any(&["gates", "flags"]);
-    let count = gates.map_or(0, Vec::len);
-    let files = val.u64_or("files", 0);
-    let compile = val.u64_or("compile_count", 0);
-    let cmake = val.u64_or("cmake_count", 0);
-    let env = val.u64_or("env_count", 0);
-    let dark = val.u64_or("dark_gates", 0);
-    let empty = Vec::new();
-    let items = gates.unwrap_or(&empty);
-    let (pw, page) = val.paginate_items(items, 100);
-    let page_attrs = pw.xml_attrs();
-    let attrs = format!(
-        "schema=\"ripwire.flags/v1\" files=\"{files}\" gates=\"{count}\" dark_gates=\"{dark}\" compile=\"{compile}\" cmake=\"{cmake}\" env=\"{env}\"{page_attrs}"
-    );
-    write_xml_envelope(out, "flags", &attrs, |out| {
+pub struct FlagsReport<'a> {
+    pub val: &'a Value,
+}
+
+impl crate::serialize::XmlReport for FlagsReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "flags"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.flags/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let empty = Vec::new();
+        let items = self.val.array_any(&["gates", "flags"]).unwrap_or(&empty);
+        let count = items.len();
+        let files = self.val.u64_or("files", 0);
+        let compile = self.val.u64_or("compile_count", 0);
+        let cmake = self.val.u64_or("cmake_count", 0);
+        let env = self.val.u64_or("env_count", 0);
+        let dark = self.val.u64_or("dark_gates", 0);
+        let (pw, _) = self.val.paginate_items(items, 100);
+        let page_attrs = pw.xml_attrs();
+        write!(
+            out,
+            " files=\"{files}\" gates=\"{count}\" dark_gates=\"{dark}\" compile=\"{compile}\" cmake=\"{cmake}\" env=\"{env}\"{page_attrs}"
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let empty = Vec::new();
+        let items = self.val.array_any(&["gates", "flags"]).unwrap_or(&empty);
+        let (_, page) = self.val.paginate_items(items, 100);
         for g in page {
             write_flag_gate_entry(out, g)?;
         }
         Ok(())
-    })
+    }
+}
+
+pub fn serialize_flags_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    FlagsReport { val }.render_envelope(out)
 }
 
 /// Serialize `doc_drift` out-of-date document references to Ripwire XML.
@@ -641,24 +664,40 @@ pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result
 }
 
 /// Serialize `stray_content` branch divergence to Ripwire XML.
-pub fn serialize_stray_content_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let head = val.str_or("head", "").xml_escaped();
-    let head_ref = val.str_or("head_ref", "HEAD").xml_escaped();
-    let refs = val.u64_or("refs", 0);
-    let blobs = val.u64_or("blobs", 0);
-    let unmerged = val.u64_or("unmerged", 0);
-    let superseded = val.u64_or("superseded", 0);
-    let merged = val.u64_or("merged", 0);
-    let unknown = val.u64_or("unknown", 0);
-    let at_attr = match val.opt_str("at") {
-        Some(at) if !at.is_empty() => format!(" at=\"{at}\""),
-        _ => String::new(),
-    };
-    let attrs = format!(
-        "schema=\"ripwire.stray-content/v1\" head=\"{head}\" head_ref=\"{head_ref}\" refs=\"{refs}\" blobs=\"{blobs}\" unmerged=\"{unmerged}\" superseded=\"{superseded}\" merged=\"{merged}\" unknown=\"{unknown}\"{at_attr}"
-    );
-    write_xml_envelope(out, "stray-content", &attrs, |out| {
-        if let Some(branches) = val["branches"].as_array() {
+pub struct StrayContentReport<'a> {
+    pub val: &'a Value,
+}
+
+impl crate::serialize::XmlReport for StrayContentReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "stray-content"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.stray-content/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let head = self.val.str_or("head", "").xml_escaped();
+        let head_ref = self.val.str_or("head_ref", "HEAD").xml_escaped();
+        let refs = self.val.u64_or("refs", 0);
+        let blobs = self.val.u64_or("blobs", 0);
+        let unmerged = self.val.u64_or("unmerged", 0);
+        let superseded = self.val.u64_or("superseded", 0);
+        let merged = self.val.u64_or("merged", 0);
+        let unknown = self.val.u64_or("unknown", 0);
+        write!(
+            out,
+            " head=\"{head}\" head_ref=\"{head_ref}\" refs=\"{refs}\" blobs=\"{blobs}\" unmerged=\"{unmerged}\" superseded=\"{superseded}\" merged=\"{merged}\" unknown=\"{unknown}\""
+        )?;
+        if let Some(at) = self.val.opt_str("at").filter(|s| !s.is_empty()) {
+            write!(out, " at=\"{}\"", at.xml_escaped())?;
+        }
+        Ok(())
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        if let Some(branches) = self.val["branches"].as_array() {
             for b in branches {
                 let name = b.str_any(&["name", "branch"], "").xml_escaped();
                 let base = b.str_or("base", "").xml_escaped();
@@ -671,17 +710,36 @@ pub fn serialize_stray_content_xml<W: Write>(val: &Value, out: &mut W) -> io::Re
             }
         }
         Ok(())
-    })
+    }
+}
+
+pub fn serialize_stray_content_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    StrayContentReport { val }.render_envelope(out)
 }
 
 /// Serialize `mentions` doc backtick occurrences to Ripwire XML.
-pub fn serialize_mentions_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
-    let sym = val.str_or("symbol", "").xml_escaped();
-    let docs = val["docs"].as_array();
-    let count = docs.map_or(0, Vec::len);
-    let attrs = format!("schema=\"ripwire.mentions/v1\" of=\"{sym}\" root=\".\" docs=\"{count}\"");
-    write_xml_envelope(out, "mentions", &attrs, |out| {
-        if let Some(items) = docs {
+pub struct MentionsReport<'a> {
+    pub val: &'a Value,
+}
+
+impl crate::serialize::XmlReport for MentionsReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "mentions"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.mentions/v1"
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let sym = self.val.str_or("symbol", "").xml_escaped();
+        let count = self.val["docs"].as_array().map_or(0, Vec::len);
+        write!(out, " of=\"{sym}\" root=\".\" docs=\"{count}\"")
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        if let Some(items) = self.val["docs"].as_array() {
             for d in items {
                 let path = d.str_any(&["path", "file"], "").xml_escaped();
                 let mentions = d.u64_or("mentions", 0);
@@ -689,7 +747,12 @@ pub fn serialize_mentions_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<
             }
         }
         Ok(())
-    })
+    }
+}
+
+pub fn serialize_mentions_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    MentionsReport { val }.render_envelope(out)
 }
 
 /// Serialize `connect` subgraph to Ripwire XML.

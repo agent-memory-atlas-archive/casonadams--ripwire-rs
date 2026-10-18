@@ -210,28 +210,49 @@ fn find_rust_crate_src_dir(importer_path: &str) -> &str {
     }
 }
 
+fn resolve_rust_super_dir(importer_path: &str) -> &str {
+    let p = Path::new(importer_path);
+    let is_mod_root = matches!(
+        p.file_name().and_then(|n| n.to_str()),
+        Some("mod.rs" | "lib.rs" | "main.rs")
+    );
+    let dir = if is_mod_root {
+        p.parent().and_then(|d| d.parent())
+    } else {
+        p.parent()
+    };
+    dir.and_then(|d| d.to_str()).unwrap_or("")
+}
+
+fn split_rust_anchor(clean: &str) -> Option<(&str, &str)> {
+    for anchor in ["crate", "self", "super"] {
+        if clean == anchor {
+            return Some((anchor, ""));
+        }
+        if let Some(rest) = clean
+            .strip_prefix(anchor)
+            .and_then(|s| s.strip_prefix("::"))
+        {
+            return Some((anchor, rest));
+        }
+    }
+    None
+}
+
 fn resolve_rust_base_and_rest<'a>(
     importer_path: &'a str,
     clean: &'a str,
 ) -> Option<(&'a str, &'a str)> {
-    if let Some(r) = clean.strip_prefix("crate::") {
-        Some((find_rust_crate_src_dir(importer_path), r))
-    } else if let Some(r) = clean.strip_prefix("self::") {
-        let dir = Path::new(importer_path)
+    let (anchor, rest) = split_rust_anchor(clean)?;
+    let base = match anchor {
+        "crate" => find_rust_crate_src_dir(importer_path),
+        "self" => Path::new(importer_path)
             .parent()
             .and_then(|p| p.to_str())
-            .unwrap_or("");
-        Some((dir, r))
-    } else if let Some(r) = clean.strip_prefix("super::") {
-        let parent = Path::new(importer_path)
-            .parent()
-            .and_then(|p| p.parent())
-            .and_then(|p| p.to_str())
-            .unwrap_or("");
-        Some((parent, r))
-    } else {
-        None
-    }
+            .unwrap_or(""),
+        _ => resolve_rust_super_dir(importer_path),
+    };
+    Some((base, rest))
 }
 
 fn probe_rust_segs_in_base(

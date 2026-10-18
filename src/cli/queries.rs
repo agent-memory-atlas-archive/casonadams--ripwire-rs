@@ -1285,6 +1285,35 @@ pub fn execute_external_surface_query<W: Write>(
     crate::serialize::serialize_external_surface_xml(root, &items, out)
 }
 
+fn record_rust_mod_edges(
+    ingest: &IngestResult,
+    interner: &Interner,
+    file_index: &std::collections::HashMap<&str, u32>,
+    adj_sets: &mut [std::collections::BTreeSet<usize>],
+) {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let f_len = ingest.files.len();
+    for s in &ingest.symbols {
+        let uf = s.file_id as usize;
+        if s.kind == crate::domain::SymKind::Section
+            && s.lang == crate::domain::Lang::Rust
+            && uf < f_len
+        {
+            let mod_spec = format!("self::{}", view.sym_name(s));
+            if let Some(vf) =
+                s.lang
+                    .semantics()
+                    .resolve_import_target(view.sym_path(s), &mod_spec, file_index)
+                && (vf as usize) != uf
+                && (vf as usize) < f_len
+            {
+                adj_sets[uf].insert(vf as usize);
+            }
+        }
+    }
+}
+
 fn record_import_edges<'a>(
     ingest: &'a IngestResult,
     interner: &'a Interner,
@@ -1292,6 +1321,8 @@ fn record_import_edges<'a>(
     adj_sets: &mut [std::collections::BTreeSet<usize>],
     inc_targets: &mut [Vec<&'a str>],
 ) {
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     let f_len = ingest.files.len();
     for r in &ingest.references {
         let uf = r.file_id as usize;
@@ -1303,7 +1334,7 @@ fn record_import_edges<'a>(
         if !clean.is_empty() && !inc_targets[uf].contains(&clean) {
             inc_targets[uf].push(clean);
         }
-        let f_path = interner.resolve(&ingest.files[uf].path);
+        let f_path = view.file_path(r.file_id);
         if let Some(vf) = ingest.files[uf]
             .lang
             .semantics()
@@ -1314,6 +1345,7 @@ fn record_import_edges<'a>(
             adj_sets[uf].insert(vf as usize);
         }
     }
+    record_rust_mod_edges(ingest, interner, file_index, adj_sets);
 }
 
 fn collect_import_and_call_adj<'a>(
