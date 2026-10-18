@@ -1,5 +1,25 @@
 # Repository instructions
 
+## Core mission: Maximum intelligence in the smallest token footprint
+
+- **Signal density over volume**: Every CLI and MCP output exists to give coding
+  agents the highest-precision architectural, call-graph, and dataflow
+  intelligence in the fewest tokens possible.
+- **Present-only, zero-filler serialization**: Omit zero/unit default attributes
+  (e.g., `ccx="0"`, `in="0"`, `churn="1"`, `amp="1"`), empty wrapper tags, and
+  repeated per-row pagination hints (`next=`). Place pagination and window
+  metadata (`shown=`, `total=`, `capped=`, `next=`) once on the enclosing
+  section or root element.
+- **Noise-free ranking and triage**: Filter out non-callable noise, test/fixture
+  helpers (via `CorpusView::is_test_symbol`), language builtins, and prose
+  backticks before ranking or counting. Partition unresolvable references into
+  actionable categories (`unresolved`, `external`, `declined`) rather than
+  inflating a single bucket.
+- **Actionable context in one turn**: Prefer bundling the highest-value
+  implementation body, resolved callee signatures (`<calls>`), architectural
+  layer tags (`layer=`), and causal def-use order (`--slice`) directly into the
+  response so an agent does not need follow-up round trips.
+
 ## Code structure
 
 - Prioritize cohesion and natural readability over artificial file length
@@ -11,6 +31,11 @@
 - Prefer idiomatic Rust function signatures: use natural parameter lists or
   explicit domain config/context structs. Never pack parameters into tuples
   (`(a, b): (&str, &str)`) to circumvent argument count thresholds.
+- Leverage domain and serialization traits (`CorpusView`, `LanguageSemantics`,
+  `ResolutionLookup`, `XmlReport`, `GraphGaugeProvider`, `PathLayerExt`,
+  `GitStampExt`, `PaginateSlice`, `JsonValueExt`) to keep calling code concise,
+  uniform, and free of ad-hoc string buffering or duplicated boilerplate. Stream
+  XML directly to `Write` sinks instead of allocating intermediate `String`s.
 - Prefer standard in-file `#[cfg(test)] mod tests` for unit tests. Use a sibling
   `tests.rs` or integration tests under `tests/` when a test suite is genuinely
   distinct or very large. Do not create nested test directories
