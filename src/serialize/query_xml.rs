@@ -88,8 +88,8 @@ pub fn serialize_for_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let route = escape_xml_str(val.str_or("route", &default_route));
     let raw_root = val.str_or("root", ".");
     let root = escape_xml_str(raw_root);
-    let at_stamp =
-        crate::git::history::compute_git_at_stamp(raw_root).unwrap_or_else(|| "HEAD".to_string());
+    use crate::serialize::GitStampExt;
+    let at_stamp = raw_root.git_at_or_head();
     let confidence = escape_xml_str(val.str_or("confidence", "high"));
     let margin_pct = val.u64_or("margin_pct", 0);
     let coverage = val.u64_or("coverage", 100);
@@ -596,7 +596,10 @@ fn format_doc_drift_header_counts(val: &Value) -> String {
 pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     let drift = val["drift"].as_array();
     let count = drift.map_or(0, |d| d.len());
-    let root = escape_xml_str(val["root"].as_str().unwrap_or("."));
+    use crate::serialize::GitStampExt;
+    let raw_root = val["root"].as_str().unwrap_or(".");
+    let root = escape_xml_str(raw_root);
+    let at_attr = raw_root.git_at_xml_attr();
     let mut grouped: Vec<(&str, Vec<&Value>)> = Vec::new();
     if let Some(items) = drift {
         for d in items {
@@ -615,7 +618,7 @@ pub fn serialize_doc_drift_xml<W: Write>(val: &Value, out: &mut W) -> io::Result
     let (pw, page) = val.paginate_items(&grouped, 40);
     let page_attrs = pw.xml_attrs();
     let attrs = format!(
-        "schema=\"ripwire.doc-drift/v1\" root=\"{root}\" docs=\"{docs_cnt}\"{extra_counts} drift=\"{count}\"{page_attrs}"
+        "schema=\"ripwire.doc-drift/v1\" root=\"{root}\" docs=\"{docs_cnt}\"{extra_counts} drift=\"{count}\"{page_attrs}{at_attr}"
     );
     write_xml_envelope(out, "doc-drift", &attrs, |out| {
         for (doc, list) in page {
@@ -1420,7 +1423,8 @@ impl crate::serialize::XmlReport for AroundReport<'_> {
             return write!(out, "<f p=\"src/lib.rs\"></f>");
         }
         for (path, list) in grouped {
-            write!(out, "<f p=\"{}\">", path.xml_escaped())?;
+            use crate::serialize::PathLayerExt;
+            path.write_file_open_tag(out)?;
             for r in list {
                 let k = 1.0 / f64::from(1u32 << r.hop.min(10));
                 write!(out, "<s t=\"{}\" n=\"{}\"", r.kind, r.name.xml_escaped())?;
@@ -1772,6 +1776,21 @@ pub fn serialize_deps_xml<W: Write>(
     serialize_deps_report_xml(root, &rep, out)
 }
 /// Serialize `--exemplar` to Ripwire XML.
+fn format_exemplar_calls_xml(ex: &Value) -> String {
+    let Some(calls) = ex["calls"].as_array().filter(|a| !a.is_empty()) else {
+        return String::new();
+    };
+    let mut out = format!("<calls total=\"{}\">", calls.len());
+    for c in calls {
+        let cn = c.str_or("name", "").xml_escaped();
+        let cl = c.u64_or("line", 1);
+        let sig = c.str_or("sig", "").xml_escaped();
+        out.push_str(&format!("<c n=\"{cn}\" l=\"{cl}\">{sig}</c>"));
+    }
+    out.push_str("</calls>");
+    out
+}
+
 pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
     let ex = val.get("exemplar").unwrap_or(val);
     let k = val.str_any(&["kind", "role"], "fn");
@@ -1786,10 +1805,11 @@ pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) ->
     };
     let tested = ex.u64_or("tested", 0);
     let b = ex.str_or("body", "");
+    let calls_xml = format_exemplar_calls_xml(ex);
 
     writeln!(
         out,
-        "<!-- ripwire exemplar schema=ripwire.exemplar/v1: the best-in-class instance of kind= for the task. -->\n<exemplar schema=\"ripwire.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]></b></bodies></exemplar>"
+        "<!-- ripwire exemplar schema=ripwire.exemplar/v1: the best-in-class instance of kind= for the task. -->\n<exemplar schema=\"ripwire.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]>{calls_xml}</b></bodies></exemplar>"
     )
 }
 /// Serialize `--lego` to Ripwire XML.
@@ -1808,15 +1828,7 @@ pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io:
     } else {
         format!(" methods=\"{}\"", methods.len())
     };
-    let lego_attrs = if let Some(amb) = val["graph_ambiguous"].as_u64() {
-        let unres = val.u64_or("graph_unresolved", 0);
-        let unidx = val.u64_or("graph_unindexed", 0);
-        format!(
-            " graph_ambiguous=\"{amb}\" graph_unresolved=\"{unres}\" graph_unindexed=\"{unidx}\" counts_floor=\"1\""
-        )
-    } else {
-        String::new()
-    };
+    let lego_attrs = val.xml_opt_gauge_attrs();
     let mut buf = format!(
         "<ctx schema=\"ripwire.lego/v1\" root=\"{root}\"><lego{lego_attrs}><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{}\">\n",
         impls.len()

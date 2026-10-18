@@ -377,7 +377,8 @@ fn resolve_git_branch_and_subject(root: &str) -> (String, String) {
 }
 
 fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> String {
-    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".into());
+    use crate::serialize::GitStampExt;
+    let at_stamp = root.git_at_or_head();
     let (branch, subject) = resolve_git_branch_and_subject(root);
     let changed = crate::cli::safety::get_working_tree_changed_files(root);
     let mut verified_rows = String::new();
@@ -557,8 +558,8 @@ fn execute_session_tools_query<W: Write>(
     out: &mut W,
 ) -> io::Result<bool> {
     if ws.doctor {
-        let at_stamp =
-            crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".into());
+        use crate::serialize::GitStampExt;
+        let at_stamp = root.git_at_or_head();
         let exe_name = std::env::current_exe()
             .ok()
             .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
@@ -1910,11 +1911,9 @@ pub fn execute_retrieval_dispatch<W: Write>(
                 "ripwire: --lego type not found: {iface}"
             )));
         }
+        use crate::serialize::JsonValueExt;
         let mut val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
-        let g = graph.gauges();
-        val["graph_ambiguous"] = serde_json::json!(g.ambiguous);
-        val["graph_unresolved"] = serde_json::json!(g.unresolved);
-        val["graph_unindexed"] = serde_json::json!(g.unindexed);
+        val.attach_gauges(graph);
         crate::serialize::serialize_lego_xml(root, &val, out)
     } else if let Some(rec) = ret.recall.as_deref() {
         let val =

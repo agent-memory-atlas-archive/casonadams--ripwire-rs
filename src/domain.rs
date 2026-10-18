@@ -649,6 +649,13 @@ pub trait CorpusView<'a> {
         sym.source_text(&bytes).map(std::borrow::Cow::into_owned)
     }
 
+    /// Read the declaration signature of `sym` relative to `root`.
+    #[must_use]
+    fn read_sym_signature(&self, root: &str, sym: &Symbol) -> Option<String> {
+        let bytes = self.read_sym_bytes(root, sym).ok()?;
+        Some(sym.extract_signature(&bytes, self.sym_name(sym)))
+    }
+
     #[inline]
     #[must_use]
     fn is_test_symbol(&self, sym: &Symbol) -> bool {

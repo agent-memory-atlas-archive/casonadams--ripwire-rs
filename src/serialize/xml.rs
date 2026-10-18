@@ -123,14 +123,8 @@ impl<W: Write> Write for CountingWriter<W> {
 
 /// Write the file opening element `<f p="...">`.
 pub fn write_file_header<W: Write>(w: &mut W, path: &str) -> io::Result<()> {
-    let close: &[u8] = if crate::gate::affected::is_test_path(path) {
-        b"\" layer=\"test\">"
-    } else {
-        b"\">"
-    };
-    w.write_all(b"<f p=\"")?;
-    escape_xml_write(w, path)?;
-    w.write_all(close)
+    use crate::serialize::PathLayerExt;
+    path.write_file_open_tag(w)
 }
 
 fn write_symbol_metrics_tag<W: Write>(w: &mut W, ctx: &SymbolRowContext<'_>) -> io::Result<()> {

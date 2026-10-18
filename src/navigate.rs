@@ -1427,6 +1427,24 @@ impl GraphFilterPredicate for FileFilter {
             .is_some_and(|f| interner.resolve(&f.path).contains(&self.0))
     }
 }
+#[derive(Debug, Clone)]
+struct LayerFilter(String);
+impl GraphFilterPredicate for LayerFilter {
+    fn matches(
+        &self,
+        sym: &crate::domain::Symbol,
+        ingest: &IngestResult,
+        _graph: &Graph,
+        interner: &Interner,
+    ) -> bool {
+        use crate::serialize::PathLayerExt;
+        ingest
+            .files
+            .get(sym.file_id as usize)
+            .and_then(|f| interner.resolve(&f.path).builtin_layer())
+            .is_some_and(|l| l.eq_ignore_ascii_case(&self.0))
+    }
+}
 
 #[derive(Debug, Clone)]
 struct FaninFilter(usize);
@@ -1546,6 +1564,7 @@ impl<'a> GraphQueryParser<'a> {
             "callees" => self.parse_closure_expr(false),
             "kind" => self.parse_str_filter("kind", |s| std::sync::Arc::new(KindFilter(s))),
             "file" => self.parse_str_filter("file", |s| std::sync::Arc::new(FileFilter(s))),
+            "layer" => self.parse_str_filter("layer", |s| std::sync::Arc::new(LayerFilter(s))),
             "fanin" => self.parse_num_filter("fanin", 1, |n| std::sync::Arc::new(FaninFilter(n))),
             "cx" => self.parse_num_filter("cx", 15, |n| std::sync::Arc::new(CxFilter(n as u32))),
             "and" => self.parse_composite(true),
@@ -2145,5 +2164,21 @@ mod tests {
         assert!(kind_matches_tag(SymKind::Interface, "interface"));
         assert!(kind_matches_tag(SymKind::Section, "section"));
         assert!(!kind_matches_tag(SymKind::Function, "unknown"));
+        use crate::serialize::PathLayerExt;
+        assert_eq!("src/infra/nodekind.h".builtin_layer(), Some("infra"));
+        assert_eq!("src/ui/render/renderer.rs".builtin_layer(), Some("render"));
+        assert_eq!("packages/ai/src/usage.ts".builtin_layer(), Some("ai"));
+        assert_eq!("src/lib.rs".builtin_layer(), None);
+        let mut l_out = Vec::new();
+        execute_graph_query_expr(
+            "layer(all, \"test\")",
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &mut l_out,
+        )
+        .unwrap();
+        assert!(String::from_utf8(l_out).unwrap().contains("count=\"0\""));
     }
 }

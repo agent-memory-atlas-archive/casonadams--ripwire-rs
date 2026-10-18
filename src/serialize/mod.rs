@@ -189,6 +189,76 @@ impl GraphGaugeProvider for GraphGauges {
         *self
     }
 }
+const BUILTIN_LAYERS: &[(&str, &str)] = &[
+    ("game", "game"),
+    ("gameplay", "game"),
+    ("infra", "infra"),
+    ("infrastructure", "infra"),
+    ("infrastucture", "infra"),
+    ("metal", "render"),
+    ("render", "render"),
+    ("renderer", "render"),
+    ("math", "math"),
+    ("numerics", "math"),
+    ("sound", "audio"),
+    ("audio", "audio"),
+    ("steer", "ai"),
+    ("ai", "ai"),
+    ("behavior", "ai"),
+    ("test", "test"),
+    ("tests", "test"),
+    ("bench", "test"),
+];
+
+/// Extension trait for built-in architectural layer inference and `<f p=... layer=...>` tag emission.
+pub trait PathLayerExt {
+    fn builtin_layer(&self) -> Option<&'static str>;
+    fn write_file_open_tag<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()>;
+}
+
+impl PathLayerExt for str {
+    fn builtin_layer(&self) -> Option<&'static str> {
+        let (dirs, _) = self.rsplit_once('/')?;
+        for comp in dirs.split('/') {
+            for &(dir_name, layer) in BUILTIN_LAYERS {
+                if comp.eq_ignore_ascii_case(dir_name) {
+                    return Some(layer);
+                }
+            }
+        }
+        crate::gate::affected::is_test_path(self).then_some("test")
+    }
+
+    fn write_file_open_tag<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
+        out.write_all(b"<f p=\"")?;
+        escape_xml_write(out, self)?;
+        if let Some(layer) = self.builtin_layer() {
+            write!(out, "\" layer=\"{layer}\">")
+        } else {
+            out.write_all(b"\">")
+        }
+    }
+}
+
+/// Extension trait for resolving a repository root path's git HEAD stamp and XML attribute.
+pub trait GitStampExt {
+    fn git_at_or_head(&self) -> String;
+    fn git_at_xml_attr(&self) -> String;
+}
+
+impl GitStampExt for str {
+    fn git_at_or_head(&self) -> String {
+        crate::git::history::compute_git_at_stamp(self).unwrap_or_else(|| "HEAD".to_string())
+    }
+
+    fn git_at_xml_attr(&self) -> String {
+        match crate::git::history::compute_git_at_stamp(self) {
+            Some(stamp) if !stamp.is_empty() => format!(" at=\"{stamp}\""),
+            _ => String::new(),
+        }
+    }
+}
+
 /// Unified XML envelope trait for structured Ripwire reports.
 pub trait XmlReport {
     fn schema_tag(&self) -> &'static str;
@@ -267,6 +337,8 @@ pub trait JsonValueExt {
     fn array_any(&self, keys: &[&str]) -> Option<&Vec<serde_json::Value>>;
     fn str_vec(&self, key: &str) -> Vec<String>;
 
+    fn attach_gauges<G: GraphGaugeProvider>(&mut self, source: &G);
+    fn xml_opt_gauge_attrs(&self) -> String;
     fn paginate_items<'a, T>(&self, items: &'a [T], default_cap: usize) -> (PageWindow, &'a [T]) {
         items.paginate(
             default_cap,
@@ -362,5 +434,26 @@ impl JsonValueExt for serde_json::Value {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    fn attach_gauges<G: GraphGaugeProvider>(&mut self, source: &G) {
+        let g = source.gauges();
+        self["graph_ambiguous"] = serde_json::json!(g.ambiguous);
+        self["graph_unresolved"] = serde_json::json!(g.unresolved);
+        self["graph_unindexed"] = serde_json::json!(g.unindexed);
+    }
+
+    fn xml_opt_gauge_attrs(&self) -> String {
+        let Some(amb) = self.get("graph_ambiguous").and_then(Self::as_u64) else {
+            return String::new();
+        };
+        let g = GraphGauges {
+            ambiguous: amb as usize,
+            unresolved: self.u64_or("graph_unresolved", 0) as usize,
+            external: 0,
+            declined: 0,
+            unindexed: self.u64_or("graph_unindexed", 0) as usize,
+        };
+        format!(" {}", g.xml_gauge_attrs())
     }
 }

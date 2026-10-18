@@ -88,7 +88,8 @@ fn render_locals_xml(
 ) -> String {
     let kind_tag = symbol.kind.tag();
     let lang_tag = symbol.lang.tag();
-    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".into());
+    use crate::serialize::GitStampExt;
+    let at_stamp = root.git_at_or_head();
     let mut out = format!(
         "<!-- ripwire slice schema=ripwire.slice/v1: name-based def-use rows of one variable in one definition. -->\n<slice schema=\"ripwire.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" t=\"{kind_tag}\" lang=\"{lang_tag}\" vars=\"{}\" at=\"{at_stamp}\" root=\"{root}\" counts=\"as-classified\">\n",
         locals.len()
@@ -143,8 +144,8 @@ fn render_flow_xml(ctx: &FlowRenderCtx<'_>, steps: &[SliceStep]) -> String {
     let lines: Vec<&str> = src_text.lines().collect();
     let defs_cnt = steps.iter().filter(|s| s.role.is_def()).count();
     let uses_cnt = steps.iter().filter(|s| s.role.is_use()).count();
-    let at_stamp =
-        crate::git::history::compute_git_at_stamp(ctx.root).unwrap_or_else(|| "HEAD".into());
+    use crate::serialize::GitStampExt;
+    let at_stamp = ctx.root.git_at_or_head();
     let mut out = format!(
         "<slice schema=\"ripwire.slice/v1\" sym=\"{}\" var=\"{}\" p=\"{}\" t=\"{}\" lang=\"{}\" defs=\"{defs_cnt}\" uses=\"{uses_cnt}\" flow=\"{}\" depth=\"{}\" steps=\"{}\" at=\"{at_stamp}\" root=\"{}\" counts=\"as-classified\">\n",
         ctx.sym_name,

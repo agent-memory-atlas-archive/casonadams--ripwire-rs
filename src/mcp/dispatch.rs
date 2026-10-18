@@ -368,10 +368,7 @@ pub fn call_exemplar_tool(state: &McpState, args: &Value) -> Result<Value, Strin
 pub fn call_lego_tool(state: &McpState, args: &Value) -> Result<Value, String> {
     let iface = args.str_any(&["interface", "symbol"], "");
     let mut val = retrieval::call_lego(&state.ingest, &state.interner, iface);
-    let g = state.graph.gauges();
-    val["graph_ambiguous"] = serde_json::json!(g.ambiguous);
-    val["graph_unresolved"] = serde_json::json!(g.unresolved);
-    val["graph_unindexed"] = serde_json::json!(g.unindexed);
+    val.attach_gauges(&state.graph);
     Ok(val)
 }
 

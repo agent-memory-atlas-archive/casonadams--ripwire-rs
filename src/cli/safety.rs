@@ -708,12 +708,8 @@ pub fn print_cochange_pairs_paged<W: Write>(
     offset: Option<usize>,
     out: &mut W,
 ) -> io::Result<()> {
-    use crate::serialize::PaginateSlice;
-    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let at_attr = match at_stamp.is_empty() {
-        false => format!(" at=\"{at_stamp}\""),
-        true => String::new(),
-    };
+    use crate::serialize::{GitStampExt, PaginateSlice};
+    let at_attr = root.git_at_xml_attr();
     let total = pairs.len();
     let (pw, page) = pairs.paginate(30, limit, offset);
     let page_attrs = pw.xml_attrs();
@@ -742,13 +738,8 @@ pub fn print_cochange_groups_paged<W: Write>(
     offset: Option<usize>,
     out: &mut W,
 ) -> io::Result<()> {
-    use crate::serialize::PaginateSlice;
-    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let at_attr = if at_stamp.is_empty() {
-        String::new()
-    } else {
-        format!(" at=\"{at_stamp}\"")
-    };
+    use crate::serialize::{GitStampExt, PaginateSlice};
+    let at_attr = root.git_at_xml_attr();
     let total = groups.len();
     let (pw, page) = groups.paginate(30, limit, offset);
     let page_attrs = pw.xml_attrs();

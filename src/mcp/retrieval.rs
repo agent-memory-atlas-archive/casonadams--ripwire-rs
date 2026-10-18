@@ -973,7 +973,7 @@ fn select_best_exemplar<'a>(
     use crate::domain::CorpusView;
     let view = (ingest, interner);
     for &sym in candidates_pool {
-        let is_non_test = !crate::gate::affected::is_test_path(view.sym_path(sym));
+        let is_non_test = !view.is_test_symbol(sym);
         let in_deg = graph.map(|g| g.in_degree(sym.id)).unwrap_or(0);
         let neg_ccx = -(sym.ccx as i64);
         let r = ranks.get(sym.id as usize).copied().unwrap_or(0.0);
@@ -997,6 +997,31 @@ pub fn call_exemplar(
     call_exemplar_in_root(".", ingest, interner, ranks, role, graph)
 }
 
+fn collect_exemplar_calls(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    graph: Option<&Graph>,
+    sym_id: u32,
+) -> Vec<Value> {
+    use crate::domain::CorpusView;
+    let Some(g) = graph else {
+        return Vec::new();
+    };
+    let view = (ingest, interner);
+    g.callees(sym_id)
+        .filter_map(|(cid, _)| ingest.symbols.get(cid as usize))
+        .map(|csym| {
+            let sig = view.read_sym_signature(root, csym).unwrap_or_default();
+            json!({
+                "name": view.sym_name(csym),
+                "line": csym.line,
+                "sig": sig
+            })
+        })
+        .collect()
+}
+
 pub fn call_exemplar_in_root(
     root: &str,
     ingest: &IngestResult,
@@ -1015,6 +1040,7 @@ pub fn call_exemplar_in_root(
     let name = view.sym_name(sym);
     let file_path = view.sym_path(sym);
     let body = view.read_sym_source(root, sym);
+    let calls = collect_exemplar_calls(root, ingest, interner, graph, sym.id);
     json!({
         "role": role,
         "kind": sym.kind.tag(),
@@ -1028,7 +1054,8 @@ pub fn call_exemplar_in_root(
         "ccx": sym.ccx,
         "tested": usize::from(in_deg > 0),
         "rank": (rank * 10000.0).round() / 10000.0,
-        "body": body.unwrap_or_default()
+        "body": body.unwrap_or_default(),
+        "calls": calls
     })
 }
 
@@ -1559,6 +1586,52 @@ mod tests {
         assert_eq!(target_kind_from_role("interface"), SymKind::Interface);
         assert_eq!(target_kind_from_role("section"), SymKind::Section);
         assert_eq!(target_kind_from_role("other"), SymKind::Function);
+        let mut ing = IngestResult::new();
+        ing.files.push(crate::domain::FileInfo {
+            id: 0,
+            path: interner.intern("src/lib.rs"),
+            lang: crate::domain::Lang::Rust,
+            line_count: 20,
+            byte_size: 100,
+        });
+        let mut s0 = crate::domain::Symbol::new(
+            0,
+            interner.intern("caller_fn"),
+            interner.intern("src/lib.rs::caller_fn"),
+            SymKind::Function,
+            crate::domain::Lang::Rust,
+            0,
+            1,
+        );
+        s0.end_byte = 50;
+        ing.symbols.push(s0);
+        ing.symbols.push(crate::domain::Symbol::new(
+            1,
+            interner.intern("callee_fn"),
+            interner.intern("src/lib.rs::callee_fn"),
+            SymKind::Method,
+            crate::domain::Lang::Rust,
+            0,
+            10,
+        ));
+        ing.references.push(crate::domain::Reference::new(
+            0,
+            interner.intern("callee_fn"),
+            0,
+            2,
+            crate::domain::Lang::Rust,
+            RefRole::Call,
+        ));
+        let g = Graph::build(&ing, &interner);
+        let ex = call_exemplar(&ing, &interner, &[0.8, 0.2], "fn", Some(&g));
+        assert_eq!(ex["calls"].as_array().unwrap().len(), 1);
+        let mut xml_buf = Vec::new();
+        crate::serialize::serialize_exemplar_xml(".", &ex, &mut xml_buf).unwrap();
+        assert!(
+            String::from_utf8(xml_buf)
+                .unwrap()
+                .contains("<calls total=\"1\">")
+        );
     }
 
     #[test]
