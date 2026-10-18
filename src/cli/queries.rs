@@ -370,19 +370,16 @@ fn execute_note_append<W: Write>(root: &str, note: &str, out: &mut W) -> io::Res
     writeln!(out, "pinned note: {note}")
 }
 
-fn resolve_git_branch_and_subject(root: &str) -> (String, String) {
+fn resolve_git_branch_and_subject(root: &str) -> (String, String, bool) {
     let Ok(repo) = gix::open(root) else {
-        return ("main".to_string(), "head".to_string());
+        return ("main".to_string(), "head".to_string(), false);
     };
-    let branch = repo
-        .head_name()
-        .ok()
-        .flatten()
-        .map(|n| {
-            let s = n.as_bstr().to_string();
-            s.strip_prefix("refs/heads/").unwrap_or(&s).to_string()
-        })
-        .unwrap_or_else(|| "main".to_string());
+    let branch_opt = repo.head_name().ok().flatten().map(|n| {
+        let s = n.as_bstr().to_string();
+        s.strip_prefix("refs/heads/").unwrap_or(&s).to_string()
+    });
+    let detached = branch_opt.is_none();
+    let branch = branch_opt.unwrap_or_else(|| "HEAD".to_string());
     let subject = repo
         .head_commit()
         .ok()
@@ -394,38 +391,73 @@ fn resolve_git_branch_and_subject(root: &str) -> (String, String) {
         .and_then(|m| m.lines().next().map(|l| l.trim().to_string()))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "head".to_string());
-    (branch, subject)
+    (branch, subject, detached)
+}
+
+fn build_handoff_verified_rows(
+    changed: &[String],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> String {
+    let mut rows = String::new();
+    if changed.is_empty() {
+        if let Some(s) = ingest.symbols.first() {
+            let p = ingest.sym_file_path(s, interner).xml_escaped();
+            let sn = interner[s.name].xml_escaped();
+            rows.push_str(&format!("<f p=\"{p}\"><s n=\"{sn}\"/></f>"));
+        }
+        rows.push_str("<tests n=\"0\"/>");
+        return rows;
+    }
+    for cf in changed.iter().take(12) {
+        let sym = ingest
+            .symbols
+            .iter()
+            .find(|s| {
+                let p = ingest.sym_file_path(s, interner);
+                p == cf || cf.ends_with(p)
+            })
+            .map_or("main", |s| &interner[s.name]);
+        rows.push_str(&format!(
+            "<f p=\"{}\"><s n=\"{}\"/></f>",
+            cf.xml_escaped(),
+            sym.xml_escaped()
+        ));
+    }
+    rows.push_str("<tests n=\"0\"/>");
+    rows
+}
+
+fn build_handoff_doc_rows(
+    root: &str,
+    query: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> (String, usize) {
+    let recall =
+        crate::mcp::retrieval::call_memory_recall_in_root(root, ingest, interner, query, Some(4));
+    let mut rows = String::new();
+    let mut cnt = 0usize;
+    if let Some(docs) = recall.get("docs").and_then(|v| v.as_array()) {
+        for d in docs {
+            let p = d.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let sc = d.get("score").and_then(|v| v.as_u64()).unwrap_or(1) as f64;
+            if !p.is_empty() {
+                rows.push_str(&format!("<doc p=\"{}\" s=\"{sc:.3}\"/>", p.xml_escaped()));
+                cnt += 1;
+            }
+        }
+    }
+    (rows, cnt)
 }
 
 fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> String {
     use crate::serialize::GitStampExt;
     let at_stamp = root.git_at_or_head();
-    let (branch, subject) = resolve_git_branch_and_subject(root);
+    let (branch, subject, detached) = resolve_git_branch_and_subject(root);
+    let detached_attr = if detached { " detached=\"1\"" } else { "" };
     let changed = crate::cli::safety::get_working_tree_changed_files(root);
-    let mut verified_rows = String::new();
-    if changed.is_empty() {
-        if let Some(s) = ingest.symbols.first() {
-            let p = ingest.sym_file_path(s, interner).xml_escaped();
-            let sn = interner[s.name].xml_escaped();
-            verified_rows.push_str(&format!("<f p=\"{p}\"><s n=\"{sn}\"/></f>"));
-        }
-    } else {
-        for cf in changed.iter().take(12) {
-            let sym = ingest
-                .symbols
-                .iter()
-                .find(|s| {
-                    let p = ingest.sym_file_path(s, interner);
-                    p == cf || cf.ends_with(p)
-                })
-                .map_or("main", |s| &interner[s.name]);
-            verified_rows.push_str(&format!(
-                "<f p=\"{}\"><s n=\"{}\"/></f>",
-                cf.xml_escaped(),
-                sym.xml_escaped()
-            ));
-        }
-    }
+    let verified_rows = build_handoff_verified_rows(&changed, ingest, interner);
     let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, None);
     let probe_path = changed.first().map(String::as_str).unwrap_or_else(|| {
         ingest
@@ -436,7 +468,7 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
     let partners = coupling.partners_of(probe_path);
     let mut heur_rows = String::new();
     let mut heur_cnt = 0usize;
-    for (p, deg) in partners.iter().take(5) {
+    for (p, deg) in partners.iter().take(4) {
         let score = (*deg).min(1.0);
         heur_rows.push_str(&format!(
             "<f p=\"{}\" score=\"{score:.2}\" why=\"cochange\"/>",
@@ -444,6 +476,10 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
         ));
         heur_cnt += 1;
     }
+    let (doc_rows, doc_cnt) =
+        build_handoff_doc_rows(root, &format!("{branch} {subject}"), ingest, interner);
+    heur_rows.push_str(&doc_rows);
+    heur_cnt += doc_cnt;
     if heur_cnt == 0 {
         let fallback = ingest
             .files
@@ -457,12 +493,12 @@ fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> 
         heur_cnt = 1;
     }
     let ch_cnt = changed.len();
+    let candidates = (partners.len() + doc_cnt).max(heur_cnt);
     let est_tokens = (verified_rows.len() + heur_rows.len() + 240) / 4;
     format!(
-        "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{}\" subject=\"{}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{}\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
+        "<!-- ripwire handoff schema=ripwire.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{}\"{detached_attr} subject=\"{}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{candidates}\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
         branch.xml_escaped(),
         subject.xml_escaped(),
-        partners.len().max(1)
     )
 }
 
@@ -2028,5 +2064,25 @@ mod tests {
             execute_expand_or_outline_query(".", "missing", true, &ingest, &interner, &mut buf)
                 .is_err()
         );
+    }
+
+    #[test]
+    fn test_handoff_xml_branches() {
+        let reg = crate::LanguageRegistry::new().unwrap();
+        let interner = Interner::new();
+        let fixtures: &[(&str, crate::domain::Lang, &[u8])] = &[(
+            "src/lib.rs",
+            crate::domain::Lang::Rust,
+            b"pub fn overview() {}\n",
+        )];
+        let ingest = crate::ingest::ingest_in_memory_files(fixtures, &reg, &interner);
+        let empty_rows = build_handoff_verified_rows(&[], &ingest, &interner);
+        assert!(empty_rows.contains("src/lib.rs"));
+        let ch_rows = build_handoff_verified_rows(&["src/lib.rs".to_string()], &ingest, &interner);
+        assert!(ch_rows.contains("overview"));
+        let xml = build_handoff_xml(".", &ingest, &interner);
+        assert!(xml.contains("ripwire.handoff/v1"));
+        let (b, s, d) = resolve_git_branch_and_subject("/nonexistent_repo_path_xyz");
+        assert_eq!((b.as_str(), s.as_str(), d), ("main", "head", false));
     }
 }

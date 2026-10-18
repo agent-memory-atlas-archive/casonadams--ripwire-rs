@@ -451,10 +451,10 @@ fn measure_comment_coherence_row(
         None if sym.loc > 5 => ident_terms.iter().cloned().collect(),
         None => Vec::new(),
     };
-    if comment_words.is_empty() {
+    let words = comment_words.len();
+    if words < 2 {
         return None;
     }
-    let words = comment_words.len();
     let restate = comment_words
         .iter()
         .filter(|w| {
@@ -513,7 +513,9 @@ pub fn compute_comment_coherence_in_root(
     use crate::domain::CorpusView;
     let view = (ingest, interner);
     for sym in &ingest.symbols {
-        if sym.kind != SymKind::Function && sym.kind != SymKind::Method {
+        if (sym.kind != SymKind::Function && sym.kind != SymKind::Method)
+            || view.is_test_symbol(sym)
+        {
             continue;
         }
         let file_path = view.sym_path(sym);

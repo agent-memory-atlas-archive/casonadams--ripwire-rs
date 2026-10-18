@@ -302,15 +302,18 @@ fn score_candidate_symbol(
         return 0.0;
     }
     let view = (ingest, interner);
+    let file_path = view.sym_path(sym);
     let kind_factor = if matches!(sym.kind, SymKind::Var | SymKind::Field) {
         0.2
+    } else if file_path.ends_with(".proto") {
+        0.35
     } else {
         1.0
     };
     let ctx = SymbolMatchCtx {
         name: view.sym_name(sym),
         scope: view.sym_scope(sym),
-        file_path: view.sym_path(sym),
+        file_path,
         body_mask: body_masks.get(sym.id as usize).copied().unwrap_or(0),
         terms: raw_terms,
         idf_weights,
