@@ -41,8 +41,10 @@
 
 - **No lint suppressions**: Never add Clippy `allow` / `expect` attributes or
   CLI exclusions; remove any encountered in touched code and refactor instead.
-- **Fast, in-memory tests**: Never perform disk I/O or network calls in tests;
-  use in-memory slices (`< 500ms` per test, `< 15s` full suite).
+- **Fast, in-memory public-API tests**: Place all tests in `tests/<mod>/<file>.rs`
+  (rooted by `tests/<mod>.rs`), never inline `#[cfg(test)]` in `src/`. Never
+  perform disk I/O or network calls in tests; use in-memory slices (`< 500ms`
+  per test, `< 15s` full suite).
 - **Documentation sync**: When changing CLI flags, subcommands, defaults, or MCP
   tools, update `README.md`, `docs/`, `www/`, `man/man1/ripwire-rs.1`, and
   `skills/` in the same commit, and verify with `ripwire-rs . --doc-drift`.
