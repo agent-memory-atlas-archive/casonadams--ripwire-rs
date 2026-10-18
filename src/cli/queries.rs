@@ -856,13 +856,15 @@ pub fn execute_tree_query<W: Write>(
     );
 
     let mut file_symbols = Vec::new();
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     for f in file_order {
-        let rel_path = ingest.file_path(f, interner);
+        let rel_path = view.file_path(f);
         let bucket = &buckets[f as usize];
         let mut top3 = Vec::new();
         for &sym_id in bucket.iter().take(3) {
             let sym = &ingest[sym_id];
-            top3.push((sym.kind.tag(), &interner[sym.name]));
+            top3.push((sym.kind.tag(), view.sym_name(sym)));
         }
         file_symbols.push(crate::serialize::TreeFileSymbols {
             path: rel_path,
@@ -1252,7 +1254,16 @@ pub fn execute_external_surface_query<W: Write>(
         std::collections::HashMap::new();
 
     for r in &ingest.references {
-        if !by_name.contains_key(&r.callee_name) {
+        let is_call = matches!(
+            r.role,
+            crate::domain::RefRole::Call | crate::domain::RefRole::Macro
+        );
+        let name = interner.resolve(&r.callee_name);
+        if is_call
+            && !by_name.contains_key(&r.callee_name)
+            && !r.lang.semantics().is_std_or_builtin_member(name)
+            && !r.lang.semantics().is_builtin_keyword(name)
+        {
             *ext_counts.entry((r.callee_name, r.lang)).or_default() += 1;
         }
     }

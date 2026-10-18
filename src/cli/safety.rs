@@ -646,7 +646,8 @@ pub fn execute_hotspots_with<W: Write>(
         .into_iter()
         .map(|(path, fc)| (path, fc.commits))
         .collect();
-    let report = crate::metrics::compute_hotspots(&state.ingest, &state.interner, &counts);
+    let report = crate::metrics::compute_hotspots(&state.ingest, &state.interner, &counts)
+        .with_root(&state.root);
     report.write_xml(out)
 }
 

@@ -838,52 +838,85 @@ pub struct TreeFileSymbols<'a> {
 }
 
 /// Serialize `--tree` hierarchical file symbol views to Ripwire XML.
+pub struct TreeReport<'a> {
+    pub root: &'a str,
+    pub file_symbols: &'a [TreeFileSymbols<'a>],
+    pub pr_iters: u32,
+}
+
+impl crate::serialize::XmlReport for TreeReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "tree"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire.tree/v1"
+    }
+    fn root_path(&self) -> &str {
+        self.root
+    }
+    fn include_root_attr(&self) -> bool {
+        false
+    }
+    fn legend_comment(&self) -> Option<&'static str> {
+        Some(
+            "ripwire tree schema=ripwire.tree/v1: each file with its top 3 symbols by rank, files by best symbol: <file p= symbols=> of <s t= n=>.",
+        )
+    }
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::PaginateSlice;
+        let total_files = self.file_symbols.len();
+        let (pw, shown_slice) = self.file_symbols.paginate(80, None, None);
+        let total_shown: usize = shown_slice.iter().map(|f| f.top_symbols.len()).sum();
+        let symbols_capped = usize::from(
+            shown_slice
+                .iter()
+                .any(|f| f.total_symbols > f.top_symbols.len()),
+        );
+        let page_attrs = pw.xml_attrs();
+        let next_attr = if pw.capped {
+            format!(" next=\"--tree --offset={}\"", pw.shown)
+        } else {
+            String::new()
+        };
+        write!(
+            out,
+            " files=\"{total_files}\" files_unlisted=\"0\"{page_attrs} pr_iters=\"{}\" root=\"{}\" shown_symbols=\"{total_shown}\" symbols_capped=\"{symbols_capped}\"{next_attr}",
+            self.pr_iters,
+            self.root.xml_escaped()
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::PaginateSlice;
+        let (_, shown_slice) = self.file_symbols.paginate(80, None, None);
+        for f in shown_slice {
+            write!(
+                out,
+                "<file p=\"{}\" symbols=\"{}\">",
+                f.path.xml_escaped(),
+                f.total_symbols
+            )?;
+            for &(kind, name) in &f.top_symbols {
+                write!(out, "<s t=\"{kind}\" n=\"{}\"/>", name.xml_escaped())?;
+            }
+            write!(out, "</file>")?;
+        }
+        Ok(())
+    }
+}
+
 pub fn serialize_tree_xml<W: Write>(
     root: &str,
     file_symbols: &[TreeFileSymbols<'_>],
     pr_iters: u32,
     out: &mut W,
 ) -> io::Result<()> {
-    let total_files = file_symbols.len();
-    let cap = 80usize;
-    let shown_files = total_files.min(cap);
-    let capped = usize::from(shown_files < total_files);
-    let shown_slice = &file_symbols[..shown_files];
-    let total_shown: usize = shown_slice.iter().map(|f| f.top_symbols.len()).sum();
-    let symbols_capped = usize::from(
-        shown_slice
-            .iter()
-            .any(|f| f.total_symbols > f.top_symbols.len()),
-    );
-    let page_attrs = if capped == 1 {
-        format!(
-            " shown=\"{shown_files}\" capped=\"1\" total=\"{total_files}\" has_more=\"1\" next_offset=\"{shown_files}\" offset=\"0\" limit=\"0\""
-        )
-    } else {
-        format!(" shown=\"{shown_files}\" capped=\"0\"")
-    };
-    let next_attr = if capped == 1 {
-        format!(" next=\"--tree --offset={shown_files}\"")
-    } else {
-        String::new()
-    };
-    write!(
-        out,
-        "<!-- ripwire tree schema=ripwire.tree/v1: each file with its top 3 symbols by rank, files by best symbol: <file p= symbols=> of <s t= n=>. -->\n<tree schema=\"ripwire.tree/v1\" files=\"{total_files}\" files_unlisted=\"0\"{page_attrs} pr_iters=\"{pr_iters}\" root=\"{root}\" shown_symbols=\"{total_shown}\" symbols_capped=\"{symbols_capped}\"{next_attr}>",
-    )?;
-    for f in shown_slice {
-        write!(
-            out,
-            "<file p=\"{}\" symbols=\"{}\">",
-            f.path.xml_escaped(),
-            f.total_symbols
-        )?;
-        for &(kind, name) in &f.top_symbols {
-            write!(out, "<s t=\"{kind}\" n=\"{}\"/>", name.xml_escaped())?;
-        }
-        write!(out, "</file>")?;
+    use crate::serialize::XmlReport;
+    TreeReport {
+        root,
+        file_symbols,
+        pr_iters,
     }
-    writeln!(out, "</tree>")
+    .render_envelope(out)
 }
 
 /// Serialize `--pack-top-n` bodies to Ripwire XML.
