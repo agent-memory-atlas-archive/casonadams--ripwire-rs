@@ -139,7 +139,7 @@ pub fn compute_readability(code: &str) -> ReadabilityMetrics {
 }
 
 pub struct ReadabilityReport<'a> {
-    pub functions: Vec<(&'a crate::domain::Symbol, String, String)>,
+    pub functions: Vec<(&'a crate::domain::Symbol, &'a str, &'a str)>,
 }
 
 impl crate::serialize::XmlReport for ReadabilityReport<'_> {
@@ -192,17 +192,20 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
     interner: &crate::domain::Interner,
     out: &mut W,
 ) -> std::io::Result<()> {
+    use crate::domain::CorpusView;
     use crate::serialize::XmlReport;
-    let mut functions: Vec<(&crate::domain::Symbol, String, String)> = Vec::new();
-    for sym in &ingest.symbols {
-        if sym.kind == crate::domain::SymKind::Function
-            || sym.kind == crate::domain::SymKind::Method
-        {
-            let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
-            let n = interner.resolve(&sym.name);
-            functions.push((sym, p.to_string(), n.to_string()));
-        }
-    }
+    let view = (ingest, interner);
+    let mut functions: Vec<(&crate::domain::Symbol, &str, &str)> = ingest
+        .symbols
+        .iter()
+        .filter(|sym| {
+            matches!(
+                sym.kind,
+                crate::domain::SymKind::Function | crate::domain::SymKind::Method
+            )
+        })
+        .map(|sym| (sym, view.sym_path(sym), view.sym_name(sym)))
+        .collect();
     functions.sort_by(|a, b| b.0.loc.cmp(&a.0.loc).then_with(|| b.0.ccx.cmp(&a.0.ccx)));
     ReadabilityReport { functions }.write_xml_report(root, out)
 }

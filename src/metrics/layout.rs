@@ -1,5 +1,4 @@
 use crate::domain::{IngestResult, Interner, SymKind};
-use std::fs;
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -103,13 +102,7 @@ fn extract_struct_layout_def(
     file_path: &str,
     root: &str,
 ) -> StructLayoutDef {
-    let full_path = if root == "." {
-        file_path.to_string()
-    } else {
-        format!("{root}/{file_path}")
-    };
-
-    let fields = if let Ok(bytes) = fs::read(&full_path) {
+    let fields = if let Ok(bytes) = crate::domain::read_rel_bytes(root, file_path) {
         let body = sym.source_text(&bytes).unwrap_or_default();
         parse_struct_fields(&body)
     } else {
@@ -134,20 +127,16 @@ pub fn compute_layout_report(
     interner: &Interner,
     root: &str,
 ) -> StructLayoutReport {
-    let mut defs = Vec::new();
-
-    for sym in &ingest.symbols {
-        let n = interner.resolve(&sym.name);
-        if n == sym_name && (sym.kind == SymKind::Struct || sym.kind == SymKind::Class) {
-            let file_path = ingest
-                .files
-                .get(sym.file_id as usize)
-                .map(|f| interner.resolve(&f.path))
-                .unwrap_or("");
-            defs.push(extract_struct_layout_def(sym, file_path, root));
-        }
-    }
-
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
+    let defs: Vec<StructLayoutDef> = ingest
+        .symbols
+        .iter()
+        .filter(|sym| {
+            view.sym_name(sym) == sym_name && matches!(sym.kind, SymKind::Struct | SymKind::Class)
+        })
+        .map(|sym| extract_struct_layout_def(sym, view.sym_path(sym), root))
+        .collect();
     let found = !defs.is_empty();
     StructLayoutReport {
         sym: sym_name.to_string(),
@@ -224,6 +213,8 @@ pub fn compute_field_affinity_report(
     if let Some(sym) = sym_opt.filter(|s| !s.is_empty()) {
         return compute_layout_report(sym, ingest, interner, root);
     }
+    use crate::domain::CorpusView;
+    let view = (ingest, interner);
     let defs: Vec<StructLayoutDef> = ingest
         .symbols
         .iter()
@@ -232,13 +223,7 @@ pub fn compute_field_affinity_report(
                 && s.lang.semantics().supports_c_layout()
         })
         .take(20)
-        .map(|s| {
-            let file_path = ingest
-                .files
-                .get(s.file_id as usize)
-                .map_or("", |f| interner.resolve(&f.path));
-            extract_struct_layout_def(s, file_path, root)
-        })
+        .map(|s| extract_struct_layout_def(s, view.sym_path(s), root))
         .collect();
     let found = !defs.is_empty();
     StructLayoutReport {
