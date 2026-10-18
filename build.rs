@@ -83,7 +83,7 @@ fn is_skill_md(path: &std::path::Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return false;
     };
-    name != "CONSOLIDATION.md" && name != "README.md"
+    name != "README.md"
 }
 
 fn add_skill_entry(
