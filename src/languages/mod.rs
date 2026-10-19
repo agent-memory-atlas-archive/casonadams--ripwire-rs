@@ -196,6 +196,16 @@ pub trait LanguageSemantics: Sync {
         name.to_string()
     }
 
+    /// Optional language-specific enclosing scope extractor for non-standard container AST shapes.
+    fn extract_custom_scope(
+        &self,
+        _parent: tree_sitter::Node<'_>,
+        _name_node: tree_sitter::Node<'_>,
+        _source_bytes: &[u8],
+    ) -> Option<String> {
+        None
+    }
+
     /// True if a captured identifier is a language keyword or cast operator that must not be indexed.
     fn is_builtin_keyword(&self, _name: &str) -> bool {
         false

@@ -45,6 +45,30 @@ impl LanguageSemantics for LuaLanguage {
         !sym_name.starts_with('_') && !sym_name.starts_with('#')
     }
 
+    fn extract_custom_scope(
+        &self,
+        parent: tree_sitter::Node<'_>,
+        name_node: tree_sitter::Node<'_>,
+        source_bytes: &[u8],
+    ) -> Option<String> {
+        if !matches!(
+            parent.kind(),
+            "dot_index_expression" | "method_index_expression"
+        ) {
+            return None;
+        }
+        let gp_kind = parent.parent()?.kind();
+        if !matches!(gp_kind, "function_declaration" | "variable_list") {
+            return None;
+        }
+        crate::ingest::distinct_scope_tail(
+            parent.child_by_field_name("table")?,
+            name_node,
+            source_bytes,
+            "",
+        )
+    }
+
     fn std_member_names(&self) -> &'static [&'static str] {
         LUA_STD_MEMBERS
     }

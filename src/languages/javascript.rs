@@ -158,6 +158,37 @@ pub(super) const JS_STD_QUALIFIERS: &[&str] = &[
     "Deno",
 ];
 
+fn is_cjs_export_target(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
+    let Some(obj) = name_node
+        .parent()
+        .and_then(|m| m.child_by_field_name("object"))
+    else {
+        return false;
+    };
+    if obj.kind() == "identifier" {
+        return obj.utf8_text(source_bytes) == Ok("exports");
+    }
+    if obj.kind() == "member_expression" {
+        let is_mod = obj
+            .child_by_field_name("object")
+            .is_some_and(|o| o.kind() == "identifier" && o.utf8_text(source_bytes) == Ok("module"));
+        let is_exp = obj
+            .child_by_field_name("property")
+            .is_some_and(|p| p.utf8_text(source_bytes) == Ok("exports"));
+        return is_mod && is_exp;
+    }
+    false
+}
+
+fn is_prototype_member_target(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
+    name_node
+        .parent()
+        .and_then(|m| m.child_by_field_name("object"))
+        .filter(|o| o.kind() == "member_expression")
+        .and_then(|o| o.child_by_field_name("property"))
+        .is_some_and(|p| p.utf8_text(source_bytes) == Ok("prototype"))
+}
+
 pub(super) fn is_jsx_intrinsic_tag_call(
     name_node: Option<tree_sitter::Node<'_>>,
     name: &str,
@@ -216,7 +247,16 @@ impl LanguageSemantics for JavaScriptLanguage {
     }
 
     fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
-        ctx.sub != Some("constant") || super::is_screaming_snake(ctx.name)
+        match ctx.sub {
+            Some("constant") => super::is_screaming_snake(ctx.name),
+            Some("cjsexport") => ctx
+                .name_node
+                .is_some_and(|nn| is_cjs_export_target(nn, ctx.source_bytes)),
+            Some("protomethod") => ctx
+                .name_node
+                .is_some_and(|nn| is_prototype_member_target(nn, ctx.source_bytes)),
+            _ => true,
+        }
     }
 
     fn should_ignore_call(&self, name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {

@@ -103,7 +103,7 @@ fn extract_impl_scope(parent: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Opt
     }
 }
 
-fn distinct_scope_tail(
+pub fn distinct_scope_tail(
     cand: tree_sitter::Node<'_>,
     name_node: tree_sitter::Node<'_>,
     source_bytes: &[u8],
@@ -153,52 +153,6 @@ fn extract_qualified_scope(
     distinct_scope_tail(scope_node, name_node, source_bytes, "::")
 }
 
-fn extract_go_receiver_scope(parent: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
-    let recv_list = parent.child_by_field_name("receiver")?;
-    let param = recv_list.named_child(0)?;
-    let type_node = param.child_by_field_name("type")?;
-    let text = type_node.utf8_text(source_bytes).ok()?;
-    let base = text
-        .trim_start_matches('*')
-        .split('[')
-        .next()
-        .unwrap_or("")
-        .trim();
-    (!base.is_empty()).then(|| base.to_string())
-}
-
-fn extract_elixir_module_scope(
-    parent: tree_sitter::Node<'_>,
-    name_node: tree_sitter::Node<'_>,
-    source_bytes: &[u8],
-) -> Option<String> {
-    let target = parent
-        .child_by_field_name("target")?
-        .utf8_text(source_bytes)
-        .ok()?;
-    if !matches!(target, "defmodule" | "defprotocol") {
-        return None;
-    }
-    distinct_scope_tail(elixir_first_arg(parent)?, name_node, source_bytes, ".")
-}
-
-fn extract_lua_table_scope(
-    parent: tree_sitter::Node<'_>,
-    name_node: tree_sitter::Node<'_>,
-    source_bytes: &[u8],
-) -> Option<String> {
-    let gp_kind = parent.parent()?.kind();
-    if !matches!(gp_kind, "function_declaration" | "variable_list") {
-        return None;
-    }
-    distinct_scope_tail(
-        parent.child_by_field_name("table")?,
-        name_node,
-        source_bytes,
-        "",
-    )
-}
-
 fn is_named_container_kind(kind: &str) -> bool {
     matches!(
         kind,
@@ -235,15 +189,17 @@ fn extract_node_scope(
     parent: tree_sitter::Node<'_>,
     name_node: tree_sitter::Node<'_>,
     source_bytes: &[u8],
+    lang: Lang,
 ) -> Option<String> {
+    if let Some(custom) = lang
+        .semantics()
+        .extract_custom_scope(parent, name_node, source_bytes)
+    {
+        return Some(custom);
+    }
     match parent.kind() {
         "impl_item" => extract_impl_scope(parent, source_bytes),
-        "method_declaration" => extract_go_receiver_scope(parent, source_bytes),
         "qualified_identifier" => extract_qualified_scope(parent, name_node, source_bytes),
-        "call" => extract_elixir_module_scope(parent, name_node, source_bytes),
-        "dot_index_expression" | "method_index_expression" => {
-            extract_lua_table_scope(parent, name_node, source_bytes)
-        }
         k if is_named_container_kind(k) => {
             extract_named_container_scope(parent, name_node, source_bytes)
         }
@@ -251,10 +207,14 @@ fn extract_node_scope(
     }
 }
 
-fn find_enclosing_scope(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
+fn find_enclosing_scope(
+    name_node: tree_sitter::Node<'_>,
+    source_bytes: &[u8],
+    lang: Lang,
+) -> Option<String> {
     let mut curr = name_node.parent();
     while let Some(parent) = curr {
-        if let Some(scope) = extract_node_scope(parent, name_node, source_bytes) {
+        if let Some(scope) = extract_node_scope(parent, name_node, source_bytes, lang) {
             return Some(scope);
         }
         curr = parent.parent();
@@ -340,7 +300,7 @@ fn extract_member_receiver_qualifier(
     }
     let text = recv.utf8_text(source_bytes).ok()?.trim();
     if matches!(text, "self" | "this" | "Self") {
-        return find_enclosing_scope(name_node, source_bytes);
+        return find_enclosing_scope(name_node, source_bytes, lang);
     }
     let keep = is_pascal_type_ident(text) || lang.semantics().is_std_or_builtin_qualifier(text);
     keep.then(|| text.to_string())
@@ -441,65 +401,6 @@ fn count_call_arguments(name_node: tree_sitter::Node<'_>) -> (u16, bool) {
     (0, false)
 }
 
-pub fn elixir_arguments<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
-    (0..node.named_child_count())
-        .filter_map(|i| node.named_child(i))
-        .find(|c| c.kind() == "arguments")
-}
-
-fn elixir_first_arg<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
-    let args = elixir_arguments(node)?;
-    for i in 0..args.named_child_count() {
-        let child = args.named_child(i)?;
-        if child.kind() != "comment" {
-            return Some(child);
-        }
-    }
-    None
-}
-
-fn unwrap_when_guard<'a>(
-    head: tree_sitter::Node<'a>,
-    source_bytes: &[u8],
-) -> Option<tree_sitter::Node<'a>> {
-    let op = head.child_by_field_name("operator")?;
-    if op.utf8_text(source_bytes).ok() == Some("when") {
-        head.child_by_field_name("left")
-    } else {
-        None
-    }
-}
-
-fn count_non_comment_args(args: tree_sitter::Node<'_>) -> u16 {
-    let mut count = 0u16;
-    for i in 0..args.named_child_count() {
-        if let Some(c) = args.named_child(i)
-            && c.kind() != "comment"
-        {
-            count = count.saturating_add(1);
-        }
-    }
-    count
-}
-
-pub fn elixir_param_count(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> u16 {
-    let Some(mut head) = elixir_first_arg(def_node) else {
-        return 0;
-    };
-    if head.kind() == "binary_operator" {
-        match unwrap_when_guard(head, source_bytes) {
-            Some(left) => head = left,
-            None => return 2,
-        }
-    }
-    if head.kind() == "unary_operator" {
-        return 1;
-    }
-    elixir_arguments(head)
-        .map(count_non_comment_args)
-        .unwrap_or(0)
-}
-
 struct MatchExtract<'a> {
     name: Option<String>,
     name_node: Option<tree_sitter::Node<'a>>,
@@ -559,58 +460,6 @@ fn extract_match_captures<'a>(
         apply_capture(&mut ext, cap_name, capture.node, source_bytes);
     }
     ext
-}
-
-fn is_cjs_export_target(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
-    let Some(member) = name_node.parent() else {
-        return false;
-    };
-    let Some(obj) = member.child_by_field_name("object") else {
-        return false;
-    };
-    if obj.kind() == "identifier" {
-        return obj.utf8_text(source_bytes) == Ok("exports");
-    }
-    if obj.kind() == "member_expression" {
-        let Some(oo) = obj.child_by_field_name("object") else {
-            return false;
-        };
-        let Some(prop) = obj.child_by_field_name("property") else {
-            return false;
-        };
-        return oo.kind() == "identifier"
-            && oo.utf8_text(source_bytes) == Ok("module")
-            && prop.utf8_text(source_bytes) == Ok("exports");
-    }
-    false
-}
-
-fn is_prototype_member_target(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
-    let Some(member) = name_node.parent() else {
-        return false;
-    };
-    let Some(obj) = member.child_by_field_name("object") else {
-        return false;
-    };
-    if obj.kind() != "member_expression" {
-        return false;
-    }
-    let Some(prop) = obj.child_by_field_name("property") else {
-        return false;
-    };
-    prop.utf8_text(source_bytes) == Ok("prototype")
-}
-
-fn is_gated_def_allowed(
-    sub: Option<&str>,
-    node: Option<tree_sitter::Node<'_>>,
-    src: &[u8],
-) -> bool {
-    match sub {
-        Some("cjsexport") => node.is_some_and(|nn| is_cjs_export_target(nn, src)),
-        Some("protomethod") => node.is_some_and(|nn| is_prototype_member_target(nn, src)),
-        _ => true,
-    }
 }
 
 fn is_body_block_kind(kind: &str) -> bool {
@@ -702,14 +551,13 @@ fn record_def_item(
         source_bytes,
     };
     if lang.semantics().is_builtin_keyword(orig_name)
-        || !is_gated_def_allowed(sub, ext.name_node, source_bytes)
         || !lang.semantics().is_def_capture_allowed(&gate_ctx)
     {
         return;
     }
     let scope = inline_scope.or_else(|| {
         ext.name_node
-            .and_then(|n| find_enclosing_scope(n, source_bytes))
+            .and_then(|n| find_enclosing_scope(n, source_bytes, lang))
     });
     let (body_node, end) = lang.semantics().resolve_def_body_and_end(ext.def_node, end);
     let body_byte = body_node.map_or(0, find_def_body_start);
@@ -769,7 +617,7 @@ fn record_ref_item(
     let qualifier = inline_qual.or_else(|| {
         ext.name_node.and_then(|n| {
             if role == RefRole::Extends {
-                find_enclosing_scope(n, source_bytes)
+                find_enclosing_scope(n, source_bytes, lang)
             } else {
                 find_call_qualifier(n, source_bytes, lang)
             }

@@ -160,6 +160,56 @@ const ELIXIR_SPECIAL_CALLS: &[&str] = &[
     "test",
 ];
 
+fn elixir_arguments<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+    (0..node.named_child_count())
+        .filter_map(|i| node.named_child(i))
+        .find(|c| c.kind() == "arguments")
+}
+
+fn elixir_first_arg<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+    let args = elixir_arguments(node)?;
+    (0..args.named_child_count())
+        .filter_map(|i| args.named_child(i))
+        .find(|c| c.kind() != "comment")
+}
+
+fn unwrap_when_guard<'a>(
+    head: tree_sitter::Node<'a>,
+    source_bytes: &[u8],
+) -> Option<tree_sitter::Node<'a>> {
+    let op = head.child_by_field_name("operator")?;
+    if op.utf8_text(source_bytes).ok() == Some("when") {
+        head.child_by_field_name("left")
+    } else {
+        None
+    }
+}
+
+fn count_non_comment_args(args: tree_sitter::Node<'_>) -> u16 {
+    (0..args.named_child_count())
+        .filter_map(|i| args.named_child(i))
+        .filter(|c| c.kind() != "comment")
+        .count() as u16
+}
+
+pub fn elixir_param_count(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> u16 {
+    let Some(mut head) = elixir_first_arg(def_node) else {
+        return 0;
+    };
+    if head.kind() == "binary_operator" {
+        match unwrap_when_guard(head, source_bytes) {
+            Some(left) => head = left,
+            None => return 2,
+        }
+    }
+    if head.kind() == "unary_operator" {
+        return 1;
+    }
+    elixir_arguments(head)
+        .map(count_non_comment_args)
+        .unwrap_or(0)
+}
+
 fn is_elixir_call_def_allowed(dn: tree_sitter::Node<'_>, ctx: &DefCaptureGateContext<'_>) -> bool {
     let Some(target) = dn
         .child_by_field_name("target")
@@ -216,7 +266,7 @@ impl LanguageSemantics for ElixirLanguage {
         orig_name: &str,
     ) -> (u16, String) {
         let params = def_node
-            .map(|n| crate::ingest::elixir_param_count(n, source_bytes))
+            .map(|n| elixir_param_count(n, source_bytes))
             .unwrap_or(0);
         let name = if kind == SymKind::Function {
             format!("{orig_name}/{params}")
@@ -229,6 +279,25 @@ impl LanguageSemantics for ElixirLanguage {
     fn format_callee_name(&self, name: &str, arg_count: u16, arg_count_known: bool) -> String {
         let arity = if arg_count_known { arg_count } else { 0 };
         format!("{name}/{arity}")
+    }
+
+    fn extract_custom_scope(
+        &self,
+        parent: tree_sitter::Node<'_>,
+        name_node: tree_sitter::Node<'_>,
+        source_bytes: &[u8],
+    ) -> Option<String> {
+        if parent.kind() != "call" {
+            return None;
+        }
+        let target = parent
+            .child_by_field_name("target")?
+            .utf8_text(source_bytes)
+            .ok()?;
+        if !matches!(target, "defmodule" | "defprotocol") {
+            return None;
+        }
+        crate::ingest::distinct_scope_tail(elixir_first_arg(parent)?, name_node, source_bytes, ".")
     }
 
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {

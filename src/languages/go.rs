@@ -72,6 +72,27 @@ impl LanguageSemantics for GoLanguage {
         text.chars().next().is_some_and(|c| c.is_uppercase())
     }
 
+    fn extract_custom_scope(
+        &self,
+        parent: tree_sitter::Node<'_>,
+        _name_node: tree_sitter::Node<'_>,
+        source_bytes: &[u8],
+    ) -> Option<String> {
+        if parent.kind() != "method_declaration" {
+            return None;
+        }
+        let recv_list = parent.child_by_field_name("receiver")?;
+        let param = recv_list.named_child(0)?;
+        let type_node = param.child_by_field_name("type")?;
+        let text = type_node.utf8_text(source_bytes).ok()?;
+        let base = text
+            .trim_start_matches('*')
+            .split('[')
+            .next()
+            .unwrap_or("")
+            .trim();
+        (!base.is_empty()).then(|| base.to_string())
+    }
     fn std_member_names(&self) -> &'static [&'static str] {
         GO_STD_MEMBERS
     }
