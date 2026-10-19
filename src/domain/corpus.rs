@@ -219,6 +219,27 @@ pub trait CorpusView<'a> {
         }
         importers.into_iter().collect()
     }
+
+    /// Collect all reference sites matching `query` as `(role_tag, file_path, line, enclosing_sym_name)`.
+    #[must_use]
+    fn collect_symbol_uses(
+        &self,
+        query: &str,
+    ) -> Vec<(&'static str, &'a str, u32, Option<&'a str>)> {
+        let ingest = self.ingest();
+        ingest
+            .references
+            .iter()
+            .filter(|r| self.reference_matches_query(r, query))
+            .map(|r| {
+                let file_path = self.file_path(r.file_id);
+                let enclosing = (r.from_symbol != super::NO_NODE)
+                    .then(|| ingest.sym(r.from_symbol).map(|s| self.sym_name(s)))
+                    .flatten();
+                (r.role.tag(), file_path, r.line, enclosing)
+            })
+            .collect()
+    }
 }
 
 /// Read file bytes at `rel_path` resolved under `root` (with direct `rel_path` fallback).

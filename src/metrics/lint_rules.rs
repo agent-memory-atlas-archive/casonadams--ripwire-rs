@@ -299,28 +299,34 @@ fn check_naming_series(
     }
 }
 
+fn check_return_type_lint(
+    rule: &FileLintSpec,
+    ctx: &FileLintContext<'_>,
+    findings: &mut Vec<LintFinding>,
+    check: fn(&str, &str) -> Option<String>,
+) {
+    for &(sym, name) in &ctx.syms {
+        let short = name.rsplit("::").next().unwrap_or(name);
+        if let Some(ret) = sig_return_type(ctx.raw, sym)
+            && let Some(msg) = check(short, ret)
+        {
+            rule.emit(ctx, sym.line, name, &msg, findings);
+        }
+    }
+}
+
 fn check_naming_predicate(
     rule: &FileLintSpec,
     ctx: &FileLintContext<'_>,
     findings: &mut Vec<LintFinding>,
 ) {
-    for &(sym, name) in &ctx.syms {
-        let short = name.rsplit("::").next().unwrap_or(name);
-        if ["is_", "has_", "can_", "should_", "was_"]
+    check_return_type_lint(rule, ctx, findings, |short, ret| {
+        (["is_", "has_", "can_", "should_", "was_"]
             .iter()
             .any(|p| short.starts_with(p))
-            && let Some(ret) = sig_return_type(ctx.raw, sym)
-            && !ret.contains("bool")
-        {
-            rule.emit(
-                ctx,
-                sym.line,
-                name,
-                &format!("Predicate '{short}' returns '{ret}'"),
-                findings,
-            );
-        }
-    }
+            && !ret.contains("bool"))
+        .then(|| format!("Predicate '{short}' returns '{ret}'"))
+    });
 }
 
 fn check_naming_setter(
@@ -328,22 +334,10 @@ fn check_naming_setter(
     ctx: &FileLintContext<'_>,
     findings: &mut Vec<LintFinding>,
 ) {
-    for &(sym, name) in &ctx.syms {
-        let short = name.rsplit("::").next().unwrap_or(name);
-        if short.starts_with("set_")
-            && let Some(ret) = sig_return_type(ctx.raw, sym)
-            && ret != "()"
-            && !ret.contains("Result<()")
-        {
-            rule.emit(
-                ctx,
-                sym.line,
-                name,
-                &format!("Setter '{short}' returns '{ret}'"),
-                findings,
-            );
-        }
-    }
+    check_return_type_lint(rule, ctx, findings, |short, ret| {
+        (short.starts_with("set_") && ret != "()" && !ret.contains("Result<()>"))
+            .then(|| format!("Setter '{short}' returns '{ret}'"))
+    });
 }
 
 fn check_naming_confusable(

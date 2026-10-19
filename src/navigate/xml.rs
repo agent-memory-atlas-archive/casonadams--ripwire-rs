@@ -452,19 +452,11 @@ pub fn serialize_uses_with_gauge_xml<W: Write>(
 ) -> io::Result<()> {
     use crate::domain::CorpusView;
     use crate::serialize::XmlReport;
-    let view = (ingest, interner);
-    let mut sites = Vec::new();
-    for r in &ingest.references {
-        if view.reference_matches_query(r, sym_name) {
-            let file_path = view.file_path(r.file_id);
-            let enclosing = if r.from_symbol != crate::domain::NO_NODE {
-                ingest.sym(r.from_symbol).map_or("", |s| view.sym_name(s))
-            } else {
-                ""
-            };
-            sites.push((r.role.tag(), file_path, r.line, enclosing));
-        }
-    }
+    let sites = (ingest, interner)
+        .collect_symbol_uses(sym_name)
+        .into_iter()
+        .map(|(role, file, line, enc)| (role, file, line, enc.unwrap_or("")))
+        .collect();
     UsesReport {
         root,
         sym_name,

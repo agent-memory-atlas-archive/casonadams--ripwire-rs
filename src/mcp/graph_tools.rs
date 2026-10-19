@@ -148,27 +148,18 @@ pub fn call_path_between(
 /// Execute `uses` tool: all statically resolvable use-sites of a symbol.
 pub fn call_uses(ingest: &IngestResult, interner: &Interner, symbol_name: &str) -> Value {
     use crate::domain::CorpusView;
-    let view = (ingest, interner);
-    let mut use_sites = Vec::new();
-
-    for r in &ingest.references {
-        if view.reference_matches_query(r, symbol_name) {
-            let file_path = ingest.file_path(r.file_id, interner);
-            let enclosing = if r.from_symbol != crate::domain::NO_NODE {
-                ingest.sym(r.from_symbol).map(|s| &interner[s.name])
-            } else {
-                None
-            };
-
-            use_sites.push(json!({
-                "role": r.role.tag(),
-                "file": file_path,
-                "line": r.line,
+    let use_sites: Vec<Value> = (ingest, interner)
+        .collect_symbol_uses(symbol_name)
+        .into_iter()
+        .map(|(role, file, line, enclosing)| {
+            json!({
+                "role": role,
+                "file": file,
+                "line": line,
                 "enclosing": enclosing
-            }));
-        }
-    }
-
+            })
+        })
+        .collect();
     json!({
         "symbol": symbol_name,
         "count": use_sites.len(),

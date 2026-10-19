@@ -370,27 +370,9 @@ pub struct CommentCoherenceReport {
 }
 
 fn split_identifier_subtokens(ident: &str) -> std::collections::BTreeSet<String> {
-    let mut tokens = std::collections::BTreeSet::new();
-    let mut cur = String::new();
-    for ch in ident.chars() {
-        let is_camel_boundary = ch.is_ascii_uppercase()
-            && !cur.is_empty()
-            && cur.chars().last().is_some_and(|p| p.is_ascii_lowercase());
-        if !ch.is_ascii_alphanumeric() || is_camel_boundary {
-            if cur.len() >= 2 {
-                tokens.insert(cur.to_ascii_lowercase());
-            }
-            cur.clear();
-            if ch.is_ascii_alphanumeric() {
-                cur.push(ch);
-            }
-        } else {
-            cur.push(ch);
-        }
-    }
-    if cur.len() >= 2 {
-        tokens.insert(cur.to_ascii_lowercase());
-    }
+    let mut tokens: std::collections::BTreeSet<String> = super::eval::split_camel_or_snake(ident)
+        .into_iter()
+        .collect();
     if tokens.is_empty() && !ident.is_empty() {
         tokens.insert(ident.to_ascii_lowercase());
     }

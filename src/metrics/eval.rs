@@ -59,7 +59,7 @@ pub fn run_retrieval_eval<W: Write>(out: &mut W) -> io::Result<()> {
     )
 }
 
-fn split_camel_or_snake(s: &str) -> Vec<String> {
+pub(crate) fn split_camel_or_snake(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     for ch in s.chars() {

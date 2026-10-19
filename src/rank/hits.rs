@@ -40,27 +40,42 @@ fn normalize_vector_l2(vec: &mut [f64]) {
     }
 }
 
-fn compute_authority_step(graph: &Graph, hub: &[f64], authority: &mut [f64]) {
-    let in_edges = &graph.in_edges;
-    for (i, auth_val) in authority.iter_mut().enumerate() {
-        let start = in_edges.row_offsets[i] as usize;
-        let end = in_edges.row_offsets[i + 1] as usize;
-        *auth_val = (start..end).fold(0.0, |acc, k| {
-            acc + (in_edges.values[k] as f64) * hub[in_edges.col_indices[k] as usize]
+fn compute_csr_step(
+    offsets: &[u32],
+    targets: &[u32],
+    weights: &[f32],
+    src: &[f64],
+    dst: &mut [f64],
+) {
+    for (i, dst_val) in dst.iter_mut().enumerate() {
+        let start = offsets[i] as usize;
+        let end = offsets[i + 1] as usize;
+        *dst_val = (start..end).fold(0.0, |acc, k| {
+            acc + (weights[k] as f64) * src[targets[k] as usize]
         });
     }
-    normalize_vector_l2(authority);
+    normalize_vector_l2(dst);
+}
+
+fn compute_authority_step(graph: &Graph, hub: &[f64], authority: &mut [f64]) {
+    let in_edges = &graph.in_edges;
+    compute_csr_step(
+        &in_edges.row_offsets,
+        &in_edges.col_indices,
+        &in_edges.values,
+        hub,
+        authority,
+    );
 }
 
 fn compute_hub_step(graph: &Graph, authority: &[f64], hub: &mut [f64]) {
-    for (j, hub_val) in hub.iter_mut().enumerate() {
-        let start = graph.out_offsets[j] as usize;
-        let end = graph.out_offsets[j + 1] as usize;
-        *hub_val = (start..end).fold(0.0, |acc, k| {
-            acc + (graph.out_weights[k] as f64) * authority[graph.out_targets[k] as usize]
-        });
-    }
-    normalize_vector_l2(hub);
+    compute_csr_step(
+        &graph.out_offsets,
+        &graph.out_targets,
+        &graph.out_weights,
+        authority,
+        hub,
+    );
 }
 
 fn compute_hits_residual(a: &[f64], a_prev: &[f64], h: &[f64], h_prev: &[f64]) -> f64 {

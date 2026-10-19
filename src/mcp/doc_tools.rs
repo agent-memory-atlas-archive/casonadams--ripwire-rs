@@ -763,72 +763,34 @@ struct GateEntry {
     reads: Vec<(String, usize)>,
 }
 
+impl GateEntry {
+    fn configure(&mut self, def_val: String, is_dark: bool) {
+        if self.reads.len() == 1 {
+            self.default_val = def_val;
+            self.is_dark = is_dark;
+        }
+    }
+}
+
 #[derive(Default)]
 struct FlagsScanTally {
     by_key: std::collections::BTreeMap<(String, &'static str), GateEntry>,
 }
 
 impl FlagsScanTally {
-    fn record_compile(
+    fn record_site(
         &mut self,
+        kind: &'static str,
         name: String,
-        def_val: String,
-        is_dark: bool,
         path: &str,
         line: usize,
-        reg_loc: usize,
-    ) {
+    ) -> &mut GateEntry {
         let entry = self
             .by_key
-            .entry((name.clone(), "compile"))
+            .entry((name.clone(), kind))
             .or_insert_with(|| GateEntry {
                 name,
-                kind: "compile",
-                default_val: def_val.clone(),
-                is_dark,
-                file: path.to_string(),
-                line,
-                regions: 0,
-                loc: 0,
-                reads: Vec::new(),
-            });
-        entry.regions += 1;
-        entry.loc += reg_loc;
-        entry.reads.push((path.to_string(), line));
-    }
-
-    fn record_cmake(
-        &mut self,
-        name: String,
-        def_val: String,
-        is_dark: bool,
-        path: &str,
-        line: usize,
-    ) {
-        let entry = self
-            .by_key
-            .entry((name.clone(), "cmake"))
-            .or_insert_with(|| GateEntry {
-                name,
-                kind: "cmake",
-                default_val: def_val,
-                is_dark,
-                file: path.to_string(),
-                line,
-                regions: 0,
-                loc: 0,
-                reads: Vec::new(),
-            });
-        entry.reads.push((path.to_string(), line));
-    }
-
-    fn record_env(&mut self, name: String, path: &str, line: usize) {
-        let entry = self
-            .by_key
-            .entry((name.clone(), "env"))
-            .or_insert_with(|| GateEntry {
-                name,
-                kind: "env",
+                kind,
                 default_val: "unset".to_string(),
                 is_dark: true,
                 file: path.to_string(),
@@ -838,6 +800,7 @@ impl FlagsScanTally {
                 reads: Vec::new(),
             });
         entry.reads.push((path.to_string(), line));
+        entry
     }
 }
 
@@ -849,11 +812,16 @@ fn scan_file_flags(root_path: &std::path::Path, path: &str, tally: &mut FlagsSca
     for (idx, &line) in lines.iter().enumerate() {
         if let Some((guard, def_val, is_dark)) = extract_compile_guard_with_default(&lines, idx) {
             let reg_loc = measure_preproc_region_loc(&lines, idx);
-            tally.record_compile(guard, def_val, is_dark, path, idx + 1, reg_loc);
+            let entry = tally.record_site("compile", guard, path, idx + 1);
+            entry.configure(def_val, is_dark);
+            entry.regions += 1;
+            entry.loc += reg_loc;
         } else if let Some((opt, def_val, is_dark)) = extract_cmake_option(line, path) {
-            tally.record_cmake(opt, def_val, is_dark, path, idx + 1);
+            tally
+                .record_site("cmake", opt, path, idx + 1)
+                .configure(def_val, is_dark);
         } else if let Some(env_var) = extract_env_identifier(line) {
-            tally.record_env(env_var, path, idx + 1);
+            tally.record_site("env", env_var, path, idx + 1);
         }
     }
 }

@@ -301,18 +301,14 @@ fn create_impact_node(
     ranks: &[f64],
     interner: &Interner,
 ) -> Option<ImpactNode> {
-    let sym = ingest.sym(curr)?;
-    let name = interner[sym.name].to_string();
-    let path = ingest.sym_file_path(sym, interner).to_string();
-    let rank = ranks.get(curr as usize).copied().unwrap_or(0.0);
-
+    let info = get_symbol_nav_info(curr, ingest, ranks, interner, 1.0)?;
     Some(ImpactNode {
         id: curr,
-        name,
-        path,
-        line: sym.line,
-        kind: sym.kind.tag(),
-        rank,
+        name: info.name,
+        path: info.path,
+        line: info.line,
+        kind: info.kind,
+        rank: info.rank,
         hops: depth,
         tested: false,
     })

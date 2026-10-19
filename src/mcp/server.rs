@@ -43,26 +43,30 @@ pub fn run_mcp_stdio(root: &str) -> io::Result<()> {
     run_mcp_stream(stdin.lock(), stdout.lock(), root)
 }
 
-/// Run MCP JSON-RPC protocol over any Read/Write stream pair.
-pub fn run_mcp_stream<R: BufRead, W: Write>(
+fn run_json_rpc_stream<R: BufRead, W: Write>(
     reader: R,
     mut writer: W,
     root: &str,
+    dispatch: fn(&str, &mut Option<McpState>, &str) -> Option<String>,
 ) -> io::Result<()> {
     let mut state = McpState::load(root);
-
     for line_res in reader.lines() {
         let line = line_res?;
         let trimmed = line.trim();
-        if trimmed.is_empty() {
+        if trimmed.is_empty() || trimmed.starts_with("Content-Length:") {
             continue;
         }
-        if let Some(response) = dispatch_json_rpc(trimmed, &mut state, root) {
-            writeln!(writer, "{response}")?;
+        if let Some(resp) = dispatch(trimmed, &mut state, root) {
+            writeln!(writer, "{resp}")?;
             writer.flush()?;
         }
     }
     Ok(())
+}
+
+/// Run MCP JSON-RPC protocol over any Read/Write stream pair.
+pub fn run_mcp_stream<R: BufRead, W: Write>(reader: R, writer: W, root: &str) -> io::Result<()> {
+    run_json_rpc_stream(reader, writer, root, dispatch_json_rpc)
 }
 
 /// Dispatch a single raw JSON-RPC line. Returns `None` for notifications.
@@ -294,24 +298,8 @@ pub fn dispatch_lsp_json_rpc(
 }
 
 /// Run the stdio JSON-RPC Language Server Protocol loop.
-pub fn run_lsp_stream<R: BufRead, W: Write>(
-    reader: R,
-    mut writer: W,
-    root: &str,
-) -> io::Result<()> {
-    let mut state = McpState::load(root);
-    for line_res in reader.lines() {
-        let line = line_res?;
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with("Content-Length:") {
-            continue;
-        }
-        if let Some(resp) = dispatch_lsp_json_rpc(trimmed, &mut state, root) {
-            writeln!(writer, "{resp}")?;
-            writer.flush()?;
-        }
-    }
-    Ok(())
+pub fn run_lsp_stream<R: BufRead, W: Write>(reader: R, writer: W, root: &str) -> io::Result<()> {
+    run_json_rpc_stream(reader, writer, root, dispatch_lsp_json_rpc)
 }
 
 /// Run the stdio JSON-RPC Language Server Protocol loop.
