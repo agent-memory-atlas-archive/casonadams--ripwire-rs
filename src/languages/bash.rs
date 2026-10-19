@@ -8,6 +8,7 @@ impl LanguageSemantics for BashLanguage {
     fn tag(&self) -> &'static str {
         "sh"
     }
+    super::impl_grammar_method!(crate tree_sitter_bash::LANGUAGE, "../queries/bash/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["sh", "bash", "zsh"]

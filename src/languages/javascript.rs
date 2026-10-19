@@ -237,6 +237,7 @@ impl LanguageSemantics for JavaScriptLanguage {
     fn tag(&self) -> &'static str {
         "js"
     }
+    super::impl_grammar_method!(crate tree_sitter_javascript::LANGUAGE, "../queries/javascript/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["js", "jsx", "mjs", "cjs"]

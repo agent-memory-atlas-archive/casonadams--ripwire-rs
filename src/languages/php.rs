@@ -35,6 +35,7 @@ impl LanguageSemantics for PhpLanguage {
     fn tag(&self) -> &'static str {
         "php"
     }
+    super::impl_grammar_method!(ffi tree_sitter_php, include_str!("../queries/php/tags.scm"));
 
     fn extensions(&self) -> &'static [&'static str] {
         &["php", "phtml"]

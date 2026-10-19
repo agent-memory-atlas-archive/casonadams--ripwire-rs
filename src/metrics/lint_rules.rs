@@ -58,7 +58,7 @@ impl<'a> FileLintContext<'a> {
 
     #[must_use]
     pub fn is_c_family(&self) -> bool {
-        matches!(self.lang, Lang::C | Lang::Cpp | Lang::ObjC | Lang::Cuda)
+        self.lang.semantics().dialect_group() == crate::languages::DialectGroup::CFamily
     }
 
     #[must_use]

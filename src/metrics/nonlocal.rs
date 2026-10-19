@@ -83,17 +83,12 @@ pub struct NonlocalStateReport<'a> {
 }
 
 impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "nonlocal_state"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.nonlocal-state/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs nonlocal-state schema=ripwire-rs.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches.",
-        )
-    }
+    crate::xml_report_meta!(
+        "nonlocal_state",
+        "ripwire-rs.nonlocal-state/v1",
+        root: true,
+        comment: "ripwire-rs nonlocal-state schema=ripwire-rs.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches."
+    );
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
         Some(self.gauges)
     }

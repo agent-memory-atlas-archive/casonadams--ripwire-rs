@@ -24,15 +24,7 @@ pub struct AffectedReport {
 }
 
 impl crate::serialize::XmlReport for AffectedReport {
-    fn schema_tag(&self) -> &'static str {
-        "affected"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.affected/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("affected", "ripwire-rs.affected/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         write!(
             out,

@@ -8,6 +8,7 @@ impl LanguageSemantics for TomlLanguage {
     fn tag(&self) -> &'static str {
         "toml"
     }
+    super::impl_grammar_method!(ffi tree_sitter_toml, include_str!("../queries/toml/tags.scm"));
 
     fn display_color(&self) -> &'static str {
         "#9c4221"

@@ -119,15 +119,12 @@ pub fn compute_context_ratio(
 }
 
 impl crate::serialize::XmlReport for ContextRatioReport {
-    fn schema_tag(&self) -> &'static str {
-        "contextratio"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.context-ratio/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire-rs context-ratio schema=ripwire-rs.context-ratio/v1: LOCAL-REASONING lens.")
-    }
+    crate::xml_report_meta!(
+        "contextratio",
+        "ripwire-rs.context-ratio/v1",
+        root: true,
+        comment: "ripwire-rs context-ratio schema=ripwire-rs.context-ratio/v1: LOCAL-REASONING lens."
+    );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
         write!(
@@ -284,17 +281,12 @@ pub fn compute_ensemble(
 }
 
 impl crate::serialize::XmlReport for EnsembleReport {
-    fn schema_tag(&self) -> &'static str {
-        "ensemble"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.ensemble/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs ensemble schema=ripwire-rs.ensemble/v1: four orthogonal evidence families joined.",
-        )
-    }
+    crate::xml_report_meta!(
+        "ensemble",
+        "ripwire-rs.ensemble/v1",
+        root: true,
+        comment: "ripwire-rs ensemble schema=ripwire-rs.ensemble/v1: four orthogonal evidence families joined."
+    );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
         let f_shown = self.rows.len().min(20);
@@ -547,17 +539,12 @@ pub fn compute_comment_coherence_in_root(
 }
 
 impl crate::serialize::XmlReport for CommentCoherenceReport {
-    fn schema_tag(&self) -> &'static str {
-        "comment_coherence"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.comment-coherence/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs comment-coherence schema=ripwire-rs.comment-coherence/v1: two comment/name content measures per documented function.",
-        )
-    }
+    crate::xml_report_meta!(
+        "comment_coherence",
+        "ripwire-rs.comment-coherence/v1",
+        root: true,
+        comment: "ripwire-rs comment-coherence schema=ripwire-rs.comment-coherence/v1: two comment/name content measures per documented function."
+    );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
         Some(crate::serialize::PageWindow::compute(
             self.rows.len(),

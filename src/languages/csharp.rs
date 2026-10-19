@@ -73,6 +73,7 @@ impl LanguageSemantics for CSharpLanguage {
     fn tag(&self) -> &'static str {
         "cs"
     }
+    super::impl_grammar_method!(crate tree_sitter_c_sharp::LANGUAGE, "../queries/csharp/tags.scm");
 
     fn display_color(&self) -> &'static str {
         "#178600"

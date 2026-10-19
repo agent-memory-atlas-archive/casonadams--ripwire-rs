@@ -238,18 +238,12 @@ impl<'a> ImpactReport<'a> {
 }
 
 impl crate::serialize::XmlReport for ImpactReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "impact"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.impact/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire-rs impact schema=ripwire-rs.impact/v1: transitive blast radius of of=.")
-    }
+    crate::xml_report_meta!(
+        "impact",
+        "ripwire-rs.impact/v1",
+        root: false,
+        comment: "ripwire-rs impact schema=ripwire-rs.impact/v1: transitive blast radius of of=."
+    );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let reaches = self.nodes.len();
         let shown = reaches.min(40);
@@ -416,18 +410,12 @@ pub struct UsesReport<'a> {
 }
 
 impl crate::serialize::XmlReport for UsesReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "uses"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.uses/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire-rs uses schema=ripwire-rs.uses/v1: resolvable use-sites of of=.")
-    }
+    crate::xml_report_meta!(
+        "uses",
+        "ripwire-rs.uses/v1",
+        root: false,
+        comment: "ripwire-rs uses schema=ripwire-rs.uses/v1: resolvable use-sites of of=."
+    );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let total = self.sites.len();
         let shown = total.min(40);

@@ -8,6 +8,7 @@ impl LanguageSemantics for DockerfileLanguage {
     fn tag(&self) -> &'static str {
         "docker"
     }
+    super::impl_grammar_method!(ffi tree_sitter_dockerfile, include_str!("../queries/dockerfile/tags.scm"));
 
     fn extensions(&self) -> &'static [&'static str] {
         &["dockerfile", "containerfile"]

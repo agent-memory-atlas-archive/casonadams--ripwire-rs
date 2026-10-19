@@ -28,6 +28,7 @@ impl LanguageSemantics for SolidityLanguage {
     fn tag(&self) -> &'static str {
         "sol"
     }
+    super::impl_grammar_method!(crate tree_sitter_solidity::LANGUAGE, "../queries/solidity/tags.scm");
 
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Isolated(Lang::Solidity)

@@ -1,3 +1,36 @@
+macro_rules! impl_grammar_method {
+    (crate $lang_expr:expr, $scm:expr) => {
+        fn grammar_and_query(
+            &self,
+        ) -> Option<(&'static tree_sitter::Language, &'static tree_sitter::Query)> {
+            static ENTRY: std::sync::LazyLock<(tree_sitter::Language, tree_sitter::Query)> =
+                std::sync::LazyLock::new(|| {
+                    let ts: tree_sitter::Language = $lang_expr.into();
+                    let q = tree_sitter::Query::new(&ts, include_str!($scm)).expect("valid query");
+                    (ts, q)
+                });
+            Some((&ENTRY.0, &ENTRY.1))
+        }
+    };
+    (ffi $ffi_fn:ident, $scm:expr) => {
+        fn grammar_and_query(
+            &self,
+        ) -> Option<(&'static tree_sitter::Language, &'static tree_sitter::Query)> {
+            unsafe extern "C" {
+                fn $ffi_fn() -> *const tree_sitter::ffi::TSLanguage;
+            }
+            static ENTRY: std::sync::LazyLock<(tree_sitter::Language, tree_sitter::Query)> =
+                std::sync::LazyLock::new(|| {
+                    let ts = unsafe { tree_sitter::Language::from_raw($ffi_fn()) };
+                    let q = tree_sitter::Query::new(&ts, $scm).expect("valid query");
+                    (ts, q)
+                });
+            Some((&ENTRY.0, &ENTRY.1))
+        }
+    };
+}
+pub(crate) use impl_grammar_method;
+
 pub mod bash;
 pub mod c;
 pub mod cpp;
@@ -94,6 +127,15 @@ pub trait LanguageSemantics: Sync {
         }
     }
 
+    /// Compiled Tree-sitter grammar and tags query for this language.
+    fn grammar_and_query(&self) -> Option<(&'static Language, &'static Query)> {
+        None
+    }
+
+    /// True if `'` can introduce a lifetime identifier (`'a`) rather than a character literal.
+    fn has_lifetime_tick_syntax(&self) -> bool {
+        false
+    }
     /// Visualization fill color for HTML call-graph export.
     fn display_color(&self) -> &'static str {
         "#888888"

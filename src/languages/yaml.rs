@@ -20,6 +20,7 @@ impl LanguageSemantics for YamlLanguage {
     fn tag(&self) -> &'static str {
         "yaml"
     }
+    super::impl_grammar_method!(ffi tree_sitter_yaml, include_str!("../queries/yaml/tags.scm"));
 
     fn extensions(&self) -> &'static [&'static str] {
         &["yml", "yaml"]

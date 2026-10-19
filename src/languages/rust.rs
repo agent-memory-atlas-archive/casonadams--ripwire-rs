@@ -150,6 +150,11 @@ impl LanguageSemantics for RustLanguage {
     fn tag(&self) -> &'static str {
         "rs"
     }
+    super::impl_grammar_method!(crate tree_sitter_rust::LANGUAGE, "../queries/rust/tags.scm");
+
+    fn has_lifetime_tick_syntax(&self) -> bool {
+        true
+    }
 
     fn display_color(&self) -> &'static str {
         "#dea584"

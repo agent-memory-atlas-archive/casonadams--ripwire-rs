@@ -8,6 +8,7 @@ impl LanguageSemantics for HclLanguage {
     fn tag(&self) -> &'static str {
         "hcl"
     }
+    super::impl_grammar_method!(crate tree_sitter_hcl::LANGUAGE, "../queries/hcl/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["tf", "hcl", "tfvars"]

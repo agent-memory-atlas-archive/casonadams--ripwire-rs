@@ -86,7 +86,7 @@ fn opens_line_comment(src: &[u8], i: usize, hash_comments: bool) -> bool {
 pub fn mask_source(src: &str, lang: Lang) -> MaskedSource {
     let bytes = src.as_bytes();
     let hash_comments = lang.semantics().uses_hash_comments();
-    let rust = lang == Lang::Rust;
+    let has_lifetimes = lang.semantics().has_lifetime_tick_syntax();
     let mut m = Masker {
         src: bytes,
         code: Vec::with_capacity(bytes.len()),
@@ -99,7 +99,7 @@ pub fn mask_source(src: &str, lang: Lang) -> MaskedSource {
             (m.line_end(i), Region::Comment)
         } else if bytes[i..].starts_with(b"/*") {
             (m.block_end(i), Region::Comment)
-        } else if b == b'"' || b == b'`' || (b == b'\'' && !rust) {
+        } else if b == b'"' || b == b'`' || (b == b'\'' && !has_lifetimes) {
             (m.quoted_end(i), Region::Literal)
         } else if b == b'\'' {
             m.rust_char_end(i)

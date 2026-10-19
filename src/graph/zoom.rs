@@ -162,20 +162,12 @@ pub struct ZoomReport<'a> {
 }
 
 impl crate::serialize::XmlReport for ZoomReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "zoom"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.zoom/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs zoom schema=ripwire-rs.zoom/v1: nested Louvain module hierarchy: <module level= id= size= dir=>; level 0 is the finest partition; levels_shown= of levels= are printed from the top; symbols= = isolated= + size= of all top_modules=. children=K: K child modules below the levels_shown= cut, unprinted. id= is the module's lowest member node id; dir= its most common directory. pr_iters=N: PageRank iterations.",
-        )
-    }
+    crate::xml_report_meta!(
+        "zoom",
+        "ripwire-rs.zoom/v1",
+        root: false,
+        comment: "ripwire-rs zoom schema=ripwire-rs.zoom/v1: nested Louvain module hierarchy: <module level= id= size= dir=>; level 0 is the finest partition; levels_shown= of levels= are printed from the top; symbols= = isolated= + size= of all top_modules=. children=K: K child modules below the levels_shown= cut, unprinted. id= is the module's lowest member node id; dir= its most common directory. pr_iters=N: PageRank iterations."
+    );
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
         Some(self.gauges)
     }

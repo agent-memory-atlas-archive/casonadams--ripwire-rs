@@ -237,17 +237,8 @@ pub fn check_pair_dependency_capability(
     ingest: Option<&IngestResult>,
     interner: Option<&Interner>,
 ) -> bool {
-    let ext_a = Path::new(path_a)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    let ext_b = Path::new(path_b)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    let mut lang_a = Lang::from_extension(ext_a);
-    let mut lang_b = Lang::from_extension(ext_b);
-
+    let mut lang_a = Lang::from_path(Path::new(path_a));
+    let mut lang_b = Lang::from_path(Path::new(path_b));
     if (lang_a == Lang::Unknown || lang_b == Lang::Unknown)
         && let (Some(ing), Some(itr)) = (ingest, interner)
     {

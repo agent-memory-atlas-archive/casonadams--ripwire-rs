@@ -8,6 +8,7 @@ impl LanguageSemantics for ScalaLanguage {
     fn tag(&self) -> &'static str {
         "scala"
     }
+    super::impl_grammar_method!(crate tree_sitter_scala::LANGUAGE, "../queries/scala/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["scala", "sc"]

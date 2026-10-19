@@ -241,6 +241,7 @@ impl LanguageSemantics for ElixirLanguage {
     fn tag(&self) -> &'static str {
         "ex"
     }
+    super::impl_grammar_method!(ffi tree_sitter_elixir, include_str!("../queries/elixir/tags.scm"));
 
     fn extensions(&self) -> &'static [&'static str] {
         &["ex", "exs"]

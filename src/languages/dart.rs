@@ -127,6 +127,7 @@ impl LanguageSemantics for DartLanguage {
     fn tag(&self) -> &'static str {
         "dart"
     }
+    super::impl_grammar_method!(ffi tree_sitter_dart, include_str!("../queries/dart/tags.scm"));
 
     fn display_color(&self) -> &'static str {
         "#00b4ab"

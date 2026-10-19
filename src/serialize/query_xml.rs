@@ -109,15 +109,7 @@ pub struct ForReport<'a> {
 }
 
 impl crate::serialize::XmlReport for ForReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "ctx"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.for/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("ctx", "ripwire-rs.for/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::GitStampExt;
         let raw_task = self.val.str_or("task", "");
@@ -358,15 +350,7 @@ pub struct GrepReport<'a> {
 }
 
 impl crate::serialize::XmlReport for GrepReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "grep"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.grep/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("grep", "ripwire-rs.grep/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let pat = escape_xml_str(self.val["pattern"].as_str().unwrap_or(""));
         let hits = self.val["hits"].as_array();
@@ -424,15 +408,7 @@ pub struct ConnectReport<'a> {
 }
 
 impl crate::serialize::XmlReport for ConnectReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "connect"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.connect/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("connect", "ripwire-rs.connect/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let count = self.val["symbols"].as_array().map_or(0, Vec::len);
         let root = escape_xml_str(self.val["root"].as_str().unwrap_or("."));

@@ -185,17 +185,12 @@ pub fn find_integration_seams(
 }
 
 impl crate::serialize::XmlReport for SeamsReport {
-    fn schema_tag(&self) -> &'static str {
-        "seams"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.seams/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs seams schema=ripwire-rs.seams/v1: cross-directory call edges NO test reaches.",
-        )
-    }
+    crate::xml_report_meta!(
+        "seams",
+        "ripwire-rs.seams/v1",
+        root: true,
+        comment: "ripwire-rs seams schema=ripwire-rs.seams/v1: cross-directory call edges NO test reaches."
+    );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
         Some(crate::serialize::PageWindow::compute(
             self.seam_pairs_count,

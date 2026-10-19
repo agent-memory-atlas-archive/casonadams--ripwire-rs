@@ -12,6 +12,7 @@ impl LanguageSemantics for MetalLanguage {
     fn tag(&self) -> &'static str {
         "metal"
     }
+    super::impl_grammar_method!(crate tree_sitter_cpp::LANGUAGE, "../queries/cpp/tags.scm");
 
     fn display_color(&self) -> &'static str {
         "#3a87ad"

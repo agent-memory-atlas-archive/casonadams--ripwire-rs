@@ -10,6 +10,7 @@ impl LanguageSemantics for MarkdownLanguage {
     fn tag(&self) -> &'static str {
         "md"
     }
+    super::impl_grammar_method!(ffi tree_sitter_markdown, "");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["md", "markdown", "rst", "adoc", "org", "mdx"]

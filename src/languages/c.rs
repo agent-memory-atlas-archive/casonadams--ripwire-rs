@@ -441,6 +441,7 @@ impl LanguageSemantics for CLanguage {
     fn tag(&self) -> &'static str {
         "c"
     }
+    super::impl_grammar_method!(crate tree_sitter_c::LANGUAGE, "../queries/c/tags.scm");
 
     fn display_color(&self) -> &'static str {
         "#555555"

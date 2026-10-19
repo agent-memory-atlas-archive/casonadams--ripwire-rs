@@ -8,6 +8,7 @@ impl LanguageSemantics for ErlangLanguage {
     fn tag(&self) -> &'static str {
         "erl"
     }
+    super::impl_grammar_method!(crate tree_sitter_erlang::LANGUAGE, "../queries/erlang/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["erl", "hrl"]

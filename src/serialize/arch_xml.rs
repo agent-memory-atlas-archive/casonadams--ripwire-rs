@@ -25,18 +25,12 @@ pub struct TestGateReport<'a> {
 }
 
 impl crate::serialize::XmlReport for TestGateReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "test-gate"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.test-gate/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire-rs test-gate schema=ripwire-rs.test-gate/v1: tests + untested blast radius.")
-    }
+    crate::xml_report_meta!(
+        "test-gate",
+        "ripwire-rs.test-gate/v1",
+        root: false,
+        comment: "ripwire-rs test-gate schema=ripwire-rs.test-gate/v1: tests + untested blast radius."
+    );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let t_len = self.tests.len();
         let dirty = t_len > 0 || self.untested > 0;
@@ -109,20 +103,12 @@ pub struct SafeDeleteReport<'a> {
 }
 
 impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "safe-delete"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.safe-delete/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs safe-delete schema=ripwire-rs.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=.",
-        )
-    }
+    crate::xml_report_meta!(
+        "safe-delete",
+        "ripwire-rs.safe-delete/v1",
+        root: false,
+        comment: "ripwire-rs safe-delete schema=ripwire-rs.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=."
+    );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let risk = if self.callers.is_empty() && self.blast_radius == 0 {
             "low"
@@ -205,12 +191,7 @@ pub struct ExercisesReport<'a> {
 }
 
 impl crate::serialize::XmlReport for ExercisesReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "exercises"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.exercises/v1"
-    }
+    crate::xml_report_meta!("exercises", "ripwire-rs.exercises/v1", root: true);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         write!(
             out,
@@ -274,17 +255,12 @@ pub struct DeadCodeReport<'a> {
 }
 
 impl crate::serialize::XmlReport for DeadCodeReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "dead-code"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.dead-code/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs dead-code schema=ripwire-rs.dead-code/v1: internal-linkage functions with no caller found in the index: <d n= t= p= l=>.",
-        )
-    }
+    crate::xml_report_meta!(
+        "dead-code",
+        "ripwire-rs.dead-code/v1",
+        root: true,
+        comment: "ripwire-rs dead-code schema=ripwire-rs.dead-code/v1: internal-linkage functions with no caller found in the index: <d n= t= p= l=>."
+    );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
         use crate::serialize::PaginateSlice;
         Some(self.items.paginate(40, self.limit, self.offset).0)
@@ -363,17 +339,12 @@ pub struct CommunitiesReport<'a> {
 }
 
 impl crate::serialize::XmlReport for CommunitiesReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "communities"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.communities/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs communities schema=ripwire-rs.communities/v1: call-graph modules (Louvain): <community id= size= dir= label=> of <member t= n= p=>.",
-        )
-    }
+    crate::xml_report_meta!(
+        "communities",
+        "ripwire-rs.communities/v1",
+        root: true,
+        comment: "ripwire-rs communities schema=ripwire-rs.communities/v1: call-graph modules (Louvain): <community id= size= dir= label=> of <member t= n= p=>."
+    );
     fn pr_iters(&self) -> Option<u32> {
         Some(self.summary.pr_iters.max(1))
     }
@@ -484,17 +455,12 @@ pub struct AroundReport<'a> {
 }
 
 impl crate::serialize::XmlReport for AroundReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "r"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.around/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs around schema=ripwire-rs.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop.",
-        )
-    }
+    crate::xml_report_meta!(
+        "r",
+        "ripwire-rs.around/v1",
+        root: true,
+        comment: "ripwire-rs around schema=ripwire-rs.around/v1: call neighbourhood of of=: depth= hops, fanout= kept per hop."
+    );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let edge_cnt: usize = self.rows.iter().map(|r| r.callees.len()).sum();
         let est_tokens = 25 + self.rows.len() * 14 + edge_cnt * 5;
@@ -594,20 +560,12 @@ pub struct ExternalSurfaceReport<'a> {
 }
 
 impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "external-surface"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.external-surface/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs external-surface schema=ripwire-rs.external-surface/v1: names used but never defined in the index: <x n= lang= refs= calls=>.",
-        )
-    }
+    crate::xml_report_meta!(
+        "external-surface",
+        "ripwire-rs.external-surface/v1",
+        root: false,
+        comment: "ripwire-rs external-surface schema=ripwire-rs.external-surface/v1: names used but never defined in the index: <x n= lang= refs= calls=>."
+    );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let total = self.externals.len();
         let pw = crate::serialize::PageWindow::compute(total, 100, None, None);
@@ -748,17 +706,12 @@ fn write_deps_file_row<W: Write>(out: &mut W, row: &DepsFileRow<'_>) -> io::Resu
 }
 
 impl crate::serialize::XmlReport for DepsReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "deps"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.deps/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs deps schema=ripwire-rs.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>.",
-        )
-    }
+    crate::xml_report_meta!(
+        "deps",
+        "ripwire-rs.deps/v1",
+        root: true,
+        comment: "ripwire-rs deps schema=ripwire-rs.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>."
+    );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
         let total = self
             .rows

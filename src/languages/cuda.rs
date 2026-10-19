@@ -12,6 +12,7 @@ impl LanguageSemantics for CudaLanguage {
     fn tag(&self) -> &'static str {
         "cuda"
     }
+    super::impl_grammar_method!(crate tree_sitter_cuda::LANGUAGE, "../queries/cuda/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["cu", "cuh"]

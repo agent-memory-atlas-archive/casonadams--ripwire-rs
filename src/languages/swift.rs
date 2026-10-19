@@ -54,6 +54,7 @@ impl LanguageSemantics for SwiftLanguage {
     fn tag(&self) -> &'static str {
         "swift"
     }
+    super::impl_grammar_method!(crate tree_sitter_swift::LANGUAGE, "../queries/swift/tags.scm");
 
     fn display_color(&self) -> &'static str {
         "#f05138"

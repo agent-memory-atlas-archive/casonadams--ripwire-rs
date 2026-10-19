@@ -278,6 +278,26 @@ impl GitStampExt for str {
     }
 }
 
+#[macro_export]
+macro_rules! xml_report_meta {
+    ($tag:expr, $ver:expr, root: $inc:expr $(, comment: $comment:expr)?) => {
+        fn schema_tag(&self) -> &'static str {
+            $tag
+        }
+        fn schema_version(&self) -> &'static str {
+            $ver
+        }
+        fn include_root_attr(&self) -> bool {
+            $inc
+        }
+        $(
+            fn legend_comment(&self) -> Option<&'static str> {
+                Some($comment)
+            }
+        )?
+    };
+}
+
 /// Unified XML envelope trait for structured Ripwire reports.
 pub trait XmlReport {
     fn schema_tag(&self) -> &'static str;

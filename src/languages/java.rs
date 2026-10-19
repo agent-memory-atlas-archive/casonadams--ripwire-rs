@@ -84,6 +84,7 @@ impl LanguageSemantics for JavaLanguage {
     fn tag(&self) -> &'static str {
         "java"
     }
+    super::impl_grammar_method!(crate tree_sitter_java::LANGUAGE, "../queries/java/tags.scm");
 
     fn display_color(&self) -> &'static str {
         "#b07219"

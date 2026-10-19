@@ -53,6 +53,7 @@ impl LanguageSemantics for TypeScriptLanguage {
     fn tag(&self) -> &'static str {
         "ts"
     }
+    super::impl_grammar_method!(crate tree_sitter_typescript::LANGUAGE_TYPESCRIPT, "../queries/typescript/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["ts", "tsx", "mts", "cts", "astro"]

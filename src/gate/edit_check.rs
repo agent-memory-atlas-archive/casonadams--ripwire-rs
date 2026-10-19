@@ -46,18 +46,12 @@ impl EditCheckReport {
     }
 }
 impl crate::serialize::XmlReport for EditCheckReport {
-    fn schema_tag(&self) -> &'static str {
-        "edit-check"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.edit-check/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire-rs edit-check schema=ripwire-rs.edit-check/v1: sym='s contract NOW vs HEAD.")
-    }
+    crate::xml_report_meta!(
+        "edit-check",
+        "ripwire-rs.edit-check/v1",
+        root: false,
+        comment: "ripwire-rs edit-check schema=ripwire-rs.edit-check/v1: sym='s contract NOW vs HEAD."
+    );
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
         Some(self.gauges)
     }

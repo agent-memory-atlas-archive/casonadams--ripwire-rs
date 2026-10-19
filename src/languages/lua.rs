@@ -28,6 +28,7 @@ impl LanguageSemantics for LuaLanguage {
     fn tag(&self) -> &'static str {
         "lua"
     }
+    super::impl_grammar_method!(ffi tree_sitter_lua, include_str!("../queries/lua/tags.scm"));
 
     fn display_color(&self) -> &'static str {
         "#000080"

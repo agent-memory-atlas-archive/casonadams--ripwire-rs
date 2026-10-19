@@ -54,6 +54,7 @@ impl LanguageSemantics for ZigLanguage {
     fn tag(&self) -> &'static str {
         "zig"
     }
+    super::impl_grammar_method!(crate tree_sitter_zig::LANGUAGE, "../queries/zig/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["zig", "zon"]

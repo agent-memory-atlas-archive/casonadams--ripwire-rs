@@ -8,6 +8,7 @@ impl LanguageSemantics for SqlLanguage {
     fn tag(&self) -> &'static str {
         "sql"
     }
+    super::impl_grammar_method!(ffi tree_sitter_sql, include_str!("../queries/sql/tags.scm"));
 
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Isolated(Lang::Sql)

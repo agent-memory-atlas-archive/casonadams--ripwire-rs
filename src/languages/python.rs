@@ -182,6 +182,7 @@ impl LanguageSemantics for PythonLanguage {
     fn tag(&self) -> &'static str {
         "py"
     }
+    super::impl_grammar_method!(crate tree_sitter_python::LANGUAGE, "../queries/python/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["py", "pyi"]

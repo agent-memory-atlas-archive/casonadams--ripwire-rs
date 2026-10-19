@@ -30,6 +30,7 @@ impl LanguageSemantics for GDScriptLanguage {
     fn tag(&self) -> &'static str {
         "gd"
     }
+    super::impl_grammar_method!(ffi tree_sitter_gdscript, include_str!("../queries/gdscript/tags.scm"));
 
     fn display_color(&self) -> &'static str {
         "#355570"

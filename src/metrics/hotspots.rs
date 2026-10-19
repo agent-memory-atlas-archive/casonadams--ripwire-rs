@@ -37,20 +37,12 @@ impl HotspotsReport {
 }
 
 impl crate::serialize::XmlReport for HotspotsReport {
-    fn schema_tag(&self) -> &'static str {
-        "hotspots"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.hotspots/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs hotspots schema=ripwire-rs.hotspots/v1: maintenance pain = churn x ccx over window=.",
-        )
-    }
+    crate::xml_report_meta!(
+        "hotspots",
+        "ripwire-rs.hotspots/v1",
+        root: false,
+        comment: "ripwire-rs hotspots schema=ripwire-rs.hotspots/v1: maintenance pain = churn x ccx over window=."
+    );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::XmlEscapeExt;
         let pw =

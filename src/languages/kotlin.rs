@@ -8,6 +8,7 @@ impl LanguageSemantics for KotlinLanguage {
     fn tag(&self) -> &'static str {
         "kt"
     }
+    super::impl_grammar_method!(ffi tree_sitter_kotlin, include_str!("../queries/kotlin/tags.scm"));
 
     fn extensions(&self) -> &'static [&'static str] {
         &["kt", "kts"]

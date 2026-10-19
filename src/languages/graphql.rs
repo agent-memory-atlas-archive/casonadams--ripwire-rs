@@ -8,6 +8,7 @@ impl LanguageSemantics for GraphqlLanguage {
     fn tag(&self) -> &'static str {
         "gql"
     }
+    super::impl_grammar_method!(ffi tree_sitter_graphql, include_str!("../queries/graphql/tags.scm"));
 
     fn extensions(&self) -> &'static [&'static str] {
         &["graphql", "gql"]

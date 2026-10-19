@@ -261,17 +261,12 @@ pub fn compute_quality_panel_report(
 }
 
 impl crate::serialize::XmlReport for QualityPanelReport {
-    fn schema_tag(&self) -> &'static str {
-        "quality_panel"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.quality-panel/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs quality-panel schema=ripwire-rs.quality-panel/v1: every quality family in ONE report.",
-        )
-    }
+    crate::xml_report_meta!(
+        "quality_panel",
+        "ripwire-rs.quality-panel/v1",
+        root: true,
+        comment: "ripwire-rs quality-panel schema=ripwire-rs.quality-panel/v1: every quality family in ONE report."
+    );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
         let ccut = if self.cfiles > 0 { 40 } else { 0 };

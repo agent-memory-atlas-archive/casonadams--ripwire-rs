@@ -62,6 +62,7 @@ impl LanguageSemantics for ObjCLanguage {
     fn tag(&self) -> &'static str {
         "m"
     }
+    super::impl_grammar_method!(crate tree_sitter_objc::LANGUAGE, "../queries/objc/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["m", "mm"]

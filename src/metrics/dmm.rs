@@ -143,18 +143,12 @@ pub fn compute_dmm_report(
 }
 
 impl crate::serialize::XmlReport for DmmReport {
-    fn schema_tag(&self) -> &'static str {
-        "dmm"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.dmm/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some("ripwire-rs dmm schema=ripwire-rs.dmm/v1: Delta Maintainability Model.")
-    }
+    crate::xml_report_meta!(
+        "dmm",
+        "ripwire-rs.dmm/v1",
+        root: false,
+        comment: "ripwire-rs dmm schema=ripwire-rs.dmm/v1: Delta Maintainability Model."
+    );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let at_attr = if !self.at_stamp.is_empty() {
             format!(" at=\"{}\"", self.at_stamp)

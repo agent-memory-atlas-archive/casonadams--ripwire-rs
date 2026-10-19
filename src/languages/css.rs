@@ -7,6 +7,7 @@ impl LanguageSemantics for CssLanguage {
     fn tag(&self) -> &'static str {
         "css"
     }
+    super::impl_grammar_method!(crate tree_sitter_css::LANGUAGE, "../queries/css/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["css", "scss", "sass", "less"]

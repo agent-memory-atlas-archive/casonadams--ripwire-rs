@@ -156,17 +156,12 @@ fn write_pr_file_context<W: Write>(f: &PrFileContext, out: &mut W) -> io::Result
 }
 
 impl crate::serialize::XmlReport for PrContextReport {
-    fn schema_tag(&self) -> &'static str {
-        "pr-context"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.pr-context/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs pr-context schema=ripwire-rs.pr-context/v1: review bundle per changed file vs base=.",
-        )
-    }
+    crate::xml_report_meta!(
+        "pr-context",
+        "ripwire-rs.pr-context/v1",
+        root: true,
+        comment: "ripwire-rs pr-context schema=ripwire-rs.pr-context/v1: review bundle per changed file vs base=."
+    );
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
         Some(self.gauges)
     }

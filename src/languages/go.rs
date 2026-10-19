@@ -45,6 +45,7 @@ impl LanguageSemantics for GoLanguage {
     fn tag(&self) -> &'static str {
         "go"
     }
+    super::impl_grammar_method!(crate tree_sitter_go::LANGUAGE, "../queries/go/tags.scm");
 
     fn display_color(&self) -> &'static str {
         "#00add8"

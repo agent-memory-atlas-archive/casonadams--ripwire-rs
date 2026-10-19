@@ -143,17 +143,12 @@ pub struct ReadabilityReport<'a> {
 }
 
 impl crate::serialize::XmlReport for ReadabilityReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "readability"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.readability/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs readability schema=ripwire-rs.readability/v1: Posnett/Hindle/Devanbu lens, largest Halstead volume first: <fn p= n= lines= toks= ops= vocab= vol= ent= posnett=>.",
-        )
-    }
+    crate::xml_report_meta!(
+        "readability",
+        "ripwire-rs.readability/v1",
+        root: true,
+        comment: "ripwire-rs readability schema=ripwire-rs.readability/v1: Posnett/Hindle/Devanbu lens, largest Halstead volume first: <fn p= n= lines= toks= ops= vocab= vol= ent= posnett=>."
+    );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
         Some(crate::serialize::PageWindow::compute(
             self.functions.len(),

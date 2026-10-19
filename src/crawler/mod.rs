@@ -80,15 +80,7 @@ fn build_walker(root: &Path, options: &CrawlerOptions) -> ignore::Walk {
 }
 
 fn resolve_path_lang(path: &Path) -> Lang {
-    let file_name = path.file_name().and_then(|e| e.to_str()).unwrap_or("");
-    if file_name.eq_ignore_ascii_case("dockerfile")
-        || file_name.eq_ignore_ascii_case("containerfile")
-    {
-        Lang::Dockerfile
-    } else {
-        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        Lang::from_extension(ext)
-    }
+    Lang::from_path(path)
 }
 
 fn process_crawl_entry(

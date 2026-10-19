@@ -64,15 +64,7 @@ pub struct WhereisReport<'a> {
 }
 
 impl crate::serialize::XmlReport for WhereisReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "whereis"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.whereis/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("whereis", "ripwire-rs.whereis/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::PaginateSlice;
         let sym = escape_xml_str(self.val.str_or("symbol", ""));
@@ -158,15 +150,7 @@ pub struct OwnersReport<'a> {
 }
 
 impl crate::serialize::XmlReport for OwnersReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "owners"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.owners/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("owners", "ripwire-rs.owners/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let files = self.val.array_any(&["files", "ownership"]);
         let count = files.map_or(0, Vec::len);
@@ -264,15 +248,7 @@ pub struct FlagsReport<'a> {
 }
 
 impl crate::serialize::XmlReport for FlagsReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "flags"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.flags/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("flags", "ripwire-rs.flags/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let empty = Vec::new();
         let items = self.val.array_any(&["gates", "flags"]).unwrap_or(&empty);
@@ -372,15 +348,7 @@ pub struct DocDriftReport<'a> {
 }
 
 impl crate::serialize::XmlReport for DocDriftReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "doc-drift"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.doc-drift/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("doc-drift", "ripwire-rs.doc-drift/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::GitStampExt;
         let count = self.val["drift"].as_array().map_or(0, Vec::len);
@@ -425,15 +393,7 @@ pub struct StrayContentReport<'a> {
 }
 
 impl crate::serialize::XmlReport for StrayContentReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "stray-content"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.stray-content/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("stray-content", "ripwire-rs.stray-content/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let head = self.val.str_or("head", "").xml_escaped();
         let head_ref = self.val.str_or("head_ref", "HEAD").xml_escaped();
@@ -480,15 +440,7 @@ pub struct MentionsReport<'a> {
 }
 
 impl crate::serialize::XmlReport for MentionsReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "mentions"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.mentions/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
+    crate::xml_report_meta!("mentions", "ripwire-rs.mentions/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let sym = self.val.str_or("symbol", "").xml_escaped();
         let count = self.val["docs"].as_array().map_or(0, Vec::len);

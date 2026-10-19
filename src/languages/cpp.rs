@@ -13,6 +13,7 @@ impl LanguageSemantics for CppLanguage {
     fn tag(&self) -> &'static str {
         "cpp"
     }
+    super::impl_grammar_method!(crate tree_sitter_cpp::LANGUAGE, "../queries/cpp/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["h", "cpp", "cc", "cxx", "hpp", "hxx", "hh"]

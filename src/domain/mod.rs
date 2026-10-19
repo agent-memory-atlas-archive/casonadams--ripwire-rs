@@ -221,6 +221,20 @@ impl Lang {
             .unwrap_or(Self::Unknown)
     }
 
+    /// Resolve language from a file path (checking extension first, then filename).
+    #[must_use]
+    pub fn from_path(path: &std::path::Path) -> Self {
+        if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+            let lang = Self::from_extension(ext);
+            if lang != Self::Unknown {
+                return lang;
+            }
+        }
+        path.file_name()
+            .and_then(|f| f.to_str())
+            .map_or(Self::Unknown, Self::from_extension)
+    }
+
     /// True if these two languages are compatible for cross-symbol resolution.
     pub fn is_compatible(self, other: Self) -> bool {
         self == other || self.semantics().dialect_group() == other.semantics().dialect_group()

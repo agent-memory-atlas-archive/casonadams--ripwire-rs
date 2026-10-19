@@ -184,12 +184,7 @@ pub fn compute_layout_report(
 }
 
 impl crate::serialize::XmlReport for StructLayoutReport {
-    fn schema_tag(&self) -> &'static str {
-        "layout"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.layout/v1"
-    }
+    crate::xml_report_meta!("layout", "ripwire-rs.layout/v1", root: true);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::XmlEscapeExt;
         let found = usize::from(self.found);
@@ -281,17 +276,12 @@ pub struct FieldAffinityReport {
 }
 
 impl crate::serialize::XmlReport for FieldAffinityReport {
-    fn schema_tag(&self) -> &'static str {
-        "fieldaffinity"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.field-affinity/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs field-affinity schema=ripwire-rs.field-affinity/v1: fields read together vs 64-byte lines.",
-        )
-    }
+    crate::xml_report_meta!(
+        "fieldaffinity",
+        "ripwire-rs.field-affinity/v1",
+        root: true,
+        comment: "ripwire-rs field-affinity schema=ripwire-rs.field-affinity/v1: fields read together vs 64-byte lines."
+    );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let aggregates = self.layout.defs.len();
         let files_cnt: std::collections::HashSet<&str> =

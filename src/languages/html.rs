@@ -7,6 +7,7 @@ impl LanguageSemantics for HtmlLanguage {
     fn tag(&self) -> &'static str {
         "html"
     }
+    super::impl_grammar_method!(crate tree_sitter_html::LANGUAGE, "../queries/html/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["html", "htm"]

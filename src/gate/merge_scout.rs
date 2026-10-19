@@ -85,20 +85,12 @@ pub fn evaluate_merge_scout(
 }
 
 impl crate::serialize::XmlReport for MergeScoutReport {
-    fn schema_tag(&self) -> &'static str {
-        "merge-scout"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.merge-scout/v1"
-    }
-    fn include_root_attr(&self) -> bool {
-        false
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs merge-scout schema=ripwire-rs.merge-scout/v1: cross-branch overlap of arms= refs.",
-        )
-    }
+    crate::xml_report_meta!(
+        "merge-scout",
+        "ripwire-rs.merge-scout/v1",
+        root: false,
+        comment: "ripwire-rs merge-scout schema=ripwire-rs.merge-scout/v1: cross-branch overlap of arms= refs."
+    );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         write!(w, " arms=\"{}\" head=\"HEAD\" at=\"HEAD\"", self.arms_count)
     }

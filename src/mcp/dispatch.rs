@@ -39,44 +39,43 @@ pub fn call_find_symbol(state: &McpState, args: &Value) -> Result<Value, String>
     Ok(json!({ "symbol": sym_name, "matches": matches }))
 }
 
-pub fn call_callers(state: &McpState, args: &Value) -> Result<Value, String> {
+fn collect_1hop_names(
+    state: &McpState,
+    iter: impl Iterator<Item = (crate::domain::NodeId, f32)>,
+) -> Vec<&str> {
+    iter.filter_map(|(cid, _)| state.ingest.sym(cid))
+        .map(|cs| &state.interner[cs.name])
+        .collect()
+}
+
+fn call_1hop_neighbors(
+    state: &McpState,
+    args: &Value,
+    key: &str,
+    is_callers: bool,
+) -> Result<Value, String> {
     let sym_name = require_str_arg(args, "symbol")?;
     let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
-
-    let callers_json: Vec<Value> = ids
+    let defs: Vec<Value> = ids
         .into_iter()
         .map(|id| {
-            let callers = state
-                .graph
-                .callers(id)
-                .filter_map(|(cid, _)| state.ingest.sym(cid))
-                .map(|cs| &state.interner[cs.name])
-                .collect::<Vec<_>>();
-            json!({ "symbol_id": id, "callers": callers })
+            let names = if is_callers {
+                collect_1hop_names(state, state.graph.callers(id))
+            } else {
+                collect_1hop_names(state, state.graph.callees(id))
+            };
+            json!({ "symbol_id": id, key: names })
         })
         .collect();
+    Ok(json!({ "symbol": sym_name, "definitions": defs }))
+}
 
-    Ok(json!({ "symbol": sym_name, "definitions": callers_json }))
+pub fn call_callers(state: &McpState, args: &Value) -> Result<Value, String> {
+    call_1hop_neighbors(state, args, "callers", true)
 }
 
 pub fn call_callees(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym_name = require_str_arg(args, "symbol")?;
-    let ids = find_symbols_by_name(sym_name, &state.ingest, &state.interner);
-
-    let callees_json: Vec<Value> = ids
-        .into_iter()
-        .map(|id| {
-            let callees = state
-                .graph
-                .callees(id)
-                .filter_map(|(cid, _)| state.ingest.sym(cid))
-                .map(|cs| &state.interner[cs.name])
-                .collect::<Vec<_>>();
-            json!({ "symbol_id": id, "callees": callees })
-        })
-        .collect();
-
-    Ok(json!({ "symbol": sym_name, "definitions": callees_json }))
+    call_1hop_neighbors(state, args, "callees", false)
 }
 
 pub fn call_impact(state: &McpState, args: &Value) -> Result<Value, String> {
