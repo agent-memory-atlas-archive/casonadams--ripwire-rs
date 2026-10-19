@@ -122,7 +122,7 @@ Register `ripwire-rs` with any MCP-compatible client or coding agent:
 ## Development
 
 ```bash
-# Run all quality checks (fmt-check, clippy, complexity <= 15, quality delta, crap <= 30)
+# Run all quality checks (clippy, complexity <= 15, quality delta, crap <= 30, fmt)
 make all
 
 # Run test suite under coverage

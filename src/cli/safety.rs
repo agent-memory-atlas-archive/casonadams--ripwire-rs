@@ -174,6 +174,9 @@ pub fn dispatch_git_metrics_with_flags(
 }
 
 pub fn get_working_tree_changed_files(root: &str) -> Vec<String> {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return Vec::new();
+    }
     if let Ok(output) = std::process::Command::new("git")
         .args(["diff", "--name-only", "HEAD"])
         .current_dir(root)

@@ -52,6 +52,6 @@
 - **Documentation sync**: When changing CLI flags, subcommands, defaults, or MCP
   tools, update `README.md`, `docs/`, `www/`, `man/man1/ripwire-rs.1`, and
   `skills/` in the same commit, and verify with `ripwire-rs . --doc-drift`.
-- **Required gate**: Run `make all` before finishing (enforces `fmt-check`,
-  `clippy`, cognitive complexity `<= 15`, `--quality-delta` vs `git HEAD`, and
-  test coverage CRAP `<= 30`).
+- **Required gate**: Run `make all` before finishing (enforces `clippy`,
+  cognitive complexity `<= 15`, `--quality-delta` vs `git HEAD`, test coverage
+  CRAP `<= 30`, and `fmt` as the final step).
