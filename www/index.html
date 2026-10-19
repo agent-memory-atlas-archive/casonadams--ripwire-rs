@@ -74,6 +74,8 @@
       <div class="install-card">
         <div class="install-tabs">
           <button class="install-tab active" data-tab="brew">Homebrew</button>
+          <button class="install-tab" data-tab="apt">APT (Ubuntu/Debian)</button>
+          <button class="install-tab" data-tab="dnf">DNF (Fedora/RHEL)</button>
           <button class="install-tab" data-tab="cargo">Cargo</button>
           <button class="install-tab" data-tab="source">From Source</button>
         </div>
@@ -83,16 +85,28 @@
             <button class="btn-copy" data-copy="brew install casonadams/tap/ripwire-rs">Copy</button>
           </div>
         </div>
+        <div id="panel-apt" class="install-panel">
+          <div class="code-wrap">
+            <code>echo "deb [trusted=yes] https://casonadams.github.io/homebrew-tap/apt stable main" | sudo tee /etc/apt/sources.list.d/casonadams.list &amp;&amp; sudo apt update &amp;&amp; sudo apt install ripwire-rs</code>
+            <button class="btn-copy" data-copy="echo &quot;deb [trusted=yes] https://casonadams.github.io/homebrew-tap/apt stable main&quot; | sudo tee /etc/apt/sources.list.d/casonadams.list &amp;&amp; sudo apt update &amp;&amp; sudo apt install ripwire-rs">Copy</button>
+          </div>
+        </div>
+        <div id="panel-dnf" class="install-panel">
+          <div class="code-wrap">
+            <code>sudo dnf config-manager --add-repo https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo &amp;&amp; sudo dnf install ripwire-rs</code>
+            <button class="btn-copy" data-copy="sudo dnf config-manager --add-repo https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo &amp;&amp; sudo dnf install ripwire-rs">Copy</button>
+          </div>
+        </div>
         <div id="panel-cargo" class="install-panel">
           <div class="code-wrap">
-            <code>cargo install ripwire-rs</code>
-            <button class="btn-copy" data-copy="cargo install ripwire-rs">Copy</button>
+            <code>cargo binstall ripwire-rs || cargo install ripwire-rs</code>
+            <button class="btn-copy" data-copy="cargo binstall ripwire-rs || cargo install ripwire-rs">Copy</button>
           </div>
         </div>
         <div id="panel-source" class="install-panel">
           <div class="code-wrap">
-            <code>git clone https://github.com/casonadams/ripwire-rs.git &amp;&amp; cd ripwire-rs &amp;&amp; make build-release</code>
-            <button class="btn-copy" data-copy="git clone https://github.com/casonadams/ripwire-rs.git &amp;&amp; cd ripwire-rs &amp;&amp; make build-release">Copy</button>
+            <code>git clone https://github.com/casonadams/ripwire-rs.git &amp;&amp; cd ripwire-rs &amp;&amp; make install</code>
+            <button class="btn-copy" data-copy="git clone https://github.com/casonadams/ripwire-rs.git &amp;&amp; cd ripwire-rs &amp;&amp; make install">Copy</button>
           </div>
         </div>
       </div>

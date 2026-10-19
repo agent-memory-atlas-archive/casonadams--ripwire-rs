@@ -60,6 +60,7 @@
     <div id="tocDrawer" class="mobile-toc-drawer">
       <ul class="docs-nav-links">
         <li><a href="#quickstart" class="docs-nav-link">Quickstart</a></li>
+        <li><a href="#installation" class="docs-nav-link">Installation</a></li>
         <li><a href="#cli" class="docs-nav-link">CLI Commands</a></li>
         <li><a href="#subcommands" class="docs-nav-link">Subcommands</a></li>
         <li><a href="#gates" class="docs-nav-link">Pre-Commit Verification Gates</a></li>
@@ -114,15 +115,27 @@
       <h3>Homebrew (macOS &amp; Linux)</h3>
       <pre><code>brew install casonadams/tap/ripwire-rs</code></pre>
 
-      <h3>Cargo</h3>
-      <pre><code>cargo install ripwire-rs</code></pre>
+      <h3>APT (Ubuntu &amp; Debian — amd64 &amp; arm64)</h3>
+      <pre><code>echo "deb [trusted=yes] https://casonadams.github.io/homebrew-tap/apt stable main" | sudo tee /etc/apt/sources.list.d/casonadams.list
+sudo apt update &amp;&amp; sudo apt install ripwire-rs</code></pre>
 
+      <h3>DNF / RPM (Fedora, RHEL &amp; CentOS — x86_64 &amp; aarch64)</h3>
+      <pre><code>sudo dnf config-manager --add-repo https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo
+sudo dnf install ripwire-rs</code></pre>
+
+      <h3>Cargo &amp; cargo-binstall</h3>
+      <pre><code>cargo binstall ripwire-rs
+# or compile from crates.io source:
+cargo install ripwire-rs</code></pre>
+
+      <h3>From Source</h3>
+      <pre><code>git clone https://github.com/casonadams/ripwire-rs.git &amp;&amp; cd ripwire-rs &amp;&amp; make install</code></pre>
       <h2 id="cli">ripwire-rs CLI Reference</h2>
       <p>The <code>ripwire-rs</code> binary offers both direct flag-based execution and structured workflow subcommands.</p>
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>ripwire-rs [PATH] [--top-k &lt;N&gt;] [--max-tokens &lt;N&gt;] [--legend &lt;MODE&gt;] [--cache &lt;PATH&gt;] [--no-cache]</code></div>
+          <div class="cmd-title"><code>ripwire-rs [PATH] [--top-k &lt;N&gt;] [--max-tokens &lt;N&gt;] [--stable] [--legend &lt;MODE&gt;] [--cache &lt;PATH&gt;] [--no-cache]</code></div>
           <span class="cmd-badge">Architecture</span>
         </div>
         <div class="cmd-body">
@@ -846,20 +859,27 @@
 
       <pre><code>// Cargo.toml
 [dependencies]
-ripwire-rs = "0.4"
+ripwire-rs = "0.6"
 
 // src/main.rs
-use ripwire_rs::{ingest_in_memory_files, Graph, Interner, Lang, PageRankConfig};
+use ripwire_rs::ingest::{LanguageRegistry, ingest_in_memory_files};
+use ripwire_rs::{Graph, Interner, Lang, PageRankConfig};
 
 fn main() {
     let interner = Interner::new();
+    let registry = LanguageRegistry::new();
     let files = [("src/main.rs", Lang::Rust, b"fn main() { run(); }\nfn run() {}" as &amp;[u8])];
-    let ingest = ingest_in_memory_files(&amp;files, &amp;interner);
+    let ingest = ingest_in_memory_files(&amp;files, &amp;registry, &amp;interner);
 
-    let graph = Graph::from_ingest(&amp;ingest, &amp;interner);
-    let pr = ripwire_rs::page_rank(&amp;graph.matrix, PageRankConfig::default());
+    let graph = Graph::build(&amp;ingest, &amp;interner);
+    let pr = graph.page_rank(&amp;PageRankConfig::default());
 
-    println!("Indexed {} symbols and {} edges", ingest.symbols.len(), graph.matrix.nnz());
+    println!(
+        "Indexed {} symbols and {} edges (iters={})",
+        ingest.symbols.len(),
+        graph.edge_count(),
+        pr.iterations
+    );
 }</code></pre>
     </main>
   </div>
@@ -905,6 +925,14 @@ fn main() {
         });
       });
     }
+
+    // Sidebar active link tracking
+    document.querySelectorAll('.docs-sidebar .docs-nav-link').forEach(link => {
+      link.addEventListener('click', () => {
+        document.querySelectorAll('.docs-sidebar .docs-nav-link').forEach(l => l.classList.remove('active'));
+        link.classList.add('active');
+      });
+    });
   </script>
 </body>
 </html>

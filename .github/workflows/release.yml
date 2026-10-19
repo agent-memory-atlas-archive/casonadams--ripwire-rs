@@ -143,6 +143,73 @@ jobs:
           tar czf "$name.tar.gz" -C "$package_dir" ripwire-rs ripwire-rs.1
           gh release upload "$TAG" "$name.tar.gz" --clobber
 
+      - name: Build and upload Linux .deb and .rpm packages
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${TAG##*v}"
+          case "${{ matrix.target }}" in
+            x86_64-*)  deb_arch="amd64"; rpm_arch="x86_64" ;;
+            aarch64-*) deb_arch="arm64"; rpm_arch="aarch64" ;;
+            *) exit 0 ;;
+          esac
+          bin_path="$(pwd)/target/${{ matrix.target }}/release/ripwire-rs"
+          man_path="$(pwd)/man/man1/ripwire-rs.1"
+          work_dir="$(mktemp -d)"
+          trap 'rm -rf "$work_dir"' EXIT
+
+          # 1. Build .deb
+          deb_root="$work_dir/deb"
+          mkdir -p "$deb_root/DEBIAN" "$deb_root/usr/bin" "$deb_root/usr/share/man/man1"
+          install -m 755 "$bin_path" "$deb_root/usr/bin/ripwire-rs"
+          gzip -9n -c "$man_path" > "$deb_root/usr/share/man/man1/ripwire-rs.1.gz"
+          chmod 644 "$deb_root/usr/share/man/man1/ripwire-rs.1.gz"
+          cat > "$deb_root/DEBIAN/control" <<EOF
+          Package: ripwire-rs
+          Version: ${version}
+          Section: devel
+          Priority: optional
+          Architecture: ${deb_arch}
+          Maintainer: Cason Adams <casonadams@users.noreply.github.com>
+          Homepage: https://github.com/casonadams/ripwire-rs
+          Description: High-throughput agent context router and deterministic static analysis engine
+          EOF
+          sed -i 's/^          //' "$deb_root/DEBIAN/control"
+          deb_file="ripwire-rs_${version}_${deb_arch}.deb"
+          dpkg-deb --build --root-owner-group "$deb_root" "$deb_file"
+
+          # 2. Build .rpm
+          command -v rpmbuild >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y rpm)
+          rpm_top="$work_dir/rpm"
+          mkdir -p "$rpm_top/BUILD" "$rpm_top/RPMS" "$rpm_top/SOURCES" "$rpm_top/SPECS" "$rpm_top/SRPMS"
+          cat > "$rpm_top/SPECS/ripwire-rs.spec" <<EOF
+          %define _build_id_links none
+          Name: ripwire-rs
+          Version: ${version}
+          Release: 1
+          Summary: High-throughput agent context router and deterministic static analysis engine
+          License: Apache-2.0
+          URL: https://github.com/casonadams/ripwire-rs
+          AutoReqProv: no
+          %description
+          High-throughput agent context router and deterministic static analysis engine.
+          %install
+          mkdir -p %{buildroot}/usr/bin %{buildroot}/usr/share/man/man1
+          install -m 755 "$bin_path" %{buildroot}/usr/bin/ripwire-rs
+          gzip -9n -c "$man_path" > %{buildroot}/usr/share/man/man1/ripwire-rs.1.gz
+          chmod 644 %{buildroot}/usr/share/man/man1/ripwire-rs.1.gz
+          %files
+          /usr/bin/ripwire-rs
+          /usr/share/man/man1/ripwire-rs.1.gz
+          EOF
+          sed -i 's/^          //' "$rpm_top/SPECS/ripwire-rs.spec"
+          rpmbuild -bb --target "$rpm_arch" --define "_topdir $rpm_top" "$rpm_top/SPECS/ripwire-rs.spec"
+          rpm_file="ripwire-rs-${version}-1.${rpm_arch}.rpm"
+          cp "$rpm_top/RPMS/$rpm_arch/"*.rpm "$rpm_file"
+
+          gh release upload "$TAG" "$deb_file" "$rpm_file" --clobber
+
       - name: Package and upload (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

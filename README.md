@@ -21,27 +21,24 @@ Built for **maximum intelligence in the smallest token footprint**:
 
 ## Installation
 
-### Homebrew (macOS & Linux)
-
 ```bash
+# macOS & Linux (Homebrew)
 brew install casonadams/tap/ripwire-rs
-```
 
-### Cargo
+# Ubuntu & Debian (APT)
+echo "deb [trusted=yes] https://casonadams.github.io/homebrew-tap/apt stable main" | sudo tee /etc/apt/sources.list.d/casonadams.list
+sudo apt update && sudo apt install ripwire-rs
 
-```bash
+# Fedora, RHEL & CentOS (DNF / RPM)
+sudo dnf config-manager --add-repo https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo
+sudo dnf install ripwire-rs
+
+# Rust (prebuilt binary via cargo-binstall, or compile from source)
+cargo binstall ripwire-rs
 cargo install ripwire-rs
 ```
 
-### From Source
-
-```bash
-git clone https://github.com/casonadams/ripwire-rs.git
-cd ripwire-rs
-make install
-```
-
-Builds release binary and automatically installs manual pages (`man ripwire-rs`).
+See the **[Installation Guide](docs/INSTALL.md)** for standalone `.deb`/`.rpm` downloads, source builds (`make install`), and post-install setup.
 
 ---
 
@@ -89,6 +86,7 @@ See the **[Workflow Guide](docs/WORKFLOWS.md)** (or **[online](https://casonadam
 
 ## Documentation
 
+- **[Installation Guide](docs/INSTALL.md)** — Homebrew, APT, DNF/RPM, `cargo-binstall`, and source build instructions.
 - **[Workflow Guide](docs/WORKFLOWS.md)** — In-depth guide to the 6 primary workflows: when, where, and why to use each command.
 - **[CLI Reference](docs/CLI.md)** — Complete command catalog, top-level flags, streaming budgets, and selector syntax.
 - **[Pre-Commit Safety Gates](docs/GATES.md)** — Verification gates (`--edit-check`, `--affected`, `--quality-delta`, `--test-gate`, `--seams`, `--pr-context`, `--merge-scout`, `--arch`).

@@ -582,7 +582,7 @@
             <div class="workflow-step">
               <div class="step-desc">
                 <span class="step-num">3</span>
-                <span>Upstream Parity Validation: verifies 1:1 input/output equivalence across 67 commands</span>
+                <span>Upstream Parity Validation: verifies 1:1 input/output equivalence across 66 commands</span>
               </div>
               <div class="code-wrap">
                 <code>make validate REPO=.</code>
@@ -650,7 +650,7 @@ jobs:
           <ul style="padding-left: 20px; color: var(--text-secondary); font-size: 0.95rem; margin-top: 6px;">
             <li><strong>Automated Merge Blocking:</strong> Fails PR jobs automatically (exit code 4 on <code>ripwire-rs . --test-gate</code> or non-zero on <code>ripwire-rs . --quality-delta</code>) before untested code or architectural rot merges.</li>
             <li><strong>Sub-50ms Execution:</strong> Fast in-memory static analysis executes in milliseconds, eliminating slow CI runner bottlenecks.</li>
-            <li><strong>Upstream Parity Enforcement:</strong> <code>make validate</code> runs continuous 20-command verification matrices against upstream specifications.</li>
+            <li><strong>Upstream Parity Enforcement:</strong> <code>make validate</code> runs continuous 66-command verification matrices against upstream specifications.</li>
             <li><strong>Zero Configuration:</strong> Reads native git repository history, remotes, and branch merge bases automatically.</li>
           </ul>
         </div>
