@@ -151,7 +151,7 @@ fn parse_tag_attrs(tag_inner: &str) -> (&str, serde_json::Map<String, serde_json
     (tag_name, map)
 }
 
-fn strip_xml_comments(mut s: &str) -> String {
+pub fn strip_xml_comments(mut s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     while let Some(start) = s.find("<!--") {
         out.push_str(&s[..start]);

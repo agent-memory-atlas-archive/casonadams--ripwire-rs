@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 
 #[test]
@@ -11,14 +11,11 @@ fn test_json_graph_protocol() {
             b"{\n  \"name\": \"pkg\",\n  \"scripts\": {\n    \"build\": \"cargo build\",\n    \"nested\": { \"deep_leaf\": true }\n  }\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "name", kind: SymKind::Section, scope: None, has_body_span: false },
-            ExpectedSym { name: "scripts", kind: SymKind::Section, scope: None, has_body_span: false },
-            ExpectedSym { name: "build", kind: SymKind::Section, scope: None, has_body_span: false },
+            sym("name", SymKind::Section, None, false),
+            sym("scripts", SymKind::Section, None, false),
+            sym("build", SymKind::Section, None, false),
         ],
         rejected_syms: &["deep_leaf"],
-        expected_edges: &[],
-        expect_external: false,
-        expected_lego: None,
-        expected_import: None,
+        ..Default::default()
     });
 }

@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 
 #[test]
@@ -11,35 +11,12 @@ fn test_toml_graph_protocol() {
             b"[package]\nname = \"demo\"\n[dependencies]\nserde = { version = \"1.0\" }\n",
         )],
         expected_syms: &[
-            ExpectedSym {
-                name: "package",
-                kind: SymKind::Section,
-                scope: None,
-                has_body_span: false,
-            },
-            ExpectedSym {
-                name: "name",
-                kind: SymKind::Section,
-                scope: None,
-                has_body_span: false,
-            },
-            ExpectedSym {
-                name: "dependencies",
-                kind: SymKind::Section,
-                scope: None,
-                has_body_span: false,
-            },
-            ExpectedSym {
-                name: "serde",
-                kind: SymKind::Section,
-                scope: None,
-                has_body_span: false,
-            },
+            sym("package", SymKind::Section, None, false),
+            sym("name", SymKind::Section, None, false),
+            sym("dependencies", SymKind::Section, None, false),
+            sym("serde", SymKind::Section, None, false),
         ],
         rejected_syms: &["version"],
-        expected_edges: &[],
-        expect_external: false,
-        expected_lego: None,
-        expected_import: None,
+        ..Default::default()
     });
 }

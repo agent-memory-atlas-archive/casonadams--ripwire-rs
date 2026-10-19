@@ -27,32 +27,31 @@ fn read_quoted_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, quot
     s
 }
 
-fn read_digits(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<usize> {
+fn read_chars_while(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    pred: fn(char) -> bool,
+) -> String {
     let mut s = String::new();
     while let Some(&nc) = chars.peek() {
-        if !nc.is_ascii_digit() {
-            break;
-        }
-        s.push(nc);
-        chars.next();
-    }
-    s.parse::<usize>().ok()
-}
-
-fn is_ident_char(c: char) -> bool {
-    c.is_alphanumeric() || matches!(c, '_' | ':' | '-' | '.')
-}
-
-fn read_ident(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
-    let mut s = String::new();
-    while let Some(&nc) = chars.peek() {
-        if !is_ident_char(nc) {
+        if !pred(nc) {
             break;
         }
         s.push(nc);
         chars.next();
     }
     s
+}
+
+fn read_digits(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<usize> {
+    read_chars_while(chars, |c| c.is_ascii_digit())
+        .parse::<usize>()
+        .ok()
+}
+
+fn read_ident(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> String {
+    read_chars_while(chars, |c| {
+        c.is_alphanumeric() || matches!(c, '_' | ':' | '-' | '.')
+    })
 }
 
 fn next_token(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<Token> {
@@ -220,54 +219,76 @@ impl<'a> GraphQueryParser<'a> {
                 }
                 Some(GraphExpr::All)
             }
-            "name" => {
-                if self.peek() == Some(&Token::LParen) {
-                    self.pos += 1;
-                    let name = self.match_ident().unwrap_or_default();
-                    if self.peek() == Some(&Token::RParen) {
-                        self.pos += 1;
-                    }
-                    Some(GraphExpr::Name(name))
-                } else {
-                    Some(GraphExpr::Name(id.to_string()))
-                }
-            }
+            "name" => self.parse_paren_call("name", |p| {
+                Some(GraphExpr::Name(p.match_ident().unwrap_or_default()))
+            }),
             "callers" => self.parse_closure_expr("callers", true),
             "callees" => self.parse_closure_expr("callees", false),
-            "kind" => self.parse_str_filter("kind", FilterSpec::Kind),
-            "file" => self.parse_str_filter("file", FilterSpec::File),
-            "layer" => self.parse_str_filter("layer", FilterSpec::Layer),
-            "fanin" => self.parse_num_filter("fanin", 1, FilterSpec::Fanin),
-            "cx" => self.parse_num_filter("cx", 15, |n| FilterSpec::Cx(n as u32)),
-            "and" => self.parse_composite(true),
-            "or" => self.parse_composite(false),
-            "not" => self.parse_not(),
+            "kind" => self.parse_filter_with_opt(
+                "kind",
+                String::new(),
+                Self::match_ident,
+                FilterSpec::Kind,
+            ),
+            "file" => self.parse_filter_with_opt(
+                "file",
+                String::new(),
+                Self::match_ident,
+                FilterSpec::File,
+            ),
+            "layer" => self.parse_filter_with_opt(
+                "layer",
+                String::new(),
+                Self::match_ident,
+                FilterSpec::Layer,
+            ),
+            "fanin" => {
+                self.parse_filter_with_opt("fanin", 1, Self::next_num_opt, FilterSpec::Fanin)
+            }
+            "cx" => self
+                .parse_filter_with_opt("cx", 15, Self::next_num_opt, |n| FilterSpec::Cx(n as u32)),
+            "and" => self.parse_paren_call("and", |p| Some(GraphExpr::And(p.parse_args()))),
+            "or" => self.parse_paren_call("or", |p| Some(GraphExpr::Or(p.parse_args()))),
+            "not" => {
+                self.parse_paren_call("not", |p| Some(GraphExpr::Not(Box::new(p.parse_expr()?))))
+            }
             _ => Some(GraphExpr::Name(id.to_string())),
         }
+    }
+
+    fn parse_paren_call(
+        &mut self,
+        op_name: &str,
+        inner: impl FnOnce(&mut Self) -> Option<GraphExpr>,
+    ) -> Option<GraphExpr> {
+        if self.peek() != Some(&Token::LParen) {
+            return Some(GraphExpr::Name(op_name.to_string()));
+        }
+        self.pos += 1;
+        let res = inner(self)?;
+        if self.peek() == Some(&Token::RParen) {
+            self.pos += 1;
+        }
+        Some(res)
     }
 
     fn parse_unary_with_opt<T>(
         &mut self,
         op_name: &str,
         default: T,
-        parse_arg: impl FnOnce(&mut Self) -> Option<T>,
+        parse_arg: fn(&mut Self) -> Option<T>,
         build: impl FnOnce(Box<GraphExpr>, T) -> GraphExpr,
     ) -> Option<GraphExpr> {
-        if self.peek() != Some(&Token::LParen) {
-            return Some(GraphExpr::Name(op_name.to_string()));
-        }
-        self.pos += 1;
-        let sub = self.parse_expr()?;
-        let arg = if self.peek() == Some(&Token::Comma) {
-            self.pos += 1;
-            parse_arg(self).unwrap_or(default)
-        } else {
-            default
-        };
-        if self.peek() == Some(&Token::RParen) {
-            self.pos += 1;
-        }
-        Some(build(Box::new(sub), arg))
+        self.parse_paren_call(op_name, |p| {
+            let sub = p.parse_expr()?;
+            let arg = if p.peek() == Some(&Token::Comma) {
+                p.pos += 1;
+                parse_arg(p).unwrap_or(default)
+            } else {
+                default
+            };
+            Some(build(Box::new(sub), arg))
+        })
     }
 
     fn next_num_opt(&mut self) -> Option<usize> {
@@ -287,55 +308,16 @@ impl<'a> GraphQueryParser<'a> {
         })
     }
 
-    fn parse_str_filter(
+    fn parse_filter_with_opt<T>(
         &mut self,
         op_name: &str,
-        build: fn(String) -> FilterSpec,
+        default: T,
+        parse_arg: fn(&mut Self) -> Option<T>,
+        build: fn(T) -> FilterSpec,
     ) -> Option<GraphExpr> {
-        self.parse_unary_with_opt(op_name, String::new(), Self::match_ident, |sub, arg| {
+        self.parse_unary_with_opt(op_name, default, parse_arg, |sub, arg| {
             GraphExpr::Filter(sub, std::sync::Arc::new(build(arg)))
         })
-    }
-
-    fn parse_num_filter(
-        &mut self,
-        op_name: &str,
-        default_num: usize,
-        build: fn(usize) -> FilterSpec,
-    ) -> Option<GraphExpr> {
-        self.parse_unary_with_opt(op_name, default_num, Self::next_num_opt, |sub, num| {
-            GraphExpr::Filter(sub, std::sync::Arc::new(build(num)))
-        })
-    }
-
-    fn parse_composite(&mut self, is_and: bool) -> Option<GraphExpr> {
-        if self.peek() != Some(&Token::LParen) {
-            return Some(GraphExpr::Name(
-                if is_and { "and" } else { "or" }.to_string(),
-            ));
-        }
-        self.pos += 1;
-        let args = self.parse_args();
-        if self.peek() == Some(&Token::RParen) {
-            self.pos += 1;
-        }
-        if is_and {
-            Some(GraphExpr::And(args))
-        } else {
-            Some(GraphExpr::Or(args))
-        }
-    }
-
-    fn parse_not(&mut self) -> Option<GraphExpr> {
-        if self.peek() != Some(&Token::LParen) {
-            return Some(GraphExpr::Name("not".to_string()));
-        }
-        self.pos += 1;
-        let sub = self.parse_expr()?;
-        if self.peek() == Some(&Token::RParen) {
-            self.pos += 1;
-        }
-        Some(GraphExpr::Not(Box::new(sub)))
     }
 }
 

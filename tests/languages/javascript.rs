@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Interner, Lang, LanguageRegistry, RefRole, SymKind, ingest_in_memory_files};
 
 #[test]
@@ -11,10 +11,10 @@ fn test_javascript_and_jsx_graph_protocol() {
             b"import './init.js';\nconst API_VERSION = 2;\nconst tempLocal = 0;\nclass BaseCtrl {}\nclass UserCtrl extends BaseCtrl {\n  process() {\n    JSON.stringify({});\n    validate();\n  }\n}\nfunction validate() {\n  return true;\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "API_VERSION", kind: SymKind::Var, scope: None, has_body_span: false },
-            ExpectedSym { name: "UserCtrl", kind: SymKind::Class, scope: None, has_body_span: true },
-            ExpectedSym { name: "process", kind: SymKind::Method, scope: Some("UserCtrl"), has_body_span: true },
-            ExpectedSym { name: "validate", kind: SymKind::Function, scope: None, has_body_span: true },
+            sym("API_VERSION", SymKind::Var, None, false),
+            sym("UserCtrl", SymKind::Class, None, true),
+            sym("process", SymKind::Method, Some("UserCtrl"), true),
+            sym("validate", SymKind::Function, None, true),
         ],
         rejected_syms: &["tempLocal"],
         expected_edges: &[("process", "validate")],

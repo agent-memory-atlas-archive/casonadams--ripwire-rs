@@ -67,15 +67,12 @@ fn list_span_locals(
     if start_byte == 0 && end_byte >= source_bytes.len() {
         return list_sliceable_locals(root, source_bytes);
     }
-    let occs = collect_span_variables(root, start_byte, end_byte, source_bytes);
-    let mut seen = std::collections::HashSet::new();
-    let mut locals = Vec::new();
-    for occ in occs {
-        if occ.role.is_def() && seen.insert(occ.var_name.clone()) {
-            locals.push((occ.var_name, occ.line, occ.role));
-        }
-    }
-    locals
+    collect_unique_def_locals(collect_span_variables(
+        root,
+        start_byte,
+        end_byte,
+        source_bytes,
+    ))
 }
 
 /// Render XML for sliceable locals inventory when no variable was given.

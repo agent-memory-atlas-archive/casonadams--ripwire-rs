@@ -30,52 +30,41 @@ pub struct PageRankResult {
     pub ranks: Vec<f64>,
 }
 
-/// Sum a slice of floats deterministically using contiguous 1024-element block reductions.
-#[must_use]
-pub fn reduce_block_sum(values: &[f64]) -> f64 {
+fn reduce_blocks_sum(n: usize, term: impl Fn(usize) -> f64) -> f64 {
     let mut total = 0.0f64;
-    for block in values.chunks(REDUCTION_BLOCK_SIZE) {
+    for block_start in (0..n).step_by(REDUCTION_BLOCK_SIZE) {
+        let block_end = (block_start + REDUCTION_BLOCK_SIZE).min(n);
         let mut partial = 0.0f64;
-        for &v in block {
-            partial += v;
+        for i in block_start..block_end {
+            partial += term(i);
         }
         total += partial;
     }
     total
+}
+
+/// Sum a slice of floats deterministically using contiguous 1024-element block reductions.
+#[must_use]
+pub fn reduce_block_sum(values: &[f64]) -> f64 {
+    reduce_blocks_sum(values.len(), |i| values[i])
 }
 
 /// Accumulate dangling mass from nodes with zero out-degree using 1024-block reductions.
 #[must_use]
 pub fn compute_dangling_mass(current_rank: &[f64], w_out_deg: &[f64]) -> f64 {
-    let n = current_rank.len();
-    let mut total = 0.0f64;
-    for block_start in (0..n).step_by(REDUCTION_BLOCK_SIZE) {
-        let block_end = (block_start + REDUCTION_BLOCK_SIZE).min(n);
-        let mut partial = 0.0f64;
-        for i in block_start..block_end {
-            if w_out_deg[i] <= 0.0 {
-                partial += current_rank[i];
-            }
+    reduce_blocks_sum(current_rank.len(), |i| {
+        if w_out_deg[i] <= 0.0 {
+            current_rank[i]
+        } else {
+            0.0
         }
-        total += partial;
-    }
-    total
+    })
 }
 
 /// Compute L1 residual between successive iteration vectors using 1024-block reductions.
 #[must_use]
 pub fn compute_l1_residual(next: &[f64], current: &[f64]) -> f64 {
-    let n = next.len();
-    let mut total = 0.0f64;
-    for block_start in (0..n).step_by(REDUCTION_BLOCK_SIZE) {
-        let block_end = (block_start + REDUCTION_BLOCK_SIZE).min(n);
-        let mut partial = 0.0f64;
-        for i in block_start..block_end {
-            partial += (next[i] - current[i]).abs();
-        }
-        total += partial;
-    }
-    total
+    reduce_blocks_sum(next.len(), |i| (next[i] - current[i]).abs())
 }
 
 /// Precompute reciprocal out-degrees so power iteration multiplies instead of dividing.

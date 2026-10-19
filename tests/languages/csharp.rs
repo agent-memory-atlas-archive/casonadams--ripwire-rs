@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 
 #[test]
@@ -11,11 +11,11 @@ fn test_csharp_graph_protocol() {
             b"using System.IO;\npublic interface IStore {}\npublic class SqlStore : IStore {\n    public const int LIMIT = 50;\n    private int retryCounter = 0;\n    public void Save() {\n        Console.WriteLine();\n        Commit();\n    }\n    private void Commit() {\n        return;\n    }\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "IStore", kind: SymKind::Interface, scope: None, has_body_span: true },
-            ExpectedSym { name: "SqlStore", kind: SymKind::Class, scope: None, has_body_span: true },
-            ExpectedSym { name: "LIMIT", kind: SymKind::Var, scope: Some("SqlStore"), has_body_span: false },
-            ExpectedSym { name: "Save", kind: SymKind::Method, scope: Some("SqlStore"), has_body_span: true },
-            ExpectedSym { name: "Commit", kind: SymKind::Method, scope: Some("SqlStore"), has_body_span: true },
+            sym("IStore", SymKind::Interface, None, true),
+            sym("SqlStore", SymKind::Class, None, true),
+            sym("LIMIT", SymKind::Var, Some("SqlStore"), false),
+            sym("Save", SymKind::Method, Some("SqlStore"), true),
+            sym("Commit", SymKind::Method, Some("SqlStore"), true),
         ],
         rejected_syms: &["retryCounter"],
         expected_edges: &[("Save", "Commit")],

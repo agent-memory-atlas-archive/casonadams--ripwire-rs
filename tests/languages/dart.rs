@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 use std::collections::HashMap;
 
@@ -12,17 +12,17 @@ fn test_dart_graph_protocol_and_imports() {
             b"import 'package:core/core.dart';\nabstract class Runner {}\nclass TaskRunner extends Runner {\n  static List<String> allCols() => [];\n  void execute() {\n    print('skip');\n    Future.wait([]);\n    performStep();\n  }\n  void performStep() {\n    return;\n  }\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "Runner", kind: SymKind::Class, scope: None, has_body_span: true },
-            ExpectedSym { name: "TaskRunner", kind: SymKind::Class, scope: None, has_body_span: true },
-            ExpectedSym { name: "allCols", kind: SymKind::Method, scope: Some("TaskRunner"), has_body_span: true },
-            ExpectedSym { name: "execute", kind: SymKind::Method, scope: Some("TaskRunner"), has_body_span: true },
-            ExpectedSym { name: "performStep", kind: SymKind::Method, scope: Some("TaskRunner"), has_body_span: true },
+            sym("Runner", SymKind::Class, None, true),
+            sym("TaskRunner", SymKind::Class, None, true),
+            sym("allCols", SymKind::Method, Some("TaskRunner"), true),
+            sym("execute", SymKind::Method, Some("TaskRunner"), true),
+            sym("performStep", SymKind::Method, Some("TaskRunner"), true),
         ],
-        rejected_syms: &[],
         expected_edges: &[("execute", "performStep")],
         expect_external: true,
         expected_lego: Some(("Runner", "TaskRunner")),
         expected_import: Some("package:core/core.dart"),
+        ..Default::default()
     });
 
     let mut dart_idx = HashMap::new();

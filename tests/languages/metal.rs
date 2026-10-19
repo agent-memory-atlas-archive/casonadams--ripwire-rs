@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 
 #[test]
@@ -11,13 +11,12 @@ fn test_metal_graph_protocol() {
             b"#include \"shader.h\"\nvoid compute_pass() {\n    metal::sin(0.0);\n    shade_vertex();\n}\nvoid shade_vertex() {\n    return;\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "compute_pass", kind: SymKind::Function, scope: None, has_body_span: true },
-            ExpectedSym { name: "shade_vertex", kind: SymKind::Function, scope: None, has_body_span: true },
+            sym("compute_pass", SymKind::Function, None, true),
+            sym("shade_vertex", SymKind::Function, None, true),
         ],
-        rejected_syms: &[],
         expected_edges: &[("compute_pass", "shade_vertex")],
         expect_external: true,
-        expected_lego: None,
         expected_import: Some("shader.h"),
+        ..Default::default()
     });
 }

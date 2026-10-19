@@ -11,15 +11,30 @@ pub struct ExpectedSym {
     pub has_body_span: bool,
 }
 
-pub struct GraphProtocolCase {
-    pub label: &'static str,
-    pub files: &'static [(&'static str, Lang, &'static [u8])],
-    pub expected_syms: &'static [ExpectedSym],
-    pub rejected_syms: &'static [&'static str],
-    pub expected_edges: &'static [(&'static str, &'static str)],
+pub const fn sym(
+    name: &'static str,
+    kind: SymKind,
+    scope: Option<&'static str>,
+    has_body_span: bool,
+) -> ExpectedSym {
+    ExpectedSym {
+        name,
+        kind,
+        scope,
+        has_body_span,
+    }
+}
+
+#[derive(Default)]
+pub struct GraphProtocolCase<'a> {
+    pub label: &'a str,
+    pub files: &'a [(&'a str, Lang, &'a [u8])],
+    pub expected_syms: &'a [ExpectedSym],
+    pub rejected_syms: &'a [&'a str],
+    pub expected_edges: &'a [(&'a str, &'a str)],
     pub expect_external: bool,
-    pub expected_lego: Option<(&'static str, &'static str)>,
-    pub expected_import: Option<&'static str>,
+    pub expected_lego: Option<(&'a str, &'a str)>,
+    pub expected_import: Option<&'a str>,
 }
 
 fn assert_expected_sym(
@@ -112,7 +127,7 @@ fn assert_expected_edge(
     );
 }
 
-pub fn verify_protocol_case(case: &GraphProtocolCase) {
+pub fn verify_protocol_case(case: &GraphProtocolCase<'_>) {
     let reg = LanguageRegistry::new().unwrap();
     let interner = Interner::new();
     let ingest = ingest_in_memory_files(case.files, &reg, &interner);

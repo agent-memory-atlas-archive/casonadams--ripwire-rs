@@ -6,7 +6,7 @@ pub mod query_xml;
 pub mod workspace_xml;
 pub mod writer;
 pub mod xml;
-pub use writer::{MinifyingWriter, XmlWriter};
+pub use writer::{MinifyingWriter, XmlWriter, strip_xml_comments};
 
 pub use query_xml::{
     AroundSymbolRow, CommunityModule, CommunitySummary, DepsFileRow, DepsReport,

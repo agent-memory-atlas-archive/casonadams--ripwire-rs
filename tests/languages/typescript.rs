@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Interner, Lang, LanguageRegistry, RefRole, SymKind, ingest_in_memory_files};
 use std::collections::HashMap;
 
@@ -12,11 +12,11 @@ fn test_typescript_and_tsx_graph_protocol() {
             b"import { log } from './logger';\nexport const MAX_BATCH = 64;\nexport const camelNoise = 1;\nexport interface Handler { handle(): void; }\nexport class ApiHandler implements Handler {\n  handle(): void {\n    Array.isArray([]);\n    dispatch();\n  }\n}\nexport function dispatch(): void {\n  return;\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "MAX_BATCH", kind: SymKind::Var, scope: None, has_body_span: false },
-            ExpectedSym { name: "Handler", kind: SymKind::Interface, scope: None, has_body_span: true },
-            ExpectedSym { name: "ApiHandler", kind: SymKind::Class, scope: None, has_body_span: true },
-            ExpectedSym { name: "handle", kind: SymKind::Method, scope: Some("ApiHandler"), has_body_span: true },
-            ExpectedSym { name: "dispatch", kind: SymKind::Function, scope: None, has_body_span: true },
+            sym("MAX_BATCH", SymKind::Var, None, false),
+            sym("Handler", SymKind::Interface, None, true),
+            sym("ApiHandler", SymKind::Class, None, true),
+            sym("handle", SymKind::Method, Some("ApiHandler"), true),
+            sym("dispatch", SymKind::Function, None, true),
         ],
         rejected_syms: &["camelNoise"],
         expected_edges: &[("handle", "dispatch")],

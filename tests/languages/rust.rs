@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 use std::collections::HashMap;
 
@@ -12,10 +12,10 @@ fn test_rust_graph_protocol_and_imports() {
             b"use crate::util::helper;\npub trait Runner { fn execute(&self); }\npub struct Engine;\nimpl Runner for Engine {\n    pub fn execute(&self) {\n        let local_noise = 1;\n        println!(\"{}\", local_noise);\n        std::mem::drop(local_noise);\n        step();\n    }\n}\npub fn step() {}\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "Runner", kind: SymKind::Interface, scope: None, has_body_span: true },
-            ExpectedSym { name: "Engine", kind: SymKind::Class, scope: None, has_body_span: false },
-            ExpectedSym { name: "execute", kind: SymKind::Method, scope: Some("Engine"), has_body_span: true },
-            ExpectedSym { name: "step", kind: SymKind::Function, scope: None, has_body_span: true },
+            sym("Runner", SymKind::Interface, None, true),
+            sym("Engine", SymKind::Class, None, false),
+            sym("execute", SymKind::Method, Some("Engine"), true),
+            sym("step", SymKind::Function, None, true),
         ],
         rejected_syms: &["local_noise"],
         expected_edges: &[("execute", "step")],

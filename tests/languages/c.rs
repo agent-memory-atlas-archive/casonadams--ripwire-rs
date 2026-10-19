@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Interner, Lang, LanguageRegistry, SymKind, ingest_in_memory_files};
 use std::collections::HashMap;
 
@@ -12,15 +12,14 @@ fn test_c_graph_protocol_and_header_refinement() {
             b"#include \"core.h\"\n#define EMPTY_FN(x)\nstatic const int MAX_CONN = 16;\nint plain_global = 0;\nvoid start_server(void) {\n    accept_loop();\n}\nvoid accept_loop(void) {\n    return;\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "MAX_CONN", kind: SymKind::Var, scope: None, has_body_span: false },
-            ExpectedSym { name: "start_server", kind: SymKind::Function, scope: None, has_body_span: true },
-            ExpectedSym { name: "accept_loop", kind: SymKind::Function, scope: None, has_body_span: true },
+            sym("MAX_CONN", SymKind::Var, None, false),
+            sym("start_server", SymKind::Function, None, true),
+            sym("accept_loop", SymKind::Function, None, true),
         ],
         rejected_syms: &["EMPTY_FN", "plain_global"],
         expected_edges: &[("start_server", "accept_loop")],
-        expect_external: false,
-        expected_lego: None,
         expected_import: Some("core.h"),
+        ..Default::default()
     });
 
     let registry = LanguageRegistry::new().unwrap();

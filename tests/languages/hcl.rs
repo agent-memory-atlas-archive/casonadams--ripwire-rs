@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 
 #[test]
@@ -11,29 +11,10 @@ fn test_hcl_graph_protocol() {
             b"resource \"aws_s3_bucket\" \"primary\" {\n  bucket = format(\"%s\", var.name)\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym {
-                name: "resource",
-                kind: SymKind::Class,
-                scope: None,
-                has_body_span: false,
-            },
-            ExpectedSym {
-                name: "aws_s3_bucket",
-                kind: SymKind::Section,
-                scope: None,
-                has_body_span: false,
-            },
-            ExpectedSym {
-                name: "bucket",
-                kind: SymKind::Field,
-                scope: None,
-                has_body_span: false,
-            },
+            sym("resource", SymKind::Class, None, false),
+            sym("aws_s3_bucket", SymKind::Section, None, false),
+            sym("bucket", SymKind::Field, None, false),
         ],
-        rejected_syms: &[],
-        expected_edges: &[],
-        expect_external: false,
-        expected_lego: None,
-        expected_import: None,
+        ..Default::default()
     });
 }

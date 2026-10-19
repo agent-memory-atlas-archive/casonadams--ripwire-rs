@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 
 #[test]
@@ -11,16 +11,14 @@ fn test_gdscript_graph_protocol() {
             b"class Actor:\n\tpass\nclass Boss:\n\textends Actor\n\tfunc tick():\n\t\tadvance()\n\tfunc advance():\n\t\tpass\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "Actor", kind: SymKind::Class, scope: None, has_body_span: true },
-            ExpectedSym { name: "Boss", kind: SymKind::Class, scope: None, has_body_span: true },
-            ExpectedSym { name: "tick", kind: SymKind::Method, scope: Some("Boss"), has_body_span: true },
-            ExpectedSym { name: "advance", kind: SymKind::Method, scope: Some("Boss"), has_body_span: true },
+            sym("Actor", SymKind::Class, None, true),
+            sym("Boss", SymKind::Class, None, true),
+            sym("tick", SymKind::Method, Some("Boss"), true),
+            sym("advance", SymKind::Method, Some("Boss"), true),
         ],
-        rejected_syms: &[],
         expected_edges: &[("tick", "advance")],
-        expect_external: false,
         expected_lego: Some(("Actor", "Boss")),
-        expected_import: None,
+        ..Default::default()
     });
     assert!(
         Lang::GDScript

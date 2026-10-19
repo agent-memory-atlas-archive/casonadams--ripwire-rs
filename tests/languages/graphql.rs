@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 
 #[test]
@@ -11,29 +11,10 @@ fn test_graphql_graph_protocol() {
             b"interface Node {\n  id: ID!\n}\ntype Account {\n  id: ID!\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym {
-                name: "Node",
-                kind: SymKind::Interface,
-                scope: None,
-                has_body_span: false,
-            },
-            ExpectedSym {
-                name: "Account",
-                kind: SymKind::Class,
-                scope: None,
-                has_body_span: false,
-            },
-            ExpectedSym {
-                name: "id",
-                kind: SymKind::Field,
-                scope: None,
-                has_body_span: false,
-            },
+            sym("Node", SymKind::Interface, None, false),
+            sym("Account", SymKind::Class, None, false),
+            sym("id", SymKind::Field, None, false),
         ],
-        rejected_syms: &[],
-        expected_edges: &[],
-        expect_external: false,
-        expected_lego: None,
-        expected_import: None,
+        ..Default::default()
     });
 }

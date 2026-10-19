@@ -77,33 +77,21 @@ const ID_MATCH: u32 = 0x7e20_2f96;
 const ID_DOT: u32 = 0x2b0c_98f1;
 const ID_EQ: u32 = 0x380c_ad68;
 
-fn is_threshold_ladder(tokens: &[u32]) -> bool {
-    let if_count = tokens.iter().filter(|&&t| t == ID_IF).count();
-    let ret_count = tokens.iter().filter(|&&t| t == ID_RETURN).count();
-    if_count >= 2 && ret_count >= 2 && tokens.len() <= 80
-}
-
-fn is_switch_table(tokens: &[u32]) -> bool {
-    let case_count = tokens
-        .iter()
-        .filter(|&&t| t == ID_CASE || t == ID_ARROW)
-        .count();
-    let switch_or_match = tokens.iter().any(|&t| t == ID_SWITCH || t == ID_MATCH);
-    switch_or_match && case_count >= 2 && tokens.len() <= 80
-}
-
-fn is_builder_chain(tokens: &[u32]) -> bool {
-    let dot_count = tokens.iter().filter(|&&t| t == ID_DOT).count();
-    let eq_count = tokens.iter().filter(|&&t| t == ID_EQ).count();
-    eq_count >= 3 && dot_count >= 3 && tokens.len() <= 80
+fn count_token(tokens: &[u32], id: u32) -> usize {
+    tokens.iter().filter(|&&t| t == id).count()
 }
 
 fn classify_body_idiom(tokens: &[u32]) -> CloneIdiom {
-    if is_threshold_ladder(tokens) {
+    if tokens.len() > 80 {
+        return CloneIdiom::None;
+    }
+    if count_token(tokens, ID_IF) >= 2 && count_token(tokens, ID_RETURN) >= 2 {
         CloneIdiom::ThresholdLadder
-    } else if is_switch_table(tokens) {
+    } else if tokens.iter().any(|&t| t == ID_SWITCH || t == ID_MATCH)
+        && (count_token(tokens, ID_CASE) + count_token(tokens, ID_ARROW)) >= 2
+    {
         CloneIdiom::SwitchNameTable
-    } else if is_builder_chain(tokens) {
+    } else if count_token(tokens, ID_EQ) >= 3 && count_token(tokens, ID_DOT) >= 3 {
         CloneIdiom::BuilderChain
     } else {
         CloneIdiom::None

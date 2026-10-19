@@ -12,19 +12,8 @@ use ripwire_rs::{
 };
 use serde_json::json;
 
-fn strip_xml_comments(mut xml: &str) -> String {
-    let mut out = String::with_capacity(xml.len());
-    while let Some(start) = xml.find("<!--") {
-        out.push_str(&xml[..start]);
-        let end = xml[start..].find("-->").expect("unclosed comment") + start + 3;
-        xml = &xml[end..];
-    }
-    out.push_str(xml);
-    out
-}
-
 fn validate_xml_well_formed(raw_xml: &str) {
-    let cleaned = strip_xml_comments(raw_xml);
+    let cleaned = ripwire_rs::serialize::strip_xml_comments(raw_xml);
     let xml = cleaned.as_str();
     let mut tag_stack: Vec<&str> = Vec::new();
     let mut i = 0;

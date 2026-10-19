@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::mcp::retrieval::call_lego;
 use ripwire_rs::{Interner, Lang, LanguageRegistry, SymKind, ingest_in_memory_files};
 
@@ -12,14 +12,14 @@ fn test_cpp_graph_protocol_and_macro_gates() {
             b"#include \"engine.h\"\n#define NOOP_MACRO(x)\nstatic const int MAX_THREADS = 8;\nconstexpr int kValidConst = 7;\nint mutable_global = 0;\nint uninitialized_global;\nclass BaseEngine {\npublic:\n    static constexpr int kClassConst = 9;\n    static int s_mutable;\n    int count;\n};\ntemplate<> class BaseEngine<int> {};\nclass RenderEngine : public BaseEngine {\npublic:\n    void render() {\n        std::lock_guard<std::mutex> guard(m);\n        std::move(0);\n        flushBuffers();\n    }\n};\nvoid flushBuffers() {\n    return;\n}\nTEST_CASE(\"suite\") {\n    flushBuffers();\n}\n",
         )],
         expected_syms: &[
-            ExpectedSym { name: "MAX_THREADS", kind: SymKind::Var, scope: None, has_body_span: false },
-            ExpectedSym { name: "kValidConst", kind: SymKind::Var, scope: None, has_body_span: false },
-            ExpectedSym { name: "kClassConst", kind: SymKind::Var, scope: Some("BaseEngine"), has_body_span: false },
-            ExpectedSym { name: "count", kind: SymKind::Field, scope: Some("BaseEngine"), has_body_span: false },
-            ExpectedSym { name: "RenderEngine", kind: SymKind::Class, scope: None, has_body_span: true },
-            ExpectedSym { name: "render", kind: SymKind::Method, scope: Some("RenderEngine"), has_body_span: true },
-            ExpectedSym { name: "flushBuffers", kind: SymKind::Function, scope: None, has_body_span: true },
-            ExpectedSym { name: "TEST_CASE", kind: SymKind::Macro, scope: None, has_body_span: true },
+            sym("MAX_THREADS", SymKind::Var, None, false),
+            sym("kValidConst", SymKind::Var, None, false),
+            sym("kClassConst", SymKind::Var, Some("BaseEngine"), false),
+            sym("count", SymKind::Field, Some("BaseEngine"), false),
+            sym("RenderEngine", SymKind::Class, None, true),
+            sym("render", SymKind::Method, Some("RenderEngine"), true),
+            sym("flushBuffers", SymKind::Function, None, true),
+            sym("TEST_CASE", SymKind::Macro, None, true),
         ],
         rejected_syms: &["NOOP_MACRO", "mutable_global", "uninitialized_global", "s_mutable", "guard"],
         expected_edges: &[("render", "flushBuffers")],

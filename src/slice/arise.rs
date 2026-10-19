@@ -175,19 +175,31 @@ fn is_assign_node(parent: Node<'_>, binding: Node<'_>) -> bool {
     false
 }
 
-fn is_call_arg_node(node: Node<'_>) -> bool {
+fn has_ancestor_before(
+    node: Node<'_>,
+    match_pred: fn(&str) -> bool,
+    stop_pred: fn(&str) -> bool,
+) -> bool {
     let mut curr = node.parent();
-    while let Some(parent) = curr {
-        let pkind = parent.kind();
-        if pkind.contains("argument") || pkind == "args" {
+    while let Some(p) = curr {
+        let pk = p.kind();
+        if match_pred(pk) {
             return true;
         }
-        if pkind.contains("statement") || pkind.contains("declaration") {
+        if stop_pred(pk) {
             break;
         }
-        curr = parent.parent();
+        curr = p.parent();
     }
     false
+}
+
+fn is_call_arg_node(node: Node<'_>) -> bool {
+    has_ancestor_before(
+        node,
+        |pk| pk.contains("argument") || pk == "args",
+        |pk| pk.contains("statement") || pk.contains("declaration"),
+    )
 }
 
 fn find_stmt_line(node: Node<'_>) -> u32 {
@@ -236,27 +248,22 @@ fn is_identifier_node(kind: &str) -> bool {
 }
 
 fn is_inside_type_context(node: Node<'_>) -> bool {
-    let mut curr = node.parent();
-    while let Some(p) = curr {
-        let pk = p.kind();
-        if matches!(
-            pk,
-            "type_parameters"
-                | "type_parameter"
-                | "type_annotation"
-                | "type_arguments"
-                | "generic_type"
-                | "template_argument_list"
-                | "template_parameter_list"
-        ) {
-            return true;
-        }
-        if pk.contains("statement") || pk.contains("body") || pk == "block" {
-            break;
-        }
-        curr = p.parent();
-    }
-    false
+    has_ancestor_before(
+        node,
+        |pk| {
+            matches!(
+                pk,
+                "type_parameters"
+                    | "type_parameter"
+                    | "type_annotation"
+                    | "type_arguments"
+                    | "generic_type"
+                    | "template_argument_list"
+                    | "template_parameter_list"
+            )
+        },
+        |pk| pk.contains("statement") || pk.contains("body") || pk == "block",
+    )
 }
 
 fn is_member_or_callee_ident(node: Node<'_>) -> bool {
@@ -347,20 +354,21 @@ pub fn collect_symbol_variables(
     out
 }
 
+/// Extract unique defined local variable tuples `(var_name, line, role)` in order of first appearance.
+#[must_use]
+pub fn collect_unique_def_locals(occs: Vec<VariableOcc>) -> Vec<(String, u32, OccRole)> {
+    let mut seen = std::collections::HashSet::new();
+    occs.into_iter()
+        .filter(|occ| occ.role.is_def() && seen.insert(occ.var_name.clone()))
+        .map(|occ| (occ.var_name, occ.line, occ.role))
+        .collect()
+}
+
 /// List unique sliceable local variable names in order of their first appearance.
 #[must_use]
 pub fn list_sliceable_locals(
     def_node: Node<'_>,
     source_bytes: &[u8],
 ) -> Vec<(String, u32, OccRole)> {
-    let occs = collect_symbol_variables(def_node, source_bytes, None);
-    let mut seen = std::collections::HashSet::new();
-    let mut locals = Vec::new();
-
-    for occ in occs {
-        if occ.role.is_def() && seen.insert(occ.var_name.clone()) {
-            locals.push((occ.var_name, occ.line, occ.role));
-        }
-    }
-    locals
+    collect_unique_def_locals(collect_symbol_variables(def_node, source_bytes, None))
 }

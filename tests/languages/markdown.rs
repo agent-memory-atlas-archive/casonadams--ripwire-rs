@@ -1,4 +1,4 @@
-use super::harness::{ExpectedSym, GraphProtocolCase, verify_protocol_case};
+use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 
 #[test]
@@ -11,23 +11,9 @@ fn test_markdown_graph_protocol() {
             b"# Guide\nIntro\n## Setup\nSteps\n",
         )],
         expected_syms: &[
-            ExpectedSym {
-                name: "Guide",
-                kind: SymKind::Section,
-                scope: None,
-                has_body_span: false,
-            },
-            ExpectedSym {
-                name: "Setup",
-                kind: SymKind::Section,
-                scope: Some("Guide"),
-                has_body_span: false,
-            },
+            sym("Guide", SymKind::Section, None, false),
+            sym("Setup", SymKind::Section, Some("Guide"), false),
         ],
-        rejected_syms: &[],
-        expected_edges: &[],
-        expect_external: false,
-        expected_lego: None,
-        expected_import: None,
+        ..Default::default()
     });
 }
