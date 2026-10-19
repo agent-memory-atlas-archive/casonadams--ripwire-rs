@@ -500,6 +500,10 @@ fn test_top_safety_queries() {
             ..Default::default()
         },
         TopSafetyArgs {
+            dmm: Some(Some("HEAD~1".into())),
+            ..Default::default()
+        },
+        TopSafetyArgs {
             plan_lanes: Some(Some(2)),
             task: Some("refactor".into()),
             ..Default::default()

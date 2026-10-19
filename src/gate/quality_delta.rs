@@ -541,6 +541,19 @@ fn merge_snapshot_entries(dst: &mut QualitySnapshot, src: QualitySnapshot) {
     dst.public_api.extend(src.public_api);
 }
 
+fn resolve_rev_tree<'a>(repo: &'a gix::Repository, rev: &str) -> Option<gix::Tree<'a>> {
+    if !rev.is_empty()
+        && rev != "HEAD"
+        && let Ok(id) = repo.rev_parse_single(rev)
+        && let Ok(obj) = id.object()
+        && let Ok(commit) = obj.try_into_commit()
+        && let Ok(tree) = commit.tree()
+    {
+        return Some(tree);
+    }
+    repo.head_commit().ok()?.tree().ok()
+}
+
 fn read_changed_rev_blobs<P: AsRef<Path>>(
     root_path: P,
     rev: &str,
@@ -552,27 +565,13 @@ fn read_changed_rev_blobs<P: AsRef<Path>>(
     let Ok(repo) = gix::open(root_path.as_ref()) else {
         return rev_files;
     };
-    let commit_res = if rev.is_empty() || rev == "HEAD" {
-        repo.head_commit()
-    } else {
-        repo.rev_parse_single(rev)
-            .map_err(|_| ())
-            .and_then(|id| id.object().map_err(|_| ()))
-            .and_then(|obj| obj.try_into_commit().map_err(|_| ()))
-            .or_else(|()| repo.head_commit())
-    };
-    let Ok(commit) = commit_res else {
-        return rev_files;
-    };
-    let Ok(tree) = commit.tree() else {
+    let Some(tree) = resolve_rev_tree(&repo, rev) else {
         return rev_files;
     };
     for f in &ingest.files {
         let rel_path = interner.resolve(&f.path);
-        if !changed_set.contains(rel_path) {
-            continue;
-        }
-        if let Ok(Some(entry)) = tree.lookup_entry_by_path(rel_path)
+        if changed_set.contains(rel_path)
+            && let Ok(Some(entry)) = tree.lookup_entry_by_path(rel_path)
             && let Ok(obj) = entry.object()
         {
             rev_files.push((rel_path.to_string(), f.lang, obj.data.to_vec()));
