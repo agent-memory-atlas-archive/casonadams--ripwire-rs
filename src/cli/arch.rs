@@ -151,7 +151,7 @@ fn tally_isolated_symbols(
     }
 }
 
-fn collect_community_bridges<'a>(
+pub fn collect_community_bridges<'a>(
     comms: &[u32],
     modules: &[crate::serialize::CommunityModule<'a>],
     ingest: &'a IngestResult,
@@ -210,14 +210,16 @@ fn compute_community_summary<'a>(
     sum
 }
 
-pub fn execute_communities_query<W: Write>(
-    root: &str,
+pub fn build_ranked_communities<'a>(
     target_id: Option<u32>,
-    ingest: &IngestResult,
+    ingest: &'a IngestResult,
     graph: &Graph,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
+    interner: &'a Interner,
+) -> (
+    Vec<u32>,
+    std::collections::HashMap<u32, Vec<NodeId>>,
+    Vec<crate::serialize::CommunityModule<'a>>,
+) {
     let comms = graph.communities();
     let mut by_comm: std::collections::HashMap<u32, Vec<NodeId>> = std::collections::HashMap::new();
     for (node, &c) in comms.comm.iter().enumerate() {
@@ -225,7 +227,6 @@ pub fn execute_communities_query<W: Write>(
             by_comm.entry(c).or_default().push(node as u32);
         }
     }
-
     let mut comm_ids: Vec<u32> = by_comm
         .iter()
         .filter(|(_, nodes)| target_id.is_some() || nodes.len() >= 2)
@@ -237,13 +238,23 @@ pub fn execute_communities_query<W: Write>(
             .cmp(&by_comm[a].len())
             .then_with(|| a.cmp(b))
     });
-
-    let modules: Vec<crate::serialize::CommunityModule<'_>> = comm_ids
+    let modules = comm_ids
         .into_iter()
         .map(|id| build_community_module(id, &by_comm[&id], ingest, interner))
         .collect();
-    let summary = compute_community_summary(&comms.comm, &by_comm, &modules, ingest, graph);
+    (comms.comm, by_comm, modules)
+}
 
+pub fn execute_communities_query<W: Write>(
+    root: &str,
+    target_id: Option<u32>,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (comms, by_comm, modules) = build_ranked_communities(target_id, ingest, graph, interner);
+    let summary = compute_community_summary(&comms, &by_comm, &modules, ingest, graph);
     crate::serialize::serialize_communities_with_summary_xml(root, &modules, &summary, out)
 }
 

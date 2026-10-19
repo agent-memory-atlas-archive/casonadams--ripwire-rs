@@ -46,13 +46,6 @@ pub fn execute_gate_action<W: Write>(
     None
 }
 
-pub fn run_quality_delta_gate<W: Write>(
-    state: &crate::mcp::McpState,
-    out: &mut W,
-) -> io::Result<()> {
-    run_quality_delta_gate_with_args(GateDispatchArgs::default(), state, out)
-}
-
 pub fn run_quality_delta_gate_with_args<W: Write>(
     args: GateDispatchArgs<'_>,
     state: &crate::mcp::McpState,
@@ -113,17 +106,6 @@ pub fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<i
     let res = execute_gate_action(args, &state, &mut stdout);
     let _ = stdout.flush();
     res
-}
-
-pub fn execute_with_git_state<F>(root: &str, cutoff: Option<i64>, runner: F) -> io::Result<()>
-where
-    F: FnOnce(
-        &[crate::git::history::CommitInfo],
-        &crate::mcp::McpState,
-        &mut crate::serialize::XmlWriter<'_, io::StdoutLock<'_>>,
-    ) -> io::Result<()>,
-{
-    execute_with_git_state_fmt(root, cutoff, false, false, runner)
 }
 
 pub fn execute_with_git_state_fmt<F>(
@@ -694,14 +676,6 @@ fn format_copair_row(p: &crate::git::cochange::CoPair) -> String {
     row
 }
 
-pub fn print_cochange_pairs<W: Write>(
-    root: &str,
-    pairs: &[crate::git::cochange::CoPair],
-    out: &mut W,
-) -> io::Result<()> {
-    print_cochange_pairs_paged(root, pairs, None, None, out)
-}
-
 pub fn print_cochange_pairs_paged<W: Write>(
     root: &str,
     pairs: &[crate::git::cochange::CoPair],
@@ -774,43 +748,10 @@ pub fn execute_cochange_with<W: Write>(
     state: &crate::mcp::McpState,
     out: &mut W,
 ) -> io::Result<()> {
-    execute_cochange_full(probed_file, since_str, false, commits, state, out)
-}
-
-pub fn execute_cochange_full<W: Write>(
-    probed_file: Option<&str>,
-    since_str: Option<&str>,
-    groups_mode: bool,
-    commits: &[crate::git::history::CommitInfo],
-    state: &crate::mcp::McpState,
-    out: &mut W,
-) -> io::Result<()> {
-    execute_cochange_with_recur(
-        probed_file,
-        since_str,
-        groups_mode,
-        None,
-        commits,
-        state,
-        out,
-    )
-}
-
-pub fn execute_cochange_with_recur<W: Write>(
-    probed_file: Option<&str>,
-    since_str: Option<&str>,
-    groups_mode: bool,
-    min_recur: Option<u32>,
-    commits: &[crate::git::history::CommitInfo],
-    state: &crate::mcp::McpState,
-    out: &mut W,
-) -> io::Result<()> {
     execute_cochange_with_options(
         probed_file,
         GitMetricsFlags {
             since: since_str,
-            cochange_groups: groups_mode,
-            cochange_recur: min_recur,
             ..Default::default()
         },
         commits,

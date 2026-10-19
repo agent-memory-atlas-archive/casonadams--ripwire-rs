@@ -200,20 +200,20 @@ pub(crate) fn scan_string_slice<'a>(bytes: &'a [u8], i: &mut usize) -> &'a [u8] 
     &bytes[start..(*i).min(bytes.len())]
 }
 
-pub(crate) fn scan_number_slice<'a>(bytes: &'a [u8], i: &mut usize) -> &'a [u8] {
+fn scan_alnum_plus<'a>(bytes: &'a [u8], i: &mut usize, extra: u8) -> &'a [u8] {
     let start = *i;
-    while *i < bytes.len() && (bytes[*i].is_ascii_alphanumeric() || bytes[*i] == b'.') {
+    while *i < bytes.len() && (bytes[*i].is_ascii_alphanumeric() || bytes[*i] == extra) {
         *i += 1;
     }
     &bytes[start..*i]
 }
 
+pub(crate) fn scan_number_slice<'a>(bytes: &'a [u8], i: &mut usize) -> &'a [u8] {
+    scan_alnum_plus(bytes, i, b'.')
+}
+
 pub(crate) fn scan_ident_slice<'a>(bytes: &'a [u8], i: &mut usize) -> &'a [u8] {
-    let start = *i;
-    while *i < bytes.len() && (bytes[*i].is_ascii_alphanumeric() || bytes[*i] == b'_') {
-        *i += 1;
-    }
-    &bytes[start..*i]
+    scan_alnum_plus(bytes, i, b'_')
 }
 
 pub(crate) fn scan_operator_slice<'a>(bytes: &'a [u8], i: &mut usize) -> &'a [u8] {
@@ -261,19 +261,9 @@ fn fnv1a_absorb_token(mut hash: u64, token: &[u8]) -> u64 {
     hash.wrapping_mul(0x1000_0000_01b3)
 }
 
-fn uses_hash_comments(lang: Lang) -> bool {
-    lang.semantics().uses_hash_comments()
-}
-
-/// Zero-allocation scanner returning `(raw_hash, norm_hash, norm_token_ids)`.
-#[must_use]
-pub fn scan_body_ids(bytes: &[u8], lang: Lang) -> (u64, u64, Vec<u32>) {
-    let hash_comments = uses_hash_comments(lang);
-    let mut raw_hash = 0xcbf2_9ce4_8422_2325u64;
-    let mut norm_hash = 0xcbf2_9ce4_8422_2325u64;
-    let mut norm_ids = Vec::with_capacity(bytes.len() / 6);
+fn for_each_body_token<'a>(bytes: &'a [u8], lang: Lang, mut visit: impl FnMut(&'a [u8], &'a [u8])) {
+    let hash_comments = lang.semantics().uses_hash_comments();
     let mut i = 0;
-
     while i < bytes.len() {
         skip_whitespace(bytes, &mut i);
         if i >= bytes.len() {
@@ -283,35 +273,33 @@ pub fn scan_body_ids(bytes: &[u8], lang: Lang) -> (u64, u64, Vec<u32>) {
             continue;
         }
         let (raw_slice, norm_slice) = next_token_slices(bytes, &mut i);
+        visit(raw_slice, norm_slice);
+    }
+}
+
+/// Zero-allocation scanner returning `(raw_hash, norm_hash, norm_token_ids)`.
+#[must_use]
+pub fn scan_body_ids(bytes: &[u8], lang: Lang) -> (u64, u64, Vec<u32>) {
+    let mut raw_hash = 0xcbf2_9ce4_8422_2325u64;
+    let mut norm_hash = 0xcbf2_9ce4_8422_2325u64;
+    let mut norm_ids = Vec::with_capacity(bytes.len() / 6);
+    for_each_body_token(bytes, lang, |raw_slice, norm_slice| {
         raw_hash = fnv1a_absorb_token(raw_hash, raw_slice);
         norm_hash = fnv1a_absorb_token(norm_hash, norm_slice);
         norm_ids.push(token_id(norm_slice));
-    }
-
+    });
     (raw_hash, norm_hash, norm_ids)
 }
 
 /// Tokenize symbol source body into raw and normalized token streams.
 #[must_use]
 pub fn tokenize_body(bytes: &[u8], lang: Lang) -> (Vec<String>, Vec<String>) {
-    let hash_comments = uses_hash_comments(lang);
     let mut raw_tokens = Vec::new();
     let mut norm_tokens = Vec::new();
-    let mut i = 0;
-
-    while i < bytes.len() {
-        skip_whitespace(bytes, &mut i);
-        if i >= bytes.len() {
-            break;
-        }
-        if skip_comment(bytes, &mut i, hash_comments) {
-            continue;
-        }
-        let (raw_slice, norm_slice) = next_token_slices(bytes, &mut i);
+    for_each_body_token(bytes, lang, |raw_slice, norm_slice| {
         raw_tokens.push(String::from_utf8_lossy(raw_slice).into_owned());
         norm_tokens.push(String::from_utf8_lossy(norm_slice).into_owned());
-    }
-
+    });
     (raw_tokens, norm_tokens)
 }
 
@@ -325,16 +313,20 @@ pub fn hash_tokens(tokens: &[String]) -> u64 {
     hash
 }
 
-/// Compute sorted, unique k-gram fingerprint hashes for Type-3 detection.
-#[must_use]
-pub fn compute_kgrams(tokens: &[String], k: usize) -> Vec<u64> {
-    if tokens.len() < k {
+fn sorted_window_hashes<T>(slice: &[T], k: usize, hasher: fn(&[T]) -> u64) -> Vec<u64> {
+    if slice.len() < k {
         return Vec::new();
     }
-    let mut list: Vec<u64> = tokens.windows(k).map(hash_tokens).collect();
+    let mut list: Vec<u64> = slice.windows(k).map(hasher).collect();
     list.sort_unstable();
     list.dedup();
     list
+}
+
+/// Compute sorted, unique k-gram fingerprint hashes for Type-3 detection.
+#[must_use]
+pub fn compute_kgrams(tokens: &[String], k: usize) -> Vec<u64> {
+    sorted_window_hashes(tokens, k, hash_tokens)
 }
 
 /// Compute 32-bit FNV-1a hash of a token byte slice.
@@ -366,13 +358,7 @@ pub fn hash_token_window(window: &[u32]) -> u64 {
 /// Compute sorted, unique k-gram fingerprint hashes from token ids.
 #[must_use]
 pub fn compute_kgrams_ids(ids: &[u32], k: usize) -> Vec<u64> {
-    if ids.len() < k {
-        return Vec::new();
-    }
-    let mut list: Vec<u64> = ids.windows(k).map(hash_token_window).collect();
-    list.sort_unstable();
-    list.dedup();
-    list
+    sorted_window_hashes(ids, k, hash_token_window)
 }
 
 /// Compute Jaccard similarity of two sorted, unique k-gram hash vectors.

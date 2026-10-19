@@ -197,18 +197,7 @@ pub fn execute_connect_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    execute_connect_query_in_root(".", syms, ingest, graph, interner, out)
-}
-
-pub fn execute_connect_query_in_root<W: Write>(
-    root: &str,
-    syms: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
-    execute_connect_query_with_radius(root, syms, 6, ingest, graph, interner, out)
+    execute_connect_query_with_radius(".", syms, 6, ingest, graph, interner, out)
 }
 
 pub fn execute_connect_query_with_radius<W: Write>(

@@ -410,33 +410,19 @@ fn kind_matches_tag(kind: crate::domain::SymKind, tag: &str) -> bool {
         }
 }
 
-fn eval_callers_closure(
+fn eval_1hop_closure(
     mut current: BTreeSet<NodeId>,
     depth: usize,
     graph: &Graph,
+    is_callers: bool,
 ) -> BTreeSet<NodeId> {
     for _ in 0..depth {
         let mut next = BTreeSet::new();
         for &id in &current {
-            for (caller, _) in graph.callers(id) {
-                next.insert(caller);
-            }
-        }
-        current = next;
-    }
-    current
-}
-
-fn eval_callees_closure(
-    mut current: BTreeSet<NodeId>,
-    depth: usize,
-    graph: &Graph,
-) -> BTreeSet<NodeId> {
-    for _ in 0..depth {
-        let mut next = BTreeSet::new();
-        for &id in &current {
-            for (callee, _) in graph.callees(id) {
-                next.insert(callee);
+            if is_callers {
+                next.extend(graph.callers(id).map(|(n, _)| n));
+            } else {
+                next.extend(graph.callees(id).map(|(n, _)| n));
             }
         }
         current = next;
@@ -503,13 +489,9 @@ fn evaluate_graph_expr(
         GraphExpr::Name(name) => find_symbols_by_name(name, ingest, interner)
             .into_iter()
             .collect(),
-        GraphExpr::Callers(sub, depth) => {
+        GraphExpr::Callers(sub, depth) | GraphExpr::Callees(sub, depth) => {
             let base = evaluate_graph_expr(sub, ingest, graph, interner);
-            eval_callers_closure(base, *depth, graph)
-        }
-        GraphExpr::Callees(sub, depth) => {
-            let base = evaluate_graph_expr(sub, ingest, graph, interner);
-            eval_callees_closure(base, *depth, graph)
+            eval_1hop_closure(base, *depth, graph, matches!(expr, GraphExpr::Callers(..)))
         }
         GraphExpr::Filter(sub, pred) => {
             let base = evaluate_graph_expr(sub, ingest, graph, interner);

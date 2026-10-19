@@ -53,63 +53,74 @@ impl crate::serialize::XmlReport for AffectedReport {
     }
 }
 
+fn matches_path_convention(
+    p: &Path,
+    dir_pred: impl Fn(&str) -> bool,
+    file_pred: impl Fn(&str) -> bool,
+) -> bool {
+    if p.components()
+        .filter_map(|c| c.as_os_str().to_str())
+        .any(|s| dir_pred(&s.to_ascii_lowercase()))
+    {
+        return true;
+    }
+    let lower = p
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    file_pred(&lower)
+}
+
 /// Check if a path corresponds to a test file by directory convention or filename.
 #[must_use]
 pub fn is_test_path<P: AsRef<Path>>(path: P) -> bool {
-    let p = path.as_ref();
-    for component in p.components() {
-        if let Some(s) = component.as_os_str().to_str() {
-            let lower = s.to_ascii_lowercase();
-            if matches!(
-                lower.as_str(),
-                "test" | "tests" | "spec" | "specs" | "testdata"
-            ) {
-                return true;
-            }
-        }
-    }
-
-    let file_name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
-    let lower = file_name.to_ascii_lowercase();
-    lower.starts_with("test_")
-        || lower.ends_with("_test.rs")
-        || lower.ends_with("_test.go")
-        || lower.ends_with(".test.ts")
-        || lower.ends_with(".test.js")
-        || lower.ends_with(".spec.ts")
-        || lower.ends_with(".spec.js")
-        || lower.ends_with("test.java")
+    matches_path_convention(
+        path.as_ref(),
+        |d| matches!(d, "test" | "tests" | "spec" | "specs" | "testdata"),
+        |f| {
+            f.starts_with("test_")
+                || [
+                    "_test.rs",
+                    "_test.go",
+                    ".test.ts",
+                    ".test.js",
+                    ".spec.ts",
+                    ".spec.js",
+                    "test.java",
+                ]
+                .iter()
+                .any(|ext| f.ends_with(ext))
+        },
+    )
 }
 
 /// Check if a path is a test, benchmark, or fixture path for ranking and module naming.
 #[must_use]
 pub fn is_test_or_bench_path<P: AsRef<Path>>(path: P) -> bool {
     let p = path.as_ref();
-    if is_test_path(p) {
-        return true;
-    }
-    for component in p.components() {
-        if let Some(s) = component.as_os_str().to_str() {
-            let lower = s.to_ascii_lowercase();
-            if matches!(
-                lower.as_str(),
-                "bench" | "benches" | "fixtures" | "__tests__"
-            ) || lower.ends_with("_tests")
-                || lower.ends_with("_test")
-            {
-                return true;
-            }
-        }
-    }
-    let file_name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
-    let lower = file_name.to_ascii_lowercase();
-    matches!(lower.as_str(), "tests.rs" | "test.rs")
-        || lower.ends_with("_tests.rs")
-        || lower.ends_with(".test.tsx")
-        || lower.ends_with(".spec.tsx")
-        || lower.ends_with("_test.py")
-        || lower.ends_with("_test.cpp")
-        || lower.ends_with("_test.c")
+    is_test_path(p)
+        || matches_path_convention(
+            p,
+            |d| {
+                matches!(d, "bench" | "benches" | "fixtures" | "__tests__")
+                    || d.ends_with("_tests")
+                    || d.ends_with("_test")
+            },
+            |f| {
+                matches!(f, "tests.rs" | "test.rs")
+                    || [
+                        "_tests.rs",
+                        ".test.tsx",
+                        ".spec.tsx",
+                        "_test.py",
+                        "_test.cpp",
+                        "_test.c",
+                    ]
+                    .iter()
+                    .any(|ext| f.ends_with(ext))
+            },
+        )
 }
 
 struct SeedResolution {

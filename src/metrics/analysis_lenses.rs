@@ -719,39 +719,8 @@ fn extract_module_intents(members: &[(&'static str, &str, &str, u32)]) -> String
     }
 }
 
-fn collect_report_bridges<'a>(
-    comms: &[u32],
-    modules: &[crate::serialize::CommunityModule<'a>],
-    ingest: &IngestResult,
-    graph: &Graph,
-) -> Vec<(&'a str, &'a str, usize)> {
-    let label_by_id: std::collections::HashMap<u32, &'a str> =
-        modules.iter().map(|m| (m.id, m.label)).collect();
-    let mut bridge_counts: std::collections::HashMap<(u32, u32), usize> =
-        std::collections::HashMap::new();
-    for u in 0..ingest.symbols.len() {
-        let cu = comms.get(u).copied().unwrap_or(0);
-        for (v, _) in graph.callees(u as u32) {
-            let cv = comms.get(v as usize).copied().unwrap_or(0);
-            if cu != cv {
-                let pair = if cu < cv { (cu, cv) } else { (cv, cu) };
-                *bridge_counts.entry(pair).or_default() += 1;
-            }
-        }
-    }
-    let mut bridges: Vec<((u32, u32), usize)> = bridge_counts.into_iter().collect();
-    bridges.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    bridges
-        .into_iter()
-        .take(8)
-        .map(|((a, b), w)| {
-            (
-                label_by_id.get(&a).copied().unwrap_or("module"),
-                label_by_id.get(&b).copied().unwrap_or("module"),
-                w,
-            )
-        })
-        .collect()
+fn non_empty_or<'a>(s: &'a str, fallback: &'a str) -> &'a str {
+    if s.is_empty() { fallback } else { s }
 }
 
 fn write_report_modules_and_bridges<W: Write>(
@@ -760,27 +729,7 @@ fn write_report_modules_and_bridges<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let comms = graph.communities();
-    let mut by_comm: std::collections::HashMap<u32, Vec<crate::domain::NodeId>> =
-        std::collections::HashMap::new();
-    for (node, &c) in comms.comm.iter().enumerate() {
-        by_comm.entry(c).or_default().push(node as u32);
-    }
-    let mut comm_ids: Vec<u32> = by_comm
-        .iter()
-        .filter(|(_, nodes)| nodes.len() >= 2)
-        .map(|(&id, _)| id)
-        .collect();
-    comm_ids.sort_by(|a, b| {
-        by_comm[b]
-            .len()
-            .cmp(&by_comm[a].len())
-            .then_with(|| a.cmp(b))
-    });
-    let modules: Vec<crate::serialize::CommunityModule<'_>> = comm_ids
-        .into_iter()
-        .map(|id| crate::cli::build_community_module(id, &by_comm[&id], ingest, interner))
-        .collect();
+    let (comms, _, modules) = crate::cli::build_ranked_communities(None, ingest, graph, interner);
     let shown_mods = modules.len().min(12);
     writeln!(
         out,
@@ -801,7 +750,11 @@ fn write_report_modules_and_bridges<W: Write>(
         writeln!(out)?;
     }
 
-    let bridges = collect_report_bridges(&comms.comm, &modules, ingest, graph);
+    let bridges: Vec<_> = crate::cli::collect_community_bridges(&comms, &modules, ingest, graph)
+        .into_iter()
+        .take(8)
+        .map(|(_, _, la, lb, w)| (non_empty_or(la, "module"), non_empty_or(lb, "module"), w))
+        .collect();
     writeln!(
         out,
         "## Cross-module bridges (showing {} of {})",

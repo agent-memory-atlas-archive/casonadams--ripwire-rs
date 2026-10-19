@@ -248,40 +248,58 @@ fn scan_local_branch_hits(root: &str, symbol_name: &str, on_head: bool) -> (usiz
     (refs_scanned, hits)
 }
 
+fn resolve_hit_file<'a>(ingest: &'a IngestResult, interner: &'a Interner, file_id: u32) -> &'a str {
+    ingest
+        .files
+        .get(file_id as usize)
+        .map(|f| interner.resolve(&f.path))
+        .unwrap_or("")
+}
+
+fn build_head_hit(
+    file_path: &str,
+    root: &str,
+    line: u32,
+    sym_name: &str,
+    def_kind: Option<crate::domain::SymKind>,
+) -> Value {
+    let full_path = if root == "." {
+        file_path.to_string()
+    } else {
+        format!("{root}/{file_path}")
+    };
+    let (kind, fallback) = match def_kind {
+        Some(k) => ("def", format!("{} {sym_name}", k.tag())),
+        None => ("ref", sym_name.to_string()),
+    };
+    let text = get_line_snippet(&full_path, line, &fallback);
+    json!({
+        "ref": "HEAD",
+        "symbol": sym_name,
+        "kind": kind,
+        "file": file_path,
+        "path": file_path,
+        "line": line,
+        "text": text,
+        "on_head": true
+    })
+}
+
 fn collect_head_defs(
     ingest: &IngestResult,
     interner: &Interner,
     root: &str,
     sym_name: &str,
 ) -> Vec<Value> {
-    let mut hits = Vec::new();
-    for sym in &ingest.symbols {
-        let n = interner.resolve(&sym.name);
-        if n == sym_name {
-            let file_path = ingest
-                .files
-                .get(sym.file_id as usize)
-                .map(|f| interner.resolve(&f.path))
-                .unwrap_or("");
-            let full_path = if root == "." {
-                file_path.to_string()
-            } else {
-                format!("{root}/{file_path}")
-            };
-            let text = get_line_snippet(&full_path, sym.line, &format!("{} {}", sym.kind.tag(), n));
-            hits.push(json!({
-                "ref": "HEAD",
-                "symbol": n,
-                "kind": "def",
-                "file": file_path,
-                "path": file_path,
-                "line": sym.line,
-                "text": text,
-                "on_head": true
-            }));
-        }
-    }
-    hits
+    ingest
+        .symbols
+        .iter()
+        .filter(|sym| interner.resolve(&sym.name) == sym_name)
+        .map(|sym| {
+            let fp = resolve_hit_file(ingest, interner, sym.file_id);
+            build_head_hit(fp, root, sym.line, sym_name, Some(sym.kind))
+        })
+        .collect()
 }
 
 fn collect_head_refs(
@@ -290,34 +308,15 @@ fn collect_head_refs(
     root: &str,
     sym_name: &str,
 ) -> Vec<Value> {
-    let mut hits = Vec::new();
-    for r in &ingest.references {
-        let n = interner.resolve(&r.callee_name);
-        if n == sym_name {
-            let file_path = ingest
-                .files
-                .get(r.file_id as usize)
-                .map(|f| interner.resolve(&f.path))
-                .unwrap_or("");
-            let full_path = if root == "." {
-                file_path.to_string()
-            } else {
-                format!("{root}/{file_path}")
-            };
-            let text = get_line_snippet(&full_path, r.line, n);
-            hits.push(json!({
-                "ref": "HEAD",
-                "symbol": n,
-                "kind": "ref",
-                "file": file_path,
-                "path": file_path,
-                "line": r.line,
-                "text": text,
-                "on_head": true
-            }));
-        }
-    }
-    hits
+    ingest
+        .references
+        .iter()
+        .filter(|r| interner.resolve(&r.callee_name) == sym_name)
+        .map(|r| {
+            let fp = resolve_hit_file(ingest, interner, r.file_id);
+            build_head_hit(fp, root, r.line, sym_name, None)
+        })
+        .collect()
 }
 
 pub(super) fn probe_name_history(root: &str, sym_name: &str, head_sha: &str) -> Option<Value> {

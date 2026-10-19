@@ -258,78 +258,61 @@ pub trait QualityDeltaDimension: Sync {
     }
 }
 
-struct ComplexityDimension;
-impl QualityDeltaDimension for ComplexityDimension {
+pub struct NumericDimensionSpec {
+    pub kind: &'static str,
+    pub preexisting_floor: u32,
+    pub gating_threshold: Option<u32>,
+    pub new_symbol_floor: Option<u32>,
+    pub extract: fn(&QualitySnapshot, &str) -> u32,
+}
+
+impl QualityDeltaDimension for NumericDimensionSpec {
     fn kind(&self) -> &'static str {
-        "complexity"
+        self.kind
     }
     fn extract(&self, snap: &QualitySnapshot, key: &str) -> u32 {
-        snap.ccx_by_sym.get(key).copied().unwrap_or(0)
+        (self.extract)(snap, key)
     }
     fn preexisting_floor(&self) -> u32 {
-        0
+        self.preexisting_floor
     }
     fn is_preexisting_gating(&self, now: u32) -> bool {
-        now > 15
+        self.gating_threshold.is_some_and(|t| now > t)
     }
     fn new_symbol_floor(&self) -> Option<u32> {
-        Some(15)
-    }
-}
-
-struct VerbosityDimension;
-impl QualityDeltaDimension for VerbosityDimension {
-    fn kind(&self) -> &'static str {
-        "verbosity"
-    }
-    fn extract(&self, snap: &QualitySnapshot, key: &str) -> u32 {
-        snap.loc_by_sym.get(key).copied().unwrap_or(0)
-    }
-    fn preexisting_floor(&self) -> u32 {
-        60
-    }
-    fn is_preexisting_gating(&self, _now: u32) -> bool {
-        false
-    }
-}
-
-struct NestingDimension;
-impl QualityDeltaDimension for NestingDimension {
-    fn kind(&self) -> &'static str {
-        "nesting"
-    }
-    fn extract(&self, snap: &QualitySnapshot, key: &str) -> u32 {
-        u32::from(snap.nest_by_sym.get(key).copied().unwrap_or(0))
-    }
-    fn preexisting_floor(&self) -> u32 {
-        4
-    }
-    fn is_preexisting_gating(&self, now: u32) -> bool {
-        now > 6
-    }
-}
-
-struct ParamsDimension;
-impl QualityDeltaDimension for ParamsDimension {
-    fn kind(&self) -> &'static str {
-        "params"
-    }
-    fn extract(&self, snap: &QualitySnapshot, key: &str) -> u32 {
-        u32::from(snap.params_by_sym.get(key).copied().unwrap_or(0))
-    }
-    fn preexisting_floor(&self) -> u32 {
-        3
-    }
-    fn is_preexisting_gating(&self, now: u32) -> bool {
-        now > 5
+        self.new_symbol_floor
     }
 }
 
 pub static DELTA_DIMENSIONS: &[&dyn QualityDeltaDimension] = &[
-    &ComplexityDimension,
-    &VerbosityDimension,
-    &NestingDimension,
-    &ParamsDimension,
+    &NumericDimensionSpec {
+        kind: "complexity",
+        preexisting_floor: 0,
+        gating_threshold: Some(15),
+        new_symbol_floor: Some(15),
+        extract: |snap, key| snap.ccx_by_sym.get(key).copied().unwrap_or(0),
+    },
+    &NumericDimensionSpec {
+        kind: "verbosity",
+        preexisting_floor: 60,
+        gating_threshold: None,
+        new_symbol_floor: None,
+        extract: |snap, key| snap.loc_by_sym.get(key).copied().unwrap_or(0),
+    },
+    &NumericDimensionSpec {
+        kind: "nesting",
+        preexisting_floor: 4,
+        gating_threshold: Some(6),
+        new_symbol_floor: None,
+        extract: |snap, key| u32::from(snap.nest_by_sym.get(key).copied().unwrap_or(0)),
+    },
+    &NumericDimensionSpec {
+        kind: "params",
+        preexisting_floor: 3,
+        gating_threshold: Some(5),
+        new_symbol_floor: None,
+        extract: |snap, key| u32::from(snap.params_by_sym.get(key).copied().unwrap_or(0)),
+    },
 ];
 
 fn check_symbol_numeric_regressions(

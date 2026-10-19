@@ -146,13 +146,9 @@ impl LanguageSemantics for DartLanguage {
         def_node: Option<tree_sitter::Node<'a>>,
         default_end: usize,
     ) -> (Option<tree_sitter::Node<'a>>, usize) {
-        let Some(dn) = def_node else {
-            return (None, default_end);
-        };
-        if let Some(body) = dart_following_body(dn) {
-            return (Some(body), body.end_byte());
-        }
-        (Some(dn), default_end)
+        def_node
+            .and_then(dart_following_body)
+            .map_or((def_node, default_end), |b| (Some(b), b.end_byte()))
     }
 
     fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
