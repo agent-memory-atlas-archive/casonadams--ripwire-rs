@@ -493,19 +493,3 @@ impl ResolutionLookup for ResolutionContext<'_> {
             .is_some_and(|set| set.contains(&scope))
     }
 }
-
-pub fn resolve_call_reference(
-    r: &Reference,
-    symbols: &[Symbol],
-    file_dirs: &[u32],
-    by_name: &HashMap<Spur, Vec<NodeId>>,
-) -> Option<ResolvedRef> {
-    let ctx = ResolutionContext {
-        symbols,
-        file_dirs,
-        by_name,
-        interner: None,
-        file_scopes: None,
-    };
-    ctx.resolve_ref(r)
-}

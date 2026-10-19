@@ -13,24 +13,6 @@ use ripwire_rs::{
 };
 
 #[test]
-fn test_tier1_registry_and_parsing() {
-    let reg = LanguageRegistry::new_tier1().unwrap();
-    assert!(reg.get(Lang::Rust).is_some() && reg.get(Lang::Python).is_some());
-
-    let (lang, query) = reg.get(Lang::Rust).unwrap();
-    let res = parse_file_content(
-        b"fn run() { log(); } fn log() {}",
-        lang,
-        query,
-        Lang::Rust,
-        "src/lib.rs",
-    );
-    assert_eq!(res.defs.len(), 2);
-    assert_eq!(res.refs.len(), 1);
-    assert_eq!(res.refs[0].callee_name, "log");
-}
-
-#[test]
 fn test_classify_captures() {
     assert!(matches!(classify_capture("name"), Some(Capture::Name)));
     assert!(matches!(

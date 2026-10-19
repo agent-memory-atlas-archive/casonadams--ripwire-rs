@@ -347,15 +347,6 @@ fn execute_slice_with_root(
     }
 }
 
-/// Helper entry point for executing slicing from CLI arguments.
-pub fn execute_slice_command(
-    root: &str,
-    target: Option<&str>,
-    flow_str: &str,
-) -> std::io::Result<()> {
-    execute_slice_command_with_depth(root, target, flow_str, 8)
-}
-
 pub fn execute_slice_command_with_depth(
     root: &str,
     target: Option<&str>,

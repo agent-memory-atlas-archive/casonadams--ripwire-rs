@@ -297,20 +297,6 @@ pub trait CliVerb: VerbGroup {
     }
 }
 
-/// Trait for architecture and quality analysis lenses.
-pub trait AnalysisLens {
-    fn execute_lens<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<bool>;
-}
-
-/// Trait for pre-PR verification gates returning an optional process exit code.
-pub trait VerificationGate {
-    fn evaluate_gate<W: Write>(
-        &self,
-        ctx: &ExecutionContext<'_>,
-        out: &mut W,
-    ) -> io::Result<Option<i32>>;
-}
-
 pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::Result<()>> {
     if !verb.is_group_active() {
         return None;
@@ -396,35 +382,15 @@ impl CliVerb for TopDetailArgs {
     }
 }
 
-impl VerificationGate for TopSafetyArgs {
-    fn evaluate_gate<W: Write>(
-        &self,
-        ctx: &ExecutionContext<'_>,
-        out: &mut W,
-    ) -> io::Result<Option<i32>> {
-        execute_safety_dispatch(self, ctx.root, ctx.ingest, ctx.graph, ctx.interner, out)
-    }
-}
-
 impl CliVerb for TopSafetyArgs {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
-        let res = self.evaluate_gate(ctx, out);
+        let res = execute_safety_dispatch(self, ctx.root, ctx.ingest, ctx.graph, ctx.interner, out);
         out.flush()?;
         if let Some(code) = res? {
             std::process::exit(code);
         }
         Ok(())
     }
-}
-
-impl AnalysisLens for TopArchitectureArgs {
-    fn execute_lens<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<bool> {
-        dispatch_lens_queries(ctx, out)
-    }
-}
-
-pub fn dispatch_top_retrieval(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    run_cli_verb(&cli.retrieval, cli, root)
 }
 
 impl CliVerb for TopWorkspaceArgs {
@@ -461,10 +427,6 @@ impl CliVerb for TopWorkspaceArgs {
             )
         }
     }
-}
-
-pub fn dispatch_top_workspace(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    run_cli_verb(&cli.workspace, cli, root)
 }
 
 fn execute_workspace_owners<W: Write>(ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
@@ -563,13 +525,6 @@ fn execute_detail_extended<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W)
     }
 }
 
-pub fn dispatch_top_detail(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    run_cli_verb(&cli.detail, cli, root)
-}
-
-pub fn dispatch_top_safety(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    run_cli_verb(&cli.safety, cli, root)
-}
 fn execute_arch_rules_query<W: Write>(
     rules_file: &str,
     root: &str,
@@ -664,7 +619,7 @@ impl CliVerb for TopArchitectureArgs {
         } else if self.deps {
             execute_deps_query_paged(ctx.root, ctx.ingest, ctx.graph, ctx.interner, ctx.cli, out)
         } else {
-            let _ = self.execute_lens(ctx, out)?;
+            let _ = dispatch_lens_queries(ctx, out)?;
             Ok(())
         }
     }
@@ -672,10 +627,6 @@ impl CliVerb for TopArchitectureArgs {
     fn force_plain_markdown(&self) -> bool {
         self.mermaid
     }
-}
-
-pub fn dispatch_top_arch(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    run_cli_verb(&cli.arch, cli, root)
 }
 
 fn dispatch_lens_queries<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W) -> io::Result<bool> {
@@ -774,11 +725,11 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         })());
     }
     dispatch_top_nav(cli, root)
-        .or_else(|| dispatch_top_retrieval(cli, root))
-        .or_else(|| dispatch_top_workspace(cli, root))
-        .or_else(|| dispatch_top_detail(cli, root))
-        .or_else(|| dispatch_top_safety(cli, root))
-        .or_else(|| dispatch_top_arch(cli, root))
+        .or_else(|| run_cli_verb(&cli.retrieval, cli, root))
+        .or_else(|| run_cli_verb(&cli.workspace, cli, root))
+        .or_else(|| run_cli_verb(&cli.detail, cli, root))
+        .or_else(|| run_cli_verb(&cli.safety, cli, root))
+        .or_else(|| run_cli_verb(&cli.arch, cli, root))
 }
 
 pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io::Result<()> {
@@ -847,11 +798,14 @@ pub fn dispatch_subcommand(command: &Commands, cli: &Cli, default_root: &str) ->
         }
         Commands::Metrics(metrics_args) => {
             let root = metrics_args.path.as_deref().unwrap_or(default_root);
-            if let Some(res) = dispatch_git_metrics_command(
+            if let Some(res) = dispatch_git_metrics_with_flags(
                 root,
-                metrics_args.cochange.as_ref().map(|o| o.as_deref()),
-                metrics_args.hotspots,
-                metrics_args.since.as_deref(),
+                GitMetricsFlags {
+                    cochange: metrics_args.cochange.as_ref().map(|o| o.as_deref()),
+                    hotspots: metrics_args.hotspots,
+                    since: metrics_args.since.as_deref(),
+                    ..Default::default()
+                },
             ) {
                 return res;
             }

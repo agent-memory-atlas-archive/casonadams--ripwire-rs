@@ -24,9 +24,7 @@ pub use query_xml::{
 
 pub use html::{ColorBy, generate_call_graph_html, write_call_graph_html};
 
-pub use escape::{
-    XmlEscapeExt, XmlEscaped, escape_xml_str, escape_xml_write, needs_escaping, xml_safe_byte,
-};
+pub use escape::{XmlEscapeExt, XmlEscaped, escape_xml_str, escape_xml_write, needs_escaping};
 pub use xml::{
     CountingWriter, DEFAULT_PACK_BUDGET_BYTES, DEFAULT_STREAM_BUFFER_CAPACITY, RootElementContext,
     SerializeOptions, StreamXmlContext, bucket_symbols_by_rank, serialize_xml,

@@ -109,21 +109,10 @@ pub fn serialize_callers_xml<W: Write>(
     callers: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    serialize_callers_in_root_xml(".", sym_name, callers, out)
-}
-
-pub fn serialize_callers_in_root_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    callers: &[SymbolNavInfo],
-    out: &mut W,
-) -> io::Result<()> {
-    write_nav_items(
-        "callers",
-        root,
+    serialize_callers_with_gauge_xml(
+        ".",
         sym_name,
         callers,
-        "--uses",
         crate::serialize::GraphGauges::ZERO_XML_ATTRS,
         out,
     )
@@ -153,21 +142,10 @@ pub fn serialize_callees_xml<W: Write>(
     callees: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    serialize_callees_in_root_xml(".", sym_name, callees, out)
-}
-
-pub fn serialize_callees_in_root_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    callees: &[SymbolNavInfo],
-    out: &mut W,
-) -> io::Result<()> {
-    write_nav_items(
-        "callees",
-        root,
+    serialize_callees_with_gauge_xml(
+        ".",
         sym_name,
         callees,
-        "--expand",
         crate::serialize::GraphGauges::ZERO_XML_ATTRS,
         out,
     )
@@ -187,31 +165,6 @@ pub fn serialize_callees_with_gauge_xml<W: Write>(
         callees,
         "--expand",
         gauge_attrs,
-        out,
-    )
-}
-
-/// Serialize transitive impact blast radius to Ripwire-compatible XML.
-pub fn serialize_impact_xml<W: Write>(
-    sym_name: &str,
-    nodes: &[ImpactNode],
-    out: &mut W,
-) -> io::Result<()> {
-    serialize_impact_in_root_xml(".", sym_name, nodes, out)
-}
-
-pub fn serialize_impact_in_root_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    nodes: &[ImpactNode],
-    out: &mut W,
-) -> io::Result<()> {
-    serialize_impact_with_gauge_xml(
-        root,
-        sym_name,
-        nodes,
-        crate::serialize::GraphGauges::ZERO_XML_ATTRS,
-        1,
         out,
     )
 }
@@ -303,25 +256,6 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
     }
 }
 
-pub fn serialize_impact_with_gauge_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    nodes: &[ImpactNode],
-    gauge_attrs: &str,
-    pr_iters: u32,
-    out: &mut W,
-) -> io::Result<()> {
-    serialize_impact_with_importers_xml(
-        root,
-        sym_name,
-        nodes,
-        Vec::new(),
-        gauge_attrs,
-        pr_iters,
-        out,
-    )
-}
-
 pub fn serialize_impact_with_importers_xml<'a, W: Write>(
     root: &'a str,
     sym_name: &'a str,
@@ -382,18 +316,8 @@ pub fn serialize_uses_xml<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    serialize_uses_in_root_xml(".", sym_name, ingest, interner, out)
-}
-
-pub fn serialize_uses_in_root_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
     serialize_uses_with_gauge_xml(
-        root,
+        ".",
         sym_name,
         ingest,
         interner,

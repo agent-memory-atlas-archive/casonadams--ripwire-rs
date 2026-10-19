@@ -55,15 +55,13 @@ pub use metrics::{
 pub use navigate::{
     ImpactNode, NavNeighborhood, SymbolLookup, SymbolNavInfo, find_symbols_by_name,
     get_symbol_nav_info, navigate_1hop, serialize_callees_xml, serialize_callers_xml,
-    serialize_find_symbol_xml, serialize_impact_xml, serialize_uses_xml, transitive_impact,
+    serialize_find_symbol_xml, serialize_uses_xml, transitive_impact,
 };
 pub use rank::{
     HitsConfig, HitsResult, PageRankConfig, PageRankResult, biased_teleport, compute_hits,
     page_rank, uniform_teleport,
 };
-pub use resolve::{
-    EdgeAcc, ResolutionResult, ResolvedRef, resolve_all_references, resolve_call_reference,
-};
+pub use resolve::{EdgeAcc, ResolutionResult, ResolvedRef, resolve_all_references};
 pub use serialize::{
     ColorBy, CommunityModule, CountingWriter, DEFAULT_PACK_BUDGET_BYTES, RootElementContext,
     SerializeOptions, StreamXmlContext, ToXmlString, TreeFileSymbols, escape_xml_str,

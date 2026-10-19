@@ -182,15 +182,6 @@ impl crate::serialize::XmlReport for ContextRatioReport {
     }
 }
 
-pub fn serialize_context_ratio_xml<W: Write>(
-    rep: &ContextRatioReport,
-    root: &str,
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    rep.write_xml_report(root, out)
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnsembleRow {
     pub path: String,
@@ -337,15 +328,6 @@ impl crate::serialize::XmlReport for EnsembleReport {
         }
         Ok(())
     }
-}
-
-pub fn serialize_ensemble_xml<W: Write>(
-    rep: &EnsembleReport,
-    root: &str,
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    rep.write_xml_report(root, out)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -561,15 +543,6 @@ impl crate::serialize::XmlReport for CommentCoherenceReport {
         }
         Ok(())
     }
-}
-
-pub fn serialize_comment_coherence_xml<W: Write>(
-    rep: &CommentCoherenceReport,
-    root: &str,
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    rep.write_xml_report(root, out)
 }
 
 pub fn classify_identifier_casing(name: &str) -> &'static str {

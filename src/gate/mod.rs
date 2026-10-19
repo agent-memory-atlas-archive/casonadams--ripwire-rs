@@ -26,4 +26,4 @@ pub use pr_context::{PrContextReport, compute_pr_context, serialize_pr_context_x
 pub use quality_delta::{
     QualityDeltaReport, QualityRegression, compute_quality_delta, evaluate_quality_delta,
 };
-pub use seams::{SeamsReport, find_integration_seams, serialize_seams_xml};
+pub use seams::{SeamsReport, find_integration_seams};

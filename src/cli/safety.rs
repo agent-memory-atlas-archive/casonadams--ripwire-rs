@@ -145,28 +145,6 @@ pub struct GitMetricsFlags<'a> {
     pub offset: Option<usize>,
 }
 
-pub fn dispatch_git_metrics_command(
-    root: &str,
-    cochange: Option<Option<&str>>,
-    hotspots: bool,
-    since: Option<&str>,
-) -> Option<io::Result<()>> {
-    dispatch_git_metrics_with_flags(
-        root,
-        GitMetricsFlags {
-            cochange,
-            cochange_groups: false,
-            cochange_recur: None,
-            hotspots,
-            since,
-            pretty: false,
-            json_out: false,
-            limit: None,
-            offset: None,
-        },
-    )
-}
-
 pub fn dispatch_git_metrics_with_flags(
     root: &str,
     flags: GitMetricsFlags<'_>,
@@ -574,8 +552,9 @@ fn execute_verification_queries<W: Write>(
     } else if let Some(testfile) = s.exercises.as_deref() {
         execute_exercises_query(root, testfile, ingest, graph, interner, out)?;
     } else if s.seams {
+        use crate::serialize::XmlReport;
         let rep = crate::gate::seams::find_integration_seams(ingest, graph, interner);
-        crate::gate::seams::serialize_seams_xml(root, &rep, out)?;
+        rep.write_xml_report(root, out)?;
     } else if let Some(ref_opt) = &s.pr_context {
         execute_pr_context_dispatch(root, ref_opt.as_deref(), ingest, graph, interner, out)?;
     } else {

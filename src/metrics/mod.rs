@@ -13,7 +13,6 @@ pub mod source_mask;
 
 pub use analysis_lenses::{
     classify_identifier_casing, compute_comment_coherence, compute_context_ratio, compute_ensemble,
-    serialize_comment_coherence_xml, serialize_context_ratio_xml, serialize_ensemble_xml,
     serialize_executive_report_md, serialize_naming_calibration_xml,
     serialize_naming_consistency_xml,
 };

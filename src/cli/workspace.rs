@@ -394,28 +394,6 @@ pub struct EditCliOptions<'a> {
     pub dry_run: bool,
 }
 
-fn execute_edit_op<W: Write>(
-    root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
-    spec: &str,
-    op: crate::mcp::edit::EditOp,
-    out: &mut W,
-) -> io::Result<()> {
-    execute_edit_op_with_options(
-        EditCliOptions {
-            root,
-            spec,
-            op,
-            payload_override: None,
-            dry_run: false,
-        },
-        ingest,
-        interner,
-        out,
-    )
-}
-
 pub fn execute_edit_op_with_options<W: Write>(
     opts: EditCliOptions<'_>,
     ingest: &IngestResult,
@@ -436,21 +414,6 @@ pub fn execute_edit_op_with_options<W: Write>(
         interner,
     );
     writeln!(out, "{res}")
-}
-
-fn execute_symbol_mutation_query<W: Write>(
-    ws: &TopWorkspaceArgs,
-    root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<bool> {
-    if let Some((spec, op)) = ws.active_edit_op() {
-        execute_edit_op(root, ingest, interner, spec, op, out)?;
-        Ok(true)
-    } else {
-        Ok(false)
-    }
 }
 
 pub fn execute_workspace_doc_query<W: Write>(
@@ -487,6 +450,19 @@ pub fn execute_workspace_doc_query_paged<W: Write>(
     if execute_session_tools_query(ws, root, ingest, interner, out)? {
         return Ok(());
     }
-    execute_symbol_mutation_query(ws, root, ingest, interner, out)?;
+    if let Some((spec, op)) = ws.active_edit_op() {
+        execute_edit_op_with_options(
+            EditCliOptions {
+                root,
+                spec,
+                op,
+                payload_override: None,
+                dry_run: false,
+            },
+            ingest,
+            interner,
+            out,
+        )?;
+    }
     Ok(())
 }

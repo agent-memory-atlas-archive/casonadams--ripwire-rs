@@ -1,13 +1,13 @@
 use ripwire_rs::cli::{
     AroundConfig, GateArgs, MetricsArgs, NavContext, NavMode, NavigateArgs, OrientArgs, SliceArgs,
-    TopArchitectureArgs, TopRetrievalArgs, TopSafetyArgs, TopWorkspaceArgs, dispatch_top_arch,
-    dispatch_top_detail, execute_around_query, execute_batch_content, execute_communities_query,
-    execute_connect_query, execute_dead_code_query, execute_deps_query, execute_exercises_query,
+    TopArchitectureArgs, TopRetrievalArgs, TopSafetyArgs, TopWorkspaceArgs, execute_around_query,
+    execute_batch_content, execute_communities_query, execute_connect_query,
+    execute_dead_code_query, execute_deps_query, execute_exercises_query,
     execute_external_surface_query, execute_html_export, execute_nav_symbol_query,
     execute_navigate_with, execute_path_query, execute_retrieval_dispatch,
     execute_safe_delete_query, execute_safety_dispatch, execute_situ_query,
     execute_stream_xml_with, execute_test_gate_query, execute_workspace_doc_query,
-    print_cochange_groups,
+    print_cochange_groups, run_cli_verb,
 };
 use ripwire_rs::{
     Cli, Commands, Graph, IngestResult, Interner, Lang, LanguageRegistry, McpState, PageRankConfig,
@@ -582,7 +582,7 @@ fn test_top_architecture_queries() {
             arch: a,
             ..Default::default()
         };
-        let _ = dispatch_top_arch(&cli, ".");
+        let _ = run_cli_verb(&cli.arch, &cli, ".");
     }
 }
 
@@ -625,16 +625,16 @@ fn test_all_new_feature_coverage() {
     let _ = execute_workspace_doc_query(&ws, ".", &ingest, &interner, false, &mut out);
     let mut cli = Cli::default();
     cli.arch.communities = true;
-    let _ = dispatch_top_arch(&cli, ".");
+    let _ = run_cli_verb(&cli.arch, &cli, ".");
     cli.arch.communities = false;
     cli.arch.mermaid = true;
-    let _ = dispatch_top_arch(&cli, ".");
+    let _ = run_cli_verb(&cli.arch, &cli, ".");
 
     cli.detail.tree = true;
-    let _ = dispatch_top_detail(&cli, ".");
+    let _ = run_cli_verb(&cli.detail, &cli, ".");
     cli.detail.tree = false;
     cli.detail.biggest_first = true;
-    let _ = dispatch_top_detail(&cli, ".");
+    let _ = run_cli_verb(&cli.detail, &cli, ".");
 
     let ret = TopRetrievalArgs {
         at: Some("src/lib.rs:1".into()),
@@ -652,13 +652,13 @@ fn test_all_new_feature_coverage() {
     assert!(execute_html_export(".", None, "lang").is_ok());
     let mut detail_cli = Cli::default();
     detail_cli.detail.naming_consistency = true;
-    let _ = dispatch_top_detail(&detail_cli, ".");
+    let _ = run_cli_verb(&detail_cli.detail, &detail_cli, ".");
     detail_cli.detail.naming_consistency = false;
     detail_cli.detail.report = true;
-    let _ = dispatch_top_detail(&detail_cli, ".");
+    let _ = run_cli_verb(&detail_cli.detail, &detail_cli, ".");
     detail_cli.detail.report = false;
     detail_cli.detail.legend_dict = true;
-    let _ = dispatch_top_detail(&detail_cli, ".");
+    let _ = run_cli_verb(&detail_cli.detail, &detail_cli, ".");
 
     let mut ws2 = TopWorkspaceArgs {
         skipped: true,

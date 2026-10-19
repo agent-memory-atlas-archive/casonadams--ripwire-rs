@@ -1,17 +1,6 @@
 use std::borrow::Cow;
 use std::fmt::{self, Write as _};
 use std::io::{self, Write};
-/// Replace C0 control characters with space, preserving tabs, newlines, and carriage returns.
-#[inline]
-#[must_use]
-pub fn xml_safe_byte(c: u8) -> u8 {
-    if c < 0x20 && c != b'\t' && c != b'\n' && c != b'\r' {
-        b' '
-    } else {
-        c
-    }
-}
-
 /// Convert a character requiring XML escaping into its replacement string.
 #[inline]
 #[must_use]
