@@ -386,7 +386,7 @@ pub struct TopModifierArgs {
     #[arg(long, value_name = "PATH")]
     pub cache: Option<String>,
     /// Disable on-disk binary auto-caching (force cold parse)
-    #[arg(long = "no-cache")]
+    #[arg(long = "no-cache", overrides_with = "no_cache")]
     pub no_cache: bool,
     /// Select output format (e.g. candidates, columnar, json)
     #[arg(long = "format", value_name = "FORMAT")]
@@ -395,28 +395,31 @@ pub struct TopModifierArgs {
     #[arg(long = "exclude", value_name = "GLOB")]
     pub exclude: Option<String>,
     /// Do not respect .gitignore rules during crawling
-    #[arg(long = "no-ignore")]
+    #[arg(long = "no-ignore", overrides_with = "no_ignore")]
     pub no_ignore: bool,
     /// Exclude test files and directories from analysis
-    #[arg(long = "ignore-tests")]
+    #[arg(long = "ignore-tests", overrides_with = "ignore_tests")]
     pub ignore_tests: bool,
     /// Maximum file size in bytes to index
     #[arg(long = "max-file-size", value_name = "BYTES")]
     pub max_file_size: Option<u64>,
     /// Disable secret redaction on emitted snippets
-    #[arg(long = "no-redact")]
+    #[arg(long = "no-redact", overrides_with = "no_redact")]
     pub no_redact: bool,
-    /// Disable stable dependency violation section in --deps
-    #[arg(long = "no-stable")]
+    /// Emit deterministic path-ordered map without volatile rank scores
+    #[arg(long = "stable", overrides_with = "stable")]
+    pub stable: bool,
+    /// Disable stable dependency violation section in --deps or opt out of MCP stable order
+    #[arg(long = "no-stable", overrides_with = "no_stable")]
     pub no_stable: bool,
     /// Drop unranked <inv> file inventory tier from map and metrics output
-    #[arg(long = "no-inventory")]
+    #[arg(long = "no-inventory", overrides_with = "no_inventory")]
     pub no_inventory: bool,
     /// Explicit RSS memory guard ceiling (e.g. 512M, 2G)
     #[arg(long = "max-memory", value_name = "N[K|M|G]")]
     pub max_memory: Option<String>,
     /// Compress output using compact token dialect
-    #[arg(long = "compress")]
+    #[arg(long = "compress", overrides_with = "compress")]
     pub compress: bool,
     /// Export full index to file
     #[arg(long = "export", value_name = "FILE")]

@@ -432,3 +432,39 @@ pub fn compute_lcs_len(a: &[u32], b: &[u32]) -> usize {
     }
     trimmed + (dp[short.len()] as usize)
 }
+
+#[must_use]
+fn strip_comments_preserving_strings(bytes: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if skip_slash_comment(bytes, &mut i) {
+            continue;
+        }
+        if matches!(bytes[i], b'"' | b'\'' | b'`') {
+            out.extend_from_slice(scan_string_slice(bytes, &mut i));
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+pub fn compress_source_body(body: &str) -> String {
+    let out = strip_comments_preserving_strings(body.as_bytes());
+    let stripped = String::from_utf8_lossy(&out);
+    let mut lines = Vec::new();
+    let mut prev_blank = false;
+    for line in stripped.lines() {
+        let trimmed_end = line.trim_end();
+        if !trimmed_end.trim().is_empty() {
+            lines.push(trimmed_end.to_string());
+            prev_blank = false;
+        } else if !prev_blank && !lines.is_empty() {
+            lines.push(String::new());
+            prev_blank = true;
+        }
+    }
+    lines.join("\n")
+}

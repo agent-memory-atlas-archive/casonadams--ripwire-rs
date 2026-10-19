@@ -46,7 +46,7 @@ pub fn execute_stream_xml_ranked<W: Write>(
 ) -> io::Result<()> {
     let budget_bytes = args.pack_budget;
     let rank_mode = args.rank_by.to_ascii_lowercase();
-
+    let is_stable = rank_mode == "stable";
     let map_diff_at = if args.map_diff {
         Some(
             crate::git::history::compute_git_at_stamp(args.root)
@@ -97,7 +97,7 @@ pub fn execute_stream_xml_ranked<W: Write>(
         &SerializeOptions {
             root: args.root.to_string(),
             top_k: args.top_k,
-            include_pr: true,
+            include_pr: !is_stable,
             pack_budget_bytes: budget_bytes,
             rank_by: rank_lbl,
             emit_legend: args.emit_legend,

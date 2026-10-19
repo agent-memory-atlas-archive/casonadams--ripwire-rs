@@ -310,7 +310,7 @@ pub fn serialize_xml<W: Write>(
 }
 
 pub const SCHEMA_COMMENT: &[u8] = b"<!-- ripwire-rs map schema=ripwire-rs.map/v1: ranked symbol map: <f p= layer=> groups <s t= n= sc= k= amb=> rows (k= rank), <c n=> resolved callees; the header comment is data. est_tokens=: price as emitted (an upper bound under compact). root=: p= relative to it. pr_iters=N: PageRank iterations. declined=K: K calls left unbound (no evidence chose one def). prov=scip|binding|import|split|final-segment: how that <c> edge bound (absent: one unique name); split = one arm of an amb= pick; final-segment = a qualified type matched by last name only. files=/symbols=: files and symbols indexed; edges= distinct call edges; shown= symbols printed, a merged row counting each def; ambiguous= calls split over several defs, corpus-wide; unresolved= calls with in-tree evidence and no edge (defs all language-filtered, or import/pointer binding refused); order= rows by rank (important-first, important-last; (auto:fill) = flipped past a size threshold) or by path (stable). unindexed=ext:N: N text files of that extension no grammar reads (6 extensions at most). sc=: enclosing scope; the full id is p::sc::n (p= of the row or its <f>) and selectors take it. amb=K: K calls split over several defs.";
-pub const SCHEMA_COMMENT_COMPACT: &[u8] = b"<!-- ripwire-rs map schema=ripwire-rs.map/v1: <f p= layer=> <s t= n= sc= k= amb=> <c n=> (dictv=80b7e589253a8e76; full dict: --legend-dict)";
+pub const SCHEMA_COMMENT_COMPACT: &[u8] = b"<!-- ripwire-rs map schema=ripwire-rs.map/v1: <f p= layer=> <s t= n= sc= k= amb=> <c n=> (dictv=80b7e589253a8e76; full dict: legend-dict)";
 
 fn build_symbol_row_context<'a>(
     sym: &'a Symbol,
@@ -587,19 +587,80 @@ fn compute_effective_map_ranks(
 }
 
 /// Stream minified XML with custom ranks and budget enforcement.
+fn bucket_symbols_stable(
+    ctx: &StreamXmlContext<'_>,
+    top_k: Option<usize>,
+) -> (Vec<u32>, Vec<Vec<NodeId>>) {
+    use crate::domain::CorpusView;
+    let files_len = ctx.ingest.files.len();
+    let mut file_order: Vec<u32> = (0..files_len as u32).collect();
+    file_order.sort_by(|&a, &b| ctx.file_path(a).cmp(ctx.file_path(b)));
+    let mut buckets: Vec<Vec<NodeId>> = vec![Vec::new(); files_len];
+    let keep = top_k.unwrap_or(ctx.ingest.symbols.len());
+    for sym in ctx
+        .ingest
+        .symbols
+        .iter()
+        .filter(|s| s.kind != crate::domain::SymKind::Section)
+        .take(keep)
+    {
+        if let Some(b) = buckets.get_mut(sym.file_id as usize) {
+            b.push(sym.id);
+        }
+    }
+    (file_order, buckets)
+}
+
+fn select_map_buckets(
+    ctx: &StreamXmlContext<'_>,
+    options: &SerializeOptions,
+) -> (Vec<u32>, Vec<Vec<NodeId>>) {
+    if !options.include_pr {
+        return bucket_symbols_stable(ctx, options.top_k);
+    }
+    let adjusted = compute_effective_map_ranks(ctx, options);
+    let bucket_ranks = adjusted.as_deref().unwrap_or(ctx.ranks);
+    bucket_symbols_by_rank(
+        &ctx.ingest.symbols,
+        ctx.ingest.files.len(),
+        bucket_ranks,
+        options.top_k,
+    )
+}
+
+fn write_map_legend_header<W: Write>(
+    counter: &mut W,
+    ctx: &StreamXmlContext<'_>,
+    options: &SerializeOptions,
+    symbols_shown: usize,
+) -> io::Result<()> {
+    let header_prefix = if options.legend_full || options.metrics {
+        SCHEMA_COMMENT
+    } else {
+        SCHEMA_COMMENT_COMPACT
+    };
+    counter.write_all(header_prefix)?;
+    write!(
+        counter,
+        " files={} symbols={} edges={} shown=\"{}\"",
+        ctx.ingest.file_count(),
+        ctx.ingest.symbol_count(),
+        ctx.graph.edge_count(),
+        symbols_shown,
+    )?;
+    crate::serialize::GraphGaugeProvider::write_summary_counts(ctx.graph, counter)?;
+    if !options.include_pr {
+        counter.write_all(b" order=stable")?;
+    }
+    counter.write_all(b" -->")
+}
+
 pub fn serialize_xml_with_ranks<W: Write>(
     ctx: &StreamXmlContext<'_>,
     writer: &mut W,
     options: &SerializeOptions,
 ) -> io::Result<()> {
-    let adjusted = compute_effective_map_ranks(ctx, options);
-    let bucket_ranks = adjusted.as_deref().unwrap_or(ctx.ranks);
-    let (file_order, buckets) = bucket_symbols_by_rank(
-        &ctx.ingest.symbols,
-        ctx.ingest.files.len(),
-        bucket_ranks,
-        options.top_k,
-    );
+    let (file_order, buckets) = select_map_buckets(ctx, options);
 
     let budget = options.pack_budget_bytes.unwrap_or(usize::MAX);
     let (body_buf, symbols_shown, listed_files) = serialize_symbol_buckets(
@@ -615,22 +676,7 @@ pub fn serialize_xml_with_ranks<W: Write>(
     let mut counter = CountingWriter::new(buf);
     let ambiguous = ctx.graph.amb_out.iter().map(|&a| a as usize).sum::<usize>();
     if options.emit_legend || options.metrics {
-        let header_prefix = if options.legend_full || options.metrics {
-            SCHEMA_COMMENT
-        } else {
-            SCHEMA_COMMENT_COMPACT
-        };
-        counter.write_all(header_prefix)?;
-        write!(
-            counter,
-            " files={} symbols={} edges={} shown=\"{}\"",
-            ctx.ingest.file_count(),
-            ctx.ingest.symbol_count(),
-            ctx.graph.edge_count(),
-            symbols_shown,
-        )?;
-        crate::serialize::GraphGaugeProvider::write_summary_counts(ctx.graph, &mut counter)?;
-        counter.write_all(b" -->")?;
+        write_map_legend_header(&mut counter, ctx, options, symbols_shown)?;
         let est_tokens = (body_buf.len() + 1200) * 2 / 5;
         let data_sections_cut = ctx
             .ingest

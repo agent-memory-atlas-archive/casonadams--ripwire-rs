@@ -44,6 +44,22 @@ fn current_binary_stamp() -> u64 {
     hasher.finish()
 }
 
+fn hash_dir_entries(path: &Path, hasher: &mut impl Hasher) {
+    for entry in ignore::WalkBuilder::new(path)
+        .sort_by_file_path(Ord::cmp)
+        .build()
+        .flatten()
+    {
+        entry.path().hash(hasher);
+        if let Ok(meta) = entry.metadata() {
+            if let Ok(mtime) = meta.modified() {
+                mtime.hash(hasher);
+            }
+            meta.len().hash(hasher);
+        }
+    }
+}
+
 pub fn compute_cache_key(root: &str) -> String {
     let bin_stamp = current_binary_stamp();
     let path = Path::new(root);
@@ -55,12 +71,7 @@ pub fn compute_cache_key(root: &str) -> String {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     bin_stamp.hash(&mut hasher);
     root.hash(&mut hasher);
-    if let Ok(meta) = fs::metadata(path) {
-        if let Ok(mtime) = meta.modified() {
-            mtime.hash(&mut hasher);
-        }
-        meta.len().hash(&mut hasher);
-    }
+    hash_dir_entries(path, &mut hasher);
     format!("mtime-{:x}", hasher.finish())
 }
 

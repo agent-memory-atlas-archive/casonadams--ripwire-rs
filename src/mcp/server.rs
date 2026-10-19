@@ -38,25 +38,49 @@ pub fn handle_tools_list(id: &Value) -> Value {
 
 /// Run the stdio JSON-RPC loop for MCP clients.
 pub fn run_mcp_stdio(root: &str) -> io::Result<()> {
+    run_mcp_stdio_with_options(root, false)
+}
+
+pub fn run_mcp_stdio_with_options(root: &str, no_stable: bool) -> io::Result<()> {
     let stdin = io::stdin();
     let stdout = io::stdout();
-    run_mcp_stream(stdin.lock(), stdout.lock(), root)
+    let mut state = McpState::load(root);
+    if let Some(s) = &mut state {
+        s.no_stable = no_stable;
+    }
+    run_json_rpc_stream_with_state(
+        stdin.lock(),
+        stdout.lock(),
+        root,
+        &mut state,
+        dispatch_json_rpc,
+    )
 }
 
 fn run_json_rpc_stream<R: BufRead, W: Write>(
     reader: R,
-    mut writer: W,
+    writer: W,
     root: &str,
     dispatch: fn(&str, &mut Option<McpState>, &str) -> Option<String>,
 ) -> io::Result<()> {
     let mut state = McpState::load(root);
+    run_json_rpc_stream_with_state(reader, writer, root, &mut state, dispatch)
+}
+
+fn run_json_rpc_stream_with_state<R: BufRead, W: Write>(
+    reader: R,
+    mut writer: W,
+    root: &str,
+    state: &mut Option<McpState>,
+    dispatch: fn(&str, &mut Option<McpState>, &str) -> Option<String>,
+) -> io::Result<()> {
     for line_res in reader.lines() {
         let line = line_res?;
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with("Content-Length:") {
             continue;
         }
-        if let Some(resp) = dispatch(trimmed, &mut state, root) {
+        if let Some(resp) = dispatch(trimmed, state, root) {
             writeln!(writer, "{resp}")?;
             writer.flush()?;
         }

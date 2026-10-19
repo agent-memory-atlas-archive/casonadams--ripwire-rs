@@ -150,21 +150,159 @@ pub struct SkillScanReport {
     pub verdict: &'static str,
 }
 
-pub fn scan_content_for_exfil(path_str: &str, content: &str, findings: &mut Vec<SkillScanFinding>) {
-    for (idx, line) in content.lines().enumerate() {
-        let l = line.trim();
-        let has_net = l.contains("curl ") || l.contains("wget ");
-        let has_target = l.contains('$') || l.contains(" | bash") || l.contains(" | sh");
-        let is_loopback = l.contains("127.0.0.1") || l.contains("localhost");
-        if has_net && has_target && !is_loopback {
-            findings.push(SkillScanFinding {
-                path: path_str.to_string(),
-                line: idx + 1,
-                rule: "EXFILTRATE:net-exfil",
-                sev: "critical",
-            });
+fn strip_balanced_delim(line: &str, delim: char) -> String {
+    let count = line.chars().filter(|&c| c == delim).count();
+    if count < 2 || !count.is_multiple_of(2) {
+        return line.to_string();
+    }
+    let mut out = String::with_capacity(line.len());
+    let mut inside = false;
+    for c in line.chars() {
+        if c == delim {
+            inside = !inside;
+            out.push(' ');
+        } else if !inside {
+            out.push(c);
         }
     }
+    out
+}
+
+fn check_prose_injection_line(
+    path_str: &str,
+    line_num: usize,
+    line: &str,
+    findings: &mut Vec<SkillScanFinding>,
+) -> (bool, String) {
+    let s1 = strip_balanced_delim(line, '`');
+    let s2 = strip_balanced_delim(&s1, '"');
+    let lower = s2.to_ascii_lowercase();
+    let mut hit = false;
+    if lower.contains("ignore previous instructions") {
+        findings.push(SkillScanFinding {
+            path: path_str.to_string(),
+            line: line_num,
+            rule: "INJECTION:ignore-prev",
+            sev: "critical",
+        });
+        hit = true;
+    }
+    if lower.contains("you are now an ") || lower.contains("you are now a ") {
+        findings.push(SkillScanFinding {
+            path: path_str.to_string(),
+            line: line_num,
+            rule: "INJECTION:persona-override",
+            sev: "critical",
+        });
+        hit = true;
+    }
+    if lower.contains("forget everything above") {
+        findings.push(SkillScanFinding {
+            path: path_str.to_string(),
+            line: line_num,
+            rule: "INJECTION:forget-context",
+            sev: "critical",
+        });
+        hit = true;
+    }
+    (hit, s2)
+}
+
+fn is_exfil_command_line(l: &str) -> bool {
+    if l.starts_with("You could use ") {
+        return false;
+    }
+    let is_loopback = l.contains("127.0.0.1") || l.contains("localhost");
+    if is_loopback {
+        return false;
+    }
+    let has_net = l.contains("curl ") || l.contains("wget ");
+    let has_target = l.contains('$') || l.contains(" | bash") || l.contains(" | sh");
+    let has_pipe_nc = l.contains("| nc ") || l.contains("| netcat ");
+    (has_net && has_target) || has_pipe_nc
+}
+
+fn update_doc_fence_state(l: &str, in_labeled_doc_fence: &mut bool) -> bool {
+    let Some(rest) = l.strip_prefix("```") else {
+        return false;
+    };
+    let tag = rest.trim();
+    if matches!(tag, "text" | "xml" | "markdown") {
+        *in_labeled_doc_fence = true;
+    } else if tag.is_empty() && *in_labeled_doc_fence {
+        *in_labeled_doc_fence = false;
+    }
+    true
+}
+
+fn record_exfil_line(
+    path_str: &str,
+    line_num: usize,
+    l: &str,
+    findings: &mut Vec<SkillScanFinding>,
+) {
+    if is_exfil_command_line(l) {
+        findings.push(SkillScanFinding {
+            path: path_str.to_string(),
+            line: line_num,
+            rule: "EXFILTRATE:net-exfil",
+            sev: "critical",
+        });
+    }
+}
+
+fn record_split_line_injection(
+    path_str: &str,
+    per_line_ignore: bool,
+    first_ignore_line: usize,
+    joined_prose: &str,
+    findings: &mut Vec<SkillScanFinding>,
+) {
+    if !per_line_ignore
+        && joined_prose
+            .to_ascii_lowercase()
+            .contains("ignore previous instructions")
+    {
+        findings.push(SkillScanFinding {
+            path: path_str.to_string(),
+            line: first_ignore_line,
+            rule: "INJECTION:ignore-prev",
+            sev: "critical",
+        });
+    }
+}
+
+fn scan_skill_markdown(path_str: &str, content: &str, findings: &mut Vec<SkillScanFinding>) {
+    let mut in_labeled_doc_fence = false;
+    let mut joined_prose = String::new();
+    let mut first_ignore_line = 1usize;
+    let mut per_line_ignore = false;
+    for (idx, line) in content.lines().enumerate() {
+        let l = line.trim();
+        if !update_doc_fence_state(l, &mut in_labeled_doc_fence) && !in_labeled_doc_fence {
+            let (hit, stripped) = check_prose_injection_line(path_str, idx + 1, l, findings);
+            if stripped.to_ascii_lowercase().contains("ignore previous") {
+                first_ignore_line = idx + 1;
+            }
+            per_line_ignore |= hit;
+            joined_prose.push_str(&stripped);
+            joined_prose.push(' ');
+        }
+    }
+    record_split_line_injection(
+        path_str,
+        per_line_ignore,
+        first_ignore_line,
+        &joined_prose,
+        findings,
+    );
+}
+
+pub fn scan_content_for_exfil(path_str: &str, content: &str, findings: &mut Vec<SkillScanFinding>) {
+    for (idx, line) in content.lines().enumerate() {
+        record_exfil_line(path_str, idx + 1, line.trim(), findings);
+    }
+    scan_skill_markdown(path_str, content, findings);
 }
 
 fn scan_file_for_exfil(path: &Path, findings: &mut Vec<SkillScanFinding>) {
@@ -174,23 +312,40 @@ fn scan_file_for_exfil(path: &Path, findings: &mut Vec<SkillScanFinding>) {
     scan_content_for_exfil(&path.display().to_string(), &content, findings);
 }
 
-pub fn scan_skills_directory(dir: &Path) -> io::Result<SkillScanReport> {
-    let mut files_scanned = 0usize;
-    let mut findings = Vec::new();
+fn is_scannable_skill_file(p: &Path) -> bool {
+    if !p.is_file() {
+        return false;
+    }
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+    matches!(ext, "md" | "sh" | "bash" | "zsh" | "ksh")
+        || p.file_name().and_then(|n| n.to_str()) == Some("SKILL.md")
+}
 
-    if dir.exists() {
-        for entry in ignore::WalkBuilder::new(dir).build().flatten() {
-            let p = entry.path();
-            if p.is_file()
-                && (p.extension().and_then(|e| e.to_str()) == Some("md")
-                    || p.file_name().and_then(|n| n.to_str()) == Some("SKILL.md"))
-            {
-                files_scanned += 1;
-                scan_file_for_exfil(p, &mut findings);
-            }
+fn scan_skill_tree(dir: &Path, findings: &mut Vec<SkillScanFinding>) -> usize {
+    if dir.is_file() {
+        scan_file_for_exfil(dir, findings);
+        return 1;
+    }
+    if !dir.exists() {
+        return 0;
+    }
+    let mut count = 0usize;
+    for entry in ignore::WalkBuilder::new(dir)
+        .sort_by_file_path(Ord::cmp)
+        .build()
+        .flatten()
+    {
+        if is_scannable_skill_file(entry.path()) {
+            count += 1;
+            scan_file_for_exfil(entry.path(), findings);
         }
     }
+    count
+}
 
+pub fn scan_skills_directory(dir: &Path) -> io::Result<SkillScanReport> {
+    let mut findings = Vec::new();
+    let files_scanned = scan_skill_tree(dir, &mut findings);
     let verdict = if findings.iter().any(|f| f.sev == "critical") {
         "critical"
     } else if !findings.is_empty() {

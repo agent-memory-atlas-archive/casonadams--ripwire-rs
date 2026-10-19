@@ -1,7 +1,7 @@
 use ripwire_rs::Lang;
 use ripwire_rs::clones::{
-    SKETCH_HASHES, compute_jaccard, compute_kgrams, compute_lcs_len, compute_sketch, hash_tokens,
-    scan_body_ids, sketch_matches, tokenize_body,
+    SKETCH_HASHES, compress_source_body, compute_jaccard, compute_kgrams, compute_lcs_len,
+    compute_sketch, hash_tokens, scan_body_ids, sketch_matches, tokenize_body,
 };
 
 #[test]
@@ -49,4 +49,15 @@ fn test_lcs_len() {
     let b = [1, 2, 4, 5];
     assert_eq!(compute_lcs_len(&a, &b), 4);
     assert_eq!(compute_lcs_len(&a, &a), 5);
+}
+
+#[test]
+fn test_compress_source_body() {
+    let src = "double computeArea(double w, double h) {\n    /* block comment */\n    // line comment\n\n\n    const char* u = \"http://example.com // keep\";\n    const char* b = \"/* keep */\";\n    return w * h;\n}";
+    let compressed = compress_source_body(src);
+    assert!(!compressed.contains("block comment"));
+    assert!(!compressed.contains("line comment"));
+    assert!(compressed.contains("http://example.com // keep"));
+    assert!(compressed.contains("/* keep */"));
+    assert!(!compressed.contains("\n\n\n"));
 }

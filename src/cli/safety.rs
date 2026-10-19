@@ -410,12 +410,17 @@ fn execute_pr_context_dispatch<W: Write>(
 fn execute_scan_skills_dispatch<W: Write>(raw: &str, out: &mut W) -> io::Result<i32> {
     let scan_dir = if !raw.is_empty() {
         crate::skills::resolve_skills_dir(Some(raw))
+    } else if let Ok(codex_home) = std::env::var("CODEX_HOME")
+        && std::path::Path::new(&codex_home).join("skills").is_dir()
+    {
+        std::path::Path::new(&codex_home).join("skills")
     } else if std::path::Path::new("skills").is_dir() {
         std::path::PathBuf::from("skills")
     } else {
         crate::skills::default_skills_dir()
     };
     let rep = crate::skills::scan_skills_directory(&scan_dir)?;
+    eprintln!("{} skill file(s) scanned", rep.files_scanned);
     crate::skills::serialize_skill_scan_xml(&rep, out)?;
     Ok(match rep.verdict {
         "critical" => 2,

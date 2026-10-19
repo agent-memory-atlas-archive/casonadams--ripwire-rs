@@ -692,6 +692,12 @@ fn test_all_new_feature_coverage() {
     let _ = execute_workspace_doc_query(&ws2, ".", &ingest, &interner, false, &mut out);
 
     for h_task in [
+        "calls(alpha, beta)",
+        "find \"literal\" match",
+        "user's 'flag_name' setting",
+        "I edited foo contract",
+        "how do a, b connect",
+        "implementation of foo",
         "who calls foo",
         "blast radius",
         "stack trace",

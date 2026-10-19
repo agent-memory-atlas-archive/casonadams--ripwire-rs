@@ -348,10 +348,27 @@ impl CliVerb for TopRetrievalArgs {
 
 impl CliVerb for TopDetailArgs {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+        let compress = ctx.cli.modifiers.compress;
         if let Some(syms) = self.expand.as_deref() {
-            execute_expand_or_outline_query(ctx.root, syms, false, ctx.ingest, ctx.interner, out)
+            execute_expand_or_outline_compressed(
+                ctx.root,
+                syms,
+                false,
+                compress,
+                ctx.ingest,
+                ctx.interner,
+                out,
+            )
         } else if let Some(syms) = self.outline.as_deref() {
-            execute_expand_or_outline_query(ctx.root, syms, true, ctx.ingest, ctx.interner, out)
+            execute_expand_or_outline_compressed(
+                ctx.root,
+                syms,
+                true,
+                compress,
+                ctx.ingest,
+                ctx.interner,
+                out,
+            )
         } else if let Some(n) = self.pack_top_n {
             execute_pack_top_n_query(ctx.root, n, ctx.ingest, ctx.pr, ctx.interner, out)
         } else if self.tree {
@@ -738,9 +755,14 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
     let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
+    let rank_by = if cli.modifiers.stable || cli.modifiers.order.eq_ignore_ascii_case("stable") {
+        "stable"
+    } else {
+        &cli.rank_by
+    };
     let args = RankedStreamArgs {
         root,
-        rank_by: &cli.rank_by,
+        rank_by,
         pack_budget: budget,
         top_k: cli.top_k.or(Some(200)),
         emit_legend,
@@ -840,7 +862,10 @@ pub fn execute_skills_install(target: Option<&str>) -> io::Result<()> {
 /// Execute CLI from parsed options.
 fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     if cli.mcp {
-        return Some(run_mcp_stdio(root));
+        return Some(crate::mcp::run_mcp_stdio_with_options(
+            root,
+            cli.modifiers.no_stable,
+        ));
     }
     if cli.modifiers.lsp {
         return Some(crate::mcp::run_lsp_stdio(root));

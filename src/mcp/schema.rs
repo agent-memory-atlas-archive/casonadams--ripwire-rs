@@ -126,14 +126,18 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
         ],
         &[],
         |s, a| {
-            Ok(graph_tools::call_analyze(
+            let mut val = graph_tools::call_analyze(
                 &s.ingest,
                 &s.graph,
                 &s.interner,
                 &s.ranks,
                 a.opt_usize("top_k"),
                 a.opt_str("rank_by"),
-            ))
+            );
+            if !s.no_stable {
+                val["order"] = serde_json::json!("order=stable");
+            }
+            Ok(val)
         }
     ),
     mcp_tool!(

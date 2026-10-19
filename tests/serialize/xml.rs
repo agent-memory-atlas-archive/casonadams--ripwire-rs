@@ -139,4 +139,17 @@ fn test_serialize_xml_inventory_and_entries() {
         },
     );
     assert!(!small_budget_xml.contains("<inv "));
+    let stable_xml = serialize_xml_to_string(
+        &ingest,
+        &graph,
+        &pr,
+        &interner,
+        &SerializeOptions {
+            include_pr: false,
+            emit_legend: true,
+            ..Default::default()
+        },
+    );
+    assert!(stable_xml.contains("order=stable"));
+    assert!(!stable_xml.contains(" k=\""));
 }

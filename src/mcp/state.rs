@@ -12,6 +12,7 @@ pub struct McpState {
     pub pr: PageRankResult,
     pub commits: Option<Vec<crate::git::history::CommitInfo>>,
     pub legend_sent: std::sync::atomic::AtomicBool,
+    pub no_stable: bool,
 }
 
 impl McpState {
@@ -28,6 +29,7 @@ impl McpState {
             pr,
             commits: None,
             legend_sent: std::sync::atomic::AtomicBool::new(false),
+            no_stable: false,
         })
     }
 
@@ -54,6 +56,7 @@ impl McpState {
             pr,
             commits: None,
             legend_sent: std::sync::atomic::AtomicBool::new(false),
+            no_stable: false,
         }
     }
 

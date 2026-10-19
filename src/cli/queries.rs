@@ -320,23 +320,20 @@ fn collect_expanded_symbol<'a>(
     Some((sym, name, rel_path, final_body))
 }
 
-pub fn execute_expand_or_outline_query<W: Write>(
+fn collect_all_expanded_symbols<'a>(
     root: &str,
     syms_spec: &str,
     is_outline: bool,
-    ingest: &IngestResult,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
-    let sym_names: Vec<&str> = syms_spec
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+) -> io::Result<Vec<(&'a crate::domain::Symbol, &'a str, &'a str, String)>> {
+    let mut expanded_items = Vec::new();
+    let root_path = Path::new(root);
+    for sym_name in syms_spec
         .split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .collect();
-    let mut expanded_items = Vec::new();
-    let root_path = Path::new(root);
-
-    for sym_name in sym_names {
+    {
         let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
         if ids.is_empty() {
             let flag = if is_outline { "--outline" } else { "--expand" };
@@ -351,12 +348,40 @@ pub fn execute_expand_or_outline_query<W: Write>(
             }
         }
     }
+    Ok(expanded_items)
+}
 
+pub fn execute_expand_or_outline_query<W: Write>(
+    root: &str,
+    syms_spec: &str,
+    is_outline: bool,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    execute_expand_or_outline_compressed(root, syms_spec, is_outline, false, ingest, interner, out)
+}
+
+pub fn execute_expand_or_outline_compressed<W: Write>(
+    root: &str,
+    syms_spec: &str,
+    is_outline: bool,
+    compress: bool,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut expanded_items =
+        collect_all_expanded_symbols(root, syms_spec, is_outline, ingest, interner)?;
+    if compress {
+        for item in &mut expanded_items {
+            item.3 = crate::clones::token_stream::compress_source_body(&item.3);
+        }
+    }
     let items_slice: Vec<(&crate::domain::Symbol, &str, &str, &str)> = expanded_items
         .iter()
         .map(|(s, n, p, b)| (*s, *n, *p, b.as_str()))
         .collect();
-
     crate::serialize::serialize_expand_xml(root, &items_slice, out)
 }
 
@@ -609,24 +634,97 @@ fn execute_task_or_signatures<W: Write>(
     Ok(false)
 }
 
-fn recommend_verb_for_task(task: &str) -> (&'static str, &'static str) {
-    let lower = task.to_ascii_lowercase();
-    if lower.contains("caller") || lower.contains("who calls") {
-        ("--callers", "1-hop callers of a named symbol")
-    } else if lower.contains("blast") || lower.contains("impact") || lower.contains("safe") {
-        ("--impact", "transitive caller blast radius")
-    } else if lower.contains("trace") || lower.contains("crash") || lower.contains("error") {
-        ("--from-trace", "map stack trace onto indexed symbols")
-    } else if lower.contains("duplicate") || lower.contains("clone") {
-        ("--clones", "AST near-miss code clone detector")
-    } else if lower.contains("test") || lower.contains("gate") {
-        (
-            "--test-gate",
-            "affected test suite and untested blast radius",
-        )
-    } else {
-        ("--for", "task-lens BM25 + PageRank symbol retrieval")
+fn extract_single_quoted_token(mut rest: &str) -> Option<&str> {
+    while let Some(start) = rest.find('\'') {
+        let is_possessive = rest[..start]
+            .chars()
+            .next_back()
+            .is_some_and(char::is_alphanumeric);
+        let after = &rest[start + 1..];
+        if !is_possessive
+            && let Some(end) = after.find('\'')
+            && !after[..end].is_empty()
+            && !after[..end].contains(' ')
+        {
+            return Some(&after[..end]);
+        }
+        rest = after;
     }
+    None
+}
+
+fn extract_quoted_task_literal(task: &str) -> Option<&str> {
+    if let Some(start) = task.find('"')
+        && let Some(end) = task[start + 1..].find('"')
+    {
+        return Some(&task[start + 1..start + 1 + end]);
+    }
+    extract_single_quoted_token(task)
+}
+
+const TASK_VERB_RULES: &[(&[&str], &str, &str)] = &[
+    (
+        &["edited ", "contract"],
+        "--edit-check",
+        "post-edit caller contract check",
+    ),
+    (
+        &["implementation of "],
+        "--expand",
+        "symbol definition body and callees",
+    ),
+    (
+        &["caller", "who calls"],
+        "--callers",
+        "1-hop callers of a named symbol",
+    ),
+    (
+        &["blast", "impact", "safe"],
+        "--impact",
+        "transitive caller blast radius",
+    ),
+    (
+        &["trace", "crash", "error"],
+        "--from-trace",
+        "map stack trace onto indexed symbols",
+    ),
+    (
+        &["duplicate", "clone"],
+        "--clones",
+        "AST near-miss code clone detector",
+    ),
+    (
+        &["test", "gate"],
+        "--test-gate",
+        "affected test suite and untested blast radius",
+    ),
+];
+
+fn is_closed_claim_task(trimmed: &str) -> bool {
+    trimmed.ends_with(')')
+        && (trimmed.starts_with("calls(")
+            || trimmed.starts_with("uses(")
+            || trimmed.starts_with("reaches("))
+}
+
+fn recommend_verb_for_task(task: &str) -> (&'static str, &'static str) {
+    let trimmed = task.trim();
+    if is_closed_claim_task(trimmed) {
+        return ("--verify", "closed claim grammar");
+    }
+    if extract_quoted_task_literal(trimmed).is_some() {
+        return ("--grep", "quoted exact literal search");
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    if trimmed.contains(',') && (lower.contains("connect") || lower.contains("come together")) {
+        return ("--connect", "minimal subgraph connecting named symbols");
+    }
+    for &(cues, verb, reason) in TASK_VERB_RULES {
+        if cues.iter().any(|&c| lower.contains(c)) {
+            return (verb, reason);
+        }
+    }
+    ("--for", "task-lens BM25 + PageRank symbol retrieval")
 }
 
 fn execute_pattern_or_match<W: Write>(

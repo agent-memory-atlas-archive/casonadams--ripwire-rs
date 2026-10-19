@@ -248,6 +248,9 @@ ripwire-rs . --report
 # Emit full schema legend dictionary
 ripwire-rs . --legend-dict
 
+# Emit deterministic path-ordered map without volatile rank scores
+ripwire-rs . --stable
+
 # Disable stable dependency violation section in --deps
 ripwire-rs . --deps --no-stable
 * **Benefits:** Focuses engineering attention directly on defect-prone hotspots, hidden file coupling, and dead code with mathematical precision.
