@@ -97,7 +97,7 @@ enclosing-chain report) and `@FILE:LINE` in any SYM selector; contract gate: `te
 | `uses` (`symbol`) | `--uses=SYM` | the resolvable USE-SITES — call/read/write/import/extends, not just calls (`count=0` is a real answer; `counts_floor="1"` — a floor, never a total) |
 | `path_between` (`from`, `to`) | `--path=A,B` | does A reach B, and the shortest call path (named `path_between` — `path` is the root-arg key) |
 | `connect` (`symbols`) | `--connect=A,B,C` | the minimal subgraph joining N (>2) task symbols — the shared-caller join a directed `path_between` can't see |
-| `explore` (`task`, `budget_tokens` + `partition` optional) | `--pack-task=TASK [--partition=N]` | ONE-call task orientation — routed ranking + full bodies + 1-hop callers + field notes + tests_to_run, ALL under one deterministic byte budget (default 6000 tokens). Replaces the `for` → `fetch_body` → `find_referencing_symbols` → `memory_recall` dance. Also dispatchable as `pack_task` (same handler; `explore` is the one advertised in `tools/list` — the discovery-friendly name). **`partition: 2..16`** turns it into the FAN-OUT form for a multi-agent orchestrator: a shared common core plus N minimally-overlapping per-agent slices carved along the call graph's communities, so N sub-agents stop re-deriving one map — `budget_tokens` then means ONE agent's budget (core + its slice). Read `overlap_max` / `split` / `partitions` vs `requested` on the wrapper before trusting the slices |
+| `explore` (`task`, `budget_tokens` + `partition` optional) | `--pack-task=TASK [--partition=N]` | ONE-call task orientation — routed ranking + full bodies + 1-hop callers + field notes + tests_to_run, ALL under one deterministic byte budget (default 6000 tokens). Replaces the `for` → `fetch_body` → `find_referencing_symbols` → `memory_recall` dance. Also dispatchable as `pack_task` (same handler; `explore` is the one advertised in `tools/list` — the discovery-friendly name). **`partition: 2..16`** turns it into the FAN-OUT form for a multi-agent orchestrator: a shared common core plus N minimally-overlapping per-agent slices carved along the call graph's communities, so N sub-agents stop re-deriving one map — `budget_tokens` then means ONE agent's budget (core + its slice). Read `split` / `partitions` vs `requested` on the wrapper before trusting the slices |
 | `from_trace` (`trace`, `budget_tokens` optional) | `--from-trace=FILE` | paste a stack trace / sanitizer report / compiler error → the frames mapped onto indexed symbols, ranked INNERMOST-first, with the innermost in-corpus symbol's FULL body. `trace` = the raw trace TEXT (no stdin/file arg over MCP — paste it, don't hand-translate it into a query) |
 | `edit_check` (`symbol`) | `--edit-check=SYM` | just edited a symbol? did its CONTRACT (params/publicness) change vs git HEAD, and which 1-hop callers are now PROVABLY incompatible? Fast targeted check — for the same question over a whole diff use `quality_delta` instead |
 
@@ -123,8 +123,8 @@ when you actually need to read the source, instead of the server sending bodies 
 the kit-style default-lean posture (measured ~90% cut on comparable extract-symbol calls) and matches the
 `2025-11-25` MCP spec's move to stateless HANDLE semantics.
 
-- **Handle format**: `sym#<idHash>@<contentHash>`, both 16 lowercase hex (FNV-1a-64) — `idHash` from the
-  symbol's STABLE canonical id (`path::scope::name`, never the per-run `NodeId`), `contentHash` pinning the
+- **Handle format**: `sym#<id-hash>@<content-hash>`, both 16 lowercase hex (FNV-1a-64) — the first half from the
+  symbol's STABLE canonical id (`path::scope::name`, never the per-run `NodeId`), the second half pinning the
   file's bytes at mint time.
 - **Fetch when you're about to reason about the logic**, not just to confirm the symbol exists — the
   name/kind/file/line a read verb already gives you is often enough to decide relevance or pick a call site.

@@ -2,3 +2,7 @@
 .cccc.cache
 /vendor/grammars/
 __pycache__/
+.ripwire-rs_quality_baseline
+.ripwire-rs_quality_acks
+.ripwire-rs_arch_baseline
+.ripwire-rs_notes
