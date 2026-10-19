@@ -9,6 +9,10 @@ impl LanguageSemantics for DockerfileLanguage {
         "docker"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["dockerfile", "containerfile"]
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Isolated(Lang::Dockerfile)
     }

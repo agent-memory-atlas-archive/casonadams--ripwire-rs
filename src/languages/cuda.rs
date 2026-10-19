@@ -13,6 +13,10 @@ impl LanguageSemantics for CudaLanguage {
         "cuda"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["cu", "cuh"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#3a87ad"
     }

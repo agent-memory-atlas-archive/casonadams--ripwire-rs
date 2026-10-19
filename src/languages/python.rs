@@ -183,6 +183,10 @@ impl LanguageSemantics for PythonLanguage {
         "py"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["py", "pyi"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#3572a5"
     }

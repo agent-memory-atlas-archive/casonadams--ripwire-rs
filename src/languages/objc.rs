@@ -63,6 +63,10 @@ impl LanguageSemantics for ObjCLanguage {
         "m"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["m", "mm"]
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::CFamily
     }

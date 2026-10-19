@@ -9,6 +9,10 @@ impl LanguageSemantics for KotlinLanguage {
         "kt"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["kt", "kts"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#a97bff"
     }

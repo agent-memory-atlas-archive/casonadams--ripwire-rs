@@ -54,6 +54,10 @@ impl LanguageSemantics for TypeScriptLanguage {
         "ts"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["ts", "tsx", "mts", "cts", "astro"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#3178c6"
     }

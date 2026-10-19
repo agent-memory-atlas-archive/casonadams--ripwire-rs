@@ -8,6 +8,10 @@ impl LanguageSemantics for CssLanguage {
         "css"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["css", "scss", "sass", "less"]
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Markup
     }

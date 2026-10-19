@@ -11,6 +11,10 @@ impl LanguageSemantics for MarkdownLanguage {
         "md"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["md", "markdown", "rst", "adoc", "org", "mdx"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#083fa1"
     }

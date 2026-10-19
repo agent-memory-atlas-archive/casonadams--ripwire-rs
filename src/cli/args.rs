@@ -191,23 +191,6 @@ pub struct TopDetailArgs {
     #[arg(long = "legend-dict")]
     pub legend_dict: bool,
 }
-impl TopDetailArgs {
-    pub fn is_active(&self) -> bool {
-        self.expand.is_some()
-            || self.outline.is_some()
-            || self.pack_top_n.is_some()
-            || self.tree
-            || self.biggest_first
-            || self.nonlocal_state
-            || self.lint
-            || self.lint_catalog
-            || self.naming_locals
-            || self.naming_consistency
-            || self.naming_calibration
-            || self.report
-            || self.legend_dict
-    }
-}
 
 /// Top-level pre-PR safety and verification flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
@@ -312,26 +295,6 @@ pub struct TopSafetyArgs {
     #[arg(long = "edit-payload", value_name = "PAYLOAD_JSON")]
     pub edit_payload: Option<String>,
 }
-impl TopSafetyArgs {
-    pub fn is_active(&self) -> bool {
-        self.test_gate.is_some()
-            || self.situ.is_some()
-            || self.safe_delete.is_some()
-            || self.exercises.is_some()
-            || self.seams
-            || self.pr_context.is_some()
-            || self.merge_scout.is_some()
-            || self.dmm.is_some()
-            || self.plan_lanes.is_some()
-            || self.scan_skills.is_some()
-            || self.edit_plan.is_some()
-            || self.edit_payload.is_some()
-            || self.partition.is_some()
-            || self.pin_census
-            || self.baseline
-            || self.baseline_update
-    }
-}
 
 /// Top-level architecture and discovery flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
@@ -399,26 +362,6 @@ pub struct TopArchitectureArgs {
     /// Comment-to-identifier coherence check
     #[arg(long = "comment-coherence")]
     pub comment_coherence: bool,
-}
-impl TopArchitectureArgs {
-    pub fn is_active(&self) -> bool {
-        self.dead_code
-            || self.communities
-            || self.community.is_some()
-            || self.deps
-            || self.around.is_some()
-            || self.external_surface
-            || self.arch.is_some()
-            || self.mermaid
-            || self.zoom.is_some()
-            || self.metrics
-            || self.quality_panel.is_some()
-            || self.layout.is_some()
-            || self.field_affinity.is_some()
-            || self.context_ratio
-            || self.ensemble
-            || self.comment_coherence
-    }
 }
 
 /// Top-level global modifiers and batching flags.
@@ -653,30 +596,6 @@ pub struct TopRetrievalArgs {
     #[arg(long = "grep-context", value_name = "N")]
     pub grep_context: Option<usize>,
 }
-impl TopRetrievalArgs {
-    pub fn is_active(&self) -> bool {
-        let opts = [
-            &self.task_for,
-            &self.grep,
-            &self.connect,
-            &self.path_between,
-            &self.exemplar,
-            &self.lego,
-            &self.recall,
-            &self.from_trace,
-            &self.at,
-            &self.verify,
-            &self.pack_task,
-            &self.graph_query,
-            &self.ast_match,
-            &self.pattern,
-            &self.regex,
-            &self.help_task,
-            &self.refetch,
-        ];
-        opts.iter().any(|o| o.is_some()) || self.pack_signatures
-    }
-}
 
 /// Top-level workspace & audit flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
@@ -762,23 +681,6 @@ impl TopWorkspaceArgs {
                     .as_deref()
                     .map(|s| (s, crate::mcp::edit::EditOp::InsertAfter))
             })
-    }
-
-    pub fn is_active(&self) -> bool {
-        self.whereis.is_some()
-            || self.owners
-            || self.doc_drift
-            || self.flags
-            || self.stray_content
-            || self.mentions.is_some()
-            || self.doctor
-            || self.handoff
-            || self.notes
-            || self.note_add.is_some()
-            || self.flip.is_some()
-            || self.plan_lint.is_some()
-            || self.skipped
-            || self.active_edit_op().is_some()
     }
 }
 /// Categorized workflow command groups.
@@ -1076,32 +978,61 @@ impl VerbGroup for TopNavArgs {
     }
 }
 
-impl VerbGroup for TopDetailArgs {
-    fn is_group_active(&self) -> bool {
-        self.is_active()
-    }
+macro_rules! impl_verb_group {
+    ($ty:ty, opts: [$($opt:ident),* $(,)?], flags: [$($flag:ident),* $(,)?] $(, extra: $extra:ident)?) => {
+        impl $ty {
+            #[must_use]
+            pub fn is_active(&self) -> bool {
+                $(self.$opt.is_some() ||)* $(self.$flag ||)* $(self.$extra().is_some() ||)? false
+            }
+        }
+        impl VerbGroup for $ty {
+            fn is_group_active(&self) -> bool {
+                self.is_active()
+            }
+        }
+    };
 }
 
-impl VerbGroup for TopSafetyArgs {
-    fn is_group_active(&self) -> bool {
-        self.is_active()
-    }
-}
+impl_verb_group!(
+    TopDetailArgs,
+    opts: [expand, outline, pack_top_n],
+    flags: [
+        tree, biggest_first, nonlocal_state, lint, lint_catalog,
+        naming_locals, naming_consistency, naming_calibration, report, legend_dict
+    ]
+);
 
-impl VerbGroup for TopArchitectureArgs {
-    fn is_group_active(&self) -> bool {
-        self.is_active()
-    }
-}
+impl_verb_group!(
+    TopSafetyArgs,
+    opts: [
+        test_gate, situ, safe_delete, exercises, pr_context, merge_scout,
+        dmm, plan_lanes, scan_skills, edit_plan, edit_payload, partition
+    ],
+    flags: [seams, pin_census, baseline, baseline_update]
+);
 
-impl VerbGroup for TopRetrievalArgs {
-    fn is_group_active(&self) -> bool {
-        self.is_active()
-    }
-}
+impl_verb_group!(
+    TopArchitectureArgs,
+    opts: [community, around, arch, zoom, quality_panel, layout, field_affinity],
+    flags: [
+        dead_code, communities, deps, external_surface, mermaid,
+        metrics, context_ratio, ensemble, comment_coherence
+    ]
+);
 
-impl VerbGroup for TopWorkspaceArgs {
-    fn is_group_active(&self) -> bool {
-        self.is_active()
-    }
-}
+impl_verb_group!(
+    TopRetrievalArgs,
+    opts: [
+        task_for, grep, connect, path_between, exemplar, lego, recall, from_trace,
+        at, verify, pack_task, graph_query, ast_match, pattern, regex, help_task, refetch
+    ],
+    flags: [pack_signatures]
+);
+
+impl_verb_group!(
+    TopWorkspaceArgs,
+    opts: [whereis, mentions, note_add, flip, plan_lint],
+    flags: [owners, doc_drift, flags, stray_content, doctor, handoff, notes, skipped],
+    extra: active_edit_op
+);

@@ -14,6 +14,10 @@ impl LanguageSemantics for CppLanguage {
         "cpp"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["h", "cpp", "cc", "cxx", "hpp", "hxx", "hh"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#f34b7d"
     }

@@ -9,6 +9,10 @@ impl LanguageSemantics for ErlangLanguage {
         "erl"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["erl", "hrl"]
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Beam
     }

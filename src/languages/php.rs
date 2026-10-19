@@ -36,6 +36,10 @@ impl LanguageSemantics for PhpLanguage {
         "php"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["php", "phtml"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#4f5d95"
     }

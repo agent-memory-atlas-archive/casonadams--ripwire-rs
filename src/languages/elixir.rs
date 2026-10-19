@@ -242,6 +242,10 @@ impl LanguageSemantics for ElixirLanguage {
         "ex"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["ex", "exs"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#6e4a7e"
     }

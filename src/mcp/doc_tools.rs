@@ -486,7 +486,7 @@ fn extend_from_scm_queries(
     wanted: &std::collections::HashSet<String>,
     found_in_code: &mut std::collections::HashSet<String>,
 ) {
-    let Ok(entries) = fs::read_dir(root_path.join("queries")) else {
+    let Ok(entries) = fs::read_dir(root_path.join("src/queries")) else {
         return;
     };
     for entry in entries.flatten() {

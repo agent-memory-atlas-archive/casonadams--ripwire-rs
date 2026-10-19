@@ -8,6 +8,10 @@ impl LanguageSemantics for HtmlLanguage {
         "html"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["html", "htm"]
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Markup
     }

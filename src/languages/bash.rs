@@ -9,6 +9,10 @@ impl LanguageSemantics for BashLanguage {
         "sh"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["sh", "bash", "zsh"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#89e051"
     }

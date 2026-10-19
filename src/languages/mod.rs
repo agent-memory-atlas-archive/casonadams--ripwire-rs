@@ -79,6 +79,21 @@ pub trait LanguageSemantics: Sync {
     /// Short canonical tag used in XML output (`"rs"`, `"ts"`, etc.).
     fn tag(&self) -> &'static str;
 
+    /// File extensions mapped to this language (defaults to `&[self.tag()]` when empty).
+    fn extensions(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// True if `ext` (case-insensitively) maps to this language.
+    fn matches_extension(&self, ext: &str) -> bool {
+        let exts = self.extensions();
+        if exts.is_empty() {
+            self.tag() != "?" && ext.eq_ignore_ascii_case(self.tag())
+        } else {
+            exts.iter().any(|e| ext.eq_ignore_ascii_case(e))
+        }
+    }
+
     /// Visualization fill color for HTML call-graph export.
     fn display_color(&self) -> &'static str {
         "#888888"
@@ -296,6 +311,45 @@ impl LanguageSemantics for UnknownLanguage {
         false
     }
 }
+
+pub const ALL_LANGS: [Lang; 36] = [
+    Lang::Rust,
+    Lang::TypeScript,
+    Lang::JavaScript,
+    Lang::Python,
+    Lang::Go,
+    Lang::C,
+    Lang::Cpp,
+    Lang::Cuda,
+    Lang::Metal,
+    Lang::Java,
+    Lang::CSharp,
+    Lang::Swift,
+    Lang::Bash,
+    Lang::Ruby,
+    Lang::Php,
+    Lang::Lua,
+    Lang::Elixir,
+    Lang::Dart,
+    Lang::Kotlin,
+    Lang::GDScript,
+    Lang::Json,
+    Lang::Toml,
+    Lang::Yaml,
+    Lang::Markdown,
+    Lang::Zig,
+    Lang::Solidity,
+    Lang::Hcl,
+    Lang::Scala,
+    Lang::Erlang,
+    Lang::Html,
+    Lang::Css,
+    Lang::Sql,
+    Lang::Proto,
+    Lang::Graphql,
+    Lang::Dockerfile,
+    Lang::ObjC,
+];
 
 static SEMANTICS_TABLE: [&dyn LanguageSemantics; 37] = [
     &rust::RUST_LANG,

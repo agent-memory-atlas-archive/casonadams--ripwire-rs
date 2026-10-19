@@ -9,6 +9,10 @@ impl LanguageSemantics for ScalaLanguage {
         "scala"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["scala", "sc"]
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Jvm
     }

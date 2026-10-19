@@ -21,6 +21,10 @@ impl LanguageSemantics for YamlLanguage {
         "yaml"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["yml", "yaml"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#cb171e"
     }

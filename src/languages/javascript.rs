@@ -238,6 +238,10 @@ impl LanguageSemantics for JavaScriptLanguage {
         "js"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["js", "jsx", "mjs", "cjs"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#f1e05a"
     }

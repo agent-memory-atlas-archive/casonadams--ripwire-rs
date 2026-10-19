@@ -55,6 +55,10 @@ impl LanguageSemantics for ZigLanguage {
         "zig"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["zig", "zon"]
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Isolated(Lang::Zig)
     }

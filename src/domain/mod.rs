@@ -209,102 +209,16 @@ pub enum Lang {
 
 impl Lang {
     #[inline]
-    pub const fn tag(self) -> &'static str {
-        const TAGS: [&str; 37] = [
-            "rs", "ts", "js", "py", "go", "c", "cpp", "cuda", "metal", "java", "cs", "swift", "sh",
-            "rb", "php", "lua", "ex", "dart", "kt", "gd", "json", "toml", "yaml", "md", "zig",
-            "sol", "hcl", "scala", "erl", "html", "css", "sql", "proto", "gql", "docker", "m", "?",
-        ];
-        TAGS[self as usize]
+    pub fn tag(self) -> &'static str {
+        self.semantics().tag()
     }
 
     /// Map file extensions to their corresponding language.
     pub fn from_extension(ext: &str) -> Self {
-        const EXT_MAP: &[(&str, Lang)] = &[
-            ("rs", Lang::Rust),
-            ("ts", Lang::TypeScript),
-            ("tsx", Lang::TypeScript),
-            ("mts", Lang::TypeScript),
-            ("cts", Lang::TypeScript),
-            ("astro", Lang::TypeScript),
-            ("js", Lang::JavaScript),
-            ("jsx", Lang::JavaScript),
-            ("mjs", Lang::JavaScript),
-            ("cjs", Lang::JavaScript),
-            ("py", Lang::Python),
-            ("pyi", Lang::Python),
-            ("go", Lang::Go),
-            ("c", Lang::C),
-            ("h", Lang::Cpp),
-            ("cpp", Lang::Cpp),
-            ("cc", Lang::Cpp),
-            ("cxx", Lang::Cpp),
-            ("hpp", Lang::Cpp),
-            ("hxx", Lang::Cpp),
-            ("hh", Lang::Cpp),
-            ("cu", Lang::Cuda),
-            ("cuh", Lang::Cuda),
-            ("metal", Lang::Metal),
-            ("m", Lang::ObjC),
-            ("mm", Lang::ObjC),
-            ("java", Lang::Java),
-            ("cs", Lang::CSharp),
-            ("swift", Lang::Swift),
-            ("sh", Lang::Bash),
-            ("bash", Lang::Bash),
-            ("zsh", Lang::Bash),
-            ("rb", Lang::Ruby),
-            ("rake", Lang::Ruby),
-            ("jbuilder", Lang::Ruby),
-            ("php", Lang::Php),
-            ("phtml", Lang::Php),
-            ("lua", Lang::Lua),
-            ("ex", Lang::Elixir),
-            ("exs", Lang::Elixir),
-            ("dart", Lang::Dart),
-            ("kt", Lang::Kotlin),
-            ("kts", Lang::Kotlin),
-            ("gd", Lang::GDScript),
-            ("json", Lang::Json),
-            ("toml", Lang::Toml),
-            ("yml", Lang::Yaml),
-            ("yaml", Lang::Yaml),
-            ("md", Lang::Markdown),
-            ("markdown", Lang::Markdown),
-            ("rst", Lang::Markdown),
-            ("adoc", Lang::Markdown),
-            ("org", Lang::Markdown),
-            ("mdx", Lang::Markdown),
-            ("zig", Lang::Zig),
-            ("zon", Lang::Zig),
-            ("sol", Lang::Solidity),
-            ("tf", Lang::Hcl),
-            ("hcl", Lang::Hcl),
-            ("tfvars", Lang::Hcl),
-            ("scala", Lang::Scala),
-            ("sc", Lang::Scala),
-            ("erl", Lang::Erlang),
-            ("hrl", Lang::Erlang),
-            ("html", Lang::Html),
-            ("htm", Lang::Html),
-            ("css", Lang::Css),
-            ("scss", Lang::Css),
-            ("sass", Lang::Css),
-            ("less", Lang::Css),
-            ("sql", Lang::Sql),
-            ("proto", Lang::Proto),
-            ("graphql", Lang::Graphql),
-            ("gql", Lang::Graphql),
-            ("dockerfile", Lang::Dockerfile),
-            ("containerfile", Lang::Dockerfile),
-        ];
-
-        for &(e, l) in EXT_MAP {
-            if ext.eq_ignore_ascii_case(e) {
-                return l;
-            }
-        }
-        Self::Unknown
+        crate::languages::ALL_LANGS
+            .into_iter()
+            .find(|l| l.semantics().matches_extension(ext))
+            .unwrap_or(Self::Unknown)
     }
 
     /// True if these two languages are compatible for cross-symbol resolution.

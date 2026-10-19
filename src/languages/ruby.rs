@@ -105,6 +105,10 @@ impl LanguageSemantics for RubyLanguage {
         RUBY_STD_MEMBERS
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["rb", "rake", "jbuilder"]
+    }
+
     fn std_qualifier_names(&self) -> &'static [&'static str] {
         RUBY_STD_QUALIFIERS
     }

@@ -1,4 +1,4 @@
-use crate::domain::{IngestResult, Interner};
+use crate::domain::{IngestResult, Interner, Symbol};
 use crate::graph::Graph;
 use std::io::{self, Write};
 
@@ -14,7 +14,7 @@ pub struct LintFinding {
 }
 
 /// Catalog entry describing an AST code smell rule.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LintRuleDesc {
     pub name: &'static str,
     pub severity: &'static str,
@@ -22,537 +22,385 @@ pub struct LintRuleDesc {
     pub description: &'static str,
 }
 
+macro_rules! rule_desc {
+    ($name:expr, $sev:expr, $cat:expr, $desc:expr) => {
+        LintRuleDesc {
+            name: $name,
+            severity: $sev,
+            category: $cat,
+            description: $desc,
+        }
+    };
+}
+
 pub const LINT_RULES: &[LintRuleDesc] = &[
-    LintRuleDesc {
-        name: "complexity-spike",
-        severity: "major",
-        category: "maintainability",
-        description: "Cognitive complexity exceeds the Sonar Campbell ceiling of 15",
-    },
-    LintRuleDesc {
-        name: "deep-nesting",
-        severity: "major",
-        category: "maintainability",
-        description: "Maximum control statement nesting depth exceeds 5 levels",
-    },
-    LintRuleDesc {
-        name: "parameter-spill",
-        severity: "minor",
-        category: "design",
-        description: "Parameter count exceeds 5 positional arguments",
-    },
-    LintRuleDesc {
-        name: "verbosity-spike",
-        severity: "minor",
-        category: "readability",
-        description: "Function length exceeds 100 non-comment lines of code",
-    },
-    LintRuleDesc {
-        name: "dead-function",
-        severity: "major",
-        category: "architecture",
-        description: "Internal linkage function with zero callers in workspace graph",
-    },
-    LintRuleDesc {
-        name: "large-function",
-        severity: "info",
-        category: "maintainability",
-        description: "a function body over 80 lines",
-    },
-    LintRuleDesc {
-        name: "naming-short",
-        severity: "info",
-        category: "naming",
-        description: "a 1-2 letter Function/Method/Var name — visible far beyond any tiny scope",
-    },
-    LintRuleDesc {
-        name: "naming-wordy",
-        severity: "info",
-        category: "naming",
-        description: "more than 5 split tokens in one name",
-    },
-    LintRuleDesc {
-        name: "naming-underscore",
-        severity: "info",
-        category: "naming",
-        description: "internal consecutive underscores, or a C-family reserved __x/_X form",
-    },
-    LintRuleDesc {
-        name: "naming-case",
-        severity: "info",
-        category: "naming",
-        description: "snake_case and camelCase mixed inside one name",
-    },
-    LintRuleDesc {
-        name: "c-style-cast",
-        severity: "warn",
-        category: "style",
-        description: "a C-style cast — prefers explicit static_cast/const_cast/reinterpret_cast",
-    },
-    LintRuleDesc {
-        name: "goto",
-        severity: "warn",
-        category: "control-flow",
-        description: "a goto statement — cppcoreguidelines-avoid-goto",
-    },
-    LintRuleDesc {
-        name: "do-while",
-        severity: "info",
-        category: "style",
-        description: "a do/while loop shape",
-    },
-    LintRuleDesc {
-        name: "unsafe-c-fn",
-        severity: "error",
-        category: "security",
-        description: "a call to an unbounded C string function (strcpy/strcat/sprintf/gets)",
-    },
-    LintRuleDesc {
-        name: "weak-crypto",
-        severity: "error",
-        category: "security",
-        description: "a call to a broken hash or cipher (MD5/SHA1/MD4/RC4)",
-    },
-    LintRuleDesc {
-        name: "redundant-parens",
-        severity: "info",
-        category: "style",
-        description: "a doubly-parenthesized expression — readability-redundant-parentheses",
-    },
-    LintRuleDesc {
-        name: "suspicious-semicolon",
-        severity: "warn",
-        category: "correctness",
-        description: "an if-body that is just `;` — bugprone-suspicious-semicolon",
-    },
-    LintRuleDesc {
-        name: "typedef-over-using",
-        severity: "info",
-        category: "style",
-        description: "a C-style typedef struct/union where `using` is preferred",
-    },
-    LintRuleDesc {
-        name: "magic-number",
-        severity: "info",
-        category: "maintainability",
-        description: "a non-trivial numeric literal inside a function body",
-    },
-    LintRuleDesc {
-        name: "empty-catch",
-        severity: "warn",
-        category: "error-masking",
-        description: "a catch block with an empty body",
-    },
-    LintRuleDesc {
-        name: "self-assign",
-        severity: "warn",
-        category: "correctness",
-        description: "x = x — almost always a copy-paste bug",
-    },
-    LintRuleDesc {
-        name: "inconsistent-return",
-        severity: "info",
-        category: "maintainability",
-        description: "a bare `return;` mixed with a value-returning return in the same function",
-    },
-    LintRuleDesc {
-        name: "unreachable-code",
-        severity: "warn",
-        category: "correctness",
-        description: "a statement after an unconditional return/break/continue/throw/raise",
-    },
-    LintRuleDesc {
-        name: "naming-series",
-        severity: "info",
-        category: "naming",
-        description: "foo1/foo2/... digit-suffix siblings sharing a base name in one scope",
-    },
-    LintRuleDesc {
-        name: "naming-predicate",
-        severity: "info",
-        category: "naming",
-        description: "an is/has/can/should/was-prefixed name whose return type is not bool-like",
-    },
-    LintRuleDesc {
-        name: "naming-setter",
-        severity: "info",
-        category: "naming",
-        description: "a set-prefixed name whose return type is not void-like",
-    },
-    LintRuleDesc {
-        name: "naming-confusable",
-        severity: "info",
-        category: "naming",
-        description: "a co-visible pair within edit distance <=2 or reordered tokens",
-    },
-    LintRuleDesc {
-        name: "naming-uninformative",
-        severity: "info",
-        category: "naming",
-        description: "every split subtoken is corpus-ubiquitous (BM25 idf) on a body past size floor",
-    },
-    LintRuleDesc {
-        name: "atom-comma-operator",
-        severity: "info",
-        category: "readability",
-        description: "the comma operator inside an expression [Gopstein FSE 2017]",
-    },
-    LintRuleDesc {
-        name: "atom-embedded-crement",
-        severity: "info",
-        category: "readability",
-        description: "++/-- evaluated inside a larger expression [Gopstein FSE 2017]",
-    },
-    LintRuleDesc {
-        name: "atom-assign-as-value",
-        severity: "info",
-        category: "readability",
-        description: "an assignment whose VALUE is consumed [Gopstein FSE 2017]",
-    },
-    LintRuleDesc {
-        name: "atom-nested-ternary",
-        severity: "info",
-        category: "readability",
-        description: "a conditional expression inside a conditional expression [Gopstein FSE 2017]",
-    },
-    LintRuleDesc {
-        name: "atom-implicit-predicate",
-        severity: "info",
-        category: "readability",
-        description: "arithmetic used where a truth value is expected [Gopstein FSE 2017]",
-    },
-    LintRuleDesc {
-        name: "atom-octal-literal",
-        severity: "info",
-        category: "readability",
-        description: "a leading-zero integer literal — 0755 is 493, not 755 [Gopstein FSE 2017]",
-    },
-    LintRuleDesc {
-        name: "atom-reversed-subscript",
-        severity: "info",
-        category: "readability",
-        description: "1[arr] — legal C, almost never intended [Gopstein FSE 2017]",
-    },
-    LintRuleDesc {
-        name: "cache-node-container",
-        severity: "info",
-        category: "performance",
-        description: "a node-based std container (map/list/set/...) — one heap node per element",
-    },
-    LintRuleDesc {
-        name: "cache-vector-of-raw-ptr",
-        severity: "info",
-        category: "performance",
-        description: "vector<T*> — contiguous handles, scattered payloads",
-    },
-    LintRuleDesc {
-        name: "cache-vector-of-indirect",
-        severity: "info",
-        category: "performance",
-        description: "vector<unique_ptr/shared_ptr/vector<...>> — an indirection per element",
-    },
-    LintRuleDesc {
-        name: "cache-heap-alloc-in-loop",
-        severity: "info",
-        category: "performance",
-        description: "new/malloc/calloc/realloc/strdup inside a loop body",
-    },
-    LintRuleDesc {
-        name: "cache-pointer-chase-loop",
-        severity: "info",
-        category: "performance",
-        description: "p = p->next inside a loop — a serial dependent-load chain",
-    },
-    LintRuleDesc {
-        name: "cache-gather-subscript",
-        severity: "info",
-        category: "performance",
-        description: "a[b[i]] inside a loop — gather/scatter random access",
-    },
-    LintRuleDesc {
-        name: "cache-shared-ptr-by-value",
-        severity: "info",
-        category: "performance",
-        description: "a by-value shared_ptr parameter — atomic refcount traffic per call",
-    },
-    LintRuleDesc {
-        name: "cache-manual-prefetch",
-        severity: "info",
-        category: "performance",
-        description: "an existing _mm_prefetch/__builtin_prefetch call",
-    },
+    rule_desc!(
+        "complexity-spike",
+        "major",
+        "maintainability",
+        "Cognitive complexity exceeds the Sonar Campbell ceiling of 15"
+    ),
+    rule_desc!(
+        "deep-nesting",
+        "major",
+        "maintainability",
+        "Maximum control statement nesting depth exceeds 5 levels"
+    ),
+    rule_desc!(
+        "parameter-spill",
+        "minor",
+        "design",
+        "Parameter count exceeds 5 positional arguments"
+    ),
+    rule_desc!(
+        "verbosity-spike",
+        "minor",
+        "readability",
+        "Function length exceeds 100 non-comment lines of code"
+    ),
+    rule_desc!(
+        "dead-function",
+        "major",
+        "architecture",
+        "Internal linkage function with zero callers in workspace graph"
+    ),
+    rule_desc!(
+        "large-function",
+        "info",
+        "maintainability",
+        "a function body over 80 lines"
+    ),
+    rule_desc!(
+        "naming-short",
+        "info",
+        "naming",
+        "a 1-2 letter Function/Method/Var name — visible far beyond any tiny scope"
+    ),
+    rule_desc!(
+        "naming-wordy",
+        "info",
+        "naming",
+        "more than 5 split tokens in one name"
+    ),
+    rule_desc!(
+        "naming-underscore",
+        "info",
+        "naming",
+        "internal consecutive underscores, or a C-family reserved __x/_X form"
+    ),
+    rule_desc!(
+        "naming-case",
+        "info",
+        "naming",
+        "snake_case and camelCase mixed inside one name"
+    ),
+    rule_desc!(
+        "c-style-cast",
+        "warn",
+        "style",
+        "a C-style cast — prefers explicit static_cast/const_cast/reinterpret_cast"
+    ),
+    rule_desc!(
+        "goto",
+        "warn",
+        "control-flow",
+        "a goto statement — cppcoreguidelines-avoid-goto"
+    ),
+    rule_desc!("do-while", "info", "style", "a do/while loop shape"),
+    rule_desc!(
+        "unsafe-c-fn",
+        "error",
+        "security",
+        "a call to an unbounded C string function (strcpy/strcat/sprintf/gets)"
+    ),
+    rule_desc!(
+        "weak-crypto",
+        "error",
+        "security",
+        "a call to a broken hash or cipher (MD5/SHA1/MD4/RC4)"
+    ),
+    rule_desc!(
+        "redundant-parens",
+        "info",
+        "style",
+        "a doubly-parenthesized expression — readability-redundant-parentheses"
+    ),
+    rule_desc!(
+        "suspicious-semicolon",
+        "warn",
+        "correctness",
+        "an if-body that is just `;` — bugprone-suspicious-semicolon"
+    ),
+    rule_desc!(
+        "typedef-over-using",
+        "info",
+        "style",
+        "a C-style typedef struct/union where `using` is preferred"
+    ),
+    rule_desc!(
+        "magic-number",
+        "info",
+        "maintainability",
+        "a non-trivial numeric literal inside a function body"
+    ),
+    rule_desc!(
+        "empty-catch",
+        "warn",
+        "error-masking",
+        "a catch block with an empty body"
+    ),
+    rule_desc!(
+        "self-assign",
+        "warn",
+        "correctness",
+        "x = x — almost always a copy-paste bug"
+    ),
+    rule_desc!(
+        "inconsistent-return",
+        "info",
+        "maintainability",
+        "a bare `return;` mixed with a value-returning return in the same function"
+    ),
+    rule_desc!(
+        "unreachable-code",
+        "warn",
+        "correctness",
+        "a statement after an unconditional return/break/continue/throw/raise"
+    ),
+    rule_desc!(
+        "naming-series",
+        "info",
+        "naming",
+        "foo1/foo2/... digit-suffix siblings sharing a base name in one scope"
+    ),
+    rule_desc!(
+        "naming-predicate",
+        "info",
+        "naming",
+        "an is/has/can/should/was-prefixed name whose return type is not bool-like"
+    ),
+    rule_desc!(
+        "naming-setter",
+        "info",
+        "naming",
+        "a set-prefixed name whose return type is not void-like"
+    ),
+    rule_desc!(
+        "naming-confusable",
+        "info",
+        "naming",
+        "a co-visible pair within edit distance <=2 or reordered tokens"
+    ),
+    rule_desc!(
+        "naming-uninformative",
+        "info",
+        "naming",
+        "every split subtoken is corpus-ubiquitous (BM25 idf) on a body past size floor"
+    ),
+    rule_desc!(
+        "atom-comma-operator",
+        "info",
+        "readability",
+        "the comma operator inside an expression [Gopstein FSE 2017]"
+    ),
+    rule_desc!(
+        "atom-embedded-crement",
+        "info",
+        "readability",
+        "++/-- evaluated inside a larger expression [Gopstein FSE 2017]"
+    ),
+    rule_desc!(
+        "atom-assign-as-value",
+        "info",
+        "readability",
+        "an assignment whose VALUE is consumed [Gopstein FSE 2017]"
+    ),
+    rule_desc!(
+        "atom-nested-ternary",
+        "info",
+        "readability",
+        "a conditional expression inside a conditional expression [Gopstein FSE 2017]"
+    ),
+    rule_desc!(
+        "atom-implicit-predicate",
+        "info",
+        "readability",
+        "arithmetic used where a truth value is expected [Gopstein FSE 2017]"
+    ),
+    rule_desc!(
+        "atom-octal-literal",
+        "info",
+        "readability",
+        "a leading-zero integer literal — 0755 is 493, not 755 [Gopstein FSE 2017]"
+    ),
+    rule_desc!(
+        "atom-reversed-subscript",
+        "info",
+        "readability",
+        "1[arr] — legal C, almost never intended [Gopstein FSE 2017]"
+    ),
+    rule_desc!(
+        "cache-node-container",
+        "info",
+        "performance",
+        "a node-based std container (map/list/set/...) — one heap node per element"
+    ),
+    rule_desc!(
+        "cache-vector-of-raw-ptr",
+        "info",
+        "performance",
+        "vector<T*> — contiguous handles, scattered payloads"
+    ),
+    rule_desc!(
+        "cache-vector-of-indirect",
+        "info",
+        "performance",
+        "vector<unique_ptr/shared_ptr/vector<...>> — an indirection per element"
+    ),
+    rule_desc!(
+        "cache-heap-alloc-in-loop",
+        "info",
+        "performance",
+        "new/malloc/calloc/realloc/strdup inside a loop body"
+    ),
+    rule_desc!(
+        "cache-pointer-chase-loop",
+        "info",
+        "performance",
+        "p = p->next inside a loop — a serial dependent-load chain"
+    ),
+    rule_desc!(
+        "cache-gather-subscript",
+        "info",
+        "performance",
+        "a[b[i]] inside a loop — gather/scatter random access"
+    ),
+    rule_desc!(
+        "cache-shared-ptr-by-value",
+        "info",
+        "performance",
+        "a by-value shared_ptr parameter — atomic refcount traffic per call"
+    ),
+    rule_desc!(
+        "cache-manual-prefetch",
+        "info",
+        "performance",
+        "an existing _mm_prefetch/__builtin_prefetch call"
+    ),
 ];
+
 /// Trait encapsulating a single AST symbol lint rule and its catalog metadata.
 pub trait SymbolLintRule: Sync {
     fn desc(&self) -> LintRuleDesc;
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        graph: &Graph,
-    ) -> Option<LintFinding>;
+    fn check(&self, sym: &Symbol, file: &str, name: &str, graph: &Graph) -> Option<LintFinding>;
 }
 
-struct ComplexitySpikeRule;
-impl SymbolLintRule for ComplexitySpikeRule {
+pub struct SymbolLintSpec {
+    pub desc: LintRuleDesc,
+    pub check_fn: fn(&Symbol, &str, &str, &Graph) -> Option<String>,
+}
+
+impl SymbolLintRule for SymbolLintSpec {
     fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[0].clone()
+        self.desc
     }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        _graph: &Graph,
-    ) -> Option<LintFinding> {
-        (sym.ccx > 15).then(|| LintFinding {
-            rule: "complexity-spike".to_string(),
-            message: format!(
-                "Function '{name}' cognitive complexity {} exceeds 15",
-                sym.ccx
-            ),
+    fn check(&self, sym: &Symbol, file: &str, name: &str, graph: &Graph) -> Option<LintFinding> {
+        let message = (self.check_fn)(sym, file, name, graph)?;
+        Some(LintFinding {
+            rule: self.desc.name.to_string(),
+            message,
             path: file.to_string(),
             line: sym.line,
-            severity: "major".to_string(),
-            enclosing: name.to_string(),
-        })
-    }
-}
-
-struct DeepNestingRule;
-impl SymbolLintRule for DeepNestingRule {
-    fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[1].clone()
-    }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        _graph: &Graph,
-    ) -> Option<LintFinding> {
-        (sym.max_nest > 5).then(|| LintFinding {
-            rule: "deep-nesting".to_string(),
-            message: format!("Function '{name}' max nesting {} exceeds 5", sym.max_nest),
-            path: file.to_string(),
-            line: sym.line,
-            severity: "major".to_string(),
-            enclosing: name.to_string(),
-        })
-    }
-}
-
-struct ParameterSpillRule;
-impl SymbolLintRule for ParameterSpillRule {
-    fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[2].clone()
-    }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        _graph: &Graph,
-    ) -> Option<LintFinding> {
-        (sym.params > 5).then(|| LintFinding {
-            rule: "parameter-spill".to_string(),
-            message: format!(
-                "Function '{name}' has {} parameters, exceeding 5",
-                sym.params
-            ),
-            path: file.to_string(),
-            line: sym.line,
-            severity: "minor".to_string(),
-            enclosing: name.to_string(),
-        })
-    }
-}
-
-struct VerbositySpikeRule;
-impl SymbolLintRule for VerbositySpikeRule {
-    fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[3].clone()
-    }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        _graph: &Graph,
-    ) -> Option<LintFinding> {
-        (sym.loc > 100).then(|| LintFinding {
-            rule: "verbosity-spike".to_string(),
-            message: format!("Function '{name}' length {} exceeds 100 LOC", sym.loc),
-            path: file.to_string(),
-            line: sym.line,
-            severity: "minor".to_string(),
-            enclosing: name.to_string(),
-        })
-    }
-}
-
-struct DeadFunctionRule;
-impl SymbolLintRule for DeadFunctionRule {
-    fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[4].clone()
-    }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        graph: &Graph,
-    ) -> Option<LintFinding> {
-        (graph.in_degree(sym.id) == 0 && !crate::gate::affected::is_test_path(file)).then(|| {
-            LintFinding {
-                rule: "dead-function".to_string(),
-                message: format!("Internal function '{name}' has zero incoming callers"),
-                path: file.to_string(),
-                line: sym.line,
-                severity: "major".to_string(),
-                enclosing: name.to_string(),
-            }
-        })
-    }
-}
-
-struct LargeFunctionRule;
-impl SymbolLintRule for LargeFunctionRule {
-    fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[5].clone()
-    }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        _graph: &Graph,
-    ) -> Option<LintFinding> {
-        (sym.loc > 80).then(|| LintFinding {
-            rule: "large-function".to_string(),
-            message: format!("Function '{name}' body is {} lines (> 80)", sym.loc),
-            path: file.to_string(),
-            line: sym.line,
-            severity: "info".to_string(),
-            enclosing: name.to_string(),
-        })
-    }
-}
-
-struct NamingShortRule;
-impl SymbolLintRule for NamingShortRule {
-    fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[6].clone()
-    }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        _graph: &Graph,
-    ) -> Option<LintFinding> {
-        let short = name.rsplit("::").next().unwrap_or(name);
-        (!short.is_empty() && short.len() <= 2 && short.chars().all(char::is_alphabetic)).then(
-            || LintFinding {
-                rule: "naming-short".to_string(),
-                message: format!("Function '{short}' has a 1-2 character name"),
-                path: file.to_string(),
-                line: sym.line,
-                severity: "info".to_string(),
-                enclosing: name.to_string(),
-            },
-        )
-    }
-}
-
-struct NamingWordyRule;
-impl SymbolLintRule for NamingWordyRule {
-    fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[7].clone()
-    }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        _graph: &Graph,
-    ) -> Option<LintFinding> {
-        let short = name.rsplit("::").next().unwrap_or(name);
-        let words = short.split('_').filter(|s| !s.is_empty()).count();
-        (words > 5).then(|| LintFinding {
-            rule: "naming-wordy".to_string(),
-            message: format!("Function '{short}' has {words} subtokens (> 5)"),
-            path: file.to_string(),
-            line: sym.line,
-            severity: "info".to_string(),
-            enclosing: name.to_string(),
-        })
-    }
-}
-
-struct NamingUnderscoreRule;
-impl SymbolLintRule for NamingUnderscoreRule {
-    fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[8].clone()
-    }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        _graph: &Graph,
-    ) -> Option<LintFinding> {
-        let short = name.rsplit("::").next().unwrap_or(name);
-        short.contains("__").then(|| LintFinding {
-            rule: "naming-underscore".to_string(),
-            message: format!("Function '{short}' contains consecutive underscores"),
-            path: file.to_string(),
-            line: sym.line,
-            severity: "info".to_string(),
-            enclosing: name.to_string(),
-        })
-    }
-}
-
-struct NamingCaseRule;
-impl SymbolLintRule for NamingCaseRule {
-    fn desc(&self) -> LintRuleDesc {
-        LINT_RULES[9].clone()
-    }
-    fn check(
-        &self,
-        sym: &crate::domain::Symbol,
-        file: &str,
-        name: &str,
-        _graph: &Graph,
-    ) -> Option<LintFinding> {
-        let short = name.rsplit("::").next().unwrap_or(name);
-        let mixed = short.contains('_')
-            && short.chars().any(char::is_lowercase)
-            && short.chars().any(char::is_uppercase);
-        mixed.then(|| LintFinding {
-            rule: "naming-case".to_string(),
-            message: format!("Function '{short}' mixes snake_case and camelCase"),
-            path: file.to_string(),
-            line: sym.line,
-            severity: "info".to_string(),
+            severity: self.desc.severity.to_string(),
             enclosing: name.to_string(),
         })
     }
 }
 
 pub static SYMBOL_LINT_RULES: &[&dyn SymbolLintRule] = &[
-    &ComplexitySpikeRule,
-    &DeepNestingRule,
-    &ParameterSpillRule,
-    &VerbositySpikeRule,
-    &DeadFunctionRule,
-    &LargeFunctionRule,
-    &NamingShortRule,
-    &NamingWordyRule,
-    &NamingUnderscoreRule,
-    &NamingCaseRule,
+    &SymbolLintSpec {
+        desc: LINT_RULES[0],
+        check_fn: |sym, _, name, _| {
+            (sym.ccx > 15).then(|| {
+                format!(
+                    "Function '{name}' cognitive complexity {} exceeds 15",
+                    sym.ccx
+                )
+            })
+        },
+    },
+    &SymbolLintSpec {
+        desc: LINT_RULES[1],
+        check_fn: |sym, _, name, _| {
+            (sym.max_nest > 5)
+                .then(|| format!("Function '{name}' max nesting {} exceeds 5", sym.max_nest))
+        },
+    },
+    &SymbolLintSpec {
+        desc: LINT_RULES[2],
+        check_fn: |sym, _, name, _| {
+            (sym.params > 5).then(|| {
+                format!(
+                    "Function '{name}' has {} parameters, exceeding 5",
+                    sym.params
+                )
+            })
+        },
+    },
+    &SymbolLintSpec {
+        desc: LINT_RULES[3],
+        check_fn: |sym, _, name, _| {
+            (sym.loc > 100).then(|| format!("Function '{name}' length {} exceeds 100 LOC", sym.loc))
+        },
+    },
+    &SymbolLintSpec {
+        desc: LINT_RULES[4],
+        check_fn: |sym, file, name, graph| {
+            (graph.in_degree(sym.id) == 0 && !crate::gate::affected::is_test_path(file))
+                .then(|| format!("Internal function '{name}' has zero incoming callers"))
+        },
+    },
+    &SymbolLintSpec {
+        desc: LINT_RULES[5],
+        check_fn: |sym, _, name, _| {
+            (sym.loc > 80).then(|| format!("Function '{name}' body is {} lines (> 80)", sym.loc))
+        },
+    },
+    &SymbolLintSpec {
+        desc: LINT_RULES[6],
+        check_fn: |_, _, name, _| {
+            let short = name.rsplit("::").next().unwrap_or(name);
+            (!short.is_empty() && short.len() <= 2 && short.chars().all(char::is_alphabetic))
+                .then(|| format!("Function '{short}' has a 1-2 character name"))
+        },
+    },
+    &SymbolLintSpec {
+        desc: LINT_RULES[7],
+        check_fn: |_, _, name, _| {
+            let short = name.rsplit("::").next().unwrap_or(name);
+            let words = short.split('_').filter(|s| !s.is_empty()).count();
+            (words > 5).then(|| format!("Function '{short}' has {words} subtokens (> 5)"))
+        },
+    },
+    &SymbolLintSpec {
+        desc: LINT_RULES[8],
+        check_fn: |_, _, name, _| {
+            let short = name.rsplit("::").next().unwrap_or(name);
+            short
+                .contains("__")
+                .then(|| format!("Function '{short}' contains consecutive underscores"))
+        },
+    },
+    &SymbolLintSpec {
+        desc: LINT_RULES[9],
+        check_fn: |_, _, name, _| {
+            let short = name.rsplit("::").next().unwrap_or(name);
+            let mixed = short.contains('_')
+                && short.chars().any(char::is_lowercase)
+                && short.chars().any(char::is_uppercase);
+            mixed.then(|| format!("Function '{short}' mixes snake_case and camelCase"))
+        },
+    },
 ];
 
 /// Scan the workspace for AST code smells across all symbols.

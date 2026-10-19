@@ -9,6 +9,10 @@ impl LanguageSemantics for GraphqlLanguage {
         "gql"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["graphql", "gql"]
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Isolated(Lang::Graphql)
     }

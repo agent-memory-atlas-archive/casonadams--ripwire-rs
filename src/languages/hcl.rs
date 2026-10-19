@@ -9,6 +9,10 @@ impl LanguageSemantics for HclLanguage {
         "hcl"
     }
 
+    fn extensions(&self) -> &'static [&'static str] {
+        &["tf", "hcl", "tfvars"]
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Isolated(Lang::Hcl)
     }
