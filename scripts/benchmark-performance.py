@@ -7,17 +7,12 @@ import sys
 
 
 def locate_bench_binaries():
-    rs_bin = os.path.abspath("target/release/ripwire-rs")
-    if not os.path.exists(rs_bin):
-        rs_bin = os.path.abspath("target/release/rw")
-    if not os.path.exists(rs_bin):
-        rs_bin = shutil.which("ripwire-rs") or shutil.which("rw")
-    cpp_bin = os.path.expanduser("~/.local/bin/ripwire")
-    if not os.path.exists(cpp_bin):
-        cpp_bin = shutil.which("ripwire")
+    rs_cands = [os.path.abspath("target/release/ripwire-rs"), shutil.which("ripwire-rs")]
+    cpp_cands = [os.path.expanduser("~/.local/bin/ripwire"), shutil.which("ripwire")]
+    rs_bin = next((p for p in rs_cands if p and os.path.exists(p)), None)
+    cpp_bin = next((p for p in cpp_cands if p and os.path.exists(p)), None)
     if not rs_bin or not cpp_bin:
-        print("Error: ripwire-rs or ripwire binary not found.", file=sys.stderr)
-        sys.exit(1)
+        sys.exit("Error: ripwire-rs or ripwire binary not found.")
     return rs_bin, cpp_bin
 
 

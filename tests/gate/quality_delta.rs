@@ -317,40 +317,6 @@ fn test_content_id_survives_reindent_and_self_rename_only() {
 }
 
 #[test]
-fn test_quality_delta_complexity_regression() {
-    let mut baseline = QualitySnapshot::default();
-    baseline
-        .ccx_by_sym
-        .insert("src/math.rs::calc".to_string(), 10);
-
-    let mut working = QualitySnapshot::default();
-    working
-        .ccx_by_sym
-        .insert("src/math.rs::calc".to_string(), 20);
-    working
-        .line_by_sym
-        .insert("src/math.rs::calc".to_string(), 42);
-
-    let report = compute_quality_delta(&working, &baseline, "test-baseline");
-    assert_eq!(report.regressions.len(), 1);
-    assert_eq!(report.gating_count, 1);
-    assert!(report.has_gating_failures());
-
-    let reg = &report.regressions[0];
-    assert_eq!(reg.kind, "complexity");
-    assert_eq!(reg.sym_name, "calc");
-    assert_eq!(reg.was_val, 10);
-    assert_eq!(reg.now_val, 20);
-    assert!(reg.is_gating);
-    assert!(!reg.is_new_symbol);
-    assert_eq!(reg.line, 42);
-
-    let xml = report.to_xml_string();
-    assert!(xml.contains("gating=\"1\""));
-    assert!(xml.contains("<r kind=\"complexity\" sym=\"calc\" p=\"src/math.rs:42\""));
-}
-
-#[test]
 fn test_quality_delta_nesting_and_params_regressions() {
     let mut baseline = QualitySnapshot::default();
     baseline

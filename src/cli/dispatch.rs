@@ -9,24 +9,29 @@ use crate::rank::PageRankResult;
 use clap::Parser;
 use std::io::{self, Write};
 use std::path::Path;
-pub fn print_symbol_nav_to<W: Write>(
-    id: crate::domain::NodeId,
+pub fn execute_navigate_with<W: Write>(
     args: &NavigateArgs,
-    sym_name: &str,
     ctx: &NavContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
+    let Some(sym_name) = args.symbol.as_deref() else {
+        return writeln!(out, "Error: --symbol is required for navigate commands");
+    };
+    let ids = crate::navigate::find_symbols_by_name(sym_name, ctx.ingest, ctx.interner);
+    if ids.is_empty() {
+        return writeln!(out, "Symbol '{sym_name}' not found");
+    }
     if args.impact {
         use crate::domain::CorpusView;
-        let impact = crate::navigate::transitive_impact(
-            id,
+        let impact = crate::navigate::transitive_impact_multi(
+            &ids,
             ctx.ingest,
             ctx.graph,
             ctx.ranks,
             ctx.interner,
             None,
         );
-        let importers = (ctx.ingest, ctx.interner).resolve_symbol_importers(&[id]);
+        let importers = (ctx.ingest, ctx.interner).resolve_symbol_importers(&ids);
         return crate::navigate::serialize_impact_with_importers_xml(
             ".",
             sym_name,
@@ -37,76 +42,25 @@ pub fn print_symbol_nav_to<W: Write>(
             out,
         );
     }
-    let Some(nav) =
-        crate::navigate::navigate_1hop(id, ctx.ingest, ctx.graph, ctx.ranks, ctx.interner)
-    else {
-        return Ok(());
-    };
-    if args.callers {
-        crate::navigate::serialize_callers_xml(sym_name, &nav.callers, out)
-    } else if args.callees {
-        crate::navigate::serialize_callees_xml(sym_name, &nav.callees, out)
-    } else {
-        crate::navigate::serialize_find_symbol_xml(&nav, out)
-    }
-}
-
-pub fn execute_navigate_with<W: Write>(
-    args: &NavigateArgs,
-    ctx: &NavContext<'_>,
-    out: &mut W,
-) -> io::Result<()> {
-    let sym_name = match args.symbol.as_deref() {
-        Some(s) => s,
-        None => {
-            writeln!(out, "Error: --symbol is required for navigate commands")?;
-            return Ok(());
-        }
-    };
-
-    let ids = crate::navigate::find_symbols_by_name(sym_name, ctx.ingest, ctx.interner);
-    if ids.is_empty() {
-        writeln!(out, "Symbol '{sym_name}' not found")?;
-        return Ok(());
-    }
-
-    if args.callers || args.callees || args.impact {
-        if args.impact {
-            use crate::domain::CorpusView;
-            let impact = crate::navigate::transitive_impact_multi(
-                &ids,
-                ctx.ingest,
-                ctx.graph,
-                ctx.ranks,
-                ctx.interner,
-                None,
-            );
-            let importers = (ctx.ingest, ctx.interner).resolve_symbol_importers(&ids);
-            crate::navigate::serialize_impact_with_importers_xml(
-                ".",
-                sym_name,
-                &impact,
-                importers,
-                &ctx.graph.xml_gauge_attrs(),
-                1,
-                out,
-            )?;
-        } else if let Some(nav) = crate::navigate::navigate_1hop_multi(
+    if (args.callers || args.callees)
+        && let Some(nav) = crate::navigate::navigate_1hop_multi(
             &ids,
             ctx.ingest,
             ctx.graph,
             ctx.ranks,
             ctx.interner,
-        ) {
-            if args.callers {
-                crate::navigate::serialize_callers_xml(sym_name, &nav.callers, out)?;
-            } else {
-                crate::navigate::serialize_callees_xml(sym_name, &nav.callees, out)?;
-            }
-        }
-        return Ok(());
-    } else if let Some(&first_id) = ids.first() {
-        print_symbol_nav_to(first_id, args, sym_name, ctx, out)?;
+        )
+    {
+        return if args.callers {
+            crate::navigate::serialize_callers_xml(sym_name, &nav.callers, out)
+        } else {
+            crate::navigate::serialize_callees_xml(sym_name, &nav.callees, out)
+        };
+    }
+    if let Some(nav) =
+        crate::navigate::navigate_1hop(ids[0], ctx.ingest, ctx.graph, ctx.ranks, ctx.interner)
+    {
+        crate::navigate::serialize_find_symbol_xml(&nav, out)?;
     }
     Ok(())
 }
@@ -869,13 +823,13 @@ fn execute_orient_subcommand(orient_args: &OrientArgs) -> io::Result<()> {
     stdout.flush()
 }
 
-pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
+pub fn dispatch_subcommand(command: &Commands, cli: &Cli, default_root: &str) -> io::Result<()> {
     match command {
-        Commands::Mcp(mcp_args) => run_mcp_stdio(mcp_args.path.as_deref().unwrap_or(".")),
+        Commands::Mcp(mcp_args) => run_mcp_stdio(mcp_args.path.as_deref().unwrap_or(default_root)),
         Commands::Navigate(nav_args) => execute_navigate(nav_args),
         Commands::Orient(orient_args) => execute_orient_subcommand(orient_args),
         Commands::Gate(gate_args) => {
-            let root = gate_args.path.as_deref().unwrap_or(".");
+            let root = gate_args.path.as_deref().unwrap_or(default_root);
             let sub_gate = GateDispatchArgs {
                 edit_check: gate_args.edit_check.as_deref(),
                 affected: gate_args.affected.as_deref(),
@@ -892,7 +846,7 @@ pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
             Ok(())
         }
         Commands::Metrics(metrics_args) => {
-            let root = metrics_args.path.as_deref().unwrap_or(".");
+            let root = metrics_args.path.as_deref().unwrap_or(default_root);
             if let Some(res) = dispatch_git_metrics_command(
                 root,
                 metrics_args.cochange.as_ref().map(|o| o.as_deref()),
@@ -903,14 +857,13 @@ pub fn dispatch_subcommand(command: &Commands) -> io::Result<()> {
             }
             Ok(())
         }
-        Commands::Slice(slice_args) => {
-            let target = slice_args.target.as_deref();
-            crate::slice::execute_slice_command(".", target, &slice_args.flow)
-        }
-        Commands::Skills(skills_args) => {
-            let target = skills_args.path.as_deref();
-            execute_skills_install(target)
-        }
+        Commands::Slice(slice_args) => crate::slice::execute_slice_command_with_depth(
+            default_root,
+            slice_args.target.as_deref(),
+            &slice_args.flow,
+            cli.slice_depth,
+        ),
+        Commands::Skills(skills_args) => execute_skills_install(skills_args.path.as_deref()),
     }
 }
 pub fn execute_skills_install(target: Option<&str>) -> io::Result<()> {
@@ -1016,26 +969,9 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     if cli.clones {
         return crate::clones::execute_clones_command(root, cli.min_tokens);
     }
-    if let Some(Commands::Gate(gate_args)) = &cli.command
-        && gate_args.clones
-    {
-        let gate_root = gate_args.path.as_deref().unwrap_or(root);
-        return crate::clones::execute_clones_command(gate_root, gate_args.min_tokens);
-    }
-
     if let Some(html_opt) = cli.html {
         return execute_html_export(root, html_opt.as_deref(), &cli.color_by);
     }
-
-    if let Some(Commands::Slice(slice_args)) = &cli.command {
-        return crate::slice::execute_slice_command_with_depth(
-            root,
-            slice_args.target.as_deref(),
-            &slice_args.flow,
-            cli.slice_depth,
-        );
-    }
-
     if let Some(target) = cli.slice.as_deref() {
         return crate::slice::execute_slice_command_with_depth(
             root,
@@ -1044,10 +980,9 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
             cli.slice_depth,
         );
     }
-
     let budget = cli.effective_budget_bytes();
     match &cli.command {
-        Some(cmd) => dispatch_subcommand(cmd),
+        Some(cmd) => dispatch_subcommand(cmd, &cli, root),
         None => dispatch_default_run(&cli, root, budget),
     }
 }

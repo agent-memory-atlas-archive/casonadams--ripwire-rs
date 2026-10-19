@@ -1,7 +1,5 @@
 use ripwire_rs::gate::arch::{ArchConfig, check_architecture_rules};
-use ripwire_rs::{
-    FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
-};
+use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
 
 #[test]
 fn test_arch_config_parsing() {
@@ -24,48 +22,20 @@ fn test_check_edge_violation() {
     let cfg = ArchConfig::parse(
         "layer cli = src/cli/*\nlayer domain = src/domain*\ndeny cli -> domain\n",
     );
+    let reg = LanguageRegistry::new().unwrap();
     let interner = Interner::new();
-    let mut ingest = IngestResult::new();
-    ingest.files.push(FileInfo {
-        id: 0,
-        path: interner.intern("src/cli/args.rs"),
-        lang: Lang::Rust,
-        line_count: 10,
-        byte_size: 100,
-    });
-    ingest.files.push(FileInfo {
-        id: 1,
-        path: interner.intern("src/domain.rs"),
-        lang: Lang::Rust,
-        line_count: 10,
-        byte_size: 100,
-    });
-    ingest.symbols.push(Symbol::new(
-        0,
-        interner.intern("parse"),
-        interner.intern("parse"),
-        SymKind::Function,
-        Lang::Rust,
-        0,
-        1,
-    ));
-    ingest.symbols.push(Symbol::new(
-        1,
-        interner.intern("intern"),
-        interner.intern("intern"),
-        SymKind::Function,
-        Lang::Rust,
-        1,
-        1,
-    ));
-    ingest.references.push(Reference::new(
-        0,
-        interner.intern("intern"),
-        0,
-        2,
-        Lang::Rust,
-        RefRole::Call,
-    ));
+    let ingest = ingest_in_memory_files(
+        &[
+            (
+                "src/cli/args.rs",
+                Lang::Rust,
+                b"pub fn parse() { intern(); }\n",
+            ),
+            ("src/domain.rs", Lang::Rust, b"pub fn intern() {}\n"),
+        ],
+        &reg,
+        &interner,
+    );
     let graph = Graph::build(&ingest, &interner);
     let viols = check_architecture_rules(&cfg, &ingest, &graph, &interner);
     assert_eq!(viols.len(), 1);
