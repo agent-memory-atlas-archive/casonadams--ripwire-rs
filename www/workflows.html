@@ -52,10 +52,10 @@
   <!-- Header -->
   <header class="docs-header">
     <div class="container">
-      <div class="badge"><span>PRACTICAL GUIDE · 6 PRIMARY WORKFLOWS</span></div>
+      <div class="badge"><span>PRACTICAL GUIDE · 7 PRIMARY WORKFLOWS</span></div>
       <h1 style="font-size: 2.5rem; font-weight: 800; margin-top: 12px; margin-bottom: 12px;">When, Where, &amp; Why to Use ripwire-rs</h1>
       <p style="color: var(--text-secondary); max-width: 780px; font-size: 1.1rem;">
-        <code>ripwire-rs</code> is engineered around high-impact workflows: from landing cold in a foreign codebase to surgical test execution and automated CI/CD PR verification.
+        <code>ripwire-rs</code> is engineered around 7 high-impact workflows: from landing cold in a foreign codebase to surgical test execution, automated CI/CD PR verification, and multi-agent fleet orchestration.
       </p>
     </div>
   </header>
@@ -71,6 +71,7 @@
       <a href="#code-health" class="wf-pill">4. Code Health &amp; Auditing</a>
       <a href="#agent-context" class="wf-pill">5. Agent Context Delivery</a>
       <a href="#ci-cd" class="wf-pill">6. CI / CD &amp; PR Gates</a>
+      <a href="#agent-orchestration" class="wf-pill">7. Multi-Agent Orchestration</a>
     </div>
 
     <!-- Workflow 1 -->
@@ -652,6 +653,100 @@ jobs:
             <li><strong>Sub-50ms Execution:</strong> Fast in-memory static analysis executes in milliseconds, eliminating slow CI runner bottlenecks.</li>
             <li><strong>Upstream Parity Enforcement:</strong> <code>make validate</code> runs continuous 66-command verification matrices against upstream specifications.</li>
             <li><strong>Zero Configuration:</strong> Reads native git repository history, remotes, and branch merge bases automatically.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Workflow 7 -->
+    <div class="cmd-card" id="agent-orchestration" style="margin-bottom: 32px;">
+      <div class="cmd-header">
+        <div class="cmd-title">
+          7. Multi-Agent Fleet Orchestration: Parallel Worktrees &amp; Subagent Slicing
+        </div>
+        <span class="cmd-badge">Orchestration</span>
+      </div>
+      <div class="cmd-body">
+        <div class="cmd-field">
+          <span class="cmd-label">When &amp; Where</span>
+          <ul class="cmd-scenario-list">
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Fanning a multi-symbol feature or wave refactor out across N parallel coding agents or isolated git worktrees.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Eliminating duplicate orientation spend where every spawned subagent re-discovers the same repository map from scratch.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Predicting symbol conflicts, same-file risks, and contract-touch dependencies before writing code or landing branches.</li>
+            <li class="cmd-scenario-item"><span class="cmd-scenario-bullet">▸</span>Handing off in-flight session state and persistent symbol gotchas between contexts that never met.</li>
+          </ul>
+        </div>
+        <div class="cmd-field">
+          <span class="cmd-label">Commands</span>
+          <div class="workflow-steps">
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">1</span>
+                <span>Community-Carved Context Fan-Out: 1 shared core + N minimally-overlapping subagent bundles</span>
+              </div>
+              <div class="code-wrap">
+                <code>ripwire-rs . --pack-task="refactor serialization" --partition=4</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --pack-task=&quot;refactor serialization&quot; --partition=4">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">2</span>
+                <span>Pre-Hoc Worktree Lane Planner: predict pairwise conflicts, contract touches, and landing order</span>
+              </div>
+              <div class="code-wrap">
+                <code>ripwire-rs . --plan-lanes=3 --task="refactor serialization"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --plan-lanes=3 --task=&quot;refactor serialization&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">3</span>
+                <span>Explicit Brief Lane Planner: rank one non-blank task line per lane from a brief file</span>
+              </div>
+              <div class="code-wrap">
+                <code>ripwire-rs . --plan-lanes --brief=lanes.txt</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --plan-lanes --brief=lanes.txt">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">4</span>
+                <span>Cross-Branch Merge Scout: detect symbol overlaps across concurrent branches and order landings</span>
+              </div>
+              <div class="code-wrap">
+                <code>ripwire-rs . --merge-scout="feat/auth,feat/billing"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --merge-scout=&quot;feat/auth,feat/billing&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">5</span>
+                <span>Deterministic Intent Router &amp; Closed-Claim Verifier: route tasks or verify 6-shape code claims</span>
+              </div>
+              <div class="code-wrap">
+                <code>ripwire-rs . --help-task="plan the new feature" &amp;&amp; ripwire-rs . --verify="calls(main,run_cli)"</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --help-task=&quot;plan the new feature&quot; &amp;&amp; ripwire-rs . --verify=&quot;calls(main,run_cli)&quot;">Copy</button>
+              </div>
+            </div>
+            <div class="workflow-step">
+              <div class="step-desc">
+                <span class="step-num">6</span>
+                <span>Session Handoff &amp; Persistent Symbol Notes: pass verified diff state and gotchas to the next agent</span>
+              </div>
+              <div class="code-wrap">
+                <code>ripwire-rs . --handoff &amp;&amp; ripwire-rs . --notes</code>
+                <button class="btn-copy" data-copy="ripwire-rs . --handoff &amp;&amp; ripwire-rs . --notes">Copy</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="cmd-field">
+          <span class="cmd-label">Why &amp; Key Benefits</span>
+          <ul style="padding-left: 20px; color: var(--text-secondary); font-size: 0.95rem; margin-top: 6px;">
+            <li><strong>Louvain Community Slicing:</strong> <code>--pack-task --partition=N</code> groups symbols by call-graph communities (with file fallback for edgeless data types) and reports Jaccard overlap (<code>overlap_mean</code>, <code>overlap_max</code>, <code>core_overlap</code>) so parallel agents work on genuinely disjoint modules.</li>
+            <li><strong>Pre-Hoc Collision &amp; Contract-Touch Oracle:</strong> <code>--plan-lanes</code> separates direct symbol <code>conflicts</code>, <code>same_file_risk</code>, and <code>contract_touch</code> (a claim inside another lane's blast radius) and computes a greedy fewest-conflicts-first <code>landing_order</code>.</li>
+            <li><strong>Epistemic Honesty:</strong> <code>--help-task</code> inspects live repository facts and abstains when evidence is thin; <code>--verify</code> proves or refutes 6 closed claim shapes with inline witness rows.</li>
           </ul>
         </div>
       </div>

@@ -320,6 +320,19 @@ pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::R
 }
 impl CliVerb for TopRetrievalArgs {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+        if let Some(task) = self.pack_task.as_deref()
+            && let Some(part_opt) = ctx.cli.safety.partition
+        {
+            return crate::navigate::execute_pack_task_partitioned(
+                task,
+                ctx.root,
+                part_opt.unwrap_or(2),
+                ctx.ingest,
+                ctx.graph,
+                ctx.interner,
+                out,
+            );
+        }
         if let Some(expr) = self.graph_query.as_deref() {
             return crate::navigate::execute_graph_query_expr_paged(
                 expr,

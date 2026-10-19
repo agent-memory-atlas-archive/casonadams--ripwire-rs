@@ -1,9 +1,11 @@
 pub mod inspect;
 pub mod query;
+pub mod verify;
 pub mod xml;
 
 pub use inspect::*;
 pub use query::*;
+pub use verify::*;
 pub use xml::*;
 
 use crate::domain::{IngestResult, Interner, NodeId};

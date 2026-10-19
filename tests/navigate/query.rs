@@ -1,6 +1,7 @@
 use ripwire_rs::navigate::{
     GraphQueryPageOptions, evaluate_verify_claim, execute_graph_query_expr,
-    execute_graph_query_expr_paged, execute_pack_task, truncate_body_to_budget,
+    execute_graph_query_expr_paged, execute_pack_task, execute_pack_task_partitioned,
+    truncate_body_to_budget,
 };
 use ripwire_rs::serialize::PathLayerExt;
 use ripwire_rs::{
@@ -115,16 +116,37 @@ fn test_graph_query_execution() {
     assert!(truncated.len() < 600);
     assert!(truncated.contains("truncated to fit pack-task budget"));
 
-    let mut v_out = Vec::new();
-    evaluate_verify_claim("calls(foo,bar)", &ingest, &graph, &interner, &mut v_out).unwrap();
-    assert!(String::from_utf8(v_out).unwrap().contains("confirmed"));
-    let mut v_ref = Vec::new();
-    evaluate_verify_claim("calls(bar,foo)", &ingest, &graph, &interner, &mut v_ref).unwrap();
-    assert!(String::from_utf8(v_ref).unwrap().contains("refuted"));
+    for (claim, expected) in [
+        ("calls(foo,bar)", "confirmed"),
+        ("calls(bar,foo)", "not-established"),
+        ("uses(bar)", "confirmed"),
+        ("unused(bar)", "refuted"),
+        ("unused(nonexistent_sym)", "not-established"),
+        ("contains(test.rs, \"foo\")", "confirmed"),
+        ("contains(test.rs, \"missing_lit_xyz\")", "refuted"),
+        ("defines(test.rs, foo)", "confirmed"),
+        ("defines(test.rs, missing_sym_xyz)", "refuted"),
+        ("reaches(bar, \"test.rs\")", "confirmed"),
+        ("reaches(foo, \"test.rs\")", "not-established"),
+        ("invalid_claim", "not-established"),
+    ] {
+        let mut v_out = Vec::new();
+        evaluate_verify_claim(claim, &ingest, &graph, &interner, &mut v_out).unwrap();
+        let v_str = String::from_utf8(v_out).unwrap();
+        assert!(
+            v_str.contains(&format!("verdict=\"{expected}\"")),
+            "claim {claim} expected {expected}, got: {v_str}"
+        );
+    }
     let mut p_out = Vec::new();
     execute_pack_task("search", ".", &ingest, &interner, &mut p_out).unwrap();
     assert!(String::from_utf8(p_out).unwrap().contains("<sigs>"));
-
+    let mut pp_out = Vec::new();
+    execute_pack_task_partitioned("foo bar", ".", 2, &ingest, &graph, &interner, &mut pp_out)
+        .unwrap();
+    let pp_str = String::from_utf8(pp_out).unwrap();
+    assert!(pp_str.contains("<ctx-partitions"));
+    assert!(pp_str.contains("role=\"core\""));
     for tag in [
         "function",
         "method",

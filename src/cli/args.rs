@@ -74,9 +74,6 @@ pub struct Cli {
     /// Schema legend posture: compact (default, in-context schema comment) or none
     #[arg(long, default_value = "compact")]
     pub legend: String,
-    /// Compact brief report mode
-    #[arg(long = "brief")]
-    pub brief: bool,
     /// Overlay SCIP compiler-backed index
     #[arg(long = "scip", value_name = "FILE")]
     pub scip: Option<String>,
@@ -270,6 +267,9 @@ pub struct TopSafetyArgs {
     /// Goal or task description for --plan-lanes
     #[arg(long = "task", value_name = "GOAL")]
     pub task: Option<String>,
+    /// Explicit per-lane brief file for --plan-lanes (one lane task per line)
+    #[arg(long = "brief", num_args = 0..=1, default_missing_value = "", value_name = "FILE")]
+    pub brief: Option<String>,
     /// Security audit scanner for agent skill files
     #[arg(
         long = "scan-skills",

@@ -93,105 +93,6 @@ pub fn serialize_at_xml<W: Write>(
     writeln!(out, "</at>")
 }
 
-fn check_call_relationship(
-    caller_name: &str,
-    callee_name: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-) -> bool {
-    for sym in &ingest.symbols {
-        if interner.resolve(&sym.name) != caller_name {
-            continue;
-        }
-        for (callee_id, _) in graph.callees(sym.id) {
-            let Some(c) = ingest.symbols.get(callee_id as usize) else {
-                continue;
-            };
-            if interner.resolve(&c.name) == callee_name {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-pub struct VerifyReport<'a> {
-    pub claim: &'a str,
-    pub verdict: &'static str,
-    pub from_defs: usize,
-    pub to_defs: usize,
-    pub gauges: crate::serialize::GraphGauges,
-}
-
-impl crate::serialize::XmlReport for VerifyReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "verify"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.verify/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs verify schema=ripwire-rs.verify/v1: ONE structured claim, verdict=confirmed|refuted|unknown.",
-        )
-    }
-    fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
-        Some(self.gauges)
-    }
-    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        write!(
-            out,
-            " claim=\"{}\" shape=\"calls\" verdict=\"{}\" from_defs=\"{}\" to_defs=\"{}\" limit=\"call-graph-floor\" shown=\"0\" capped=\"0\"",
-            self.claim, self.verdict, self.from_defs, self.to_defs
-        )
-    }
-    fn write_body<W: Write>(&self, _out: &mut W) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-pub fn evaluate_verify_claim<W: Write>(
-    claim: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
-    let mut from_defs = 1usize;
-    let mut to_defs = 1usize;
-    let verdict = if claim.starts_with("calls(") && claim.ends_with(')') {
-        let inner = &claim[6..claim.len() - 1];
-        let parts: Vec<&str> = inner.split(',').map(str::trim).collect();
-        if parts.len() == 2 {
-            let caller_name = parts[0];
-            let callee_name = parts[1];
-            from_defs = find_symbols_by_name(caller_name, ingest, interner).len();
-            to_defs = find_symbols_by_name(callee_name, ingest, interner).len();
-            if from_defs > 1 {
-                "not-established"
-            } else if check_call_relationship(caller_name, callee_name, ingest, graph, interner) {
-                "confirmed"
-            } else {
-                "refuted"
-            }
-        } else {
-            "not-established"
-        }
-    } else {
-        "confirmed"
-    };
-    use crate::serialize::XmlReport;
-    VerifyReport {
-        claim,
-        verdict,
-        from_defs,
-        to_defs,
-        gauges: graph.gauges(),
-    }
-    .render_envelope(out)
-}
-
 struct PackTaskBody {
     kind: String,
     line: u64,
@@ -311,6 +212,131 @@ fn write_pack_task_sigs_and_collect<'a, W: Write>(
     Ok((bodies, changed_paths, total_body_candidates))
 }
 
+struct PackRenderEnv<'a> {
+    task: &'a str,
+    root: &'a str,
+    ingest: &'a IngestResult,
+    graph: &'a Graph,
+    ranks: &'a [f64],
+    interner: &'a Interner,
+}
+
+fn collect_pack_surface_and_callers(
+    env: &PackRenderEnv<'_>,
+    syms: &[serde_json::Value],
+) -> (
+    Vec<super::SymbolNavInfo>,
+    std::collections::BTreeSet<crate::domain::NodeId>,
+) {
+    let top_caller_nodes = syms
+        .first()
+        .and_then(|it| it["name"].as_str())
+        .and_then(|n| {
+            find_symbols_by_name(n, env.ingest, env.interner)
+                .into_iter()
+                .next()
+        })
+        .and_then(|id| navigate_1hop(id, env.ingest, env.graph, env.ranks, env.interner))
+        .map(|nav| nav.callers)
+        .unwrap_or_default();
+    let mut surface = std::collections::BTreeSet::new();
+    for it in syms {
+        if let Some(n) = it["name"].as_str() {
+            surface.extend(find_symbols_by_name(n, env.ingest, env.interner));
+        }
+    }
+    for c in top_caller_nodes.iter().take(MAX_PACK_CALLERS) {
+        surface.insert(c.id);
+    }
+    (top_caller_nodes, surface)
+}
+
+fn write_pack_task_ctx<W: Write>(
+    env: &PackRenderEnv<'_>,
+    syms: &[serde_json::Value],
+    budget_tokens: usize,
+    include_legend: bool,
+    out: &mut W,
+) -> io::Result<std::collections::BTreeSet<crate::domain::NodeId>> {
+    let mut sigs_buf = Vec::new();
+    let (bodies, changed_paths, total_bodies) =
+        write_pack_task_sigs_and_collect(syms, env.ingest, env.interner, &mut sigs_buf)?;
+    let (top_caller_nodes, surface) = collect_pack_surface_and_callers(env, syms);
+    let aff = crate::gate::affected::find_affected_tests(
+        &changed_paths,
+        env.ingest,
+        env.graph,
+        env.interner,
+    );
+    let callers_shown = top_caller_nodes.len().min(MAX_PACK_CALLERS);
+    let callers_capped = usize::from(callers_shown < top_caller_nodes.len());
+    let tests_shown = aff.tests.len().min(MAX_PACK_TESTS);
+    let tests_capped = usize::from(tests_shown < aff.tests.len());
+    let bodies_capped = usize::from(bodies.len() < total_bodies);
+    let body_bytes: usize = bodies.iter().map(|b| b.body.len() + 64).sum();
+    let aux_bytes = callers_shown * 56 + tests_shown * 64 + 320;
+    let est_tokens = ((sigs_buf.len() + body_bytes + aux_bytes) / 4).max(32);
+    if include_legend {
+        writeln!(
+            out,
+            "<!-- ripwire-rs pack-task schema=ripwire-rs.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->"
+        )?;
+    }
+    write!(
+        out,
+        "<ctx schema=\"ripwire-rs.pack-task/v1\" task=\"{}\" route=\"subtoken+body:broad\" root=\"{}\" est_tokens=\"{est_tokens}\" budget_tokens=\"{budget_tokens}\"><sigs>",
+        env.task.xml_escaped(),
+        env.root
+    )?;
+    out.write_all(&sigs_buf)?;
+    write!(
+        out,
+        "</sigs><bodies shown=\"{}\" total=\"{}\" capped=\"{bodies_capped}\">",
+        bodies.len(),
+        total_bodies.max(bodies.len())
+    )?;
+    for b in &bodies {
+        write!(
+            out,
+            "<b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\"><![CDATA[{}]]></b>",
+            b.kind, b.line, b.path_esc, b.name_esc, b.body
+        )?;
+    }
+    write!(
+        out,
+        "</bodies><callers of_top=\"1\" shown=\"{callers_shown}\" total=\"{}\" capped=\"{callers_capped}\">",
+        top_caller_nodes.len()
+    )?;
+    for c in top_caller_nodes.iter().take(callers_shown) {
+        write!(
+            out,
+            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
+            c.kind,
+            c.name.xml_escaped(),
+            c.path.xml_escaped(),
+            c.line
+        )?;
+    }
+    write!(
+        out,
+        "</callers><tests shown=\"{tests_shown}\" total=\"{}\" capped=\"{tests_capped}\">",
+        aff.tests.len()
+    )?;
+    for t in aff.tests.iter().take(tests_shown) {
+        write!(
+            out,
+            "<t p=\"{}\" hops=\"{}\"/>",
+            t.path.xml_escaped(),
+            t.hops
+        )?;
+    }
+    write!(out, "</tests></ctx>")?;
+    if include_legend {
+        writeln!(out)?;
+    }
+    Ok(surface)
+}
+
 pub fn execute_pack_task<W: Write>(
     task: &str,
     root: &str,
@@ -335,73 +361,125 @@ pub fn execute_pack_task<W: Write>(
     );
     let empty = Vec::new();
     let syms = for_val["symbols"].as_array().unwrap_or(&empty);
-    let mut sigs_buf = Vec::new();
-    let (bodies, changed_paths, total_bodies) =
-        write_pack_task_sigs_and_collect(syms, ingest, interner, &mut sigs_buf)?;
-    let top_caller_nodes = syms
-        .first()
-        .and_then(|it| it["name"].as_str())
-        .and_then(|n| find_symbols_by_name(n, ingest, interner).into_iter().next())
-        .and_then(|id| navigate_1hop(id, ingest, &graph, &pr.ranks, interner))
-        .map(|nav| nav.callers)
-        .unwrap_or_default();
-    let aff = crate::gate::affected::find_affected_tests(&changed_paths, ingest, &graph, interner);
-    let callers_shown = top_caller_nodes.len().min(MAX_PACK_CALLERS);
-    let callers_capped = usize::from(callers_shown < top_caller_nodes.len());
-    let tests_shown = aff.tests.len().min(MAX_PACK_TESTS);
-    let tests_capped = usize::from(tests_shown < aff.tests.len());
-    let bodies_capped = usize::from(bodies.len() < total_bodies);
-    let body_bytes: usize = bodies.iter().map(|b| b.body.len() + 64).sum();
-    let aux_bytes = callers_shown * 56 + tests_shown * 64 + 400;
-    let est_tokens = ((sigs_buf.len() + body_bytes + aux_bytes) / 4).max(120);
+    let env = PackRenderEnv {
+        task,
+        root,
+        ingest,
+        graph: &graph,
+        ranks: &pr.ranks,
+        interner,
+    };
+    let _ = write_pack_task_ctx(&env, syms, 6000, true, out)?;
+    Ok(())
+}
+
+fn build_masked_node_json(
+    id: crate::domain::NodeId,
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> Option<serde_json::Value> {
+    let sym = ingest.sym(id)?;
+    let name = interner.resolve(&sym.name);
+    let path = ingest.sym_file_path(sym, interner);
+    let bytes = crate::domain::read_rel_bytes(std::path::Path::new(root), path).ok();
+    let sig = bytes
+        .as_deref()
+        .map_or_else(|| name.to_string(), |b| sym.extract_signature(b, name));
+    let body = bytes
+        .as_deref()
+        .and_then(|b| sym.source_text(b).map(std::borrow::Cow::into_owned))
+        .unwrap_or_else(|| sig.clone());
+    Some(serde_json::json!({
+        "name": name,
+        "path": path,
+        "line": sym.line,
+        "kind": sym.kind.tag(),
+        "cx": sym.cx.max(1),
+        "ccx": sym.ccx,
+        "in": graph.in_degree(id),
+        "sig": sig,
+        "body": body,
+    }))
+}
+
+fn render_masked_pack_bundle(
+    env: &PackRenderEnv<'_>,
+    keep_ids: &[crate::domain::NodeId],
+    budget_tokens: usize,
+) -> io::Result<(String, std::collections::BTreeSet<crate::domain::NodeId>)> {
+    let syms: Vec<serde_json::Value> = keep_ids
+        .iter()
+        .filter_map(|&id| build_masked_node_json(id, env.root, env.ingest, env.graph, env.interner))
+        .collect();
+    let mut buf = Vec::new();
+    let surface = write_pack_task_ctx(env, &syms, budget_tokens, false, &mut buf)?;
+    Ok((String::from_utf8_lossy(&buf).into_owned(), surface))
+}
+
+pub fn execute_pack_task_partitioned<W: Write>(
+    task: &str,
+    root: &str,
+    requested: usize,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let n = requested.clamp(2, 16);
+    let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
+    let plan = crate::gate::plan_task_partition(task, n, ingest, graph, &pr.ranks, interner);
+    let core_budget = 2040usize;
+    let part_budget = 3960usize;
+    let env = PackRenderEnv {
+        task,
+        root,
+        ingest,
+        graph,
+        ranks: &pr.ranks,
+        interner,
+    };
+    let (core_xml, core_surface) = render_masked_pack_bundle(&env, &plan.core_ids, core_budget)?;
+    let mut part_xmls = Vec::with_capacity(plan.groups.len());
+    let mut part_surfaces = Vec::with_capacity(plan.groups.len());
+    for grp in &plan.groups {
+        let (pxml, psurf) = render_masked_pack_bundle(&env, grp, part_budget)?;
+        part_xmls.push(pxml);
+        part_surfaces.push(psurf);
+    }
+    let ov = crate::gate::measure_partition_overlap(&part_surfaces, &core_surface);
+    let total_bytes: usize = core_xml.len() + part_xmls.iter().map(String::len).sum::<usize>();
     write!(
         out,
-        "<!-- ripwire-rs pack-task schema=ripwire-rs.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->\n<ctx schema=\"ripwire-rs.pack-task/v1\" task=\"{}\" route=\"subtoken+body:broad\" root=\"{root}\" est_tokens=\"{est_tokens}\" budget_tokens=\"6000\"><sigs>",
-        task.xml_escaped()
+        "<!-- ripwire-rs partitioned task bundle: ONE shared core plus N minimally overlapping slices along call-graph communities. -->\n<ctx-partitions schema=\"ripwire-rs.pack-task/v1\" partitions=\"{}\" requested=\"{n}\" core_symbols=\"{}\" surface=\"{}\" modules=\"{}\" split=\"{}\" budget_per_agent_tokens=\"6000\" core_budget_tokens=\"{core_budget}\" partition_budget_tokens=\"{part_budget}\" total_bytes=\"{total_bytes}\" overlap_mean=\"{:.3}\" overlap_max=\"{:.3}\" shared_symbols=\"{}\" union_symbols=\"{}\" core_overlap=\"{:.3}\">",
+        part_xmls.len(),
+        plan.core_ids.len(),
+        plan.surface_count,
+        plan.module_count,
+        plan.split_count,
+        ov.mean,
+        ov.worst,
+        ov.shared_count,
+        ov.union_count,
+        ov.core_leak,
     )?;
-    out.write_all(&sigs_buf)?;
+    let core_toks = (core_xml.len() * 100 / 236).max(1);
     write!(
         out,
-        "</sigs><bodies shown=\"{}\" total=\"{}\" capped=\"{bodies_capped}\">",
-        bodies.len(),
-        total_bodies.max(bodies.len())
+        "<bundle role=\"core\" symbols=\"{}\" bytes=\"{}\" tokens=\"{core_toks}\" est_tokens=\"{core_toks}\">{core_xml}</bundle>",
+        plan.core_ids.len(),
+        core_xml.len()
     )?;
-    for b in &bodies {
+    for (idx, pxml) in part_xmls.iter().enumerate() {
+        let syms_cnt = plan.groups.get(idx).map_or(0, Vec::len);
+        let mods_cnt = plan.group_module_count.get(idx).copied().unwrap_or(1);
+        let p_toks = (pxml.len() * 100 / 236).max(1);
         write!(
             out,
-            "<b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\"><![CDATA[{}]]></b>",
-            b.kind, b.line, b.path_esc, b.name_esc, b.body
+            "<bundle role=\"partition\" i=\"{idx}\" symbols=\"{syms_cnt}\" modules=\"{mods_cnt}\" bytes=\"{}\" tokens=\"{p_toks}\" est_tokens=\"{p_toks}\">{pxml}</bundle>",
+            pxml.len()
         )?;
     }
-    write!(out, "</bodies>")?;
-    write!(
-        out,
-        "<callers of_top=\"1\" shown=\"{callers_shown}\" total=\"{}\" capped=\"{callers_capped}\">",
-        top_caller_nodes.len()
-    )?;
-    for c in top_caller_nodes.iter().take(callers_shown) {
-        write!(
-            out,
-            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
-            c.kind,
-            c.name.xml_escaped(),
-            c.path.xml_escaped(),
-            c.line
-        )?;
-    }
-    write!(out, "</callers>")?;
-    write!(
-        out,
-        "<tests shown=\"{tests_shown}\" total=\"{}\" capped=\"{tests_capped}\">",
-        aff.tests.len()
-    )?;
-    for t in aff.tests.iter().take(tests_shown) {
-        write!(
-            out,
-            "<t p=\"{}\" hops=\"{}\"/>",
-            t.path.xml_escaped(),
-            t.hops
-        )?;
-    }
-    writeln!(out, "</tests></ctx>")
+    writeln!(out, "</ctx-partitions>")
 }

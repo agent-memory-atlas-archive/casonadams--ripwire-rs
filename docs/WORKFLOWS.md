@@ -1,6 +1,6 @@
 # Real-World Workflows: When, Where, & Why to Use ripwire
 
-`ripwire` (`ripwire-rs`) provides static analysis, call graph navigation, and pre-commit verification gates. Rather than running commands in isolation, `ripwire-rs` is designed around 6 high-impact development and agentic workflows.
+`ripwire` (`ripwire-rs`) provides static analysis, call graph navigation, and pre-commit verification gates. Rather than running commands in isolation, `ripwire-rs` is designed around 7 high-impact development and agentic workflows.
 
 ---
 
@@ -294,3 +294,44 @@ jobs:
 - **Automated Merge Blocking**: Fails PR jobs automatically (exit code 4 on `--test-gate` or exit code 2 on `--quality-delta`) before untested changes or architectural rot merge into production branches.
 - **Microsecond Gate Execution**: Executes static analysis and graph traversals in milliseconds, eliminating slow CI runner bottlenecks.
 - **Zero Configuration**: Reads native git repository history, remotes, and branch merge bases automatically.
+
+---
+
+## 7. Multi-Agent Fleet Orchestration (Parallel Worktrees & Subagent Slicing)
+
+### When & Where
+- Fanning a multi-symbol feature or large refactoring out across $N$ parallel coding agents or isolated git worktrees.
+- Preventing duplicate orientation token spend where every spawned subagent re-reads the same files from scratch.
+- Predicting symbol-level merge conflicts, same-file risks, and contract-touch dependencies *before* writing code or before landing concurrent branches.
+- Handing off in-flight work and institutional gotcha notes across agent sessions.
+
+### Commands
+```bash
+# Carve a task bundle into 1 shared core + N minimally-overlapping community slices (N=2..16)
+ripwire-rs . --pack-task="refactor serialization" --partition=4
+
+# Pre-hoc worktree lane planner: predict pairwise collisions, contract touches, and landing order (1-line JSON)
+ripwire-rs . --plan-lanes=3 --task="refactor serialization"
+
+# Explicit per-lane brief file: one non-blank task line per lane, ranked independently
+ripwire-rs . --plan-lanes --brief=lanes.txt
+
+# Post-hoc cross-branch conflict oracle and fewest-conflicts-first landing order
+ripwire-rs . --merge-scout="feat/auth,feat/billing"
+
+# Deterministic intent router: recommend one ripwire-rs verb with score/margin/repo facts (or abstain)
+ripwire-rs . --help-task="plan the new feature for authentication"
+
+# Closed-world 6-shape relationship verifier (calls, uses, unused, contains, defines, reaches)
+ripwire-rs . --verify="calls(main,run_cli)"
+
+# Session handoff bundle (verified changed symbols + co-change partners + doc recall) and persistent symbol notes
+ripwire-rs . --handoff
+ripwire-rs . --note-add="Interner: Spur IDs are 1-based; never index directly without resolve()"
+ripwire-rs . --notes
+```
+
+### Benefits
+- **Zero Redundant Orientation**: `--pack-task --partition=N` carves the task surface along Louvain call-graph communities (with file-level fallback for edgeless data types and median splitting when $K < N$), emitting a `<ctx-partitions>` bundle with a shared core plus $N$ disjoint subagent `<bundle>` slices and Jaccard overlap telemetry (`overlap_mean`, `overlap_max`, `core_overlap`).
+- **Pre-Hoc Collision Prevention**: `--plan-lanes` keys claims on path-qualified `fnv1a64(path\0scope\0name)` identities to separate true symbol `conflicts`, `same_file_risk`, and `contract_touch` (a lane's claim sitting inside another lane's transitive caller blast radius), computing a greedy fewest-conflicts-first `landing_order`.
+- **Epistemic Honesty**: `--help-task` inspects live repository facts (`git`, `dirty`, `trace`, `resolved_symbols`) and abstains when evidence is thin; `--verify` distinguishes `confirmed`, `refuted` (only under complete evidence), and `not-established` (when bounded by the static call-graph or reference floor).

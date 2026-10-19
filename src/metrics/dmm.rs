@@ -8,6 +8,8 @@ pub struct DmmProperty {
     pub dmm: f64,
     pub good: u64,
     pub bad: u64,
+    pub d_low: i64,
+    pub d_high: i64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,11 +27,33 @@ pub struct DmmReport {
     pub properties: Vec<DmmProperty>,
 }
 
-fn score_volume_diff(vol: u64, is_low_risk: bool, is_growth: bool, good: &mut u64, bad: &mut u64) {
-    if (is_low_risk && is_growth) || (!is_low_risk && !is_growth) {
-        *good += vol;
-    } else {
-        *bad += vol;
+impl DmmProperty {
+    fn record_delta(&mut self, vol: u64, is_low_risk: bool, is_growth: bool) {
+        let signed = if is_growth { vol as i64 } else { -(vol as i64) };
+        if is_low_risk {
+            self.d_low += signed;
+        } else {
+            self.d_high += signed;
+        }
+        if is_low_risk == is_growth {
+            self.good += vol;
+        } else {
+            self.bad += vol;
+        }
+    }
+    fn record_pair(&mut self, b_loc: Option<u32>, t_loc: Option<u32>, low_b: bool, low_t: bool) {
+        match (b_loc, t_loc) {
+            (None, Some(loc)) => self.record_delta(u64::from(loc), low_t, true),
+            (Some(loc), None) => self.record_delta(u64::from(loc), low_b, false),
+            (Some(b), Some(t)) if low_b != low_t => {
+                self.record_delta(u64::from(b), low_b, false);
+                self.record_delta(u64::from(t), low_t, true);
+            }
+            (Some(b), Some(t)) if t != b => {
+                self.record_delta(u64::from(t.abs_diff(b)), low_t, t > b);
+            }
+            _ => {}
+        }
     }
 }
 
@@ -42,9 +66,14 @@ pub fn compute_dmm_property<F>(
 where
     F: Fn(&str, &QualitySnapshot) -> bool,
 {
-    let mut good = 0u64;
-    let mut bad = 0u64;
-
+    let mut prop = DmmProperty {
+        key,
+        dmm: 1.0,
+        good: 0,
+        bad: 0,
+        d_low: 0,
+        d_high: 0,
+    };
     let mut all_syms: HashMap<&str, (Option<u32>, Option<u32>)> = HashMap::new();
     for (sym, &loc) in &base.loc_by_sym {
         all_syms.entry(sym.as_str()).or_default().0 = Some(loc);
@@ -52,50 +81,13 @@ where
     for (sym, &loc) in &target.loc_by_sym {
         all_syms.entry(sym.as_str()).or_default().1 = Some(loc);
     }
-
     for (sym, (b_loc, t_loc)) in all_syms {
-        match (b_loc, t_loc) {
-            (None, Some(loc)) => {
-                score_volume_diff(loc as u64, is_low(sym, target), true, &mut good, &mut bad);
-            }
-            (Some(loc), None) => {
-                score_volume_diff(loc as u64, is_low(sym, base), false, &mut good, &mut bad);
-            }
-            (Some(b), Some(t)) => {
-                if t > b {
-                    score_volume_diff(
-                        (t - b) as u64,
-                        is_low(sym, target),
-                        true,
-                        &mut good,
-                        &mut bad,
-                    );
-                } else if b > t {
-                    score_volume_diff(
-                        (b - t) as u64,
-                        is_low(sym, base),
-                        false,
-                        &mut good,
-                        &mut bad,
-                    );
-                }
-            }
-            (None, None) => {}
-        }
+        prop.record_pair(b_loc, t_loc, is_low(sym, base), is_low(sym, target));
     }
-
-    let dmm = if good + bad > 0 {
-        (good as f64) / ((good + bad) as f64)
-    } else {
-        1.0
-    };
-
-    DmmProperty {
-        key,
-        dmm,
-        good,
-        bad,
+    if prop.good + prop.bad > 0 {
+        prop.dmm = (prop.good as f64) / ((prop.good + prop.bad) as f64);
     }
+    prop
 }
 
 pub fn compute_dmm_report(
@@ -189,7 +181,7 @@ impl crate::serialize::XmlReport for DmmReport {
             writeln!(
                 w,
                 "  <p k=\"{}\" dmm=\"{p_dmm}\" good=\"{}\" bad=\"{}\" d_low=\"{}\" d_high=\"{}\"/>",
-                p.key, p.good, p.bad, p.good, p.bad
+                p.key, p.good, p.bad, p.d_low, p.d_high
             )?;
         }
         Ok(())

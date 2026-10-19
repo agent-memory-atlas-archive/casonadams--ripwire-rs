@@ -25,4 +25,15 @@ fn test_dmm_calculations() {
     serialize_dmm_xml(&report, &mut buf).unwrap();
     let xml = String::from_utf8(buf).unwrap();
     assert!(xml.contains("schema=\"ripwire-rs.dmm/v1\""));
+
+    let mut b2 = QualitySnapshot::default();
+    b2.loc_by_sym.insert("f".into(), 12);
+    b2.cx_by_sym.insert("f".into(), 3);
+    b2.params_by_sym.insert("f".into(), 1);
+    let mut t2 = b2.clone();
+    t2.cx_by_sym.insert("f".into(), 9);
+    let rep2 = compute_dmm_report(&b2, &t2, "working-tree", "at");
+    assert_eq!(rep2.properties[1].bad, 24);
+    assert_eq!(rep2.properties[1].d_low, -12);
+    assert_eq!(rep2.properties[1].d_high, 12);
 }

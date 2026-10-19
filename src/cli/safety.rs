@@ -457,7 +457,14 @@ fn execute_partition_or_baseline_queries<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
-    if s.partition.is_some() {
+    if let Some(part_opt) = s.partition {
+        let k = part_opt.unwrap_or(2);
+        if let Some(task) = s.task.as_deref() {
+            crate::navigate::execute_pack_task_partitioned(
+                task, root, k, ingest, graph, interner, out,
+            )?;
+            return Ok(Some(0));
+        }
         let mut stdout_buf = Vec::new();
         crate::cli::queries::execute_communities_query(
             root,
@@ -486,6 +493,51 @@ fn execute_partition_or_baseline_queries<W: Write>(
     Ok(None)
 }
 
+fn execute_dmm_query<W: Write>(
+    rev_opt: Option<&str>,
+    root: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<i32> {
+    let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
+    let short_sha = &head_sha[..9.min(head_sha.len())];
+    let working_snap = crate::gate::baseline::compute_snapshot(ingest, graph, interner, short_sha);
+    let rev = rev_opt.filter(|r| !r.is_empty()).unwrap_or("HEAD");
+    let changed_files = get_working_tree_changed_files(root);
+    let baseline_snap = if changed_files.is_empty() && rev == "HEAD" {
+        working_snap.clone()
+    } else {
+        let eff_changed = if changed_files.is_empty() {
+            ingest
+                .files
+                .iter()
+                .map(|f| interner.resolve(&f.path).to_string())
+                .collect()
+        } else {
+            changed_files
+        };
+        crate::gate::quality_delta::load_revision_baseline_incremental(
+            root,
+            rev,
+            ingest,
+            interner,
+            &working_snap,
+            &eff_changed,
+            short_sha,
+        )
+    };
+    let rep = crate::metrics::compute_dmm_report(
+        &baseline_snap,
+        &working_snap,
+        "working-tree",
+        &head_sha,
+    );
+    crate::metrics::serialize_dmm_xml(&rep, out)?;
+    Ok(0)
+}
+
 fn execute_tool_safety_queries<W: Write>(
     s: &TopSafetyArgs,
     root: &str,
@@ -494,33 +546,29 @@ fn execute_tool_safety_queries<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
-    if let Some(_range_opt) = &s.dmm {
-        let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-        let short_sha = &head_sha[..9.min(head_sha.len())];
-        let working_snap =
-            crate::gate::baseline::compute_snapshot(ingest, graph, interner, short_sha);
-        let mut baseline_snap = working_snap.clone();
-        if !get_working_tree_changed_files(root).is_empty()
-            && let Some(val) = baseline_snap.loc_by_sym.values_mut().next()
-        {
-            *val = val.saturating_add(1);
-        }
-        let rep = crate::metrics::compute_dmm_report(
-            &baseline_snap,
-            &working_snap,
-            "working-tree",
-            &head_sha,
-        );
-        crate::metrics::serialize_dmm_xml(&rep, out)?;
-        return Ok(Some(0));
+    if let Some(range_opt) = &s.dmm {
+        return execute_dmm_query(range_opt.as_deref(), root, ingest, graph, interner, out)
+            .map(Some);
     }
     if let Some(lanes_opt) = &s.plan_lanes {
         let requested = lanes_opt.unwrap_or(2);
         let task = s.task.as_deref().unwrap_or("general refactoring");
+        let brief_lines = s
+            .brief
+            .as_deref()
+            .filter(|p| !p.is_empty())
+            .and_then(|p| std::fs::read_to_string(p).ok())
+            .map(|c| c.lines().map(str::to_string).collect::<Vec<_>>());
         let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
-        let val = crate::gate::lanes::compute_plan_lanes(
-            root, requested, task, ingest, graph, &pr, interner,
-        );
+        let val = if let Some(lines) = brief_lines.as_deref() {
+            crate::gate::lanes::compute_plan_lanes_with_brief(
+                root, lines, ingest, graph, &pr, interner,
+            )
+        } else {
+            crate::gate::lanes::compute_plan_lanes(
+                root, requested, task, ingest, graph, &pr, interner,
+            )
+        };
         serde_json::to_writer(&mut *out, &val)?;
         writeln!(out)?;
         return Ok(Some(0));

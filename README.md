@@ -67,8 +67,12 @@ ripwire-rs . --expand="Interner::len" --compress
 # 6. Agent Skills & MCP Server: install 17 skills or run stdio MCP server
 ripwire-rs --add-skills
 ripwire-rs mcp
-```
 
+# 7. Multi-Agent Fleet Orchestration: partition task bundles, plan parallel worktrees, and scout branch merges
+ripwire-rs . --pack-task="refactor serialization" --partition=4
+ripwire-rs . --plan-lanes=3 --task="refactor serialization"
+ripwire-rs . --merge-scout="branch-a,branch-b"
+```
 ---
 
 ## Workflows
@@ -81,13 +85,14 @@ See the **[Workflow Guide](docs/WORKFLOWS.md)** (or **[online](https://casonadam
 4. **[Code Health & Technical Debt](docs/WORKFLOWS.md#4-code-health--technical-debt-auditing)**: Quality regressions, dead code, hotspots, clones, and coupling (`--quality-delta`, `--quality-panel`, `--dead-code`, `--hotspots`, `--clones`, `--cochange`, `--deps`).
 5. **[Deep Inspection & Agent Context](docs/WORKFLOWS.md#5-deep-inspection--agent-context-delivery)**: Token-budgeted symbol bodies, trace mapping, and multi-query batching (`--expand`, `--outline`, `--compress`, `--from-trace`, `--batch`, `--json`).
 6. **[CI Gates & Agent Integration](docs/WORKFLOWS.md#6-continuous-integration-ci-workflows--automated-pr-gates)**: Automated PR gates, 33-tool stdio MCP server, LSP bridge, and 17 agent skills (`--add-skills`, `ripwire-rs mcp`, `--lsp`, `--scan-skills`).
+7. **[Multi-Agent Fleet Orchestration](docs/WORKFLOWS.md#7-multi-agent-fleet-orchestration-parallel-worktrees--subagent-slicing)**: Community-carved task partitioning, pre-hoc worktree lane collision planning, cross-branch merge scouting, and session handoffs (`--pack-task --partition=N`, `--plan-lanes`, `--brief`, `--merge-scout`, `--handoff`, `--help-task`, `--verify`).
 
 ---
 
 ## Documentation
 
 - **[Installation Guide](docs/INSTALL.md)** — Homebrew, APT, DNF/RPM, `cargo-binstall`, and source build instructions.
-- **[Workflow Guide](docs/WORKFLOWS.md)** — In-depth guide to the 6 primary workflows: when, where, and why to use each command.
+- **[Workflow Guide](docs/WORKFLOWS.md)** — In-depth guide to the 7 primary workflows: when, where, and why to use each command.
 - **[CLI Reference](docs/CLI.md)** — Complete command catalog, top-level flags, streaming budgets, and selector syntax.
 - **[Pre-Commit Safety Gates](docs/GATES.md)** — Verification gates (`--edit-check`, `--affected`, `--quality-delta`, `--test-gate`, `--seams`, `--pr-context`, `--merge-scout`, `--arch`).
 - **[Model Context Protocol (MCP)](docs/MCP.md)** — Reference for all 33 MCP tools and agent configuration.

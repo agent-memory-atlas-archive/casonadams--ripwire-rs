@@ -281,12 +281,16 @@ ripwire-rs . --batch=queries.txt
 # Resolve innermost symbol chain enclosing FILE:LINE
 ripwire-rs . --at="src/main.rs:25"
 
-# Formally verify relationship claim (calls, uses, defines, contains)
+# Formally verify relationship claim across 6 closed shapes (calls, uses, unused, contains, defines, reaches)
 ripwire-rs . --verify="calls(main,run_cli)"
 
-# Single-call orientation task bundle under budget
+# Single-call orientation task bundle under budget (or partitioned across N parallel subagents)
 ripwire-rs . --pack-task="search"
+ripwire-rs . --pack-task="search" --partition=4
 
+# Pre-hoc parallel worktree lane planner (auto-carved by community or from explicit --brief=FILE)
+ripwire-rs . --plan-lanes=3 --task="refactor serialization"
+ripwire-rs . --plan-lanes --brief=lanes.txt
 # Functional graph query DSL
 ripwire-rs . --graph-query="callers(main)"
 

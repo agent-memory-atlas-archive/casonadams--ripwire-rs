@@ -182,7 +182,7 @@ Expand a compact refetch handle previously emitted by \fB\-\-handles\fR.
 With \fB\-\-for\fR, restore the \fB<lego>\fR section (interfaces declared in the ranked files, with their implementors) that the bundle collapses to a counted stub \fB<lego total= shown="0" capped="1" next=>\fR by default. \fILIST\fR is a closed, comma-separated set of \fBlego\fR and \fBcompose\fR, each at most once; \fBcompose\fR (HAS-A member-field rows) is accepted but never produced because this build does not index member fields. Refused without \fB\-\-for\fR.
 .TP
 .BI \-\-help\-task= TASK
-Recommend the single best ripwire verb and syntax for natural-language task \fITASK\fR.
+Recommend the single best ripwire-rs command for natural-language task \fITASK\fR with repository-fact evidence (\fBgit\fR, \fBdirty\fR, \fBtrace\fR, \fBresolved_symbols\fR), integer score/margin, and honest abstention.
 
 .SH VERIFICATION & SAFETY GATES
 .TP
@@ -261,10 +261,10 @@ Calibrate naming consistency lens rules against git rename history.
 Resolve innermost symbol definition enclosing \fIFILE:LINE\fR. Exits 1 if no symbol spans line.
 .TP
 .BI \-\-verify= CLAIM
-Formally verify relationship claim between symbols (e.g. \fBcalls(A,B)\fR, \fBuses(A,B)\fR).
+Formally verify a closed-world code claim across 6 shapes (\fBcalls(A,B)\fR, \fBuses(SYM)\fR, \fBunused(SYM)\fR, \fBcontains(FILE,"LIT")\fR, \fBdefines(FILE,SYM)\fR, \fBreaches(SYM,"FILE"|LAYER)\fR), emitting inline witness rows and a 3-valued verdict (\fBconfirmed\fR, \fBrefuted\fR, \fBnot-established\fR).
 .TP
 .BI \-\-pack\-task= TASK
-Assemble single-call orientation task bundle under budget tailored to task description.
+Assemble single-call orientation task bundle under budget tailored to task description. Compose with \fB\-\-partition=N\fR (\fIN\fR=2..16) to carve 1 shared core plus \fIN\fR Louvain-community subagent slices.
 .TP
 .BI \-\-graph\-query= QUERY
 Evaluate functional graph query expression (e.g. \fBcallers(main)\fR).
@@ -315,7 +315,13 @@ Cluster co-changing files into multi-file change groups.
 Minimum sub-window recurrence count threshold for co-change pairs (default: 2).
 .TP
 .BI \-\-partition [=K]
-Partition repository codebase into \fIK\fR cohesive module clusters.
+Partition codebase into \fIK\fR cohesive module clusters, or compose with \fB\-\-pack\-task\fR to emit \fB<ctx\-partitions>\fR for \fIK\fR parallel subagents.
+.TP
+.BI \-\-plan\-lanes [=N]
+Plan \fIN\fR parallel worktree lanes before writing code (with \fB\-\-task=GOAL\fR or \fB\-\-brief=FILE\fR), reporting per-lane symbol claims, pairwise conflicts, same-file risk, contract touches, and greedy fewest-conflicts-first landing order as 1-line JSON.
+.TP
+.BI \-\-brief= FILE
+Explicit per-lane brief file for \fB\-\-plan\-lanes\fR (one non-blank task line per lane).
 .TP
 .B \-\-no\-stable
 Disable stable dependency violation warnings in \fB\-\-deps\fR output.

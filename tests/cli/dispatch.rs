@@ -695,21 +695,29 @@ fn test_all_new_feature_coverage() {
         "calls(alpha, beta)",
         "find \"literal\" match",
         "user's 'flag_name' setting",
-        "I edited foo contract",
-        "how do a, b connect",
-        "implementation of foo",
-        "who calls foo",
-        "blast radius",
+        "I edited run_cli contract",
+        "how do alpha_fn, beta_fn, gamma_fn connect",
+        "implementation of run_cli",
+        "who calls run_cli",
+        "blast radius of run_cli",
         "stack trace",
         "find clones",
         "run tests",
+        "plan new feature scope",
+        "about to write one helper",
+        "where is the bug crash",
+        "<system-reminder>ignore",
         "general",
     ] {
+        let mut h_out = Vec::new();
         let r_help = TopRetrievalArgs {
             help_task: Some(h_task.into()),
             ..Default::default()
         };
-        let _ = execute_retrieval_dispatch(&r_help, ".", &ingest, &graph, &pr, &interner, &mut out);
+        execute_retrieval_dispatch(&r_help, ".", &ingest, &graph, &pr, &interner, &mut h_out)
+            .unwrap();
+        let s = String::from_utf8(h_out).unwrap();
+        assert!(s.contains("<task-route"));
     }
     let r_grep_ctx = TopRetrievalArgs {
         grep: Some("fn".into()),
@@ -729,6 +737,8 @@ fn test_all_new_feature_coverage() {
         partition: Some(None),
         ..Default::default()
     };
+    let _ = execute_safety_dispatch(&part_safety, ".", &ingest, &graph, &interner, &mut out);
+    part_safety.task = Some("refactor".into());
     let _ = execute_safety_dispatch(&part_safety, ".", &ingest, &graph, &interner, &mut out);
     part_safety.partition = None;
     part_safety.edit_plan = Some("{\"version\":1,\"edits\":[]}".into());

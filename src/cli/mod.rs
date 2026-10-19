@@ -1,9 +1,12 @@
 pub mod arch;
 pub mod args;
+pub mod detail;
 pub mod dispatch;
 pub mod queries;
+pub mod retrieval;
 pub mod safety;
 pub mod stream;
+pub mod task_route;
 pub mod workspace;
 
 pub use args::*;

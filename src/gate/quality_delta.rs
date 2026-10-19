@@ -541,38 +541,52 @@ fn merge_snapshot_entries(dst: &mut QualitySnapshot, src: QualitySnapshot) {
     dst.public_api.extend(src.public_api);
 }
 
-fn read_changed_head_blobs<P: AsRef<Path>>(
+fn read_changed_rev_blobs<P: AsRef<Path>>(
     root_path: P,
-    state: &McpState,
+    rev: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
     changed_set: &std::collections::HashSet<&str>,
 ) -> Vec<(String, crate::domain::Lang, Vec<u8>)> {
-    let mut head_files = Vec::new();
+    let mut rev_files = Vec::new();
     let Ok(repo) = gix::open(root_path.as_ref()) else {
-        return head_files;
+        return rev_files;
     };
-    let Ok(head) = repo.head_commit() else {
-        return head_files;
+    let commit_res = if rev.is_empty() || rev == "HEAD" {
+        repo.head_commit()
+    } else {
+        repo.rev_parse_single(rev)
+            .map_err(|_| ())
+            .and_then(|id| id.object().map_err(|_| ()))
+            .and_then(|obj| obj.try_into_commit().map_err(|_| ()))
+            .or_else(|()| repo.head_commit())
     };
-    let Ok(tree) = head.tree() else {
-        return head_files;
+    let Ok(commit) = commit_res else {
+        return rev_files;
     };
-    for f in &state.ingest.files {
-        let rel_path = state.interner.resolve(&f.path);
+    let Ok(tree) = commit.tree() else {
+        return rev_files;
+    };
+    for f in &ingest.files {
+        let rel_path = interner.resolve(&f.path);
         if !changed_set.contains(rel_path) {
             continue;
         }
         if let Ok(Some(entry)) = tree.lookup_entry_by_path(rel_path)
             && let Ok(obj) = entry.object()
         {
-            head_files.push((rel_path.to_string(), f.lang, obj.data.to_vec()));
+            rev_files.push((rel_path.to_string(), f.lang, obj.data.to_vec()));
         }
     }
-    head_files
+    rev_files
 }
 
-fn load_head_baseline_incremental(
+#[must_use]
+pub fn load_revision_baseline_incremental(
     root: &str,
-    state: &McpState,
+    rev: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
     working: &QualitySnapshot,
     changed_files: &[String],
     head_sha: &str,
@@ -584,15 +598,15 @@ fn load_head_baseline_incremental(
     for cf in &changed_set {
         remove_file_entries_from_snapshot(&mut snap, cf);
     }
-    let head_files = read_changed_head_blobs(root, state, &changed_set);
-    if head_files.is_empty() {
+    let rev_files = read_changed_rev_blobs(root, rev, ingest, interner, &changed_set);
+    if rev_files.is_empty() {
         return snap;
     }
     let head_interner = crate::domain::Interner::new();
     let Ok(registry) = crate::ingest::LanguageRegistry::new() else {
         return snap;
     };
-    let slices: Vec<(&str, crate::domain::Lang, &[u8])> = head_files
+    let slices: Vec<(&str, crate::domain::Lang, &[u8])> = rev_files
         .iter()
         .map(|(p, l, b)| (p.as_str(), *l, b.as_slice()))
         .collect();
@@ -606,6 +620,24 @@ fn load_head_baseline_incremental(
     }
     merge_snapshot_entries(&mut snap, delta_snap);
     snap
+}
+
+fn load_head_baseline_incremental(
+    root: &str,
+    state: &McpState,
+    working: &QualitySnapshot,
+    changed_files: &[String],
+    head_sha: &str,
+) -> QualitySnapshot {
+    load_revision_baseline_incremental(
+        root,
+        "HEAD",
+        &state.ingest,
+        &state.interner,
+        working,
+        changed_files,
+        head_sha,
+    )
 }
 
 fn matches_path(path: &str, file: &str) -> bool {

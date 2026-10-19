@@ -617,6 +617,48 @@ cargo install ripwire-rs</code></pre>
           </div>
         </div>
       </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs . --pack-task &lt;TASK&gt; [--partition &lt;N&gt;]</code></div>
+          <span class="cmd-badge">Orchestration</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Packages ranked signatures, top implementation bodies, 1-hop callers, and affected tests under a single token budget—or partitions the surface into 1 shared core plus N minimally-overlapping subagent bundles (N=2..16).</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Carves assignable task symbols along Louvain call-graph communities (falling back to file grouping for edgeless types and median-splitting when K &lt; N), packs bins largest-first, and reports pairwise Jaccard overlap.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Single-call agent task orientation or fanning a multi-symbol feature across parallel subagents without duplicate discovery spend.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs . --plan-lanes [&lt;N&gt;] [--task &lt;GOAL&gt; | --brief &lt;FILE&gt;]</code></div>
+          <span class="cmd-badge">Orchestration</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Emits a deterministic 1-line JSON worktree plan predicting which parallel agent lanes will collide, touch each other's contracts, and in what order they should land.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Keys symbol claims on path-qualified FNV-1a hashes (<code>path\0scope\0name</code>), intersects claims against transitive caller blast radii, and orders lanes by fewest conflicts first.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Before spawning N parallel git worktree agents on a shared repository.</p>
+          </div>
+        </div>
+      </div>
       <h2 id="subcommands">Structured Subcommands</h2>
       <p>Categorized workflow groups providing focused subcommands for developer and agent workflows:</p>
 
