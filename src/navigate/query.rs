@@ -15,21 +15,9 @@ enum Token {
     Comma,
 }
 
-fn read_quoted_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, quote: char) -> String {
-    let mut s = String::new();
-    while let Some(&nc) = chars.peek() {
-        chars.next();
-        if nc == quote {
-            break;
-        }
-        s.push(nc);
-    }
-    s
-}
-
 fn read_chars_while(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
-    pred: fn(char) -> bool,
+    pred: impl Fn(char) -> bool,
 ) -> String {
     let mut s = String::new();
     while let Some(&nc) = chars.peek() {
@@ -39,6 +27,12 @@ fn read_chars_while(
         s.push(nc);
         chars.next();
     }
+    s
+}
+
+fn read_quoted_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>, quote: char) -> String {
+    let s = read_chars_while(chars, |c| c != quote);
+    chars.next();
     s
 }
 

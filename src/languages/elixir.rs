@@ -166,11 +166,14 @@ fn elixir_arguments<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node
         .find(|c| c.kind() == "arguments")
 }
 
-fn elixir_first_arg<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
-    let args = elixir_arguments(node)?;
+fn non_comment_args(args: tree_sitter::Node<'_>) -> impl Iterator<Item = tree_sitter::Node<'_>> {
     (0..args.named_child_count())
-        .filter_map(|i| args.named_child(i))
-        .find(|c| c.kind() != "comment")
+        .filter_map(move |i| args.named_child(i))
+        .filter(|c| c.kind() != "comment")
+}
+
+fn elixir_first_arg<'a>(node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+    non_comment_args(elixir_arguments(node)?).next()
 }
 
 fn unwrap_when_guard<'a>(
@@ -186,10 +189,7 @@ fn unwrap_when_guard<'a>(
 }
 
 fn count_non_comment_args(args: tree_sitter::Node<'_>) -> u16 {
-    (0..args.named_child_count())
-        .filter_map(|i| args.named_child(i))
-        .filter(|c| c.kind() != "comment")
-        .count() as u16
+    non_comment_args(args).count() as u16
 }
 
 pub fn elixir_param_count(def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> u16 {

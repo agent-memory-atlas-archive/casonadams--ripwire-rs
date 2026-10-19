@@ -696,6 +696,14 @@ fn write_deps_file_row<W: Write>(out: &mut W, row: &DepsFileRow<'_>) -> io::Resu
     }
 }
 
+impl<'a> DepsReport<'a> {
+    fn active_rows(&self) -> impl Iterator<Item = &DepsFileRow<'a>> {
+        self.rows
+            .iter()
+            .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
+    }
+}
+
 impl crate::serialize::XmlReport for DepsReport<'_> {
     crate::xml_report_meta!(
         "deps",
@@ -704,32 +712,18 @@ impl crate::serialize::XmlReport for DepsReport<'_> {
         comment: "ripwire-rs deps schema=ripwire-rs.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>."
     );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
-        let total = self
-            .rows
-            .iter()
-            .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
-            .count();
         Some(crate::serialize::PageWindow::compute(
-            total,
+            self.active_rows().count(),
             40,
             self.limit,
             self.offset,
         ))
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let total = self
-            .rows
-            .iter()
-            .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
-            .count();
-        write!(out, " files=\"{total}\"")
+        write!(out, " files=\"{}\"", self.active_rows().count())
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let active: Vec<&DepsFileRow<'_>> = self
-            .rows
-            .iter()
-            .filter(|d| d.includes > 0 || d.efferent > 0 || d.afferent > 0)
-            .collect();
+        let active: Vec<&DepsFileRow<'_>> = self.active_rows().collect();
         let shape = if self.nccd < 1.0 {
             "horizontal"
         } else if self.nccd > 2.0 {

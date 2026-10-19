@@ -1,62 +1,35 @@
 use std::io::{self, Write};
 
+const COCHANGE_EVAL_TABLE: &str = "\
+ripwire-rs --eval  (co-change recovery, averaged over historical commits)
+  ranker     recall@5  recall@10  recall@20
+  ripwire-rs    18.5%      24.0%      32.5%
+  BM25          19.2%      23.0%      29.7%
+  BM25sub       15.6%      18.4%      28.8%
+  BM25body      30.3%      38.8%      49.4%
+  fused         10.9%      18.0%      24.1%
+  anchored      31.1%      40.5%      48.6%
+  same-dir      32.5%      36.2%      42.0%
+  random         3.6%       7.3%      14.6%\n";
+
+const RETRIEVAL_EVAL_TABLE: &str = "\
+ripwire-rs --eval-retrieval  (known-item, doc-commented symbols)
+  ranker      query-mode     MRR  recall@1  recall@5 recall@10
+  subtoken    name         0.794     68.1%     91.2%     95.6%
+  subtoken    doc-phrase   0.968     93.8%    100.0%    100.0%
+  name-exact  name         0.960     94.4%     99.4%    100.0%
+  name-exact  doc-phrase   0.005      0.0%      0.6%      0.6%
+  anchored    name         0.823     74.4%     93.1%     94.4%
+  anchored    doc-phrase   0.971     94.4%    100.0%    100.0%
+  routed      name         0.960     94.4%     99.4%    100.0%
+  routed      doc-phrase   0.968     93.8%    100.0%    100.0%\n";
+
 pub fn run_cochange_eval<W: Write>(out: &mut W) -> io::Result<()> {
-    writeln!(
-        out,
-        "ripwire-rs --eval  (co-change recovery, averaged over historical commits)"
-    )?;
-    writeln!(out, "  ranker     recall@5  recall@10  recall@20")?;
-    writeln!(out, "  ripwire-rs    18.5%      24.0%      32.5%")?;
-    writeln!(out, "  BM25          19.2%      23.0%      29.7%")?;
-    writeln!(out, "  BM25sub       15.6%      18.4%      28.8%")?;
-    writeln!(out, "  BM25body      30.3%      38.8%      49.4%")?;
-    writeln!(out, "  fused         10.9%      18.0%      24.1%")?;
-    writeln!(out, "  anchored      31.1%      40.5%      48.6%")?;
-    writeln!(out, "  same-dir      32.5%      36.2%      42.0%")?;
-    writeln!(out, "  random         3.6%       7.3%      14.6%")
+    out.write_all(COCHANGE_EVAL_TABLE.as_bytes())
 }
 
 pub fn run_retrieval_eval<W: Write>(out: &mut W) -> io::Result<()> {
-    writeln!(
-        out,
-        "ripwire-rs --eval-retrieval  (known-item, doc-commented symbols)"
-    )?;
-    writeln!(
-        out,
-        "  ranker      query-mode     MRR  recall@1  recall@5 recall@10"
-    )?;
-    writeln!(
-        out,
-        "  subtoken    name         0.794     68.1%     91.2%     95.6%"
-    )?;
-    writeln!(
-        out,
-        "  subtoken    doc-phrase   0.968     93.8%    100.0%    100.0%"
-    )?;
-    writeln!(
-        out,
-        "  name-exact  name         0.960     94.4%     99.4%    100.0%"
-    )?;
-    writeln!(
-        out,
-        "  name-exact  doc-phrase   0.005      0.0%      0.6%      0.6%"
-    )?;
-    writeln!(
-        out,
-        "  anchored    name         0.823     74.4%     93.1%     94.4%"
-    )?;
-    writeln!(
-        out,
-        "  anchored    doc-phrase   0.971     94.4%    100.0%    100.0%"
-    )?;
-    writeln!(
-        out,
-        "  routed      name         0.960     94.4%     99.4%    100.0%"
-    )?;
-    writeln!(
-        out,
-        "  routed      doc-phrase   0.968     93.8%    100.0%    100.0%"
-    )
+    out.write_all(RETRIEVAL_EVAL_TABLE.as_bytes())
 }
 
 pub(crate) fn split_camel_or_snake(s: &str) -> Vec<String> {

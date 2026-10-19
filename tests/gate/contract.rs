@@ -60,29 +60,31 @@ fn test_compare_contracts_scenarios() {
     assert_eq!(compare_contracts(&same, None), ContractStatus::NewSymbol);
 }
 
-#[test]
-fn test_extract_param_and_visibility() {
-    let code = b"pub fn example(a: i32, b: i32) {}";
+fn parse_rust_fn_stats(code: &[u8]) -> (u16, bool) {
     let reg = LanguageRegistry::new().unwrap();
     let (ts_lang, _) = reg.get(Lang::Rust).unwrap();
     let mut parser = tree_sitter::Parser::new();
     parser.set_language(ts_lang).unwrap();
     let tree = parser.parse(code, None).unwrap();
     let fn_node = tree.root_node().child(0).unwrap();
-    assert_eq!(extract_param_count(fn_node), 2);
-    assert!(check_node_visibility(fn_node, code, Lang::Rust));
+    (
+        extract_param_count(fn_node),
+        check_node_visibility(fn_node, code, Lang::Rust),
+    )
+}
+
+#[test]
+fn test_extract_param_and_visibility() {
+    assert_eq!(
+        parse_rust_fn_stats(b"pub fn example(a: i32, b: i32) {}"),
+        (2, true)
+    );
 }
 
 #[test]
 fn test_extract_param_count_ignores_generic_type_parameters() {
     let code = b"pub fn collect_with_rank_and_limit<E, H>(&self, rank: Option<u32>, limit: Option<usize>, heartbeat: H) {}";
-    let reg = LanguageRegistry::new().unwrap();
-    let (ts_lang, _) = reg.get(Lang::Rust).unwrap();
-    let mut parser = tree_sitter::Parser::new();
-    parser.set_language(ts_lang).unwrap();
-    let tree = parser.parse(code, None).unwrap();
-    let fn_node = tree.root_node().child(0).unwrap();
-    assert_eq!(extract_param_count(fn_node), 4);
+    assert_eq!(parse_rust_fn_stats(code).0, 4);
 }
 
 #[test]

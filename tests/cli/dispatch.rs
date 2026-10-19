@@ -392,49 +392,31 @@ fn test_top_retrieval_and_workspace_queries() {
         converged: true,
         ranks: vec![0.5, 0.5],
     };
-    let r_for = TopRetrievalArgs {
-        task_for: Some("run".into()),
-        ..Default::default()
-    };
-    assert!(
-        execute_retrieval_dispatch(&r_for, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
-    );
-    let r_grep = TopRetrievalArgs {
-        grep: Some("fn".into()),
-        ..Default::default()
-    };
-    assert!(
-        execute_retrieval_dispatch(&r_grep, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
-    );
-    let r_ex = TopRetrievalArgs {
-        exemplar: Some("fn".into()),
-        ..Default::default()
-    };
-    assert!(
-        execute_retrieval_dispatch(&r_ex, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
-    );
-    let r_lego = TopRetrievalArgs {
-        lego: Some("run_cli".into()),
-        ..Default::default()
-    };
-    assert!(
-        execute_retrieval_dispatch(&r_lego, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
-    );
-    let r_rec = TopRetrievalArgs {
-        recall: Some("plan".into()),
-        ..Default::default()
-    };
-    assert!(
-        execute_retrieval_dispatch(&r_rec, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
-    );
-    let r_tr = TopRetrievalArgs {
-        from_trace: Some("error at src/lib.rs:1".into()),
-        ..Default::default()
-    };
-    assert!(
-        execute_retrieval_dispatch(&r_tr, ".", &ingest, &graph, &pr, &interner, &mut out).is_ok()
-    );
-    for r_adv in [
+    for r_case in [
+        TopRetrievalArgs {
+            task_for: Some("run".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            grep: Some("fn".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            exemplar: Some("fn".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            lego: Some("run_cli".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            recall: Some("plan".into()),
+            ..Default::default()
+        },
+        TopRetrievalArgs {
+            from_trace: Some("error at src/lib.rs:1".into()),
+            ..Default::default()
+        },
         TopRetrievalArgs {
             verify: Some("calls(run_cli,helper)".into()),
             ..Default::default()
@@ -461,7 +443,7 @@ fn test_top_retrieval_and_workspace_queries() {
         },
     ] {
         assert!(
-            execute_retrieval_dispatch(&r_adv, ".", &ingest, &graph, &pr, &interner, &mut out)
+            execute_retrieval_dispatch(&r_case, ".", &ingest, &graph, &pr, &interner, &mut out)
                 .is_ok()
         );
     }
@@ -484,102 +466,57 @@ fn test_top_safety_queries() {
     );
     assert!(execute_exercises_query(".", "tests", &ingest, &graph, &interner, &mut out).is_ok());
 
-    let s = |tg, si, sd, ex| TopSafetyArgs {
-        test_gate: tg,
-        situ: si,
-        safe_delete: sd,
-        exercises: ex,
-        ..Default::default()
-    };
-    assert!(
-        execute_safety_dispatch(
-            &s(Some(Some("lib.rs".into())), None, None, None),
-            ".",
-            &ingest,
-            &graph,
-            &interner,
-            &mut out
-        )
-        .is_ok()
-    );
-    assert!(
-        execute_safety_dispatch(
-            &s(None, Some(Some("lib.rs".into())), None, None),
-            ".",
-            &ingest,
-            &graph,
-            &interner,
-            &mut out
-        )
-        .is_ok()
-    );
-    assert!(
-        execute_safety_dispatch(
-            &s(None, None, Some("run_cli".into()), None),
-            ".",
-            &ingest,
-            &graph,
-            &interner,
-            &mut out,
-        )
-        .is_ok()
-    );
-
-    let seams_arg = TopSafetyArgs {
-        seams: true,
-        ..Default::default()
-    };
-    assert!(execute_safety_dispatch(&seams_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
-
-    let pr_arg = TopSafetyArgs {
-        pr_context: Some(Some("HEAD~1".into())),
-        ..Default::default()
-    };
-    assert!(execute_safety_dispatch(&pr_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
-
-    let merge_arg = TopSafetyArgs {
-        merge_scout: Some("main,feat".into()),
-        ..Default::default()
-    };
-    assert!(execute_safety_dispatch(&merge_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
-    assert!(
-        execute_safety_dispatch(
-            &s(None, None, None, Some("tests".into())),
-            ".",
-            &ingest,
-            &graph,
-            &interner,
-            &mut out
-        )
-        .is_ok()
-    );
-
-    let dmm_arg = TopSafetyArgs {
-        dmm: Some(None),
-        ..Default::default()
-    };
-    assert!(execute_safety_dispatch(&dmm_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
-
-    let lanes_arg = TopSafetyArgs {
-        plan_lanes: Some(Some(2)),
-        task: Some("refactor".into()),
-        ..Default::default()
-    };
-    assert!(execute_safety_dispatch(&lanes_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
-
-    let skills_arg = TopSafetyArgs {
-        scan_skills: Some(Some("skills".into())),
-        ..Default::default()
-    };
-    assert!(
-        execute_safety_dispatch(&skills_arg, ".", &ingest, &graph, &interner, &mut out).is_ok()
-    );
-
-    let edit_arg = TopSafetyArgs {
-        edit_plan: Some("replace:fn".into()),
-        ..Default::default()
-    };
-    assert!(execute_safety_dispatch(&edit_arg, ".", &ingest, &graph, &interner, &mut out).is_ok());
+    for s_case in [
+        TopSafetyArgs {
+            test_gate: Some(Some("lib.rs".into())),
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            situ: Some(Some("lib.rs".into())),
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            safe_delete: Some("run_cli".into()),
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            exercises: Some("tests".into()),
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            seams: true,
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            pr_context: Some(Some("HEAD~1".into())),
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            merge_scout: Some("main,feat".into()),
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            dmm: Some(None),
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            plan_lanes: Some(Some(2)),
+            task: Some("refactor".into()),
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            scan_skills: Some(Some("skills".into())),
+            ..Default::default()
+        },
+        TopSafetyArgs {
+            edit_plan: Some("replace:fn".into()),
+            ..Default::default()
+        },
+    ] {
+        assert!(
+            execute_safety_dispatch(&s_case, ".", &ingest, &graph, &interner, &mut out).is_ok()
+        );
+    }
 }
 
 #[test]

@@ -3,37 +3,51 @@ use ripwire_rs::mcp::edit::{
 };
 use ripwire_rs::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
 
+fn assert_splice(
+    original: &[u8],
+    op: EditOp,
+    end_byte: usize,
+    payload: &[u8],
+    expected: (usize, usize, &[u8]),
+) {
+    let (out, new_start, new_end) = splice_file_bytes(original, op, 0, end_byte, payload).unwrap();
+    assert_eq!((new_start, new_end, out.as_slice()), expected);
+}
+
 #[test]
 fn test_splice_file_bytes_replace() {
-    let original = b"fn old_function() { return 1; }\n";
     let payload = b"fn new_function() { return 2; }";
-    let (out, new_start, new_end) =
-        splice_file_bytes(original, EditOp::ReplaceBody, 0, 31, payload).unwrap();
-    assert_eq!(new_start, 0);
-    assert_eq!(new_end, payload.len());
-    assert_eq!(out, b"fn new_function() { return 2; }\n");
+    assert_splice(
+        b"fn old_function() { return 1; }\n",
+        EditOp::ReplaceBody,
+        31,
+        payload,
+        (0, payload.len(), b"fn new_function() { return 2; }\n"),
+    );
 }
 
 #[test]
 fn test_splice_file_bytes_insert_before() {
-    let original = b"fn foo() {}\n";
     let payload = b"// comment\n";
-    let (out, new_start, new_end) =
-        splice_file_bytes(original, EditOp::InsertBefore, 0, 11, payload).unwrap();
-    assert_eq!(new_start, 0);
-    assert_eq!(new_end, payload.len());
-    assert_eq!(out, b"// comment\nfn foo() {}\n");
+    assert_splice(
+        b"fn foo() {}\n",
+        EditOp::InsertBefore,
+        11,
+        payload,
+        (0, payload.len(), b"// comment\nfn foo() {}\n"),
+    );
 }
 
 #[test]
 fn test_splice_file_bytes_insert_after() {
-    let original = b"fn foo() {}\n";
     let payload = b"\nfn bar() {}\n";
-    let (out, new_start, new_end) =
-        splice_file_bytes(original, EditOp::InsertAfter, 0, 11, payload).unwrap();
-    assert_eq!(new_start, 11);
-    assert_eq!(new_end, 11 + payload.len());
-    assert_eq!(out, b"fn foo() {}\nfn bar() {}\n\n");
+    assert_splice(
+        b"fn foo() {}\n",
+        EditOp::InsertAfter,
+        11,
+        payload,
+        (11, 11 + payload.len(), b"fn foo() {}\nfn bar() {}\n\n"),
+    );
 }
 
 #[test]
