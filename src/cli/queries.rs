@@ -474,18 +474,6 @@ pub fn deduplicate_batch_legend(raw: &[u8], legend_emitted: &mut bool) -> Vec<u8
     .into_bytes()
 }
 
-pub fn run_batch_subquery<W: Write>(
-    line: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    pr: &PageRankResult,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
-    let mut first = false;
-    run_batch_subquery_dedup(line, ingest, graph, pr, interner, &mut first, out)
-}
-
 fn run_batch_subquery_dedup<W: Write>(
     line: &str,
     ingest: &IngestResult,

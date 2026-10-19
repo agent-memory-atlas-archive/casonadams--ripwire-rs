@@ -321,11 +321,6 @@ fn collect_line_backtick_candidates<'a>(
     counts
 }
 
-/// Execute `doc_drift` tool: verify checkable doc references.
-pub fn call_doc_drift(ingest: &IngestResult, interner: &Interner) -> Value {
-    call_doc_drift_in_root(".", ingest, interner)
-}
-
 fn flush_corroborated_missing(
     doc_path: &str,
     resolving_lines: &[usize],
@@ -408,10 +403,6 @@ pub fn scan_doc_text_for_drift(
     }
     flush_corroborated_missing(doc_path, &resolving_lines, pending_missing, drift_items);
     counts
-}
-
-pub fn call_doc_drift_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
-    call_doc_drift_with_history(root, ingest, interner, false)
 }
 
 pub fn enrich_drift_item_history(root: &str, item: &mut Value, head_sha: &str) {
@@ -865,11 +856,6 @@ fn scan_file_flags(root_path: &std::path::Path, path: &str, tally: &mut FlagsSca
             tally.record_env(env_var, path, idx + 1);
         }
     }
-}
-
-/// Execute `flags` tool: detect build flags and runtime configuration gates.
-pub fn call_flags(ingest: &IngestResult, interner: &Interner) -> Value {
-    call_flags_in_root(".", ingest, interner)
 }
 
 pub fn call_flags_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {

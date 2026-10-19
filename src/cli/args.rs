@@ -816,18 +816,6 @@ pub trait Paginated {
         )
     }
 
-    fn paginate_slice<'a, T>(
-        &self,
-        items: &'a [T],
-        default_cap: usize,
-    ) -> (crate::serialize::PageWindow, &'a [T])
-    where
-        Self: Sized,
-    {
-        use crate::serialize::PaginateSlice;
-        items.paginate(default_cap, self.limit_opt(), self.offset_opt())
-    }
-
     fn apply_pagination_to_json(&self, val: &mut serde_json::Value) {
         if let Some(lim) = self.limit_opt() {
             val["limit"] = serde_json::Value::from(lim as u64);

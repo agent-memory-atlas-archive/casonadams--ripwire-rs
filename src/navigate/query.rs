@@ -112,80 +112,37 @@ pub trait GraphFilterPredicate: std::fmt::Debug + Send + Sync {
 }
 
 #[derive(Debug, Clone)]
-struct KindFilter(String);
-impl GraphFilterPredicate for KindFilter {
-    fn matches(
-        &self,
-        sym: &crate::domain::Symbol,
-        _ingest: &IngestResult,
-        _graph: &Graph,
-        _interner: &Interner,
-    ) -> bool {
-        kind_matches_tag(sym.kind, &self.0)
-    }
+enum FilterSpec {
+    Kind(String),
+    File(String),
+    Layer(String),
+    Fanin(usize),
+    Cx(u32),
 }
 
-#[derive(Debug, Clone)]
-struct FileFilter(String);
-impl GraphFilterPredicate for FileFilter {
+impl GraphFilterPredicate for FilterSpec {
     fn matches(
         &self,
         sym: &crate::domain::Symbol,
         ingest: &IngestResult,
-        _graph: &Graph,
-        interner: &Interner,
-    ) -> bool {
-        ingest
-            .files
-            .get(sym.file_id as usize)
-            .is_some_and(|f| interner.resolve(&f.path).contains(&self.0))
-    }
-}
-
-#[derive(Debug, Clone)]
-struct LayerFilter(String);
-impl GraphFilterPredicate for LayerFilter {
-    fn matches(
-        &self,
-        sym: &crate::domain::Symbol,
-        ingest: &IngestResult,
-        _graph: &Graph,
+        graph: &Graph,
         interner: &Interner,
     ) -> bool {
         use crate::serialize::PathLayerExt;
-        ingest
-            .files
-            .get(sym.file_id as usize)
-            .and_then(|f| interner.resolve(&f.path).builtin_layer())
-            .is_some_and(|l| l.eq_ignore_ascii_case(&self.0))
-    }
-}
-
-#[derive(Debug, Clone)]
-struct FaninFilter(usize);
-impl GraphFilterPredicate for FaninFilter {
-    fn matches(
-        &self,
-        sym: &crate::domain::Symbol,
-        _ingest: &IngestResult,
-        graph: &Graph,
-        _interner: &Interner,
-    ) -> bool {
-        graph.in_degree(sym.id) >= self.0
-    }
-}
-
-#[derive(Debug, Clone)]
-struct CxFilter(u32);
-impl GraphFilterPredicate for CxFilter {
-    fn matches(
-        &self,
-        sym: &crate::domain::Symbol,
-        _ingest: &IngestResult,
-        _graph: &Graph,
-        _interner: &Interner,
-    ) -> bool {
-        sym.ccx <= self.0 || sym.cx <= self.0
+        match self {
+            Self::Kind(tag) => kind_matches_tag(sym.kind, tag),
+            Self::File(pat) => ingest
+                .files
+                .get(sym.file_id as usize)
+                .is_some_and(|f| interner.resolve(&f.path).contains(pat)),
+            Self::Layer(layer) => ingest
+                .files
+                .get(sym.file_id as usize)
+                .and_then(|f| interner.resolve(&f.path).builtin_layer())
+                .is_some_and(|l| l.eq_ignore_ascii_case(layer)),
+            Self::Fanin(min_in) => graph.in_degree(sym.id) >= *min_in,
+            Self::Cx(max_cx) => sym.ccx <= *max_cx || sym.cx <= *max_cx,
+        }
     }
 }
 
@@ -275,13 +232,13 @@ impl<'a> GraphQueryParser<'a> {
                     Some(GraphExpr::Name(id.to_string()))
                 }
             }
-            "callers" => self.parse_closure_expr(true),
-            "callees" => self.parse_closure_expr(false),
-            "kind" => self.parse_str_filter("kind", |s| std::sync::Arc::new(KindFilter(s))),
-            "file" => self.parse_str_filter("file", |s| std::sync::Arc::new(FileFilter(s))),
-            "layer" => self.parse_str_filter("layer", |s| std::sync::Arc::new(LayerFilter(s))),
-            "fanin" => self.parse_num_filter("fanin", 1, |n| std::sync::Arc::new(FaninFilter(n))),
-            "cx" => self.parse_num_filter("cx", 15, |n| std::sync::Arc::new(CxFilter(n as u32))),
+            "callers" => self.parse_closure_expr("callers", true),
+            "callees" => self.parse_closure_expr("callees", false),
+            "kind" => self.parse_str_filter("kind", FilterSpec::Kind),
+            "file" => self.parse_str_filter("file", FilterSpec::File),
+            "layer" => self.parse_str_filter("layer", FilterSpec::Layer),
+            "fanin" => self.parse_num_filter("fanin", 1, FilterSpec::Fanin),
+            "cx" => self.parse_num_filter("cx", 15, |n| FilterSpec::Cx(n as u32)),
             "and" => self.parse_composite(true),
             "or" => self.parse_composite(false),
             "not" => self.parse_not(),
@@ -289,37 +246,13 @@ impl<'a> GraphQueryParser<'a> {
         }
     }
 
-    fn parse_closure_expr(&mut self, is_callers: bool) -> Option<GraphExpr> {
-        if self.peek() != Some(&Token::LParen) {
-            return Some(GraphExpr::Name(
-                if is_callers { "callers" } else { "callees" }.to_string(),
-            ));
-        }
-        self.pos += 1;
-        let sub = self.parse_expr()?;
-        let depth = if self.peek() == Some(&Token::Comma) {
-            self.pos += 1;
-            match self.next() {
-                Some(Token::Num(n)) => *n,
-                _ => 1,
-            }
-        } else {
-            1
-        };
-        if self.peek() == Some(&Token::RParen) {
-            self.pos += 1;
-        }
-        if is_callers {
-            Some(GraphExpr::Callers(Box::new(sub), depth))
-        } else {
-            Some(GraphExpr::Callees(Box::new(sub), depth))
-        }
-    }
-
-    fn parse_str_filter<F>(&mut self, op_name: &str, build: F) -> Option<GraphExpr>
-    where
-        F: FnOnce(String) -> std::sync::Arc<dyn GraphFilterPredicate>,
-    {
+    fn parse_unary_with_opt<T>(
+        &mut self,
+        op_name: &str,
+        default: T,
+        parse_arg: impl FnOnce(&mut Self) -> Option<T>,
+        build: impl FnOnce(Box<GraphExpr>, T) -> GraphExpr,
+    ) -> Option<GraphExpr> {
         if self.peek() != Some(&Token::LParen) {
             return Some(GraphExpr::Name(op_name.to_string()));
         }
@@ -327,43 +260,52 @@ impl<'a> GraphQueryParser<'a> {
         let sub = self.parse_expr()?;
         let arg = if self.peek() == Some(&Token::Comma) {
             self.pos += 1;
-            self.match_ident().unwrap_or_default()
+            parse_arg(self).unwrap_or(default)
         } else {
-            String::new()
+            default
         };
         if self.peek() == Some(&Token::RParen) {
             self.pos += 1;
         }
-        Some(GraphExpr::Filter(Box::new(sub), build(arg)))
+        Some(build(Box::new(sub), arg))
     }
 
-    fn parse_num_filter<F>(
+    fn next_num_opt(&mut self) -> Option<usize> {
+        match self.next() {
+            Some(Token::Num(n)) => Some(*n),
+            _ => None,
+        }
+    }
+
+    fn parse_closure_expr(&mut self, op_name: &str, is_callers: bool) -> Option<GraphExpr> {
+        self.parse_unary_with_opt(op_name, 1, Self::next_num_opt, |sub, depth| {
+            if is_callers {
+                GraphExpr::Callers(sub, depth)
+            } else {
+                GraphExpr::Callees(sub, depth)
+            }
+        })
+    }
+
+    fn parse_str_filter(
+        &mut self,
+        op_name: &str,
+        build: fn(String) -> FilterSpec,
+    ) -> Option<GraphExpr> {
+        self.parse_unary_with_opt(op_name, String::new(), Self::match_ident, |sub, arg| {
+            GraphExpr::Filter(sub, std::sync::Arc::new(build(arg)))
+        })
+    }
+
+    fn parse_num_filter(
         &mut self,
         op_name: &str,
         default_num: usize,
-        build: F,
-    ) -> Option<GraphExpr>
-    where
-        F: FnOnce(usize) -> std::sync::Arc<dyn GraphFilterPredicate>,
-    {
-        if self.peek() != Some(&Token::LParen) {
-            return Some(GraphExpr::Name(op_name.to_string()));
-        }
-        self.pos += 1;
-        let sub = self.parse_expr()?;
-        let num = if self.peek() == Some(&Token::Comma) {
-            self.pos += 1;
-            match self.next() {
-                Some(Token::Num(n)) => *n,
-                _ => default_num,
-            }
-        } else {
-            default_num
-        };
-        if self.peek() == Some(&Token::RParen) {
-            self.pos += 1;
-        }
-        Some(GraphExpr::Filter(Box::new(sub), build(num)))
+        build: fn(usize) -> FilterSpec,
+    ) -> Option<GraphExpr> {
+        self.parse_unary_with_opt(op_name, default_num, Self::next_num_opt, |sub, num| {
+            GraphExpr::Filter(sub, std::sync::Arc::new(build(num)))
+        })
     }
 
     fn parse_composite(&mut self, is_and: bool) -> Option<GraphExpr> {

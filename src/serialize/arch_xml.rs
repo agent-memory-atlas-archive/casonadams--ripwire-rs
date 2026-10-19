@@ -306,15 +306,6 @@ pub fn serialize_dead_code_xml<W: Write>(
     )
 }
 
-pub fn serialize_dead_code_with_gauge_xml<W: Write>(
-    root: &str,
-    items: &[(&str, &'static str, &str, u32)],
-    gauges: crate::serialize::GraphGauges,
-    out: &mut W,
-) -> io::Result<()> {
-    serialize_dead_code_paged_xml(root, items, gauges, None, None, out)
-}
-
 pub fn serialize_dead_code_paged_xml<W: Write>(
     root: &str,
     items: &[(&str, &'static str, &str, u32)],

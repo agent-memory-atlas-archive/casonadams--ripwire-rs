@@ -808,26 +808,6 @@ fn collect_for_doc_mentions(
         .collect()
 }
 
-/// Execute `fetch_body` tool.
-pub fn call_fetch_body(
-    ingest: &IngestResult,
-    interner: &Interner,
-    symbol_name: &str,
-    path_hint: Option<&str>,
-    start_line: Option<usize>,
-    end_line: Option<usize>,
-) -> Value {
-    call_fetch_body_in_root(
-        ".",
-        ingest,
-        interner,
-        symbol_name,
-        path_hint,
-        start_line,
-        end_line,
-    )
-}
-
 pub fn call_fetch_body_in_root(
     root: &str,
     ingest: &IngestResult,

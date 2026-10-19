@@ -53,12 +53,6 @@ pub fn sketch_matches(a: &[u8; SKETCH_HASHES], b: &[u8; SKETCH_HASHES]) -> u32 {
     matches
 }
 
-/// Check if word is a reserved control-flow, declaration, or structural keyword.
-#[must_use]
-pub fn is_keyword(w: &str) -> bool {
-    is_keyword_bytes(w.as_bytes())
-}
-
 #[must_use]
 pub fn is_keyword_bytes(w: &[u8]) -> bool {
     matches!(

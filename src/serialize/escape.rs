@@ -12,18 +12,6 @@ pub fn xml_safe_byte(c: u8) -> u8 {
     }
 }
 
-/// Convert legal control characters to character entity references.
-#[inline]
-#[must_use]
-pub fn xml_control_entity(c: char) -> Option<&'static str> {
-    match c {
-        '\t' => Some("&#9;"),
-        '\n' => Some("&#10;"),
-        '\r' => Some("&#13;"),
-        _ => None,
-    }
-}
-
 /// Convert a character requiring XML escaping into its replacement string.
 #[inline]
 #[must_use]

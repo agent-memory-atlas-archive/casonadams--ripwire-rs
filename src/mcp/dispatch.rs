@@ -1,6 +1,4 @@
-use super::doc_tools;
 use super::edit;
-use super::graph_tools;
 use super::retrieval;
 use super::state::McpState;
 use crate::ingest::LanguageRegistry;
@@ -10,11 +8,6 @@ use serde_json::{Value, json};
 #[inline]
 pub fn require_str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
     args.req_str(key)
-}
-
-#[inline]
-pub fn opt_str_arg<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
-    args.opt_str(key)
 }
 
 pub fn call_find_symbol(state: &McpState, args: &Value) -> Result<Value, String> {
@@ -127,7 +120,10 @@ pub fn call_explore(state: &McpState, args: &Value) -> Result<Value, String> {
     Ok(Value::String(xml))
 }
 
-fn resolve_state_commits(state: &McpState, months: u32) -> Vec<crate::git::history::CommitInfo> {
+pub(super) fn resolve_state_commits(
+    state: &McpState,
+    months: u32,
+) -> Vec<crate::git::history::CommitInfo> {
     if let Some(commits) = &state.commits {
         return commits.clone();
     }
@@ -334,188 +330,6 @@ pub fn call_for_tool(state: &McpState, args: &Value) -> Result<Value, String> {
             adaptive,
         },
     ))
-}
-
-pub fn call_fetch_body_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym = args.str_any(&["symbol", "handle"], "");
-    let path_hint = args.opt_str_any(&["path", "file"]);
-    let sl = args.opt_usize("start_line");
-    let el = args.opt_usize("end_line");
-    Ok(retrieval::call_fetch_body_in_root(
-        &state.root,
-        &state.ingest,
-        &state.interner,
-        sym,
-        path_hint,
-        sl,
-        el,
-    ))
-}
-
-pub fn call_exemplar_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let role = args.str_any(&["role", "kind"], "fn");
-    Ok(retrieval::call_exemplar_in_root(
-        &state.root,
-        &state.ingest,
-        &state.interner,
-        &state.ranks,
-        role,
-        Some(&state.graph),
-    ))
-}
-
-pub fn call_lego_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let iface = args.str_any(&["interface", "symbol"], "");
-    let mut val = retrieval::call_lego(&state.ingest, &state.interner, iface);
-    val.attach_gauges(&state.graph);
-    Ok(val)
-}
-
-pub fn call_memory_recall_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let task = args.str_or("task", "");
-    let top_k = args.opt_usize("top_k");
-    Ok(retrieval::call_memory_recall_in_root(
-        &state.root,
-        &state.ingest,
-        &state.interner,
-        task,
-        top_k,
-    ))
-}
-
-pub fn call_grep_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let pattern = args.str_or("pattern", "");
-    let path_filter = args.opt_str("path");
-    Ok(retrieval::call_grep_in_root(
-        &state.root,
-        &state.ingest,
-        &state.interner,
-        pattern,
-        path_filter,
-    ))
-}
-
-pub fn call_connect_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let symbols = args.str_vec("symbols");
-    Ok(graph_tools::call_connect(
-        &state.ingest,
-        &state.graph,
-        &state.interner,
-        &symbols,
-    ))
-}
-
-pub fn call_path_between_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let from = args.str_or("from", "");
-    let to = args.str_or("to", "");
-    Ok(graph_tools::call_path_between(
-        &state.ingest,
-        &state.graph,
-        &state.interner,
-        from,
-        to,
-    ))
-}
-
-pub fn call_uses_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym = args.str_or("symbol", "");
-    Ok(graph_tools::call_uses(&state.ingest, &state.interner, sym))
-}
-
-pub fn call_analyze_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let top_k = args.opt_usize("top_k");
-    let rank_by = args.opt_str("rank_by");
-    Ok(graph_tools::call_analyze(
-        &state.ingest,
-        &state.graph,
-        &state.interner,
-        &state.ranks,
-        top_k,
-        rank_by,
-    ))
-}
-
-pub fn call_rank_by_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let rank_by = args.str_or("rank_by", "pagerank");
-    let top_k = args.opt_usize("top_k");
-    Ok(graph_tools::call_analyze(
-        &state.ingest,
-        &state.graph,
-        &state.interner,
-        &state.ranks,
-        top_k,
-        Some(rank_by),
-    ))
-}
-
-pub fn call_situational_awareness_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let changed = args.str_vec("files");
-    let commits = resolve_state_commits(state, 18);
-    Ok(graph_tools::call_situational_awareness(
-        &state.ingest,
-        &state.graph,
-        &state.interner,
-        &changed,
-        Some(&commits),
-    ))
-}
-
-pub fn call_from_trace_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let trace = args.str_or("trace", "");
-    Ok(graph_tools::call_from_trace(
-        &state.ingest,
-        &state.interner,
-        trace,
-    ))
-}
-
-pub fn call_mentions_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym = args.str_or("symbol", "");
-    Ok(doc_tools::call_mentions_in_root(
-        &state.root,
-        &state.ingest,
-        &state.interner,
-        sym,
-    ))
-}
-
-pub fn call_doc_drift_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let with_hist = args.bool_or("with_history", false);
-    Ok(doc_tools::call_doc_drift_with_history(
-        &state.root,
-        &state.ingest,
-        &state.interner,
-        with_hist,
-    ))
-}
-
-pub fn call_flags_tool(state: &McpState, _args: &Value) -> Result<Value, String> {
-    Ok(doc_tools::call_flags_in_root(
-        &state.root,
-        &state.ingest,
-        &state.interner,
-    ))
-}
-
-pub fn call_owners_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let path = args.opt_str_any(&["path", "file"]);
-    let commits = resolve_state_commits(state, 12);
-    Ok(doc_tools::call_owners(Some(&commits), path, None, None))
-}
-
-pub fn call_whereis_tool(state: &McpState, args: &Value) -> Result<Value, String> {
-    let sym = args.str_or("symbol", "");
-    let with_hist = args.bool_or("with_history", false);
-    Ok(doc_tools::call_whereis(
-        &state.ingest,
-        &state.interner,
-        &state.root,
-        sym,
-        with_hist,
-    ))
-}
-pub fn call_stray_content_tool(state: &McpState, _args: &Value) -> Result<Value, String> {
-    Ok(doc_tools::call_stray_content(&state.root))
 }
 
 pub fn call_batch(state: &McpState, args: &Value) -> Result<Value, String> {

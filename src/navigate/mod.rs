@@ -110,11 +110,6 @@ pub trait SymbolLookup<'a>: crate::domain::CorpusView<'a> {
         let id = *self.find_symbols(selector).first()?;
         self.ingest().sym(id)
     }
-
-    #[must_use]
-    fn find_nearest_symbol(&self, query: &str) -> Option<&'a str> {
-        find_nearest_symbol_name(query, self.ingest(), self.interner())
-    }
 }
 
 impl<'a, T: crate::domain::CorpusView<'a> + ?Sized> SymbolLookup<'a> for T {}

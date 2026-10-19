@@ -42,87 +42,69 @@ pub trait QualityEvidenceFamily: Sync {
     fn fires(&self, sym: &crate::domain::Symbol, ctx: &QualityFamilyContext<'_>) -> bool;
 }
 
-struct StructuralFamily {
-    check_params: bool,
-}
-impl QualityEvidenceFamily for StructuralFamily {
-    fn name(&self) -> &'static str {
-        "structural"
-    }
-    fn fires(&self, sym: &crate::domain::Symbol, _ctx: &QualityFamilyContext<'_>) -> bool {
-        sym.ccx > 15 || sym.loc > 60 || sym.max_nest > 4 || (self.check_params && sym.params > 5)
-    }
+pub struct QualityFamilySpec {
+    pub name: &'static str,
+    pub predicate: fn(&crate::domain::Symbol, &QualityFamilyContext<'_>) -> bool,
 }
 
-struct StateFamily;
-impl QualityEvidenceFamily for StateFamily {
+impl QualityEvidenceFamily for QualityFamilySpec {
     fn name(&self) -> &'static str {
-        "state"
+        self.name
     }
     fn fires(&self, sym: &crate::domain::Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
-        ctx.state_syms.is_some_and(|s| s.contains(&sym.id))
+        (self.predicate)(sym, ctx)
     }
 }
 
-struct ColocationFamily {
-    min_out_degree: usize,
-}
-impl QualityEvidenceFamily for ColocationFamily {
-    fn name(&self) -> &'static str {
-        "colocation"
-    }
-    fn fires(&self, sym: &crate::domain::Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
-        ctx.graph.out_degree(sym.id) >= self.min_out_degree
-    }
+fn is_structural_base(sym: &crate::domain::Symbol) -> bool {
+    sym.ccx > 15 || sym.loc > 60 || sym.max_nest > 4
 }
 
-struct HistoricalFamily;
-impl QualityEvidenceFamily for HistoricalFamily {
-    fn name(&self) -> &'static str {
-        "historical"
-    }
-    fn fires(&self, sym: &crate::domain::Symbol, _ctx: &QualityFamilyContext<'_>) -> bool {
-        sym.cx > 10 && sym.loc > 40
-    }
-}
+const HISTORICAL_FAMILY: QualityFamilySpec = QualityFamilySpec {
+    name: "historical",
+    predicate: |sym, _| sym.cx > 10 && sym.loc > 40,
+};
 
-struct LexicalFamily;
-impl QualityEvidenceFamily for LexicalFamily {
-    fn name(&self) -> &'static str {
-        "lexical"
-    }
-    fn fires(&self, sym: &crate::domain::Symbol, _ctx: &QualityFamilyContext<'_>) -> bool {
-        sym.params > 4
-    }
-}
-
-struct ConfusionFamily;
-impl QualityEvidenceFamily for ConfusionFamily {
-    fn name(&self) -> &'static str {
-        "confusion"
-    }
-    fn fires(&self, sym: &crate::domain::Symbol, _ctx: &QualityFamilyContext<'_>) -> bool {
+const CONFUSION_FAMILY: QualityFamilySpec = QualityFamilySpec {
+    name: "confusion",
+    predicate: |sym, _| {
         sym.lang.semantics().supports_c_layout()
             && (sym.humps > 2 || (sym.max_nest >= 4 && sym.cx >= 12) || sym.ccx > 20)
-    }
-}
+    },
+};
 
 pub static PANEL_FAMILIES: &[&dyn QualityEvidenceFamily] = &[
-    &StructuralFamily { check_params: true },
-    &StateFamily,
-    &ColocationFamily { min_out_degree: 10 },
-    &HistoricalFamily,
-    &ConfusionFamily,
+    &QualityFamilySpec {
+        name: "structural",
+        predicate: |sym, _| is_structural_base(sym) || sym.params > 5,
+    },
+    &QualityFamilySpec {
+        name: "state",
+        predicate: |sym, ctx| ctx.state_syms.is_some_and(|s| s.contains(&sym.id)),
+    },
+    &QualityFamilySpec {
+        name: "colocation",
+        predicate: |sym, ctx| ctx.graph.out_degree(sym.id) >= 10,
+    },
+    &HISTORICAL_FAMILY,
+    &CONFUSION_FAMILY,
 ];
 
 pub static ENSEMBLE_FAMILIES: &[&dyn QualityEvidenceFamily] = &[
-    &StructuralFamily {
-        check_params: false,
+    &QualityFamilySpec {
+        name: "structural",
+        predicate: |sym, _| is_structural_base(sym),
     },
-    &ColocationFamily { min_out_degree: 8 },
-    &HistoricalFamily,
-    &LexicalFamily,
-    &ConfusionFamily,
+    &QualityFamilySpec {
+        name: "colocation",
+        predicate: |sym, ctx| ctx.graph.out_degree(sym.id) >= 8,
+    },
+    &HISTORICAL_FAMILY,
+    &QualityFamilySpec {
+        name: "lexical",
+        predicate: |sym, _| sym.params > 4,
+    },
+    &CONFUSION_FAMILY,
 ];
 #[must_use]
 pub fn evaluate_quality_families(

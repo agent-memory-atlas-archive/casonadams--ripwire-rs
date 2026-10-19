@@ -271,16 +271,6 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
     })
 }
 
-/// Execute `memory_recall` tool: search docs for task terms.
-pub fn call_memory_recall(
-    ingest: &IngestResult,
-    interner: &Interner,
-    task: &str,
-    top_k: Option<usize>,
-) -> Value {
-    call_memory_recall_in_root(".", ingest, interner, task, top_k)
-}
-
 pub fn call_memory_recall_in_root(
     root: &str,
     ingest: &IngestResult,

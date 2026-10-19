@@ -494,22 +494,6 @@ impl ResolutionLookup for ResolutionContext<'_> {
     }
 }
 
-pub fn filter_candidates(
-    all_cands: &[NodeId],
-    r: &Reference,
-    symbols: &[Symbol],
-) -> Option<CandBuffer> {
-    let empty_map = HashMap::new();
-    let ctx = ResolutionContext {
-        symbols,
-        file_dirs: &[],
-        by_name: &empty_map,
-        interner: None,
-        file_scopes: None,
-    };
-    ctx.filter_ref_candidates(all_cands, r)
-}
-
 pub fn resolve_call_reference(
     r: &Reference,
     symbols: &[Symbol],

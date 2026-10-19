@@ -2,8 +2,7 @@ pub mod ladder;
 
 pub use ladder::*;
 
-use crate::domain::{IngestResult, Interner, NodeId, Reference, Symbol};
-use lasso::Spur;
+use crate::domain::{IngestResult, Interner, NodeId, Reference};
 use rayon::prelude::*;
 use std::collections::HashMap;
 
@@ -67,24 +66,6 @@ pub fn resolve_reference_chunk_with_context<L: ResolutionLookup>(
         }
     }
     res
-}
-
-#[must_use]
-pub fn resolve_reference_chunk(
-    chunk: &[Reference],
-    symbols: &[Symbol],
-    file_dirs: &[u32],
-    by_name: &HashMap<Spur, Vec<NodeId>>,
-    num_symbols: usize,
-) -> ResolutionResult {
-    let ctx = ResolutionContext {
-        symbols,
-        file_dirs,
-        by_name,
-        interner: None,
-        file_scopes: None,
-    };
-    resolve_reference_chunk_with_context(chunk, &ctx, num_symbols)
 }
 
 #[must_use]

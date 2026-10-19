@@ -1,14 +1,12 @@
 use super::dispatch::{
-    McpToolHandler, call_affected, call_analyze_tool, call_batch, call_callees, call_callers,
-    call_cochange, call_connect_tool, call_doc_drift_tool, call_edit_check, call_edit_tool,
-    call_exemplar_tool, call_explore, call_fetch_body_tool, call_find_symbol, call_flags_tool,
-    call_for_tool, call_from_trace_tool, call_grep_tool, call_impact, call_lego_tool,
-    call_memory_recall_tool, call_mentions_tool, call_owners_tool, call_path_between_tool,
-    call_quality_baseline, call_quality_delta, call_rank_by_tool, call_situational_awareness_tool,
-    call_slice, call_stray_content_tool, call_uses_tool, call_whereis_tool,
+    McpToolHandler, call_affected, call_batch, call_callees, call_callers, call_cochange,
+    call_edit_check, call_edit_tool, call_explore, call_find_symbol, call_for_tool, call_impact,
+    call_quality_baseline, call_quality_delta, call_slice, resolve_state_commits,
 };
 use super::edit::EditOp;
 use super::state::McpState;
+use super::{doc_tools, graph_tools, retrieval};
+use crate::serialize::JsonValueExt;
 use serde_json::{Map, Value, json};
 
 /// Build an MCP tool JSON Schema object from declarative parameter tuples.
@@ -83,18 +81,6 @@ impl McpToolHandler for McpToolSpec {
     }
 }
 
-fn call_insert_after(state: &McpState, args: &Value) -> Result<Value, String> {
-    call_edit_tool(state, EditOp::InsertAfter, args, false)
-}
-
-fn call_insert_before(state: &McpState, args: &Value) -> Result<Value, String> {
-    call_edit_tool(state, EditOp::InsertBefore, args, false)
-}
-
-fn call_replace_body(state: &McpState, args: &Value) -> Result<Value, String> {
-    call_edit_tool(state, EditOp::ReplaceBody, args, true)
-}
-
 macro_rules! mcp_tool {
     ($name:expr, $desc:expr, $params:expr, $req:expr, $handler:expr) => {
         &McpToolSpec {
@@ -139,7 +125,16 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
             ),
         ],
         &[],
-        call_analyze_tool
+        |s, a| {
+            Ok(graph_tools::call_analyze(
+                &s.ingest,
+                &s.graph,
+                &s.interner,
+                &s.ranks,
+                a.opt_usize("top_k"),
+                a.opt_str("rank_by"),
+            ))
+        }
     ),
     mcp_tool!(
         "batch",
@@ -171,14 +166,28 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
         "When a task touches 2..16 named symbols, returns the minimal subgraph relating them",
         &[("symbols", "string[]", "List of symbol names")],
         &["symbols"],
-        call_connect_tool
+        |s, a| {
+            Ok(graph_tools::call_connect(
+                &s.ingest,
+                &s.graph,
+                &s.interner,
+                &a.str_vec("symbols"),
+            ))
+        }
     ),
     mcp_tool!(
         "doc_drift",
         "WHICH OF THIS REPO'S DOC CLAIMS ARE NOW FALSE: verifies checkable anchors in markdown against live index",
         &[],
         &[],
-        call_doc_drift_tool
+        |s, a| {
+            Ok(doc_tools::call_doc_drift_with_history(
+                &s.root,
+                &s.ingest,
+                &s.interner,
+                a.bool_or("with_history", false),
+            ))
+        }
     ),
     mcp_tool!(
         "edit_check",
@@ -196,7 +205,16 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
             "Kind of symbol: fn, method, class, struct, interface"
         )],
         &[],
-        call_exemplar_tool
+        |s, a| {
+            Ok(retrieval::call_exemplar_in_root(
+                &s.root,
+                &s.ingest,
+                &s.interner,
+                &s.ranks,
+                a.str_any(&["role", "kind"], "fn"),
+                Some(&s.graph),
+            ))
+        }
     ),
     mcp_tool!(
         "explore",
@@ -218,7 +236,17 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
             ("end_line", "integer", "Optional 1-based end line"),
         ],
         &["symbol"],
-        call_fetch_body_tool
+        |s, a| {
+            Ok(retrieval::call_fetch_body_in_root(
+                &s.root,
+                &s.ingest,
+                &s.interner,
+                a.str_any(&["symbol", "handle"], ""),
+                a.opt_str_any(&["path", "file"]),
+                a.opt_usize("start_line"),
+                a.opt_usize("end_line"),
+            ))
+        }
     ),
     mcp_tool!(
         "find_referencing_symbols",
@@ -239,7 +267,11 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
         "WHAT IS BUILT BUT DARK: harvests ifndef header gates, CMake options, env reads",
         &[],
         &[],
-        call_flags_tool
+        |s, _| Ok(doc_tools::call_flags_in_root(
+            &s.root,
+            &s.ingest,
+            &s.interner
+        ))
     ),
     mcp_tool!(
         "for",
@@ -256,7 +288,11 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
         "Paste a stack trace / compiler error and get it mapped onto indexed symbols innermost-first",
         &[("trace", "string", "Stack trace text")],
         &["trace"],
-        call_from_trace_tool
+        |s, a| Ok(graph_tools::call_from_trace(
+            &s.ingest,
+            &s.interner,
+            a.str_or("trace", "")
+        ))
     ),
     mcp_tool!(
         "grep",
@@ -266,7 +302,15 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
             ("path", "string", "Optional path filter"),
         ],
         &["pattern"],
-        call_grep_tool
+        |s, a| {
+            Ok(retrieval::call_grep_in_root(
+                &s.root,
+                &s.ingest,
+                &s.interner,
+                a.str_or("pattern", ""),
+                a.opt_str("path"),
+            ))
+        }
     ),
     mcp_tool!(
         "impact",
@@ -287,21 +331,29 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
         "Insert text immediately AFTER a symbol's definition (atomic write-rename)",
         EDIT_INS_PARAMS,
         &["symbol", "text"],
-        call_insert_after
+        |s, a| call_edit_tool(s, EditOp::InsertAfter, a, false)
     ),
     mcp_tool!(
         "insert_before_symbol",
         "Insert text immediately BEFORE a symbol's definition (atomic write-rename)",
         EDIT_INS_PARAMS,
         &["symbol", "text"],
-        call_insert_before
+        |s, a| call_edit_tool(s, EditOp::InsertBefore, a, false)
     ),
     mcp_tool!(
         "lego",
         "Interface-to-impls view: method contract plus EVERY implementor",
         &[("interface", "string", "Interface, trait or base class name")],
         &["interface"],
-        call_lego_tool
+        |s, a| {
+            let mut val = retrieval::call_lego(
+                &s.ingest,
+                &s.interner,
+                a.str_any(&["interface", "symbol"], ""),
+            );
+            val.attach_gauges(&s.graph);
+            Ok(val)
+        }
     ),
     mcp_tool!(
         "memory_recall",
@@ -311,21 +363,44 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
             ("top_k", "integer", "Maximum number of notes"),
         ],
         &["task"],
-        call_memory_recall_tool
+        |s, a| {
+            Ok(retrieval::call_memory_recall_in_root(
+                &s.root,
+                &s.ingest,
+                &s.interner,
+                a.str_or("task", ""),
+                a.opt_usize("top_k"),
+            ))
+        }
     ),
     mcp_tool!(
         "mentions",
         "Docs that name a code symbol in a backtick",
         SYM_PARAM,
         &["symbol"],
-        call_mentions_tool
+        |s, a| {
+            Ok(doc_tools::call_mentions_in_root(
+                &s.root,
+                &s.ingest,
+                &s.interner,
+                a.str_or("symbol", ""),
+            ))
+        }
     ),
     mcp_tool!(
         "owners",
         "Bus-factor: recency-weighted author ownership per file",
         &[("path", "string", "Optional file path filter")],
         &[],
-        call_owners_tool
+        |s, a| {
+            let commits = resolve_state_commits(s, 12);
+            Ok(doc_tools::call_owners(
+                Some(&commits),
+                a.opt_str_any(&["path", "file"]),
+                None,
+                None,
+            ))
+        }
     ),
     mcp_tool!(
         "path_between",
@@ -335,7 +410,15 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
             ("to", "string", "Target symbol name"),
         ],
         &["from", "to"],
-        call_path_between_tool
+        |s, a| {
+            Ok(graph_tools::call_path_between(
+                &s.ingest,
+                &s.graph,
+                &s.interner,
+                a.str_or("from", ""),
+                a.str_or("to", ""),
+            ))
+        }
     ),
     mcp_tool!(
         "quality_baseline",
@@ -363,7 +446,16 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
             ("top_k", "integer", "Maximum symbols to include"),
         ],
         &["rank_by"],
-        call_rank_by_tool
+        |s, a| {
+            Ok(graph_tools::call_analyze(
+                &s.ingest,
+                &s.graph,
+                &s.interner,
+                &s.ranks,
+                a.opt_usize("top_k"),
+                Some(a.str_or("rank_by", "pagerank")),
+            ))
+        }
     ),
     mcp_tool!(
         "replace_symbol_body",
@@ -374,14 +466,23 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
             ("path", "string", "Optional file path hint"),
         ],
         &["symbol", "new_body"],
-        call_replace_body
+        |s, a| call_edit_tool(s, EditOp::ReplaceBody, a, true)
     ),
     mcp_tool!(
         "situational_awareness",
         "The 5 things to know about a diff: blast_radius, tests_to_run, forgotten co-change files, hotspots",
         &[("files", "string[]", "Changed file paths")],
         &["files"],
-        call_situational_awareness_tool
+        |s, a| {
+            let commits = resolve_state_commits(s, 18);
+            Ok(graph_tools::call_situational_awareness(
+                &s.ingest,
+                &s.graph,
+                &s.interner,
+                &a.str_vec("files"),
+                Some(&commits),
+            ))
+        }
     ),
     mcp_tool!(
         "slice",
@@ -398,21 +499,33 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
         "Lines authored on divergent branches that HEAD does not have",
         &[],
         &[],
-        call_stray_content_tool
+        |s, _| Ok(doc_tools::call_stray_content(&s.root))
     ),
     mcp_tool!(
         "uses",
         "All statically resolvable use-sites of a symbol: call, read, write, import, extends",
         SYM_PARAM,
         &["symbol"],
-        call_uses_tool
+        |s, a| Ok(graph_tools::call_uses(
+            &s.ingest,
+            &s.interner,
+            a.str_or("symbol", "")
+        ))
     ),
     mcp_tool!(
         "whereis",
         "WHERE DOES THIS CONTENT LIVE: which file/branch defines or mentions a symbol",
         SYM_PARAM,
         &["symbol"],
-        call_whereis_tool
+        |s, a| {
+            Ok(doc_tools::call_whereis(
+                &s.ingest,
+                &s.interner,
+                &s.root,
+                a.str_or("symbol", ""),
+                a.bool_or("with_history", false),
+            ))
+        }
     ),
     mcp_tool!(
         "callers",
