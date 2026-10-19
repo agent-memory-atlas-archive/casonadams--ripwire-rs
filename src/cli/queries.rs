@@ -360,16 +360,6 @@ pub fn execute_expand_or_outline_query<W: Write>(
     crate::serialize::serialize_expand_xml(root, &items_slice, out)
 }
 
-pub fn execute_expand_query<W: Write>(
-    root: &str,
-    syms_spec: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
-    execute_expand_or_outline_query(root, syms_spec, false, ingest, interner, out)
-}
-
 pub fn execute_pack_top_n_query<W: Write>(
     root: &str,
     n: usize,

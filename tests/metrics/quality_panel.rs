@@ -1,6 +1,6 @@
-use ripwire_rs::metrics::{compute_quality_panel_report, serialize_quality_panel_xml};
+use ripwire_rs::metrics::compute_quality_panel_report;
 use ripwire_rs::{
-    FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
+    FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol, ToXmlString,
 };
 
 #[test]
@@ -12,10 +12,10 @@ fn test_quality_panel_computation() {
     assert_eq!(rep.preset, "default");
     assert_eq!(rep.cut, 2);
 
-    let mut buf = Vec::new();
-    serialize_quality_panel_xml(&rep, &mut buf).unwrap();
-    let xml = String::from_utf8(buf).unwrap();
-    assert!(xml.contains("schema=\"ripwire-rs.quality-panel/v1\""));
+    assert!(
+        rep.to_xml_string()
+            .contains("schema=\"ripwire-rs.quality-panel/v1\"")
+    );
 }
 
 #[test]

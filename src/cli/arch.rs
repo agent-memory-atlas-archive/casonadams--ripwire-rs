@@ -18,23 +18,6 @@ pub fn sig_has_static_token(source: &[u8], start: u32, end: u32) -> bool {
         .any(|token| token == b"static")
 }
 
-pub fn execute_dead_code_query<W: Write>(
-    root: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
-    execute_dead_code_query_paged(
-        root,
-        ingest,
-        graph,
-        interner,
-        &super::args::TopModifierArgs::default(),
-        out,
-    )
-}
-
 pub fn execute_dead_code_query_paged<W: Write>(
     root: &str,
     ingest: &IngestResult,
@@ -692,23 +675,6 @@ pub fn compute_deps_report<'a>(
         limit: None,
         offset: None,
     }
-}
-
-pub fn execute_deps_query<W: Write>(
-    root: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
-    execute_deps_query_paged(
-        root,
-        ingest,
-        graph,
-        interner,
-        &super::args::TopModifierArgs::default(),
-        out,
-    )
 }
 
 pub fn execute_deps_query_paged<W: Write>(

@@ -1,13 +1,13 @@
 use ripwire_rs::cli::{
     AroundConfig, GateArgs, MetricsArgs, NavContext, NavMode, NavigateArgs, OrientArgs, SliceArgs,
-    TopArchitectureArgs, TopRetrievalArgs, TopSafetyArgs, TopWorkspaceArgs, execute_around_query,
-    execute_batch_content, execute_communities_query, execute_connect_query,
-    execute_dead_code_query, execute_deps_query, execute_exercises_query,
+    TopArchitectureArgs, TopModifierArgs, TopRetrievalArgs, TopSafetyArgs, TopWorkspaceArgs,
+    execute_around_query, execute_batch_content, execute_communities_query, execute_connect_query,
+    execute_dead_code_query_paged, execute_deps_query_paged, execute_exercises_query,
     execute_external_surface_query, execute_html_export, execute_nav_symbol_query,
     execute_navigate_with, execute_path_query, execute_retrieval_dispatch,
     execute_safe_delete_query, execute_safety_dispatch, execute_situ_query,
     execute_stream_xml_with, execute_test_gate_query, execute_workspace_doc_query,
-    print_cochange_groups, run_cli_verb,
+    print_cochange_groups_paged, run_cli_verb,
 };
 use ripwire_rs::{
     Cli, Commands, Graph, IngestResult, Interner, Lang, LanguageRegistry, McpState, PageRankConfig,
@@ -524,7 +524,17 @@ fn test_top_architecture_queries() {
     let (ingest, graph, interner) = setup_in_memory_fixture();
     let mut out = Vec::new();
 
-    assert!(execute_dead_code_query(".", &ingest, &graph, &interner, &mut out).is_ok());
+    assert!(
+        execute_dead_code_query_paged(
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &TopModifierArgs::default(),
+            &mut out
+        )
+        .is_ok()
+    );
     assert!(execute_communities_query(".", None, &ingest, &graph, &interner, &mut out).is_ok());
     let cfg = AroundConfig {
         depth: 1,
@@ -537,7 +547,17 @@ fn test_top_architecture_queries() {
         execute_around_query(".", "missing", cfg, &ingest, &graph, &interner, &mut out).is_err()
     );
     assert!(execute_external_surface_query(".", &ingest, &interner, &mut out).is_ok());
-    assert!(execute_deps_query(".", &ingest, &graph, &interner, &mut out).is_ok());
+    assert!(
+        execute_deps_query_paged(
+            ".",
+            &ingest,
+            &graph,
+            &interner,
+            &TopModifierArgs::default(),
+            &mut out
+        )
+        .is_ok()
+    );
 
     let pr = PageRankResult {
         iterations: 1,
@@ -596,12 +616,11 @@ fn test_all_new_feature_coverage() {
     let funcs = ripwire_rs::metrics::find_nonlocal_state(&ingest, &graph, &interner);
     let _ = ripwire_rs::metrics::serialize_nonlocal_state_xml(".", &funcs, &mut out);
 
-    let findings = ripwire_rs::metrics::run_lint_scan(&ingest, &graph, &interner);
+    let findings = ripwire_rs::metrics::run_lint_scan_in_root(".", &ingest, &graph, &interner);
     let _ = ripwire_rs::metrics::serialize_lint_xml(".", &findings, &mut out);
     let _ = ripwire_rs::metrics::serialize_lint_catalog(&mut out);
     let _ = ripwire_rs::metrics::serialize_lint_sarif(&findings, &mut out);
-    let _ = print_cochange_groups(".", &[], &mut out);
-
+    let _ = print_cochange_groups_paged(".", &[], None, None, &mut out);
     let arch_cfg = ripwire_rs::gate::arch::ArchConfig::parse(
         "layer src = src\nlayer tests = tests\ndeny src -> tests\ndeny tests -> src\n",
     );

@@ -1,6 +1,6 @@
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::mcp::doc_tools::{
-    call_mentions, call_owners, call_stray_content, call_whereis, classify_code_line,
+    call_mentions_in_root, call_owners, call_stray_content, call_whereis, classify_code_line,
     collect_file_wanted_tokens, count_rev_list, enrich_drift_item_history, extract_cmake_option,
     extract_compile_guard, extract_compile_guard_with_default, extract_env_identifier,
     filter_present_in_code_drift, inspect_branch_stray, parse_branch_grep_line,
@@ -17,7 +17,7 @@ use std::path::Path;
 fn test_mentions_empty() {
     let ingest = IngestResult::new();
     let interner = Interner::new();
-    let res = call_mentions(&ingest, &interner, "nonexistent");
+    let res = call_mentions_in_root(".", &ingest, &interner, "nonexistent");
     assert_eq!(res["total_mentions"], 0);
 }
 

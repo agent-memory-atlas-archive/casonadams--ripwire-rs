@@ -228,15 +228,6 @@ impl crate::serialize::XmlReport for StructLayoutReport {
     }
 }
 
-pub fn serialize_layout_xml<W: Write>(
-    rep: &StructLayoutReport,
-    root: &str,
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    rep.write_xml_report(root, out)
-}
-
 pub fn compute_field_affinity_report(
     sym_opt: Option<&str>,
     ingest: &IngestResult,

@@ -446,14 +446,6 @@ pub trait ResolutionLookup {
             is_ambiguous,
         })
     }
-
-    #[must_use]
-    fn resolve_ref(&self, r: &Reference) -> Option<ResolvedRef> {
-        match self.classify_ref(r) {
-            RefOutcome::Resolved(res) => Some(res),
-            _ => None,
-        }
-    }
 }
 
 /// Concrete lookup context bundling symbol tables, directory mapping, and optional interner.

@@ -1,7 +1,7 @@
+use ripwire_rs::ToXmlString;
 use ripwire_rs::metrics::layout::parse_struct_fields;
 use ripwire_rs::metrics::{
     FieldLayout, StructLayoutDef, StructLayoutReport, serialize_field_affinity_xml,
-    serialize_layout_xml,
 };
 
 #[test]
@@ -42,11 +42,8 @@ fn test_serialize_layout_and_affinity() {
         found: true,
         defs: vec![def],
     };
-    let mut buf = Vec::new();
-    serialize_layout_xml(&rep, ".", &mut buf).unwrap();
     assert!(
-        String::from_utf8(buf)
-            .unwrap()
+        rep.to_xml_string()
             .contains("schema=\"ripwire-rs.layout/v1\"")
     );
 

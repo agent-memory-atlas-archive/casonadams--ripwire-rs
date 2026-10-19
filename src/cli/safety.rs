@@ -677,14 +677,6 @@ pub fn print_cochange_pairs_paged<W: Write>(
     writeln!(out, "</cochange>")
 }
 
-pub fn print_cochange_groups<W: Write>(
-    root: &str,
-    groups: &[crate::git::cochange::CoGroup],
-    out: &mut W,
-) -> io::Result<()> {
-    print_cochange_groups_paged(root, groups, None, None, out)
-}
-
 pub fn print_cochange_groups_paged<W: Write>(
     root: &str,
     groups: &[crate::git::cochange::CoGroup],
@@ -908,13 +900,6 @@ pub fn execute_quality_baseline_with<W: Write>(
     )?;
     Ok(())
 }
-pub fn execute_quality_delta_with<W: Write>(
-    state: &crate::mcp::McpState,
-    out: &mut W,
-) -> io::Result<bool> {
-    execute_quality_delta_with_args(GateDispatchArgs::default(), state, out)
-}
-
 pub fn execute_quality_delta_with_args<W: Write>(
     args: GateDispatchArgs<'_>,
     state: &crate::mcp::McpState,

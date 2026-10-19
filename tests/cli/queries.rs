@@ -1,6 +1,6 @@
 use ripwire_rs::cli::{
     build_handoff_verified_rows, build_handoff_xml, execute_expand_or_outline_query,
-    execute_expand_query, resolve_git_branch_and_subject, sig_has_static_token, skeletonize_body,
+    resolve_git_branch_and_subject, sig_has_static_token, skeletonize_body,
 };
 use ripwire_rs::{IngestResult, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
 
@@ -27,7 +27,10 @@ fn test_skeletonize_body() {
     let interner = Interner::new();
     let ingest = IngestResult::new();
     let mut buf = Vec::new();
-    assert!(execute_expand_query(".", "missing", &ingest, &interner, &mut buf).is_err());
+    assert!(
+        execute_expand_or_outline_query(".", "missing", false, &ingest, &interner, &mut buf)
+            .is_err()
+    );
     assert!(
         execute_expand_or_outline_query(".", "missing", true, &ingest, &interner, &mut buf)
             .is_err()

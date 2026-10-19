@@ -403,16 +403,6 @@ pub static SYMBOL_LINT_RULES: &[&dyn SymbolLintRule] = &[
     },
 ];
 
-/// Scan the workspace for AST code smells across all symbols.
-#[must_use]
-pub fn run_lint_scan(
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-) -> Vec<LintFinding> {
-    run_lint_scan_in_root(".", ingest, graph, interner)
-}
-
 pub fn scan_file_rules(
     path: &str,
     raw_content: &str,

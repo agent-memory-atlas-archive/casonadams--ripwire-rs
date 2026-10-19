@@ -306,11 +306,3 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         Ok(())
     }
 }
-
-pub fn serialize_quality_panel_xml<W: Write>(
-    rep: &QualityPanelReport,
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    rep.write_xml_report(".", out)
-}

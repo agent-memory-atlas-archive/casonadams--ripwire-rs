@@ -1,4 +1,4 @@
-use ripwire_rs::cli::execute_quality_delta_with;
+use ripwire_rs::cli::{GateDispatchArgs, execute_quality_delta_with_args};
 use ripwire_rs::gate::baseline::{
     QualitySnapshot, compute_snapshot, parse_snapshot_from_str, serialize_snapshot_to_string,
 };
@@ -132,7 +132,9 @@ fn test_cli_quality_delta_xml_execution() {
     let state = McpState::from_ingest(".", ingest, interner);
 
     let mut out = Cursor::new(Vec::new());
-    let has_failures = execute_quality_delta_with(&state, &mut out).expect("execute quality-delta");
+    let has_failures =
+        execute_quality_delta_with_args(GateDispatchArgs::default(), &state, &mut out)
+            .expect("execute quality-delta");
     assert!(!has_failures);
 
     let xml = String::from_utf8(out.into_inner()).unwrap();

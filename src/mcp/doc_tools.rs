@@ -5,11 +5,6 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
 
-/// Execute `mentions` tool: find documentation naming a symbol in backticks.
-pub fn call_mentions(ingest: &IngestResult, interner: &Interner, symbol_name: &str) -> Value {
-    call_mentions_in_root(".", ingest, interner, symbol_name)
-}
-
 pub fn call_mentions_in_root(
     root: &str,
     ingest: &IngestResult,
