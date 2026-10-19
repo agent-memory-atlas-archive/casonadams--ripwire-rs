@@ -19,6 +19,32 @@ Built for **maximum intelligence in the smallest token footprint**:
 
 ---
 
+## Installation
+
+### Homebrew (macOS & Linux)
+
+```bash
+brew install casonadams/tap/ripwire-rs
+```
+
+### Cargo
+
+```bash
+cargo install ripwire-rs
+```
+
+### From Source
+
+```bash
+git clone https://github.com/casonadams/ripwire-rs.git
+cd ripwire-rs
+make install
+```
+
+Builds release binary and automatically installs manual pages (`man ripwire-rs`).
+
+---
+
 ## Quickstart
 
 ```bash
@@ -70,32 +96,6 @@ See the **[Workflow Guide](docs/WORKFLOWS.md)** (or **[online](https://casonadam
 - **[Architecture & Pipeline](docs/ARCHITECTURE.md)** — Tree-Sitter grammars, lock-free interning, CSR in-edge graph, and streaming XML.
 - **[Algorithms & Academic Lenses](docs/ALGORITHMS.md)** — PageRank, HITS, Louvain modularity, clone detector, and dataflow slicing.
 - **[Interactive Documentation Site](https://casonadams.github.io/ripwire-rs/)** — Showcase, command catalog, and visualizer.
-
----
-
-## Installation
-
-### Homebrew (macOS & Linux)
-
-```bash
-brew install casonadams/tap/ripwire-rs
-```
-
-### Cargo
-
-```bash
-cargo install ripwire-rs
-```
-
-### From Source
-
-```bash
-git clone https://github.com/casonadams/ripwire-rs.git
-cd ripwire-rs
-make install
-```
-
-Builds release binary and automatically installs manual pages (`man ripwire-rs`).
 
 ---
 
