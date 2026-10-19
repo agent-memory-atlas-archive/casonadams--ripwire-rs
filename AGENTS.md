@@ -2,6 +2,9 @@
 
 ## Core mission: Maximum intelligence in the smallest token footprint
 
+`ripwire-rs` exists to replace blind `grep` and whole-file reads with deterministic, token-budgeted codebase intelligence across 36 languages, delivering the exact symbols, blast radius, and safety verification an agent or developer needs in one turn.
+
+- **Six core workflows**: Every feature serves one of (1) *Orientation & Scoping* (`--top-k`, `--for`, `--tree`), (2) *Navigation & Blast Radius* (`--callers`, `--impact`, `--uses`, `--connect`, `--slice`, plus zero-flag embedded SQL table lineage), (3) *Pre-Commit & PR Safety Gates* (`--edit-check`, `--affected`, `--test-gate`, `--situ`), (4) *Code Health & Architecture* (`--quality-delta`, `--quality-panel`, `--hotspots`, `--clones`, `--cochange`, `--deps`), (5) *Deep Inspection & Context Delivery* (`--expand`, `--outline`, `--compress`, `--from-trace`, `--batch`), or (6) *Agent & CI Integration* (`ripwire-rs mcp`, `--lsp`, `--add-skills`, `--scan-skills`).
 - **Present-only serialization**: Omit zero/unit default attributes (e.g.,
   `ccx="0"`, `in="0"`, `churn="1"`, `amp="1"`), empty wrapper tags, and repeated
   per-row pagination hints. Place window metadata (`shown=`, `total=`,
@@ -18,11 +21,12 @@
 - **Latency targets**: `< 50ms` warm on medium repos (~10k symbols), `< 500ms` on
   100k+ symbol monorepos, and strictly faster than upstream C++ `ripwire`
   (`make parity`, `make validate-knowledge`, `make bench`).
-- **Flat, zero-buffer pipeline**: Keep hot-path work on interned `Spur` /
-  `NodeId` integers and contiguous CSR graphs. Stream XML and JSON directly to
-  `io::Write` sinks (`XmlReport`, `XmlEscapeExt`) rather than building
-  intermediate `String`s in loops. Walk git history in-process via `gix`; never
-  spawn `git` subprocesses in loops.
+- **Deterministic, zero-buffer pipeline**: Sort crawled paths lexicographically
+  and use deterministic tie-breaking everywhere (never leak hash iteration order).
+  Keep hot-path work on interned `Spur` / `NodeId` integers and contiguous CSR
+  graphs. Stream XML and JSON directly to `io::Write` sinks (`XmlReport`,
+  `XmlEscapeExt`) rather than building intermediate `String`s in loops. Walk git
+  history in-process via `gix`; never spawn `git` subprocesses in loops.
 - **Idiomatic signatures**: Use natural parameter lists or domain context
   structs; never pack parameters into tuples (`(a, b): (&str, &str)`) to bypass
   argument limits.

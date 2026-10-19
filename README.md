@@ -8,53 +8,56 @@ Rust port and rewrite of [redhat-et/ripwire](https://github.com/redhat-et/ripwir
 
 ---
 
+## Design Principles
+
+Built for **maximum intelligence in the smallest token footprint**:
+
+- **Present-Only Serialization**: Omits zero/unit default attributes (`ccx="0"`, `in="0"`, `churn="1"`) and places pagination window metadata (`shown=`, `total=`, `capped=`, `next=`) once on the root element.
+- **Noise-Free Ranking**: Filters out non-callable noise, test/fixture helpers, language builtins, and prose backticks before ranking; partitions unresolvable calls into `unresolved`, `external`, and `declined`.
+- **Actionable Context in One Turn**: Bundles top implementation bodies, resolved callee signatures (`<calls>`), architectural layer tags (`layer=`), and causal def-use slices (`--slice`) directly into responses.
+- **Sub-50ms Zero-Buffer Pipeline**: Interned `Spur`/`NodeId` tables, contiguous CSR graphs, in-process `gix` history walking, and direct `io::Write` XML/JSON streaming across 36 Tree-Sitter languages (with automatic embedded SQL table lineage).
+
+---
+
 ## Quickstart
 
 ```bash
-# 1. Orientation: generate ranked architecture map (top 200 symbols)
+# 1. Orientation & Scoping: ranked architecture map or task-focused bundle
 ripwire-rs . --top-k=200
+ripwire-rs . --for="implement user authentication"
 
-# 2. Navigation: query direct callers, uses, or database table lineage
+# 2. Navigation & Blast Radius: callers, transitive impact, or def-use slice
 ripwire-rs . --callers="Interner::len"
-# 3. Pre-Commit Gate: name tests to run and check untested blast radius (exit 4 on failure)
+ripwire-rs . --impact="Interner"
+
+# 3. Pre-Commit & PR Safety Gates: affected tests and contract verification
 ripwire-rs . --test-gate
+ripwire-rs . --edit-check="Interner::len"
 
-# 4. Quality Delta: check 10 quality dimensions against git HEAD (exit 2 on regression)
+# 4. Code Health & Architecture: quality regressions, hotspots, and clones
 ripwire-rs . --quality-delta
+ripwire-rs . --hotspots
 
-# 5. Agent Skills: install 17 ripwire-rs agent skills to ~/.agents/skills
+# 5. Deep Inspection & Agent Context: compressed bodies or stack-trace mapping
+ripwire-rs . --expand="Interner::len" --compress
+
+# 6. Agent Skills & MCP Server: install 17 skills or run stdio MCP server
 ripwire-rs --add-skills
-
-# 6. Agent Context: launch native JSON-RPC Model Context Protocol (MCP) server
 ripwire-rs mcp
 ```
 
 ---
 
-## Real-World Workflows
+## Workflows
 
-`ripwire-rs` is designed around 6 high-impact workflows. See the complete **[Workflow Guide](docs/WORKFLOWS.md)** (or online at **[ripwire-rs Workflows](https://casonadams.github.io/ripwire-rs/workflows.html)**) for detailed scenarios, commands, and benefits:
+See the **[Workflow Guide](docs/WORKFLOWS.md)** (or **[online](https://casonadams.github.io/ripwire-rs/workflows.html)**) for complete scenarios:
 
-1. **[Orientation & Scoping](docs/WORKFLOWS.md#1-orientation--scoping-landing-cold-in-a-repository)**: Landing cold in an unfamiliar codebase without burning prompt token budgets (`--top-k`, `--tree`, `--for`, `--html`).
-2. **[Navigation & Blast Radius](docs/WORKFLOWS.md#2-navigation--blast-radius-safe-refactoring--impact-analysis)**: Safe refactoring and dependency tracing before modifying code (`--callers`, `--callees`, `--impact`, `--around`, `--path`, `--slice`).
-3. **[Pre-Commit & PR Safety Gates](docs/WORKFLOWS.md#3-pre-commit--pr-safety-gates-zero-broken-contracts)**: Catching broken API contracts and verifying test reachability before push or merge (`--edit-check`, `--affected`, `--test-gate`, `--situ`, `--quality-delta`).
-4. **[Code Health & Technical Debt](docs/WORKFLOWS.md#4-code-health--technical-debt-auditing)**: Identifying dead code, high-maintenance hotspots, and hidden coupling (`--dead-code`, `--hotspots`, `--clones`, `--cochange`, `--communities`, `--external-surface`).
-5. **[Deep Inspection & Agent Context](docs/WORKFLOWS.md#5-deep-inspection--agent-context-delivery)**: Precision prompting and batching for coding agents (`--expand`, `--outline`, `--pack-top-n`, `--from-trace`, `--batch`, `--json`).
-6. **[Continuous Integration (CI) & PR Gates](docs/WORKFLOWS.md#6-continuous-integration-ci-workflows--automated-pr-gates)**: Automated test gating, zero quality regressions, and upstream parity checks in CI/CD pipelines (`ripwire-rs . --test-gate`, `ripwire-rs . --quality-delta`, `make validate`).
-
----
-
-## Features
-
-- **Multi-Language AST Analysis**: 36 languages indexed via Tree-Sitter (Rust, TypeScript, JavaScript, Python, Go, C, C++, CUDA, Metal, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS, SQL, Protobuf, GraphQL, Dockerfile, Objective-C/C++).
-- **Language-Agnostic Embedded SQL Lineage**: Zero extra flags. Automatically extracts SQL DML (`SELECT ... FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM`) out of string literals across all 36 host languages (Dart, Rust, Python, TypeScript, Go, Java, C#, etc.). Assigns typed `RefRole::Read` and `RefRole::Write` references directly to `.sql` table/view definitions in the call graph, allowing `--callers`, `--uses`, and `--impact` to seamlessly bridge database migrations, backend services, and test suites.
-- **Personalized PageRank & HITS**: Transitive blast radius and structural authority calculations converging in milliseconds over lock-free sparse matrices.
-- **Pre-Commit & Pre-PR Verification Gates**: Parameter arity contract verification (`--edit-check`), surgical test reachability mapping (`--affected`), test execution gate (`--test-gate`), architectural baseline sidecars (`--baseline`, `--baseline-update`), quality census (`--pin-census`), git-changed re-ranking (`--map-diff`), integration seams (`--seams`), composite PR review context (`--pr-context`), merge conflict scouting (`--merge-scout`), Delta Maintainability Model (`--dmm`), pre-hoc worktree collision forecasting (`--plan-lanes`), and code quality regressions vs git HEAD (`--quality-delta`).
-- **Code Health & Architecture Enforcement**: Dead code detection (`--dead-code`), clone detection (`--clones`), Louvain community clustering (`--communities`), architectural layering rules (`--arch` with glob wildcards), Mermaid flowchart export (`--mermaid`), hierarchical zoom (`--zoom`), AST code smell linter (`--lint`, `--sarif`, `--lint-catalog`, `--lint-select`), nonlocal mutable state tracking (`--nonlocal-state`), unified 6-family quality panel (`--quality-panel`), LP64 memory layout & cache-line field affinity (`--layout`, `--field-affinity`), local reasoning (`--context-ratio`), naming consistency (`--naming-consistency`, `--naming-locals`, `--naming-calibration`), and multi-family ensemble ranking (`--ensemble`).
-- **Git Churn & Coupling Analytics**: Fowler's Shotgun Surgery co-change mining and multi-file clustering (`--cochange`, `--cochange-groups`), maintenance hotspot ranking (code churn &times; cognitive complexity), bus-factor author ownership with uniform collapse (`--owners`), symbol and branch divergence tracking (`--stray-content`, `--whereis`), and historical deleted-name oracle (`--with-history`).
-- **Advanced Navigation & Query DSL**: ARISE def-use dataflow slicing (`--slice`, `--slice-depth`), innermost definition resolution (`--at`), formal relationship claim verification (`--verify`), graph query DSL (`--graph-query`), composite bundles (`--pack-task`), adaptive relevance-cliff cut (`--adaptive`), executive Markdown architecture reporting (`--report`), natural-language task verb recommendation (`--help-task`), and scoped structural trigram search (`--grep`, `--grep-context`, `--and`, `--not`, `--in`).
-- **Atomic AST Code Mutations**: Surgical symbol body replacement (`--replace-symbol-body`), before/after insertions (`--insert-before-symbol`, `--insert-after-symbol`), and transactional multi-file edit plans (`--edit-plan`, `--edit-payload`, `--dry-run`) with verified byte rollback.
-- **Model Context Protocol (MCP), LSP Bridge & 17 Agent Skills**: Native stdio JSON-RPC MCP server exposing 33 context routing and navigation tools, stdio JSON-RPC Language Server Protocol bridge (`--lsp`), skill file security auditing (`--scan-skills`), and automated agent skill installation (`ripwire-rs --add-skills`).
+1. **[Orientation & Scoping](docs/WORKFLOWS.md#1-orientation--scoping-landing-cold-in-a-repository)**: Cold-start repository maps and task-ranked context (`--top-k`, `--tree`, `--for`, `--html`).
+2. **[Navigation & Blast Radius](docs/WORKFLOWS.md#2-navigation--blast-radius-safe-refactoring--impact-analysis)**: Dependency tracing, SQL table lineage, and dataflow slicing (`--callers`, `--callees`, `--impact`, `--uses`, `--connect`, `--slice`).
+3. **[Pre-Commit & PR Safety Gates](docs/WORKFLOWS.md#3-pre-commit--pr-safety-gates-zero-broken-contracts)**: Contract checks, test reachability, and diff awareness (`--edit-check`, `--affected`, `--test-gate`, `--situ`, `--pr-context`).
+4. **[Code Health & Technical Debt](docs/WORKFLOWS.md#4-code-health--technical-debt-auditing)**: Quality regressions, dead code, hotspots, clones, and coupling (`--quality-delta`, `--quality-panel`, `--dead-code`, `--hotspots`, `--clones`, `--cochange`, `--deps`).
+5. **[Deep Inspection & Agent Context](docs/WORKFLOWS.md#5-deep-inspection--agent-context-delivery)**: Token-budgeted symbol bodies, trace mapping, and multi-query batching (`--expand`, `--outline`, `--compress`, `--from-trace`, `--batch`, `--json`).
+6. **[CI Gates & Agent Integration](docs/WORKFLOWS.md#6-continuous-integration-ci-workflows--automated-pr-gates)**: Automated PR gates, 33-tool stdio MCP server, LSP bridge, and 17 agent skills (`--add-skills`, `ripwire-rs mcp`, `--lsp`, `--scan-skills`).
 
 ---
 
