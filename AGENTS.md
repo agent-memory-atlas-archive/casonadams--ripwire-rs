@@ -49,6 +49,9 @@
   (rooted by `tests/<mod>.rs`), never inline `#[cfg(test)]` in `src/`. Never
   perform disk I/O or network calls in tests; use in-memory slices (`< 500ms`
   per test, `< 15s` full suite).
+- **Generic names only**: Findings from other codebases must reach tests,
+  fixtures, docs, and commit messages under generic names (`lint_rules.py`,
+  `user_accounts`); never copy their repo, path, symbol, or table names.
 - **Documentation sync**: When changing CLI flags, subcommands, defaults, or MCP
   tools, update `README.md`, `docs/`, `www/`, `man/man1/ripwire-rs.1`, and
   `skills/` in the same commit, and verify with `ripwire-rs . --doc-drift`.
