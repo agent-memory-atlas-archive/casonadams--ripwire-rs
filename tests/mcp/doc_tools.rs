@@ -52,11 +52,7 @@ fn test_env_identifier_extraction_table() {
         ("a.py", "os.getenv(\"BAZ\")", &["BAZ"]),
         ("a.py", "os.environ.get(\"QUX\", \"d\")", &["QUX"]),
         ("a.py", "os.environ.get (\"EGS\")", &["EGS"]),
-        (
-            "a.py",
-            "dsn = os.environ[\"ALPHA_CANARY_DSN\"]",
-            &["ALPHA_CANARY_DSN"],
-        ),
+        ("a.py", "dsn = os.environ[\"DATABASE_URL\"]", &["DATABASE_URL"]),
         ("a.py", "f = os.environ[ \"SPC\" ]", &["SPC"]),
         ("a.py", "e = environ[\"BARE\"]", &["BARE"]),
         ("a.py", "x = os.environ[\"lower_case\"]", &["lower_case"]),
@@ -70,11 +66,7 @@ fn test_env_identifier_extraction_table() {
             "a = os.environ[\"DUP\"] + os.environ[\"DUP\"]",
             &["DUP"],
         ),
-        (
-            "a.py",
-            "_os.environ[\"PR_HEAD_SHA\"] = \"cafebabe\"",
-            &["PR_HEAD_SHA"],
-        ),
+        ("a.py", "_os.environ[\"COMMIT_SHA\"] = \"cafebabe\"", &["COMMIT_SHA"]),
         (
             "a.py",
             "c = \"it's\" and os.getenv(\"AFTERAPOS\")",
@@ -82,18 +74,18 @@ fn test_env_identifier_extraction_table() {
         ),
         (
             "a.yml",
-            "needs = json.loads(os.environ[\"NEEDS_JSON\"])",
-            &["NEEDS_JSON"],
+            "cfg = json.loads(os.environ[\"CONFIG_JSON\"])",
+            &["CONFIG_JSON"],
         ),
         (
             "a.ts",
-            "  * docs (injected via `process.env.PI_DOCS_EMBED`)",
+            "  * docs (injected via `process.env.DOCS_EMBED`)",
             &[],
         ),
         ("a.ts", "/* process.env.BLOCK */", &[]),
         (
             "a.ts",
-            "define: { \"process.env.PI_BUNDLED\": JSON.stringify(\"true\") },",
+            "define: { \"process.env.APP_BUNDLED\": JSON.stringify(\"true\") },",
             &[],
         ),
         ("a.js", "process.env.VAR_123", &["VAR_123"]),

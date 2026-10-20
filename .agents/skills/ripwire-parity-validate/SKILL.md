@@ -24,13 +24,12 @@ Always start by running `make all` (`fmt-check`, `clippy`, `cccc` cognitive comp
 
 ## Step 2: Run the 66-Command DOM & Invariant Matrix (`make validate`)
 
-Run `make validate REPO=<path>` across `.` and sibling reference repositories (`../ripwire`, `../rho`, `../oh-my-pi`):
+Run `make validate REPO=<path>` across `.`, the upstream checkout (`../ripwire`), and any other local reference repositories:
 
 ```bash
 make validate REPO=.
 make validate REPO=../ripwire
-make validate REPO=../rho
-make validate REPO=../oh-my-pi
+make validate REPO=<other-repo>
 ```
 
 `scripts/validate-parity.py` checks root tags, `schema=` versions, required root and child attributes, exit codes, and computed-data invariants.
@@ -42,7 +41,7 @@ make validate REPO=../oh-my-pi
 
 ## Step 3: Run the Deep Knowledge & Resource Audit (`make validate-knowledge`)
 
-Run `make validate-knowledge` (or `python3 ./scripts/validate-knowledge.py . ../rho ../oh-my-pi ../ripwire`) to compare:
+Run `make validate-knowledge` (or `python3 ./scripts/validate-knowledge.py . ../ripwire <other-repo>...`) to compare:
 - **Latency & Peak RSS**: Warm map, cold map, `--report`, `--deps`, `--quality-panel`, `--for`, `--connect`, `--impact`, and `--grep`.
 - **Extracted Knowledge Quality**:
   - `--report`: Production module clusters, cross-module bridges, and God files.
@@ -51,7 +50,7 @@ Run `make validate-knowledge` (or `python3 ./scripts/validate-knowledge.py . ../
   - `--quality-panel`: All 6 evidence families (`structural`, `lexical`, `confusion`, `historical`, `colocation`, `state`), `tested_scope`, and `deep_untested`.
 
 <example title="Resolving root-relative file paths on external repositories">
-- Wrong approach: Calling `std::fs::read(file_path)` directly in a lens or doc tool, which works on `REPO=.` but fails silently when `REPO=../rho` or `REPO=../oh-my-pi`.
+- Wrong approach: Calling `std::fs::read(file_path)` directly in a lens or doc tool, which works on `REPO=.` but fails silently when `REPO=<other-repo>`.
 - Right approach: Always resolve `Path::new(root).join(file_path)` first with fallback to `Path::new(file_path)` so every lens produces complete data on external target repositories.
 </example>
 </instructions>

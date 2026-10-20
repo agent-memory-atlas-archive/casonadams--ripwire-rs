@@ -110,10 +110,7 @@ fn test_affected_transitive_reachability() {
 fn test_partner_subject_stem_naming_cases() {
     use ripwire_rs::gate::affected::partner_subject_stem;
     let cases: [(&str, Option<&str>); 22] = [
-        (
-            "scripts/test_lint_bronze_contract.py",
-            Some("lint_bronze_contract"),
-        ),
+        ("scripts/test_lint_rules.py", Some("lint_rules")),
         ("src/lint_test.py", Some("lint")),
         ("pkg/ring.test.ts", Some("ring")),
         ("pkg/markdown.test.tsx", Some("markdown")),
@@ -167,24 +164,19 @@ fn affected_paths(paths: &[&str], changed: &str) -> Vec<String> {
 #[test]
 fn test_affected_partner_row_for_unique_convention_match() {
     let (ingest, interner) = partner_fixture(&[
-        "scripts/lint_bronze_contract.py",
-        "scripts/test_lint_bronze_contract.py",
-        "scripts/test_lint_bronze_contract_extra.py",
-        "tests/lint_bronze_contract.py",
-        "jobs/a/lint_bronze_contract.py",
+        "scripts/lint_rules.py",
+        "scripts/test_lint_rules.py",
+        "scripts/test_lint_rules_extra.py",
+        "tests/lint_rules.py",
+        "jobs/a/lint_rules.py",
     ]);
     let graph = Graph::build(&ingest, &interner);
-    let report = find_affected_tests(
-        &["scripts/lint_bronze_contract.py"],
-        &ingest,
-        &graph,
-        &interner,
-    );
+    let report = find_affected_tests(&["scripts/lint_rules.py"], &ingest, &graph, &interner);
     let paths: Vec<&str> = report.tests.iter().map(|t| t.path.as_str()).collect();
-    assert_eq!(paths, ["scripts/test_lint_bronze_contract.py"]);
+    assert_eq!(paths, ["scripts/test_lint_rules.py"]);
     assert!(report.tests[0].is_partner && report.tests[0].hops == 0);
     assert!(report.to_xml_string().contains(
-        "<test p=\"scripts/test_lint_bronze_contract.py\" partner=\"1\" run_unknown=\"1\"/>"
+        "<test p=\"scripts/test_lint_rules.py\" partner=\"1\" run_unknown=\"1\"/>"
     ));
 }
 

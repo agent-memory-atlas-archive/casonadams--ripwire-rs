@@ -54,9 +54,9 @@ ripwire-rs . --impact="Interner"
 
 
 # Cross-language embedded SQL table lineage (zero extra flags required)
-ripwire-rs . --callers="carrier_sim_swap"
-ripwire-rs . --uses="carrier_sim_swap"
-ripwire-rs . --impact="carrier_sim_swap"
+ripwire-rs . --callers="user_accounts"
+ripwire-rs . --uses="user_accounts"
+ripwire-rs . --impact="user_accounts"
 # Extract ego-graph around a symbol (depth 1, fanout 32)
 ripwire-rs . --around="Interner::new" --around-depth=2 --around-fanout=16
 

@@ -437,7 +437,7 @@ cargo install ripwire-rs</code></pre>
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Emits the 1-hop neighborhood of a symbol: all direct incoming callers, outgoing callees, definitions, and ambiguity metrics formatted as XML. Works seamlessly across code symbols and database tables (e.g. <code>ripwire-rs . --callers=carrier_sim_swap</code> lists all functions across Dart, Rust, Python, TypeScript, Go, etc. that query or mutate that table).</p>
+            <p class="cmd-desc">Emits the 1-hop neighborhood of a symbol: all direct incoming callers, outgoing callees, definitions, and ambiguity metrics formatted as XML. Works seamlessly across code symbols and database tables (e.g. <code>ripwire-rs . --callers=user_accounts</code> lists all functions across Dart, Rust, Python, TypeScript, Go, etc. that query or mutate that table).</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
@@ -486,7 +486,7 @@ cargo install ripwire-rs</code></pre>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">When To Use It</span>
-            <p class="cmd-desc">When refactoring database schemas or migrating tables (e.g. <code>ripwire-rs . --uses=carrier_sim_swap</code>) to identify every backend service, repository method, query function, or migration touching that table.</p>
+            <p class="cmd-desc">When refactoring database schemas or migrating tables (e.g. <code>ripwire-rs . --uses=user_accounts</code>) to identify every backend service, repository method, query function, or migration touching that table.</p>
           </div>
         </div>
       </div>

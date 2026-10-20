@@ -29,9 +29,9 @@ ripwire-rs . --impact="Type.method"
 ripwire-rs . --uses="Interner"
 
 # Cross-language embedded SQL table lineage (zero flags required)
-ripwire-rs . --callers="carrier_sim_swap"
-ripwire-rs . --uses="carrier_sim_swap"
-ripwire-rs . --impact="carrier_sim_swap"
+ripwire-rs . --callers="user_accounts"
+ripwire-rs . --uses="user_accounts"
+ripwire-rs . --impact="user_accounts"
 # Export self-contained interactive SVG/HTML visualizer
 ripwire-rs . --html=callgraph.html --color-by=community
 
@@ -45,14 +45,14 @@ SQL queries come **for free automatically** during standard AST ingestion—no n
 Whenever `ripwire-rs` indexes a repository, any string literal in any host language (Dart, Rust, Python, TypeScript, Go, Java, C#, etc.) containing SQL DML (`SELECT ... FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM`) automatically emits `RefRole::Read` and `RefRole::Write` references attributed to the enclosing function or method, and resolves them directly to `.sql` table/view symbols in the call graph.
 
 ```bash
-# List all functions/methods across the codebase that query or mutate carrier_sim_swap
-ripwire-rs . --callers="carrier_sim_swap"
+# List all functions/methods across the codebase that query or mutate user_accounts
+ripwire-rs . --callers="user_accounts"
 
 # List every read and write site with exact file:line and enclosing symbol
-ripwire-rs . --uses="carrier_sim_swap"
+ripwire-rs . --uses="user_accounts"
 
 # Calculate transitive blast radius from a table to all downstream callers and tests
-ripwire-rs . --impact="carrier_sim_swap"
+ripwire-rs . --impact="user_accounts"
 
 # Safety gates automatically trace from .sql migration files through to application tests
 ripwire-rs . --test-gate
