@@ -409,9 +409,7 @@ fn parse_git_log_stream(output: &[u8]) -> Option<Vec<CommitInfo>> {
 }
 
 fn resolve_git_subdir_prefix(repo_path: &Path) -> Option<String> {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(repo_path)
+    let output = super::git_command(repo_path)
         .args(["rev-parse", "--show-prefix"])
         .output()
         .ok()?;
@@ -447,8 +445,8 @@ fn strip_subdir_prefix(mut commits: Vec<CommitInfo>, prefix: Option<&str>) -> Ve
 
 fn try_git_log_cli(repo_path: &Path, cutoff_timestamp: Option<i64>) -> Option<Vec<CommitInfo>> {
     let prefix = resolve_git_subdir_prefix(repo_path);
-    let mut cmd = std::process::Command::new("git");
-    cmd.arg("-C").arg(repo_path).arg("log");
+    let mut cmd = super::git_command(repo_path);
+    cmd.arg("log");
     if let Some(cutoff) = cutoff_timestamp {
         cmd.arg(format!("--since={cutoff}"));
     }

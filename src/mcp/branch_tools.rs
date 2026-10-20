@@ -198,14 +198,8 @@ pub fn should_scan_branch(branch: &str, on_head: bool) -> bool {
 fn scan_local_branch_hits(root: &str, symbol_name: &str, on_head: bool) -> (usize, Vec<Value>) {
     let mut hits = Vec::new();
     let mut refs_scanned = 0usize;
-    let Ok(out) = std::process::Command::new("git")
-        .args([
-            "-C",
-            root,
-            "for-each-ref",
-            "--format=%(refname:short)",
-            "refs/heads",
-        ])
+    let Ok(out) = crate::git::git_command(root)
+        .args(["for-each-ref", "--format=%(refname:short)", "refs/heads"])
         .output()
     else {
         return (0, hits);
@@ -220,17 +214,8 @@ fn scan_local_branch_hits(root: &str, symbol_name: &str, on_head: bool) -> (usiz
             continue;
         }
         refs_scanned += 1;
-        let Ok(grep_out) = std::process::Command::new("git")
-            .args([
-                "-C",
-                root,
-                "grep",
-                "--threads=1",
-                "-n",
-                "-F",
-                symbol_name,
-                branch,
-            ])
+        let Ok(grep_out) = crate::git::git_command(root)
+            .args(["grep", "--threads=1", "-n", "-F", symbol_name, branch])
             .output()
         else {
             continue;
@@ -320,10 +305,8 @@ fn collect_head_refs(
 }
 
 pub(super) fn probe_name_history(root: &str, sym_name: &str, head_sha: &str) -> Option<Value> {
-    let out = std::process::Command::new("git")
+    let out = crate::git::git_command(root)
         .args([
-            "-C",
-            root,
             "log",
             "-S",
             sym_name,
@@ -559,14 +542,8 @@ pub fn call_whereis(
 }
 
 pub fn count_rev_list(root: &str, base: &str, branch: &str) -> u64 {
-    std::process::Command::new("git")
-        .args([
-            "-C",
-            root,
-            "rev-list",
-            "--count",
-            &format!("{base}..{branch}"),
-        ])
+    crate::git::git_command(root)
+        .args(["rev-list", "--count", &format!("{base}..{branch}")])
         .output()
         .ok()
         .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
@@ -577,8 +554,8 @@ pub fn inspect_branch_stray(root: &str, branch: &str, head_ref: &str) -> Option<
     if branch.is_empty() || branch == "HEAD" || branch == head_ref {
         return None;
     }
-    let mb = std::process::Command::new("git")
-        .args(["-C", root, "merge-base", "HEAD", branch])
+    let mb = crate::git::git_command(root)
+        .args(["merge-base", "HEAD", branch])
         .output()
         .ok()?;
     if !mb.status.success() {
@@ -611,14 +588,8 @@ fn gather_branch_stray(root: &str, head_ref: &str) -> (usize, usize, usize, usiz
     let mut unknown = 0usize;
     let mut branches = Vec::new();
 
-    let Ok(out) = std::process::Command::new("git")
-        .args([
-            "-C",
-            root,
-            "for-each-ref",
-            "--format=%(refname:short)",
-            "refs/heads/",
-        ])
+    let Ok(out) = crate::git::git_command(root)
+        .args(["for-each-ref", "--format=%(refname:short)", "refs/heads/"])
         .output()
     else {
         return (0, 0, 0, 0, Vec::new());
@@ -647,14 +618,14 @@ fn gather_branch_stray(root: &str, head_ref: &str) -> (usize, usize, usize, usiz
 /// Execute `stray_content` tool.
 pub fn call_stray_content(root: &str) -> Value {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let head_sha = std::process::Command::new("git")
-        .args(["-C", root, "rev-parse", "--short=9", "HEAD"])
+    let head_sha = crate::git::git_command(root)
+        .args(["rev-parse", "--short=9", "HEAD"])
         .output()
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_default();
-    let head_ref = std::process::Command::new("git")
-        .args(["-C", root, "rev-parse", "--abbrev-ref", "HEAD"])
+    let head_ref = crate::git::git_command(root)
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .ok()
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())

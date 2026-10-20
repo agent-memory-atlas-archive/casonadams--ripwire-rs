@@ -180,9 +180,8 @@ pub fn get_working_tree_changed_files(root: &str) -> Vec<String> {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return Vec::new();
     }
-    if let Ok(output) = std::process::Command::new("git")
+    if let Ok(output) = crate::git::git_command(root)
         .args(["diff", "--name-only", "HEAD"])
-        .current_dir(root)
         .output()
         && output.status.success()
     {
@@ -357,14 +356,8 @@ fn validate_merge_scout_branches(root: &str, branches: &str) -> bool {
             false
         };
         let git_ok = ref_exists
-            || std::process::Command::new("git")
-                .args([
-                    "-C",
-                    root,
-                    "rev-parse",
-                    "--verify",
-                    &format!("{branch}^{{commit}}"),
-                ])
+            || crate::git::git_command(root)
+                .args(["rev-parse", "--verify", &format!("{branch}^{{commit}}")])
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false);
