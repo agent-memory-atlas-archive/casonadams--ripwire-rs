@@ -236,14 +236,22 @@ impl LanguageSemantics for PythonLanguage {
         PYTHON_STD_QUALIFIERS
     }
 
+    fn import_binding<'a>(&self, raw_target: &'a str) -> Option<(&'a str, &'a str)> {
+        let clean = strip_import_quotes(raw_target);
+        let (module, bound) = clean
+            .split_once(" as ")
+            .map_or((clean, clean), |(m, a)| (m.trim(), a.trim()));
+        (!module.is_empty()).then_some((module, bound))
+    }
+
     fn resolve_import_target(
         &self,
         importer_path: &str,
         raw_target: &str,
         file_index: &HashMap<&str, u32>,
     ) -> Option<u32> {
-        let clean = strip_import_quotes(raw_target);
-        let rel_mod = clean.trim_start_matches('.').replace('.', "/");
+        let (module, _) = self.import_binding(raw_target)?;
+        let rel_mod = module.trim_start_matches('.').replace('.', "/");
         if rel_mod.is_empty() {
             return None;
         }

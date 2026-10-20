@@ -120,3 +120,55 @@ fn test_script_calling_at_module_scope_is_affected() {
         .collect();
     assert_eq!(tests, [("scripts/test_lint.py", 1)]);
 }
+
+#[test]
+fn test_python_module_alias_qualifier_binds_into_that_module() {
+    let other_checks: Vec<(String, &[u8])> = (0..5)
+        .map(|i| {
+            (
+                format!("scripts/other_{i}.py"),
+                b"def check(x):\n    return x\n".as_slice(),
+            )
+        })
+        .collect();
+    let mut files: Vec<(&str, Lang, &[u8])> = other_checks
+        .iter()
+        .map(|(p, src)| (p.as_str(), Lang::Python, *src))
+        .collect();
+    files.push((
+        "scripts/lint_safe.py",
+        Lang::Python,
+        b"def check(graph):\n    return graph\n",
+    ));
+    files.push((
+        "scripts/test_lint_safe.py",
+        Lang::Python,
+        b"import lint_safe as L\ndef fires():\n    return L.check(1)\n",
+    ));
+    let (ingest, interner) = ingest(&files);
+    let graph = Graph::build(&ingest, &interner);
+    let ranks = vec![1.0; ingest.symbols.len()];
+    let callers_by_file: Vec<(String, Vec<String>)> = ingest
+        .symbols
+        .iter()
+        .filter(|s| interner.resolve(&s.name) == "check")
+        .map(|s| {
+            let nav = navigate_1hop(s.id, &ingest, &graph, &ranks, &interner).unwrap();
+            (
+                ingest.sym_file_path(s, &interner).to_string(),
+                nav.callers
+                    .iter()
+                    .map(|c| c.name.clone())
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .filter(|(_, callers)| !callers.is_empty())
+        .collect();
+    assert_eq!(
+        callers_by_file,
+        [(
+            "scripts/lint_safe.py".to_string(),
+            vec!["fires".to_string()]
+        )]
+    );
+}

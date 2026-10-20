@@ -57,4 +57,4 @@
 - **Reference Roles**:
   - `SELECT ... FROM [ONLY] <table>` & `JOIN <table>` $\rightarrow$ `RefRole::Read`
   - `INSERT INTO <table>`, `UPDATE <table>`, `DELETE FROM [ONLY] <table>` $\rightarrow$ `RefRole::Write`
-- **Graph Integration**: Binds extracted table tokens directly to `.sql` schema definitions (e.g. `CREATE TABLE`), enabling transitive blast radius (`--impact`), caller tracing (`--callers`), and pre-PR verification gates (`--test-gate`, `--affected`, `--situ`) across database and application boundaries.
+- **Graph Integration**: Binds extracted table tokens only to `.sql` schema definitions (e.g. `CREATE TABLE`), never to a host-language symbol of the same name, enabling transitive blast radius (`--impact`), caller tracing (`--callers`), and pre-PR verification gates (`--test-gate`, `--affected`, `--situ`) across database and application boundaries. Names the same literal declares as CTEs (`WITH name AS (`) are query-local and emit no reference; a table no schema defines counts as external.

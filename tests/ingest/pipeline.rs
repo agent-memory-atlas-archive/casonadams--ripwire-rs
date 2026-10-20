@@ -402,6 +402,39 @@ class MobileSwapService {
 }
 
 #[test]
+fn test_embedded_sql_binds_tables_only_and_skips_ctes() {
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            ("a.py", Lang::Python, b"members = []\ncounts = {}\n"),
+            (
+                "b.py",
+                Lang::Python,
+                b"def load():\n    return \"SELECT id FROM members WHERE id = 1\"\ndef tally():\n    return \"WITH counts AS (SELECT 1 AS n) SELECT n FROM counts\"\n",
+            ),
+            ("schema.sql", Lang::Sql, b"CREATE TABLE members (id INT);\n"),
+        ],
+        &reg,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let ranks = vec![1.0; ingest.symbols.len()];
+    let callers_of = |name: &str, lang: Lang| -> Vec<String> {
+        let sym = ingest
+            .symbols
+            .iter()
+            .find(|s| interner.resolve(&s.name) == name && s.lang == lang)
+            .unwrap_or_else(|| panic!("{name} in {lang:?}"));
+        let nav = navigate_1hop(sym.id, &ingest, &graph, &ranks, &interner).unwrap();
+        nav.callers.iter().map(|c| c.name.clone()).collect()
+    };
+    assert_eq!(callers_of("members", Lang::Sql), ["load"]);
+    assert!(callers_of("members", Lang::Python).is_empty());
+    assert!(callers_of("counts", Lang::Python).is_empty());
+}
+
+#[test]
 fn test_cpp_type_uses_and_ifdef_macro_dedup() {
     let reg = LanguageRegistry::new().unwrap();
     let interner = Interner::new();

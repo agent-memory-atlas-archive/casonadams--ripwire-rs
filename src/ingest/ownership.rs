@@ -36,8 +36,14 @@ pub fn build_file_references(
             let from_symbol = find_enclosing_symbol(file_symbols, r.start_byte);
 
             let callee_spur = interner.intern(&r.callee_name);
-            let mut reference =
-                Reference::new(from_symbol, callee_spur, file_id, r.line, file.lang, r.role);
+            let mut reference = Reference::new(
+                from_symbol,
+                callee_spur,
+                file_id,
+                r.line,
+                r.lang.unwrap_or(file.lang),
+                r.role,
+            );
             if let Some(q) = &r.qualifier {
                 reference.qualifier = Some(interner.intern(q));
             }

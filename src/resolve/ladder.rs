@@ -235,6 +235,16 @@ fn filter_matching_scope(cands: &CandBuffer, symbols: &[Symbol], q: Spur) -> Can
     qualified
 }
 
+fn filter_in_file(cands: &CandBuffer, symbols: &[Symbol], file_id: u32) -> CandBuffer {
+    let mut in_file = CandBuffer::default();
+    for &id in cands {
+        if symbols[id as usize].file_id == file_id {
+            in_file.push(id);
+        }
+    }
+    in_file
+}
+
 /// Index per-file referenced identifiers and qualifiers for cross-file receiver evidence.
 #[must_use]
 pub fn index_file_scope_mentions(
@@ -251,6 +261,39 @@ pub fn index_file_scope_mentions(
         }
     }
     sets
+}
+
+/// Per file, the identifiers its imports bind to an indexed module file (`import x as y` binds `y`).
+#[must_use]
+pub fn index_module_qualifiers(
+    files: &[FileInfo],
+    references: &[Reference],
+    interner: &Interner,
+) -> Vec<HashMap<Spur, u32>> {
+    let file_index: HashMap<&str, u32> = files
+        .iter()
+        .map(|f| (interner.resolve(&f.path), f.id))
+        .collect();
+    let mut maps = vec![HashMap::new(); files.len()];
+    for r in references.iter().filter(|r| r.role == RefRole::Import) {
+        let raw = interner.resolve(&r.callee_name);
+        let semantics = r.lang.semantics();
+        let Some(bound) = semantics
+            .import_binding(raw)
+            .and_then(|(_, bound)| interner.get(bound))
+        else {
+            continue;
+        };
+        let Some(importer) = files.get(r.file_id as usize) else {
+            continue;
+        };
+        if let Some(target) =
+            semantics.resolve_import_target(interner.resolve(&importer.path), raw, &file_index)
+        {
+            maps[r.file_id as usize].insert(bound, target);
+        }
+    }
+    maps
 }
 
 fn is_non_table_read_write(r: &Reference) -> bool {
@@ -275,8 +318,12 @@ fn classify_rejected_with_interner(r: &Reference, interner: &Interner) -> RefOut
 }
 
 fn classify_rejected_candidates(r: &Reference, interner: Option<&Interner>) -> RefOutcome {
-    if is_non_table_read_write(r) {
-        return RefOutcome::Ignored;
+    if matches!(r.role, RefRole::Read | RefRole::Write) {
+        return if r.lang.semantics().is_table_read_write_target() {
+            RefOutcome::External
+        } else {
+            RefOutcome::Ignored
+        };
     }
     interner.map_or(RefOutcome::Unresolved, |i| {
         classify_rejected_with_interner(r, i)
@@ -293,6 +340,9 @@ pub trait ResolutionLookup {
     }
     fn file_mentions_scope(&self, _file_id: u32, _scope: Spur) -> bool {
         false
+    }
+    fn qualifier_module_file(&self, _file_id: u32, _qualifier: Spur) -> Option<u32> {
+        None
     }
 
     #[must_use]
@@ -319,6 +369,28 @@ pub trait ResolutionLookup {
         sym.lang.is_compatible(r.lang) && arity_ok
     }
 
+    /// Candidates a qualified reference can mean: those scoped by the qualifier, else those in the module
+    /// file the qualifier is bound to by an import, else all of them unless the qualifier is std/builtin.
+    #[must_use]
+    fn narrow_by_qualifier(&self, cands: CandBuffer, r: &Reference, q: Spur) -> Option<CandBuffer> {
+        let symbols = self.symbols();
+        let qualified = filter_matching_scope(&cands, symbols, q);
+        if !qualified.is_empty() {
+            return Some(qualified);
+        }
+        if let Some(module_file) = self.qualifier_module_file(r.file_id, q) {
+            let in_module = filter_in_file(&cands, symbols, module_file);
+            if !in_module.is_empty() {
+                return Some(in_module);
+            }
+        }
+        let is_std_qual = self
+            .interner()
+            .and_then(|i| i.try_resolve(&q))
+            .is_some_and(|qs| r.lang.semantics().is_std_or_builtin_qualifier(qs));
+        (!is_std_qual).then_some(cands)
+    }
+
     #[must_use]
     fn apply_qualifier_or_caller_scope(
         &self,
@@ -327,15 +399,7 @@ pub trait ResolutionLookup {
     ) -> Option<CandBuffer> {
         let symbols = self.symbols();
         if let Some(q) = r.qualifier {
-            let qualified = filter_matching_scope(&cands, symbols, q);
-            if !qualified.is_empty() {
-                return Some(qualified);
-            }
-            let is_std_qual = self
-                .interner()
-                .and_then(|i| i.try_resolve(&q))
-                .is_some_and(|qs| r.lang.semantics().is_std_or_builtin_qualifier(qs));
-            return (!is_std_qual).then_some(cands);
+            return self.narrow_by_qualifier(cands, r, q);
         }
         if let Some(caller_sc) = symbols.get(r.from_symbol as usize).and_then(|cs| cs.scope) {
             let qualified = filter_matching_scope(&cands, symbols, caller_sc);
@@ -455,6 +519,7 @@ pub struct ResolutionContext<'a> {
     pub by_name: &'a HashMap<Spur, Vec<NodeId>>,
     pub interner: Option<&'a Interner>,
     pub file_scopes: Option<&'a [std::collections::HashSet<Spur>]>,
+    pub module_qualifiers: Option<&'a [HashMap<Spur, u32>]>,
 }
 
 impl ResolutionLookup for ResolutionContext<'_> {
@@ -483,5 +548,13 @@ impl ResolutionLookup for ResolutionContext<'_> {
         self.file_scopes
             .and_then(|sets| sets.get(file_id as usize))
             .is_some_and(|set| set.contains(&scope))
+    }
+
+    #[inline]
+    fn qualifier_module_file(&self, file_id: u32, qualifier: Spur) -> Option<u32> {
+        self.module_qualifiers?
+            .get(file_id as usize)?
+            .get(&qualifier)
+            .copied()
     }
 }

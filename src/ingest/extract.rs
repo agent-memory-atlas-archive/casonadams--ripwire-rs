@@ -28,6 +28,8 @@ pub struct RawRef {
     pub role: RefRole,
     pub arg_count: u16,
     pub arg_count_known: bool,
+    /// Language the reference is written in when it differs from its file's (embedded SQL).
+    pub lang: Option<crate::domain::Lang>,
 }
 
 /// Parsed facts from a single file.
@@ -642,6 +644,7 @@ fn record_ref_item(
         role,
         arg_count,
         arg_count_known,
+        lang: None,
     });
 }
 
@@ -690,6 +693,7 @@ fn scan_macro_body_calls(
                 role: RefRole::Call,
                 arg_count: 0,
                 arg_count_known: false,
+                lang: None,
             });
         }
     }
@@ -788,11 +792,24 @@ fn classify_sql_keyword_pair(prev: &str, curr: &str) -> Option<RefRole> {
     }
 }
 
+/// Names a literal declares as CTEs (`name AS (`), which are local to that query, not tables.
+fn cte_names<'a>(tokens: &[&'a str]) -> Vec<&'a str> {
+    tokens
+        .windows(3)
+        .filter(|w| {
+            clean_sql_token(w[1]).eq_ignore_ascii_case("as")
+                && (w[1].ends_with('(') || w[2].starts_with('('))
+        })
+        .map(|w| clean_sql_token(w[0]))
+        .collect()
+}
+
 fn scan_sql_tokens_in_literal(text: &str, start_byte: usize, line: u32, refs: &mut Vec<RawRef>) {
     if !has_sql_dml_anchor(text) {
         return;
     }
     let tokens: Vec<&str> = text.split_whitespace().collect();
+    let ctes = cte_names(&tokens);
     for i in 0..tokens.len() {
         let prev = if i > 0 {
             clean_sql_token(tokens[i - 1])
@@ -811,7 +828,9 @@ fn scan_sql_tokens_in_literal(text: &str, start_byte: usize, line: u32, refs: &m
         }
         if let Some(&raw_target) = tokens.get(target_idx) {
             let table = clean_sql_token(raw_target);
-            if is_valid_sql_table_ident(table) {
+            if is_valid_sql_table_ident(table)
+                && !ctes.iter().any(|c| c.eq_ignore_ascii_case(table))
+            {
                 refs.push(RawRef {
                     callee_name: table.to_string(),
                     qualifier: None,
@@ -820,6 +839,7 @@ fn scan_sql_tokens_in_literal(text: &str, start_byte: usize, line: u32, refs: &m
                     role,
                     arg_count: 0,
                     arg_count_known: false,
+                    lang: Some(Lang::Sql),
                 });
             }
         }

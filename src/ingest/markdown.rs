@@ -150,6 +150,7 @@ fn scan_line_links(line: &str, line_num: u32, line_start: usize, refs: &mut Vec<
                     role: RefRole::Call,
                     arg_count: 0,
                     arg_count_known: false,
+                    lang: None,
                 });
             }
             b = rp + 1;
