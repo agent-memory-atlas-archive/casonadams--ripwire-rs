@@ -9,8 +9,11 @@ use std::sync::Arc;
 /// 32-bit index into symbol tables. Not a pointer.
 pub type NodeId = u32;
 
-/// Sentinel value indicating no node (e.g., file-scope references).
+/// Sentinel value indicating no node.
 pub const NO_NODE: NodeId = u32::MAX;
+
+/// Name of the synthetic per-file owner of references outside every definition (`SymKind::ModuleScope`).
+pub const MODULE_SCOPE_NAME: &str = "<file-scope>";
 
 /// Thread-safe string interner backed by `lasso::ThreadedRodeo`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -476,8 +479,12 @@ impl IngestResult {
         Self::default()
     }
 
+    /// Indexed definitions, excluding synthetic `ModuleScope` owners.
     pub fn symbol_count(&self) -> usize {
-        self.symbols.len()
+        self.symbols
+            .iter()
+            .filter(|s| s.kind != SymKind::ModuleScope)
+            .count()
     }
 
     pub fn reference_count(&self) -> usize {

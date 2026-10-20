@@ -1,7 +1,8 @@
 use super::extract::{FileParseResult, RawDef, RawRef, parse_file_tree};
+use super::ownership::{assign_module_scope_owner, build_file_references};
 use super::registry::LanguageRegistry;
 use crate::crawler::CrawledFile;
-use crate::domain::{FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, Reference, Symbol};
+use crate::domain::{FileInfo, IngestResult, Interner, Lang, NodeId, Reference, Symbol};
 use rayon::prelude::*;
 use std::fs;
 use tree_sitter::{Language, Query};
@@ -48,56 +49,36 @@ pub fn ingest_crawled_files(
         })
         .collect();
 
-    let mut node_offsets = Vec::with_capacity(files.len() + 1);
-    let mut current_offset: NodeId = 0;
-    for parsed in &parsed_files {
-        node_offsets.push(current_offset);
-        if let Some((_, p)) = parsed {
-            current_offset += p.defs.len() as NodeId;
-        }
-    }
-    node_offsets.push(current_offset);
-
-    let processed: Vec<(FileInfo, Vec<Symbol>, Vec<Reference>)> = (0..files.len())
+    let processed: Vec<(FileInfo, FileIndex)> = (0..files.len())
         .into_par_iter()
         .zip(parsed_files)
         .map(|(file_id, parsed)| {
             let file = &files[file_id];
             let file_id = file_id as u32;
-            let file_spur = interner.intern(&file.rel_path);
-            let mut start_id = node_offsets[file_id as usize];
-
             let (eff_lang, line_count, byte_size, defs, refs) = match parsed {
                 Some((l, p)) => (l, p.line_count, p.byte_size, p.defs, p.refs),
                 None => (file.lang, 0, file.byte_size, Vec::new(), Vec::new()),
             };
-
             let file_info = FileInfo {
                 id: file_id,
-                path: file_spur,
+                path: interner.intern(&file.rel_path),
                 lang: eff_lang,
                 line_count,
                 byte_size,
             };
-
             let mut eff_file = file.clone();
             eff_file.lang = eff_lang;
-            let file_symbols =
-                build_file_symbols(defs, &eff_file, file_id, interner, &mut start_id);
-            let file_refs =
-                build_file_references(refs, &eff_file, file_id, &file_symbols, interner);
-            (file_info, file_symbols, file_refs)
+            (
+                file_info,
+                index_file(defs, refs, &eff_file, file_id, interner),
+            )
         })
         .collect();
 
     let mut ingest = IngestResult::new();
     ingest.files.reserve(files.len());
-    ingest.symbols.reserve(current_offset as usize);
-
-    for (file_info, file_symbols, file_refs) in processed {
-        ingest.files.push(file_info);
-        ingest.symbols.extend(file_symbols);
-        ingest.references.extend(file_refs);
+    for (file_info, index) in processed {
+        append_file(&mut ingest, file_info, index);
     }
     ingest
 }
@@ -109,12 +90,9 @@ pub fn ingest_in_memory_files(
     interner: &Interner,
 ) -> IngestResult {
     let mut ingest = IngestResult::new();
-    let mut next_node_id: NodeId = 0;
 
     for (file_id, &(rel_path, lang, source_bytes)) in files.iter().enumerate() {
         let file_id = file_id as u32;
-        let file_spur = interner.intern(rel_path);
-
         let eff_lang = lang
             .semantics()
             .refine_dialect(lang, rel_path, source_bytes);
@@ -126,32 +104,68 @@ pub fn ingest_in_memory_files(
             Some(p) => (p.line_count, p.byte_size, p.defs, p.refs),
             None => (0, source_bytes.len() as u64, Vec::new(), Vec::new()),
         };
-
-        ingest.files.push(FileInfo {
+        let file_info = FileInfo {
             id: file_id,
-            path: file_spur,
+            path: interner.intern(rel_path),
             lang: eff_lang,
             line_count,
             byte_size,
-        });
-
+        };
         let dummy_crawled = CrawledFile {
             path: std::path::PathBuf::from(rel_path),
             rel_path: rel_path.to_string(),
             lang: eff_lang,
             byte_size: source_bytes.len() as u64,
         };
-
-        let file_symbols =
-            build_file_symbols(defs, &dummy_crawled, file_id, interner, &mut next_node_id);
-        let file_refs =
-            build_file_references(refs, &dummy_crawled, file_id, &file_symbols, interner);
-
-        ingest.references.extend(file_refs);
-        ingest.symbols.extend(file_symbols);
+        let index = index_file(defs, refs, &dummy_crawled, file_id, interner);
+        append_file(&mut ingest, file_info, index);
     }
 
     ingest
+}
+
+/// One file's symbols and references, with node ids local to the file (starting at 0).
+pub struct FileIndex {
+    pub symbols: Vec<Symbol>,
+    pub references: Vec<Reference>,
+}
+
+pub fn index_file(
+    defs: Vec<RawDef>,
+    refs: Vec<RawRef>,
+    file: &CrawledFile,
+    file_id: u32,
+    interner: &Interner,
+) -> FileIndex {
+    let mut next_id: NodeId = 0;
+    let mut symbols = build_file_symbols(defs, file, file_id, interner, &mut next_id);
+    let mut references = build_file_references(refs, file, file_id, &symbols, interner);
+    assign_module_scope_owner(
+        &mut symbols,
+        &mut references,
+        file,
+        file_id,
+        interner,
+        &mut next_id,
+    );
+    FileIndex {
+        symbols,
+        references,
+    }
+}
+
+/// Append a file, rebasing its file-local node ids onto the global symbol table.
+fn append_file(ingest: &mut IngestResult, file_info: FileInfo, mut index: FileIndex) {
+    let offset = ingest.symbols.len() as NodeId;
+    for s in &mut index.symbols {
+        s.id += offset;
+    }
+    for r in &mut index.references {
+        r.from_symbol += offset;
+    }
+    ingest.files.push(file_info);
+    ingest.symbols.append(&mut index.symbols);
+    ingest.references.append(&mut index.references);
 }
 
 pub fn build_file_symbols(
@@ -192,51 +206,4 @@ pub fn build_file_symbols(
         file_symbols.push(sym);
     }
     file_symbols
-}
-
-pub fn find_enclosing_symbol(file_symbols: &[Symbol], start_byte: usize) -> NodeId {
-    let upper = file_symbols.partition_point(|s| (s.sig_start_byte as usize) <= start_byte);
-    let mut best_id = NO_NODE;
-    let mut best_span = u32::MAX;
-
-    for s in file_symbols[..upper].iter().rev() {
-        let sig_start = s.sig_start_byte as usize;
-        let dist = start_byte - sig_start;
-        if dist as u32 >= best_span {
-            break;
-        }
-        if start_byte <= (s.end_byte as usize) {
-            let span = s.end_byte - s.sig_start_byte;
-            if span < best_span {
-                best_span = span;
-                best_id = s.id;
-            }
-        }
-    }
-    best_id
-}
-
-pub fn build_file_references(
-    refs: Vec<RawRef>,
-    file: &CrawledFile,
-    file_id: u32,
-    file_symbols: &[Symbol],
-    interner: &Interner,
-) -> Vec<Reference> {
-    refs.into_iter()
-        .map(|r| {
-            let from_symbol = find_enclosing_symbol(file_symbols, r.start_byte);
-
-            let callee_spur = interner.intern(&r.callee_name);
-            let mut reference =
-                Reference::new(from_symbol, callee_spur, file_id, r.line, file.lang, r.role);
-            if let Some(q) = &r.qualifier {
-                reference.qualifier = Some(interner.intern(q));
-            }
-            reference.start_byte = r.start_byte as u32;
-            reference.arg_count = r.arg_count;
-            reference.arg_count_known = r.arg_count_known;
-            reference
-        })
-        .collect()
 }

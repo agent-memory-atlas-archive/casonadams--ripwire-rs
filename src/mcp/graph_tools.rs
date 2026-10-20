@@ -483,7 +483,7 @@ pub fn call_analyze(
 
     json!({
         "ranked_by": mode,
-        "total_symbols": ingest.symbols.len(),
+        "total_symbols": ingest.symbol_count(),
         "symbols": symbols_out
     })
 }

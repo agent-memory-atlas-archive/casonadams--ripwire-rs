@@ -1,6 +1,7 @@
 use crate::domain::{IngestResult, Interner, NodeId, RefRole};
 use crate::gate::contract::{ContractStatus, SignatureContract, compare_contracts};
 use crate::graph::Graph;
+use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};
 
 /// Detailed site information for an incompatible call.
@@ -98,13 +99,19 @@ fn write_caller_row<W: Write>(c: &CallerCheckResult, out: &mut W) -> io::Result<
         return writeln!(
             out,
             "  <c n=\"{}\" p=\"{}:{}\"{}/>",
-            c.caller_name, c.file_path, c.line, incomp_attr
+            c.caller_name.xml_escaped(),
+            c.file_path.xml_escaped(),
+            c.line,
+            incomp_attr
         );
     }
     writeln!(
         out,
         "  <c n=\"{}\" p=\"{}:{}\"{}>",
-        c.caller_name, c.file_path, c.line, incomp_attr
+        c.caller_name.xml_escaped(),
+        c.file_path.xml_escaped(),
+        c.line,
+        incomp_attr
     )?;
     for s in &c.sites {
         writeln!(

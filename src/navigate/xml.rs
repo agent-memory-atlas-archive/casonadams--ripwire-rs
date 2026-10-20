@@ -75,7 +75,10 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
             write!(
                 out,
                 "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{tested_attr}{sites_attr}{via_attr}/>",
-                it.kind, it.name, it.path, it.line
+                it.kind,
+                it.name.xml_escaped(),
+                it.path.xml_escaped(),
+                it.line
             )?;
         }
         Ok(())
@@ -242,7 +245,12 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
             write!(
                 out,
                 "<s t=\"{}\" n=\"{}\" p=\"{}:{}\" d=\"{}\" dist=\"{}\"{tested_attr}/>",
-                n.kind, n.name, n.path, n.line, n.hops, n.hops
+                n.kind,
+                n.name.xml_escaped(),
+                n.path.xml_escaped(),
+                n.line,
+                n.hops,
+                n.hops
             )?;
         }
         for p in self.effective_importers().into_iter().take(37) {
@@ -282,8 +290,8 @@ pub fn serialize_find_symbol_xml<W: Write>(nav: &NavNeighborhood, out: &mut W) -
     writeln!(
         out,
         "<find-symbol schema=\"ripwire-rs.find-symbol/v1\" of=\"{}\" p=\"{}:{}\" callers=\"{}\" callees=\"{}\">",
-        nav.target.name,
-        nav.target.path,
+        nav.target.name.xml_escaped(),
+        nav.target.path.xml_escaped(),
         nav.target.line,
         nav.callers.len(),
         nav.callees.len()
@@ -293,7 +301,10 @@ pub fn serialize_find_symbol_xml<W: Write>(nav: &NavNeighborhood, out: &mut W) -
         writeln!(
             out,
             "    <s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
-            c.kind, c.name, c.path, c.line
+            c.kind,
+            c.name.xml_escaped(),
+            c.path.xml_escaped(),
+            c.line
         )?;
     }
     writeln!(out, "  </callers>")?;
@@ -302,7 +313,10 @@ pub fn serialize_find_symbol_xml<W: Write>(nav: &NavNeighborhood, out: &mut W) -
         writeln!(
             out,
             "    <s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
-            c.kind, c.name, c.path, c.line
+            c.kind,
+            c.name.xml_escaped(),
+            c.path.xml_escaped(),
+            c.line
         )?;
     }
     writeln!(out, "  </callees>")?;
@@ -353,12 +367,21 @@ impl crate::serialize::XmlReport for UsesReport<'_> {
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         for &(role, file, line, enc) in self.sites.iter().take(40) {
             if enc.is_empty() {
-                writeln!(out, "  <u role=\"{}\" p=\"{}:{}\"/>", role, file, line)?;
+                writeln!(
+                    out,
+                    "  <u role=\"{}\" p=\"{}:{}\"/>",
+                    role,
+                    file.xml_escaped(),
+                    line
+                )?;
             } else {
                 writeln!(
                     out,
                     "  <u role=\"{}\" p=\"{}:{}\" in_id=\"{}\"/>",
-                    role, file, line, enc
+                    role,
+                    file.xml_escaped(),
+                    line,
+                    enc.xml_escaped()
                 )?;
             }
         }

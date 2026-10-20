@@ -237,7 +237,7 @@ pub fn bucket_symbols_by_rank(
     let keep = top_k.unwrap_or(s).min(s);
 
     let mut order: Vec<NodeId> = (0..s as NodeId)
-        .filter(|&id| symbols[id as usize].kind != crate::domain::SymKind::Section)
+        .filter(|&id| symbols[id as usize].is_code_symbol())
         .collect();
     order.sort_by(|&a, &b| {
         let ra = ranks.get(a as usize).copied().unwrap_or(0.0);
@@ -601,7 +601,7 @@ fn bucket_symbols_stable(
         .ingest
         .symbols
         .iter()
-        .filter(|s| s.kind != crate::domain::SymKind::Section)
+        .filter(|s| s.is_code_symbol())
         .take(keep)
     {
         if let Some(b) = buckets.get_mut(sym.file_id as usize) {

@@ -75,6 +75,7 @@ ripwire-rs . --slice="compute:x" --slice-flow=both
 - **Root-Cause Tracing**: `--path-between` and `--connect` expose the exact sequence of intermediary function calls bridging two components.
 - **Side-Effect Verification**: ARISE slicing isolates exact variable lifetimes and mutation points inside a function.
 - **Cross-Language Database Lineage**: Embedded SQL queries come for free during standard AST ingestion. Any string literal in Dart, Rust, Python, TypeScript, Go, Java, etc. containing SQL DML automatically maps to `.sql` table symbols with typed `read` and `write` roles.
+- **Top-Level Callers**: Calls in a file's module scope (top-level statements and anonymous callback bodies) are attributed to a per-file `<file-scope>` symbol (`t="modscope"`, `p=FILE:1`), so script entrypoints show up in `--callers`, `--impact`, `--uses`, `--edit-check`, and `--affected`. It is a caller, never a callee, with no body to expand.
 
 ---
 

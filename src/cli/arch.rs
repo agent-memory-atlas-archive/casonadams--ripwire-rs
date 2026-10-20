@@ -182,7 +182,7 @@ fn compute_community_summary<'a>(
         .iterations
         .max(1);
     let mut sum = crate::serialize::CommunitySummary {
-        symbols: ingest.symbols.len(),
+        symbols: ingest.symbol_count(),
         connected_singletons,
         pr_iters,
         gauges: graph.gauges(),

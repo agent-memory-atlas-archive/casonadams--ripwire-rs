@@ -1,6 +1,7 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::gate::affected::is_test_path;
 use crate::graph::Graph;
+use crate::serialize::XmlEscapeExt;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 use std::path::Path;
@@ -230,7 +231,10 @@ impl crate::serialize::XmlReport for SeamsReport {
                 writeln!(
                     w,
                     "    <edge caller=\"{}\" p=\"{}\" callee=\"{}\" cp=\"{}\"/>",
-                    e.caller, e.caller_path, e.callee, e.callee_path
+                    e.caller.xml_escaped(),
+                    e.caller_path.xml_escaped(),
+                    e.callee.xml_escaped(),
+                    e.callee_path.xml_escaped()
                 )?;
             }
             writeln!(w, "  </seam>")?;

@@ -160,6 +160,8 @@ two hops away, a read/write that never calls SYM, or an `#include` that pulls it
 
 `--callers`/`--callees` answer from the call graph directly — no separate index step. Edges are name-based:
 a high-rank symbol with no callees may be a dispatch hub (virtual/callback/macro), not a leaf — read it.
+A `t="modscope" n="&lt;file-scope&gt;" p="FILE:1"` row is that file's module scope (top-level statements and
+anonymous callback bodies): a real caller with no body to expand — its `sites_at=` lines are the call sites.
 
 **What a high `amb=` should CHANGE about your next action**: `amb="K"` on a symbol means K of its outgoing
 calls matched more than one same-named definition and the resolver guessed. Before relying on an ambiguous

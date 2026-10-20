@@ -580,7 +580,7 @@ pub fn serialize_naming_consistency_xml<W: Write>(
     let mut counts: std::collections::BTreeMap<(&'static str, &'static str), usize> =
         std::collections::BTreeMap::new();
     for sym in &ingest.symbols {
-        if !include_locals && sym.kind == SymKind::Var {
+        if sym.kind == SymKind::ModuleScope || (!include_locals && sym.kind == SymKind::Var) {
             continue;
         }
         let name = interner.resolve(&sym.name);
@@ -601,7 +601,7 @@ pub fn serialize_naming_consistency_xml<W: Write>(
         out,
         "<{tag} schema=\"{schema}\" root=\"{}\" symbols=\"{}\">",
         root.xml_escaped(),
-        ingest.symbols.len()
+        ingest.symbol_count()
     )?;
     for ((kind, style), count) in counts {
         writeln!(
@@ -622,7 +622,7 @@ pub fn serialize_naming_calibration_xml<W: Write>(
         out,
         "<naming-calibration schema=\"ripwire-rs.naming-calibration/v1\" root=\"{}\" symbols=\"{}\">",
         root.xml_escaped(),
-        ingest.symbols.len()
+        ingest.symbol_count()
     )?;
     let mut style_totals: std::collections::BTreeMap<&'static str, usize> =
         std::collections::BTreeMap::new();
@@ -781,7 +781,7 @@ pub fn serialize_executive_report_md<W: Write>(
     writeln!(out, "# Architecture & Quality Report (`{root}`)\n")?;
     writeln!(out, "## Corpus Overview")?;
     writeln!(out, "- **Files Indexed**: {}", ingest.files.len())?;
-    writeln!(out, "- **Symbols Extracted**: {}", ingest.symbols.len())?;
+    writeln!(out, "- **Symbols Extracted**: {}", ingest.symbol_count())?;
     writeln!(out, "- **Call Graph Edges**: {}\n", graph.edge_count())?;
 
     write_report_modules_and_bridges(ingest, graph, interner, out)?;

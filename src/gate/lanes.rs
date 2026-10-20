@@ -637,7 +637,7 @@ fn attach_corpus_stats(mut val: Value, ingest: &IngestResult, graph: &Graph) -> 
     let gauges = graph.gauges();
     val["corpus"] = json!({
         "files": ingest.files.len(),
-        "symbols": ingest.symbols.len(),
+        "symbols": ingest.symbol_count(),
         "edges": graph.edge_count(),
         "ambiguous": gauges.ambiguous,
         "unresolved": gauges.unresolved,

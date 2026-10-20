@@ -25,8 +25,8 @@ pub use crawler::{
     CrawledFile, CrawlerOptions, DEFAULT_MAX_FILE_SIZE, DENYLIST_DIRS, crawl_directory,
 };
 pub use domain::{
-    CorpusView, FileInfo, IngestResult, Interner, Lang, NO_NODE, NodeId, RefRole, Reference,
-    SymKind, Symbol,
+    CorpusView, FileInfo, IngestResult, Interner, Lang, MODULE_SCOPE_NAME, NO_NODE, NodeId,
+    RefRole, Reference, SymKind, Symbol,
 };
 pub use gate::{
     AffectedReport, AffectedTest, CallerCheckResult, ContractStatus, DEFAULT_BASELINE_FILE,

@@ -480,8 +480,8 @@ impl crate::serialize::XmlReport for GraphQueryReport<'_> {
         let pw = self.window();
         for &node_id in self.matched_nodes.iter().skip(pw.begin).take(pw.shown) {
             if let Some(sym) = self.ingest.sym(node_id) {
-                let n = &self.interner[sym.name];
-                let p = self.ingest.sym_file_path(sym, self.interner);
+                let n = self.interner[sym.name].xml_escaped();
+                let p = self.ingest.sym_file_path(sym, self.interner).xml_escaped();
                 writeln!(
                     out,
                     "<s t=\"{}\" n=\"{n}\" p=\"{p}:{}\"/>",
