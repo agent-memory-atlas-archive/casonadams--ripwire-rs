@@ -183,13 +183,7 @@ pub struct ImpactReport<'a> {
 
 impl<'a> ImpactReport<'a> {
     fn effective_importers(&self) -> BTreeSet<&'a str> {
-        let mut set: BTreeSet<&'a str> = self.importers.iter().copied().collect();
-        for n in self.nodes {
-            if n.hops <= 1 && !n.path.is_empty() {
-                set.insert(&n.path);
-            }
-        }
-        set
+        self.importers.iter().copied().collect()
     }
 }
 

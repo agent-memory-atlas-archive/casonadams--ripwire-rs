@@ -95,6 +95,22 @@ fn test_navigate_1hop_and_impact() {
     )
     .unwrap();
     let imp_str = String::from_utf8(imp_xml).unwrap();
-    assert!(imp_str.contains("importers=\"2\""));
-    assert!(imp_str.contains("p=\"src/main.rs\""));
+    assert!(imp_str.contains(" importers=\"1\""));
+    assert!(imp_str.contains("<f via=\"import\" p=\"src/main.rs\""));
+    assert!(!imp_str.contains("<f via=\"import\" p=\"src/lib.rs\""));
+
+    let mut same_file_xml = Vec::new();
+    serialize_impact_with_importers_xml(
+        ".",
+        "c",
+        &impact,
+        Vec::new(),
+        GraphGauges::ZERO_XML_ATTRS,
+        1,
+        &mut same_file_xml,
+    )
+    .unwrap();
+    let same_file_str = String::from_utf8(same_file_xml).unwrap();
+    assert!(same_file_str.contains(" importers=\"0\""));
+    assert!(!same_file_str.contains("<f via="));
 }
