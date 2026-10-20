@@ -366,6 +366,10 @@ pub trait LanguageSemantics: Sync {
     fn import_binding<'a>(&self, _raw_target: &'a str) -> Option<(&'a str, &'a str)> {
         None
     }
+    /// False where `name(...)` always calls a function even when a parameter shares the name (Ruby).
+    fn parameters_shadow_calls(&self) -> bool {
+        true
+    }
     /// Resolve an import/include specifier from `importer_path` to a target `file_id` in `file_index`.
     fn resolve_import_target(
         &self,

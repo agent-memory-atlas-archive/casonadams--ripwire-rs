@@ -172,3 +172,43 @@ fn test_python_module_alias_qualifier_binds_into_that_module() {
         )]
     );
 }
+
+#[test]
+fn test_parameter_shadows_same_named_function() {
+    let cases: &[(&str, Lang, &[u8], &[&str])] = &[
+        (
+            "a.py",
+            Lang::Python,
+            b"def text(n):\n    return n\n\ndef walk(root, text):\n    return text(root)\n\ndef plain():\n    return text(1)\n",
+            &["plain"],
+        ),
+        (
+            "a.js",
+            Lang::JavaScript,
+            b"function text(n) { return n; }\nfunction walk(root, text) { return text(root); }\nfunction plain() { return text(1); }\n",
+            &["plain"],
+        ),
+        (
+            "a.rs",
+            Lang::Rust,
+            b"fn text(n: u32) -> u32 { n }\nfn walk(root: u32, text: fn(u32) -> u32) -> u32 { text(root) }\nfn plain() -> u32 { text(1) }\n",
+            &["plain"],
+        ),
+        (
+            "a.rb",
+            Lang::Ruby,
+            b"def text(n)\n  n\nend\n\ndef walk(root, text)\n  text(root)\nend\n\ndef plain\n  text(1)\nend\n",
+            &["plain", "walk"],
+        ),
+    ];
+    for &(path, lang, src, want) in cases {
+        let (ingest, interner) = ingest(&[(path, lang, src)]);
+        let graph = Graph::build(&ingest, &interner);
+        let ranks = vec![1.0; ingest.symbols.len()];
+        let text = sym_id(&ingest, &interner, "text");
+        let nav = navigate_1hop(text, &ingest, &graph, &ranks, &interner).unwrap();
+        let mut callers: Vec<&str> = nav.callers.iter().map(|c| c.name.as_str()).collect();
+        callers.sort_unstable();
+        assert_eq!(callers, want, "{path}");
+    }
+}

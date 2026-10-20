@@ -52,7 +52,11 @@ fn test_env_identifier_extraction_table() {
         ("a.py", "os.getenv(\"BAZ\")", &["BAZ"]),
         ("a.py", "os.environ.get(\"QUX\", \"d\")", &["QUX"]),
         ("a.py", "os.environ.get (\"EGS\")", &["EGS"]),
-        ("a.py", "dsn = os.environ[\"DATABASE_URL\"]", &["DATABASE_URL"]),
+        (
+            "a.py",
+            "dsn = os.environ[\"DATABASE_URL\"]",
+            &["DATABASE_URL"],
+        ),
         ("a.py", "f = os.environ[ \"SPC\" ]", &["SPC"]),
         ("a.py", "e = environ[\"BARE\"]", &["BARE"]),
         ("a.py", "x = os.environ[\"lower_case\"]", &["lower_case"]),
@@ -66,7 +70,11 @@ fn test_env_identifier_extraction_table() {
             "a = os.environ[\"DUP\"] + os.environ[\"DUP\"]",
             &["DUP"],
         ),
-        ("a.py", "_os.environ[\"COMMIT_SHA\"] = \"cafebabe\"", &["COMMIT_SHA"]),
+        (
+            "a.py",
+            "_os.environ[\"COMMIT_SHA\"] = \"cafebabe\"",
+            &["COMMIT_SHA"],
+        ),
         (
             "a.py",
             "c = \"it's\" and os.getenv(\"AFTERAPOS\")",

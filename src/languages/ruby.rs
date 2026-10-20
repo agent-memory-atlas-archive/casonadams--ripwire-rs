@@ -85,6 +85,10 @@ impl LanguageSemantics for RubyLanguage {
         DialectGroup::Isolated(Lang::Ruby)
     }
 
+    fn parameters_shadow_calls(&self) -> bool {
+        false
+    }
+
     fn uses_hash_comments(&self) -> bool {
         true
     }

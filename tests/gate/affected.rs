@@ -175,9 +175,11 @@ fn test_affected_partner_row_for_unique_convention_match() {
     let paths: Vec<&str> = report.tests.iter().map(|t| t.path.as_str()).collect();
     assert_eq!(paths, ["scripts/test_lint_rules.py"]);
     assert!(report.tests[0].is_partner && report.tests[0].hops == 0);
-    assert!(report.to_xml_string().contains(
-        "<test p=\"scripts/test_lint_rules.py\" partner=\"1\" run_unknown=\"1\"/>"
-    ));
+    assert!(
+        report
+            .to_xml_string()
+            .contains("<test p=\"scripts/test_lint_rules.py\" partner=\"1\" run_unknown=\"1\"/>")
+    );
 }
 
 #[test]

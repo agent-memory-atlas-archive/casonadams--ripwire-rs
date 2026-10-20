@@ -54,13 +54,14 @@ $$\text{Total Call Refs} = \text{Resolved} + \text{External} + \text{Declined} +
 
 1. **`RefOutcome::Resolved`**:
    - Bound via the deterministic precedence ladder within the same `DialectGroup`:
-     1. Explicit qualifier matching `Symbol::scope`
+     1. Explicit qualifier matching `Symbol::scope`, else the module file an import binds that qualifier to (`LanguageSemantics::import_binding`, e.g. Python `import x as y` for `y.f()`)
      2. Same-file symbol match
      3. Imported-file symbol match (`resolve_import_target`)
      4. Same-directory symbol match (bounded by starburst fan-out cap)
      5. Unique global symbol match across compatible dialects
      6. Polymorphic interface/trait contract fallback (`RefRole::Extends` implementors)
    - Self-loops (`from_symbol == to_symbol`) are discarded when building the CSR `Graph`.
+   - An unqualified call or read whose name is a parameter of an enclosing function or closure is local and never enters the ladder; `LanguageSemantics::parameters_shadow_calls` is false for Ruby, where `name(...)` always calls the method.
 2. **`RefOutcome::External`**:
    - Unresolved call whose qualifier matches `LanguageSemantics::is_std_or_builtin_qualifier` (`std`, `fmt`, `os`, `Array`, `Promise`, `System`, `Console`, `Enum`, `NSString`, etc.) or whose unpinned member name matches `LanguageSemantics::is_std_or_builtin_member`.
 3. **`RefOutcome::Declined`**:
