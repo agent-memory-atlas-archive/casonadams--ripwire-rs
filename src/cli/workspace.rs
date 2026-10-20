@@ -344,17 +344,7 @@ fn execute_session_tools_query<W: Write>(
     out: &mut W,
 ) -> io::Result<bool> {
     if ws.doctor {
-        use crate::serialize::GitStampExt;
-        let at_stamp = root.git_at_or_head();
-        let exe_name = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.file_name().map(|n| n.to_string_lossy().into_owned()))
-            .unwrap_or_else(|| "ripwire-rs".to_string());
-        let exe_esc = exe_name.xml_escaped();
-        writeln!(
-            out,
-            "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. -->\n<doctor schema=\"ripwire-rs.doctor/v1\" checks=\"9\" passed=\"9\" at=\"{at_stamp}\" built_from=\"ripwire-rs\"><c n=\"binary-path\" ok=\"1\" self=\"{exe_esc}\" which=\"{exe_esc}\" on_path=\"1\" same_file=\"1\"/></doctor>"
-        )?;
+        super::doctor::collect_doctor_report(root).write_xml(out)?;
         Ok(true)
     } else if ws.handoff {
         writeln!(out, "{}", build_handoff_xml(root, ingest, interner))?;
