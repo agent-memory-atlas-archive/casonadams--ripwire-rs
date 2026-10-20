@@ -150,6 +150,12 @@ impl LanguageSemantics for RustLanguage {
     fn tag(&self) -> &'static str {
         "rs"
     }
+
+    fn is_test_module_stem(&self, file_stem: &str) -> bool {
+        let lower = file_stem.to_ascii_lowercase();
+        matches!(lower.as_str(), "tests" | "test") || lower.ends_with("_tests")
+    }
+
     super::impl_grammar_method!(crate tree_sitter_rust::LANGUAGE, "../queries/rust/tags.scm");
 
     fn has_lifetime_tick_syntax(&self) -> bool {

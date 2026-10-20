@@ -287,10 +287,8 @@ fn score_candidate_symbol(
     let file_path = view.sym_path(sym);
     let kind_factor = if matches!(sym.kind, SymKind::Var | SymKind::Field) {
         0.2
-    } else if file_path.ends_with(".proto") {
-        0.35
     } else {
-        1.0
+        sym.lang.semantics().retrieval_weight()
     };
     let ctx = SymbolMatchCtx {
         name: view.sym_name(sym),
@@ -784,7 +782,7 @@ fn collect_for_doc_mentions(
 ) -> Vec<Value> {
     let mut doc_hits: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
     for sym in &ingest.symbols {
-        if sym.kind != SymKind::Section || sym.lang != crate::domain::Lang::Markdown {
+        if sym.kind != SymKind::Section || !sym.lang.semantics().is_prose_document() {
             continue;
         }
         let sec_lower = interner.resolve(&sym.name).to_ascii_lowercase();

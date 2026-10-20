@@ -17,4 +17,8 @@ impl LanguageSemantics for ProtoLanguage {
     fn supports_slice(&self) -> bool {
         false
     }
+
+    fn retrieval_weight(&self) -> f64 {
+        0.35
+    }
 }

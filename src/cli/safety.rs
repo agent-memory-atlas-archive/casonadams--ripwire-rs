@@ -254,9 +254,10 @@ pub fn execute_test_gate_query_paged<W: Write>(
         .files
         .iter()
         .filter(|f| {
-            let p = interner.resolve(&f.path);
-            p.ends_with(".sh")
-                && p.rsplit_once('/')
+            f.lang.semantics().is_script_runner()
+                && interner
+                    .resolve(&f.path)
+                    .rsplit_once('/')
                     .is_some_and(|(d, _)| d == "test" || d.ends_with("/test"))
         })
         .count();

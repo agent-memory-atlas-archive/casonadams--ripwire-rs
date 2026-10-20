@@ -99,7 +99,8 @@ impl AffectedTest {
 const PARTNER_SUFFIXES: [&str; 4] = ["_test", "_spec", ".test", ".spec"];
 
 fn can_be_test_file(lang: Lang) -> bool {
-    lang.semantics().supports_slice() || lang == Lang::Bash
+    let semantics = lang.semantics();
+    semantics.supports_slice() || semantics.is_script_runner()
 }
 
 fn universal_partner_subject(stem: &str) -> Option<&str> {
@@ -153,12 +154,8 @@ pub fn is_test_or_bench_path<P: AsRef<Path>>(path: P) -> bool {
     {
         return true;
     }
-    let lower = p
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    matches!(lower.as_str(), "tests.rs" | "test.rs") || lower.ends_with("_tests.rs")
+    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+    Lang::from_path(p).semantics().is_test_module_stem(stem)
 }
 
 /// The source stem a test file at `path` is named after: `test_x`, `x_test`, `x_spec`, `x.test`, `x.spec`

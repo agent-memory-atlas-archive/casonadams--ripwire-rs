@@ -326,6 +326,21 @@ pub trait LanguageSemantics: Sync {
         None
     }
 
+    /// File stems that hold only tests by this language's module convention (e.g. Rust `tests.rs`).
+    fn is_test_module_stem(&self, _file_stem: &str) -> bool {
+        false
+    }
+
+    /// True for shell scripts: test files that run programs as subprocesses the call graph cannot see.
+    fn is_script_runner(&self) -> bool {
+        false
+    }
+
+    /// Multiplier for this language's symbols in task retrieval; below 1 for declaration-only formats.
+    fn retrieval_weight(&self) -> f64 {
+        1.0
+    }
+
     /// Manifest whose nearest ancestor copy selects this language's test runner (e.g. `package.json`).
     fn test_runner_manifest(&self) -> Option<&'static str> {
         None

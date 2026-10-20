@@ -48,6 +48,10 @@ impl LanguageSemantics for BashLanguage {
         false
     }
 
+    fn is_script_runner(&self) -> bool {
+        true
+    }
+
     fn visibility_mode(&self) -> VisibilityMode {
         VisibilityMode::ByNameConvention
     }
