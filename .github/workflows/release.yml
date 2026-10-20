@@ -139,8 +139,10 @@ jobs:
           package_dir="$(mktemp -d)"
           trap 'rm -rf "$package_dir"' EXIT
           install -m 755 "target/${{ matrix.target }}/release/ripwire-rs" "$package_dir/ripwire-rs"
+          install -m 755 "target/${{ matrix.target }}/release/rw" "$package_dir/rw"
           install -m 644 man/man1/ripwire-rs.1 "$package_dir/ripwire-rs.1"
-          tar czf "$name.tar.gz" -C "$package_dir" ripwire-rs ripwire-rs.1
+          ln -s ripwire-rs.1 "$package_dir/rw.1"
+          tar czf "$name.tar.gz" -C "$package_dir" ripwire-rs rw ripwire-rs.1 rw.1
           gh release upload "$TAG" "$name.tar.gz" --clobber
 
       - name: Build and upload Linux .deb and .rpm packages
@@ -163,8 +165,9 @@ jobs:
           deb_root="$work_dir/deb"
           mkdir -p "$deb_root/DEBIAN" "$deb_root/usr/bin" "$deb_root/usr/share/man/man1"
           install -m 755 "$bin_path" "$deb_root/usr/bin/ripwire-rs"
+          ln -s ripwire-rs "$deb_root/usr/bin/rw"
           gzip -9n -c "$man_path" > "$deb_root/usr/share/man/man1/ripwire-rs.1.gz"
-          chmod 644 "$deb_root/usr/share/man/man1/ripwire-rs.1.gz"
+          ln -s ripwire-rs.1.gz "$deb_root/usr/share/man/man1/rw.1.gz"
           cat > "$deb_root/DEBIAN/control" <<EOF
           Package: ripwire-rs
           Version: ${version}
@@ -197,12 +200,14 @@ jobs:
           %install
           mkdir -p %{buildroot}/usr/bin %{buildroot}/usr/share/man/man1
           install -m 755 "$bin_path" %{buildroot}/usr/bin/ripwire-rs
+          ln -s ripwire-rs %{buildroot}/usr/bin/rw
           gzip -9n -c "$man_path" > %{buildroot}/usr/share/man/man1/ripwire-rs.1.gz
-          chmod 644 %{buildroot}/usr/share/man/man1/ripwire-rs.1.gz
+          ln -s ripwire-rs.1.gz %{buildroot}/usr/share/man/man1/rw.1.gz
           %files
           /usr/bin/ripwire-rs
+          /usr/bin/rw
           /usr/share/man/man1/ripwire-rs.1.gz
-          EOF
+          /usr/share/man/man1/rw.1.gz
           sed -i 's/^          //' "$rpm_top/SPECS/ripwire-rs.spec"
           rpmbuild -bb --target "$rpm_arch" --define "_topdir $rpm_top" "$rpm_top/SPECS/ripwire-rs.spec"
           rpm_file="ripwire-rs-${version}-1.${rpm_arch}.rpm"
@@ -218,7 +223,7 @@ jobs:
         run: |
           $version = $env:TAG -replace '^.*v', ''
           $name = "ripwire-rs-$version-${{ matrix.target }}"
-          Compress-Archive -Path "target/${{ matrix.target }}/release/ripwire-rs.exe" -DestinationPath "$name.zip"
+          Compress-Archive -Path "target/${{ matrix.target }}/release/ripwire-rs.exe", "target/${{ matrix.target }}/release/rw.exe" -DestinationPath "$name.zip"
           gh release upload $env:TAG "$name.zip" --clobber
   checksums:
     name: "Generate SHA256SUMS"

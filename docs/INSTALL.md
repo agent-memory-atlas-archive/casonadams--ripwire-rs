@@ -1,6 +1,6 @@
 # Installation Guide
 
-`ripwire-rs` ships prebuilt binaries and native system packages for macOS (`aarch64`, `x86_64`), Linux (`x86_64`, `aarch64`), and Windows (`x86_64`), as well as source builds via Cargo.
+`ripwire-rs` ships prebuilt binaries and native system packages for macOS (`aarch64`, `x86_64`), Linux (`x86_64`, `aarch64`), and Windows (`x86_64`), as well as source builds via Cargo. All installation methods provide both the `ripwire-rs` command and the `rw` shorthand executable.
 
 ---
 
@@ -71,7 +71,7 @@ cd ripwire-rs
 make install
 ```
 
-Builds the optimized release binary (`target/release/ripwire-rs`) and installs the manual page (`man ripwire-rs`).
+Builds the optimized release binaries (`ripwire-rs` and `rw`) and installs the manual pages (`man ripwire-rs` and `man rw`).
 
 ---
 

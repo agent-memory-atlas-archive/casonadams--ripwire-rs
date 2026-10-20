@@ -32,6 +32,9 @@ path = "src/lib.rs"
 name = "ripwire-rs"
 path = "src/main.rs"
 
+[[bin]]
+name = "rw"
+path = "src/bin/rw.rs"
 [[bench]]
 name = "bench_pipeline"
 harness = false

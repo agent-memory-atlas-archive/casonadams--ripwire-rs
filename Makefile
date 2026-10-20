@@ -130,6 +130,7 @@ install-man: ## Install manual pages into candidate man directory
 	@MAN_DIR=$$(test -w /opt/homebrew/share/man/man1 2>/dev/null && echo /opt/homebrew/share/man/man1 || echo ~/.local/share/man/man1); \
 	mkdir -p "$$MAN_DIR"; \
 	cp man/man1/ripwire-rs.1 "$$MAN_DIR/"; \
+	ln -sf ripwire-rs.1 "$$MAN_DIR/rw.1"; \
 	echo "Installed man pages to $$MAN_DIR"
 
 .PHONY: install
