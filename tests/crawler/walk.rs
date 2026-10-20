@@ -55,7 +55,20 @@ fn test_crawl_scope_ignore_tests_and_max_file_size() {
     assert!(
         evaluate_candidate("config.yaml", DEFAULT_YAML_CEILING + 1, false, &defaults).is_none()
     );
-    assert!(evaluate_candidate(".github/workflows/ci.yml", 20, false, &defaults).is_none());
-    assert!(evaluate_candidate(".eslintrc.json", 20, false, &defaults).is_none());
-    assert!(evaluate_candidate("src/.hidden.rs", 20, false, &defaults).is_none());
+    assert!(evaluate_candidate(".github/workflows/ci.yml", 20, false, &defaults).is_some());
+    assert!(evaluate_candidate(".eslintrc.json", 20, false, &defaults).is_some());
+    assert!(evaluate_candidate(".vscode/settings.json", 20, false, &defaults).is_none());
+    assert!(evaluate_candidate(".claude/settings.json", 20, false, &defaults).is_none());
+    for generated in ["api/x.pb.go", "m_pb2.py", "web/app.min.js"] {
+        assert!(
+            evaluate_candidate(generated, 20, false, &defaults).is_none(),
+            "{generated}"
+        );
+    }
+    for kept in ["api/x.pb.ts", "y_gen.go", "web/app.min.mjs"] {
+        assert!(
+            evaluate_candidate(kept, 20, false, &defaults).is_some(),
+            "{kept}"
+        );
+    }
 }

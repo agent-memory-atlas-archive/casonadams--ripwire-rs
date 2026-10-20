@@ -237,6 +237,10 @@ impl LanguageSemantics for JavaScriptLanguage {
     fn tag(&self) -> &'static str {
         "js"
     }
+
+    fn is_generated_file_name(&self, file_name: &str) -> bool {
+        file_name.ends_with(".min.js")
+    }
     super::impl_grammar_method!(crate tree_sitter_javascript::LANGUAGE, "../queries/javascript/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {

@@ -341,6 +341,11 @@ pub trait LanguageSemantics: Sync {
         1.0
     }
 
+    /// File names this language's code generators emit by convention (e.g. Go `x.pb.go`); never indexed.
+    fn is_generated_file_name(&self, _file_name: &str) -> bool {
+        false
+    }
+
     /// Manifest whose nearest ancestor copy selects this language's test runner (e.g. `package.json`).
     fn test_runner_manifest(&self) -> Option<&'static str> {
         None

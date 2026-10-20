@@ -27,6 +27,7 @@ pub const DENYLIST_DIRS: &[&str] = &[
     "CMakeFiles",
     "captures",
     ".agents",
+    ".claude",
     ".skills",
 ];
 
@@ -64,7 +65,7 @@ fn build_walker(root: &Path, options: &CrawlerOptions) -> ignore::Walk {
         .git_ignore(options.honor_gitignore)
         .git_global(options.honor_gitignore)
         .git_exclude(options.honor_gitignore)
-        .hidden(true)
+        .hidden(false)
         .follow_links(false)
         .filter_entry(move |entry| {
             if entry.depth() == 0 {
@@ -116,15 +117,7 @@ pub fn crawl_directory<P: AsRef<Path>>(root: P, options: &CrawlerOptions) -> Vec
 }
 
 #[inline]
-fn is_dot_name(name: &str) -> bool {
-    name.starts_with('.') && name != "." && name != ".."
-}
-
-#[inline]
 fn is_entry_denylisted(name: &str, is_dir: bool, custom_excludes: &[String]) -> bool {
-    if is_dot_name(name) {
-        return true;
-    }
     if is_dir {
         DENYLIST_DIRS.contains(&name)
             || name.starts_with("cmake-build-")
@@ -139,8 +132,7 @@ fn is_entry_denylisted(name: &str, is_dir: bool, custom_excludes: &[String]) -> 
 pub fn is_path_denylisted<P: AsRef<Path>>(path: P, custom_excludes: &[String]) -> bool {
     path.as_ref().components().any(|c| {
         c.as_os_str().to_str().is_some_and(|name| {
-            is_dot_name(name)
-                || DENYLIST_DIRS.contains(&name)
+            DENYLIST_DIRS.contains(&name)
                 || name.starts_with("cmake-build-")
                 || custom_excludes.iter().any(|ex| name.contains(ex))
         })
@@ -170,7 +162,13 @@ pub fn evaluate_candidate(
     }
     let lang = resolve_path_lang(path);
     let ceiling = lang.semantics().max_file_size(options.max_file_size);
-    if lang == Lang::Unknown || byte_size == 0 || byte_size > ceiling || is_binary {
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if lang == Lang::Unknown
+        || byte_size == 0
+        || byte_size > ceiling
+        || is_binary
+        || lang.semantics().is_generated_file_name(file_name)
+    {
         return None;
     }
     Some(CrawledFile {

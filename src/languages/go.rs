@@ -45,6 +45,10 @@ impl LanguageSemantics for GoLanguage {
     fn tag(&self) -> &'static str {
         "go"
     }
+
+    fn is_generated_file_name(&self, file_name: &str) -> bool {
+        file_name.ends_with(".pb.go")
+    }
     super::impl_grammar_method!(crate tree_sitter_go::LANGUAGE, "../queries/go/tags.scm");
 
     fn display_color(&self) -> &'static str {

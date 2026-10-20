@@ -182,6 +182,10 @@ impl LanguageSemantics for PythonLanguage {
     fn tag(&self) -> &'static str {
         "py"
     }
+
+    fn is_generated_file_name(&self, file_name: &str) -> bool {
+        file_name.ends_with("_pb2.py")
+    }
     super::impl_grammar_method!(crate tree_sitter_python::LANGUAGE, "../queries/python/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
