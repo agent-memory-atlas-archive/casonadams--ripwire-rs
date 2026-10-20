@@ -17,7 +17,7 @@ pub fn call_mentions_in_root(
 
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
-        if (path.ends_with(".md") || path.contains("doc"))
+        if file.lang.semantics().is_prose_document()
             && let Ok(content) = crate::domain::read_rel_string(root_path, path)
         {
             let occurrences = content.matches(&backtick_target).count();
@@ -547,7 +547,7 @@ fn scan_corpus_markdown_docs(
     let mut summary = CorpusDocSummary::default();
     for file in &ingest.files {
         let doc_path = interner.resolve(&file.path);
-        if file.lang != crate::domain::Lang::Markdown && !doc_path.ends_with(".md") {
+        if !file.lang.semantics().is_prose_document() {
             continue;
         }
         let Ok(text) = crate::domain::read_rel_string(root_path, doc_path) else {
@@ -1017,6 +1017,30 @@ fn literal_block_lines(lines: &[&str], lang: crate::domain::Lang) -> Vec<bool> {
     literal
 }
 
+fn scan_unindexed_flag_files(root_path: &std::path::Path, tally: &mut FlagsScanTally) {
+    for cmake_rel in ["CMakeLists.txt", "cmake/options.cmake"] {
+        if root_path.join(cmake_rel).is_file() {
+            let lang = crate::domain::Lang::from_path(std::path::Path::new(cmake_rel));
+            scan_file_flags(root_path, cmake_rel, lang, tally);
+        }
+    }
+    let Ok(entries) = std::fs::read_dir(root_path.join(".github/workflows")) else {
+        return;
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| {
+            crate::domain::Lang::from_path(std::path::Path::new(n)) == crate::domain::Lang::Yaml
+        })
+        .collect();
+    names.sort_unstable();
+    for name in names {
+        let rel = format!(".github/workflows/{name}");
+        scan_file_flags(root_path, &rel, crate::domain::Lang::Yaml, tally);
+    }
+}
+
 pub fn call_flags_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
     let root_path = std::path::Path::new(root);
     let mut tally = FlagsScanTally::default();
@@ -1027,12 +1051,7 @@ pub fn call_flags_in_root(root: &str, ingest: &IngestResult, interner: &Interner
             scan_file_flags(root_path, path, file.lang, &mut tally);
         }
     }
-    for cmake_rel in ["CMakeLists.txt", "cmake/options.cmake"] {
-        if root_path.join(cmake_rel).is_file() {
-            let lang = crate::domain::Lang::from_path(std::path::Path::new(cmake_rel));
-            scan_file_flags(root_path, cmake_rel, lang, &mut tally);
-        }
-    }
+    scan_unindexed_flag_files(root_path, &mut tally);
     tally.resolve_settings_gates();
 
     let mut flags = Vec::with_capacity(tally.by_key.len());
