@@ -219,18 +219,79 @@ pub fn execute_test_gate_query<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<bool> {
+    execute_test_gate_query_paged(
+        root,
+        files_spec,
+        crate::serialize::PageRequest::default(),
+        ingest,
+        graph,
+        interner,
+        out,
+    )
+}
+
+pub fn execute_test_gate_query_paged<W: Write>(
+    root: &str,
+    files_spec: Option<&str>,
+    page: crate::serialize::PageRequest,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<bool> {
+    use crate::domain::CorpusView;
+    use crate::serialize::{GitStampExt, XmlReport};
     let files = resolve_changed_or_spec_files(root, files_spec);
     let specs: Vec<&str> = files.iter().map(String::as_str).collect();
-    let report = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
-    let untested = report.reached_symbols.saturating_sub(report.seed_count);
-    crate::serialize::query_xml::serialize_test_gate_with_gauge_xml(
+    let mut report = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
+    crate::gate::attach_test_runners(
+        &mut report.tests,
+        std::path::Path::new(root),
+        ingest,
+        interner,
+    );
+    let tested = crate::navigate::compute_tested_node_mask(ingest, graph, interner);
+    let sum = crate::gate::summarize_test_gate(&report, &tested, ingest, interner);
+    let view = (ingest, interner);
+    let untested: Vec<crate::serialize::arch_xml::UntestedSymbol<'_>> = sum
+        .untested
+        .iter()
+        .map(|&id| {
+            let sym = &ingest[id];
+            crate::serialize::arch_xml::UntestedSymbol {
+                name: view.sym_name(sym),
+                path: view.sym_path(sym),
+                line: sym.line,
+                ccx: sym.ccx,
+            }
+        })
+        .collect();
+    let script_gates = ingest
+        .files
+        .iter()
+        .filter(|f| {
+            let p = interner.resolve(&f.path);
+            p.ends_with(".sh")
+                && p.rsplit_once('/')
+                    .is_some_and(|(d, _)| d == "test" || d.ends_with("/test"))
+        })
+        .count();
+    let at_stamp = root.git_at_or_head();
+    crate::serialize::arch_xml::TestGateReport {
         root,
-        &report.tests,
-        untested,
-        &graph.xml_gauge_attrs(),
-        out,
-    )?;
-    Ok(!report.tests.is_empty() || (report.seed_count > 0 && untested > 0))
+        at_stamp: &at_stamp,
+        changed: files.len(),
+        impacted: sum.impacted,
+        tests: &report.tests,
+        untested: &untested,
+        untested_modscope: sum.untested_modscope,
+        run_first: sum.run_first,
+        script_gates_unmodelled: script_gates,
+        page,
+        gauge_attrs: &graph.xml_gauge_attrs(),
+    }
+    .render_envelope(out)?;
+    Ok(!report.tests.is_empty() || !sum.untested.is_empty())
 }
 
 pub fn format_situ_list<W: Write>(
@@ -878,10 +939,16 @@ pub fn execute_affected_with<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let specs: Vec<&str> = specs_str.split(',').map(str::trim).collect();
-    let report = crate::gate::affected::find_affected_tests(
+    let mut report = crate::gate::affected::find_affected_tests(
         &specs,
         &state.ingest,
         &state.graph,
+        &state.interner,
+    );
+    crate::gate::attach_test_runners(
+        &mut report.tests,
+        std::path::Path::new(&state.root),
+        &state.ingest,
         &state.interner,
     );
     report.write_xml(out)

@@ -59,6 +59,14 @@ impl LanguageSemantics for TypeScriptLanguage {
         &["ts", "tsx", "mts", "cts", "astro"]
     }
 
+    fn test_runner_manifest(&self) -> Option<&'static str> {
+        Some("package.json")
+    }
+
+    fn test_run_command(&self, path: &str, source: &str, manifest: Option<&str>) -> Option<String> {
+        super::js_test_run_command(path, source, manifest, false)
+    }
+
     fn display_color(&self) -> &'static str {
         "#3178c6"
     }

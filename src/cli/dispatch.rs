@@ -349,7 +349,7 @@ impl CliVerb for TopRetrievalArgs {
                 ctx.ingest,
                 ctx.graph,
                 ctx.interner,
-                crate::navigate::GraphQueryPageOptions {
+                crate::serialize::PageRequest {
                     limit: ctx.cli.modifiers.limit,
                     offset: ctx.cli.modifiers.offset,
                 },
@@ -423,13 +423,50 @@ impl CliVerb for TopDetailArgs {
 
 impl CliVerb for TopSafetyArgs {
     fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
-        let res = execute_safety_dispatch(self, ctx.root, ctx.ingest, ctx.graph, ctx.interner, out);
+        let page = crate::serialize::PageRequest {
+            limit: ctx.cli.modifiers.limit,
+            offset: ctx.cli.modifiers.offset,
+        };
+        let res = execute_safety_verb(
+            self,
+            page,
+            ctx.root,
+            ctx.ingest,
+            ctx.graph,
+            ctx.interner,
+            out,
+        );
         out.flush()?;
         if let Some(code) = res? {
             std::process::exit(code);
         }
         Ok(())
     }
+}
+
+/// Route a top-level safety verb; `--test-gate` pages its untested rows with `page`.
+pub fn execute_safety_verb<W: Write>(
+    args: &TopSafetyArgs,
+    page: crate::serialize::PageRequest,
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<Option<i32>> {
+    let Some(files_opt) = &args.test_gate else {
+        return execute_safety_dispatch(args, root, ingest, graph, interner, out);
+    };
+    let failed = execute_test_gate_query_paged(
+        root,
+        files_opt.as_deref(),
+        page,
+        ingest,
+        graph,
+        interner,
+        out,
+    )?;
+    Ok(failed.then_some(4))
 }
 
 impl CliVerb for TopWorkspaceArgs {

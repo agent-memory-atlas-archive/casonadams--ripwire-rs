@@ -493,12 +493,6 @@ impl crate::serialize::XmlReport for GraphQueryReport<'_> {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct GraphQueryPageOptions {
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
-}
-
 pub fn execute_graph_query_expr<W: Write>(
     expr: &str,
     root: &str,
@@ -513,7 +507,7 @@ pub fn execute_graph_query_expr<W: Write>(
         ingest,
         graph,
         interner,
-        GraphQueryPageOptions::default(),
+        crate::serialize::PageRequest::default(),
         out,
     )
 }
@@ -524,7 +518,7 @@ pub fn execute_graph_query_expr_paged<W: Write>(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
-    page: GraphQueryPageOptions,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     let tokens = tokenize_graph_query(expr);

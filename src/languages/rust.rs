@@ -2,7 +2,7 @@ use super::{
     DialectGroup, LanguageSemantics, VisibilityMode, normalize_lexical_path, probe_with_suffixes,
     strip_import_quotes,
 };
-use crate::domain::Lang;
+use crate::domain::{Lang, SymKind};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -183,6 +183,9 @@ impl LanguageSemantics for RustLanguage {
         RUST_STD_QUALIFIERS
     }
 
+    fn symbol_implied_import(&self, kind: SymKind, name: &str) -> Option<String> {
+        (kind == SymKind::Section).then(|| format!("self::{name}"))
+    }
     fn resolve_import_target(
         &self,
         importer_path: &str,
@@ -292,9 +295,19 @@ fn resolve_rust_use_target(
         .unwrap_or("")
         .trim_end_matches("::*")
         .trim_end_matches("::");
+    let segs: Vec<&str> = clean.split("::").filter(|s| !s.is_empty()).collect();
     if let Some((base_dir, rest)) = resolve_rust_base_and_rest(importer_path, clean) {
-        let segs: Vec<&str> = rest.split("::").filter(|s| !s.is_empty()).collect();
-        return probe_rust_segs_in_base(base_dir, &segs, file_index);
+        let rest_segs: Vec<&str> = rest.split("::").filter(|s| !s.is_empty()).collect();
+        return probe_rust_segs_in_base(base_dir, &rest_segs, file_index);
+    }
+    let self_dir = Path::new(importer_path)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("");
+    for base in [self_dir, find_rust_crate_src_dir(importer_path)] {
+        if let Some(id) = probe_rust_segs_in_base(base, &segs, file_index) {
+            return Some(id);
+        }
     }
     resolve_rust_workspace_crate_target(clean, file_index)
 }

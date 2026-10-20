@@ -90,7 +90,7 @@ pub fn compute_snapshot(
             snap.dead_symbols.insert(key.clone());
         }
 
-        if path.ends_with(".h") || path.ends_with(".hpp") || path.ends_with(".hh") {
+        if sym.lang.semantics().is_header_file(path) {
             snap.public_api.insert(key);
         }
     }

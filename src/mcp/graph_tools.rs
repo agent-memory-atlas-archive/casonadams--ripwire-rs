@@ -532,11 +532,16 @@ fn collect_ranked_cochange_partners(
 }
 
 fn format_affected_test_label(t: &crate::gate::affected::AffectedTest) -> String {
-    if t.is_direct_change {
-        format!("[changed] {}", t.path)
+    let evidence = if t.is_direct_change {
+        "[changed]".to_string()
+    } else if t.is_partner && t.hops == 0 {
+        "[partner]".to_string()
+    } else if t.is_partner {
+        format!("[partner hops={}]", t.hops)
     } else {
-        format!("[hops={}] {}", t.hops, t.path)
-    }
+        format!("[hops={}]", t.hops)
+    };
+    format!("{evidence} {}", t.path)
 }
 
 /// Execute `situational_awareness` tool.

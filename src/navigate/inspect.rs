@@ -262,10 +262,16 @@ fn write_pack_task_ctx<W: Write>(
     let (bodies, changed_paths, total_bodies) =
         write_pack_task_sigs_and_collect(syms, env.ingest, env.interner, &mut sigs_buf)?;
     let (top_caller_nodes, surface) = collect_pack_surface_and_callers(env, syms);
-    let aff = crate::gate::affected::find_affected_tests(
+    let mut aff = crate::gate::affected::find_affected_tests(
         &changed_paths,
         env.ingest,
         env.graph,
+        env.interner,
+    );
+    crate::gate::attach_test_runners(
+        &mut aff.tests,
+        std::path::Path::new(env.root),
+        env.ingest,
         env.interner,
     );
     let callers_shown = top_caller_nodes.len().min(MAX_PACK_CALLERS);
@@ -323,9 +329,11 @@ fn write_pack_task_ctx<W: Write>(
         aff.tests.len()
     )?;
     for t in aff.tests.iter().take(tests_shown) {
+        let partner = if t.is_partner { " partner=\"1\"" } else { "" };
+        let run = t.run_attr();
         write!(
             out,
-            "<t p=\"{}\" hops=\"{}\"/>",
+            "<t p=\"{}\"{partner} hops=\"{}\"{run}/>",
             t.path.xml_escaped(),
             t.hops
         )?;

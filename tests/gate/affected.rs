@@ -227,3 +227,118 @@ fn test_affected_partner_declined_when_ambiguous_or_unnamed() {
         assert!(affected_paths(paths, changed).is_empty(), "{paths:?}");
     }
 }
+
+#[test]
+fn test_runner_command_by_language_and_nearest_manifest() {
+    use ripwire_rs::gate::runners::nearest_manifest;
+    use std::collections::HashMap;
+    let cases: [(&str, &str, Option<&str>, Option<&str>); 10] = [
+        (
+            "jobs/test_main.py",
+            "if __name__ == \"__main__\":\n    pass\n",
+            None,
+            Some("python3 jobs/test_main.py"),
+        ),
+        (
+            "jobs/test_main.py",
+            "if __name__ == '__main__':\n    pass\n",
+            None,
+            Some("python3 jobs/test_main.py"),
+        ),
+        (
+            "scripts/test_lint.py",
+            "#!/usr/bin/env python3\nassert 1\n",
+            None,
+            None,
+        ),
+        (
+            "test/run_test.sh",
+            "echo ok\n",
+            None,
+            Some("bash test/run_test.sh"),
+        ),
+        ("test/run_test.bash", "echo ok\n", None, None),
+        (
+            "pkg/a.test.ts",
+            "test('x',()=>{})",
+            Some("{\"devDependencies\":{\"vitest\":\"1\"}}"),
+            Some("npx vitest run pkg/a.test.ts"),
+        ),
+        (
+            "pkg/a.test.ts",
+            "test('x',()=>{})",
+            Some("{\"devDependencies\":{\"jest\":\"1\"}}"),
+            Some("npx jest pkg/a.test.ts"),
+        ),
+        (
+            "pkg/a.test.js",
+            "const t = require('node:test');",
+            None,
+            Some("node --test pkg/a.test.js"),
+        ),
+        (
+            "pkg/a.test.ts",
+            "const t = require('node:test');",
+            None,
+            None,
+        ),
+        ("tests/foo_test.go", "package x", None, None),
+    ];
+    for (path, src, manifest, want) in cases {
+        let lang = Lang::from_path(std::path::Path::new(path));
+        assert_eq!(
+            lang.semantics()
+                .test_run_command(path, src, manifest)
+                .as_deref(),
+            want,
+            "{path}"
+        );
+    }
+    let indexed: HashMap<&str, Lang> = [
+        ("package.json", Lang::Json),
+        ("packages/a/package.json", Lang::Json),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        nearest_manifest("packages/a/test/w.test.ts", "package.json", &indexed),
+        Some("packages/a/package.json")
+    );
+    assert_eq!(
+        nearest_manifest("packages/b/test/w.test.ts", "package.json", &indexed),
+        Some("package.json")
+    );
+}
+
+#[test]
+fn test_summarize_test_gate_separates_modscope_and_sorts_by_ccx() {
+    use ripwire_rs::gate::summarize_test_gate;
+    use ripwire_rs::navigate::compute_tested_node_mask;
+    let interner = Interner::new();
+    let registry = ripwire_rs::LanguageRegistry::new().unwrap();
+    let ingest = ripwire_rs::ingest_in_memory_files(
+        &[
+            ("src/core.py", Lang::Python, b"def leaf():\n    return 1\n"),
+            (
+                "src/app.py",
+                Lang::Python,
+                b"def simple():\n    return leaf()\ndef branchy(a, b):\n    if a:\n        if b:\n            return leaf()\n    return 0\nleaf()\n",
+            ),
+            ("tests/test_core.py", Lang::Python, b"def test_it():\n    simple()\n"),
+        ],
+        &registry,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let report = find_affected_tests(&["src/core.py"], &ingest, &graph, &interner);
+    let tested = compute_tested_node_mask(&ingest, &graph, &interner);
+    let sum = summarize_test_gate(&report, &tested, &ingest, &interner);
+    assert_eq!(sum.untested_modscope, 1);
+    let names: Vec<&str> = sum
+        .untested
+        .iter()
+        .map(|&id| interner.resolve(&ingest[id].name))
+        .collect();
+    assert_eq!(names, ["branchy"]);
+    assert_eq!(sum.run_first, 1);
+}

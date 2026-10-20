@@ -176,3 +176,38 @@ fn test_symbol_extract_signature_and_source_text() {
     assert!(sym.source_text(src).unwrap().contains("return {};"));
     assert_eq!(sym.extract_signature(b"", "fallback"), "fallback");
 }
+
+#[test]
+fn test_importers_resolve_relative_reexports_and_ignore_call_only_files() {
+    let interner = Interner::new();
+    let registry = ripwire_rs::LanguageRegistry::new().unwrap();
+    let ingest = ripwire_rs::ingest_in_memory_files(
+        &[
+            ("src/navigate/xml.rs", Lang::Rust, b"pub fn render() {}\n"),
+            (
+                "src/navigate/mod.rs",
+                Lang::Rust,
+                b"pub mod xml;\npub use xml::*;\n",
+            ),
+            (
+                "src/lib.rs",
+                Lang::Rust,
+                b"pub mod navigate;\npub use navigate::render;\n",
+            ),
+            ("src/cli.rs", Lang::Rust, b"fn run() { render(); }\n"),
+        ],
+        &registry,
+        &interner,
+    );
+    let render = ingest
+        .symbols
+        .iter()
+        .find(|s| interner.resolve(&s.name) == "render")
+        .unwrap()
+        .id;
+    let view = (&ingest, &interner);
+    assert_eq!(
+        view.resolve_symbol_importers(&[render]),
+        vec!["src/lib.rs", "src/navigate/mod.rs"]
+    );
+}

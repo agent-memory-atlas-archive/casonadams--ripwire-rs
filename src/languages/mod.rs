@@ -174,6 +174,20 @@ pub trait LanguageSemantics: Sync {
         false
     }
 
+    /// True if files of this language are structured data (JSON, TOML, YAML), excluded from code inventory.
+    fn is_data_format(&self) -> bool {
+        false
+    }
+
+    /// True if `path` is a public interface header (`.h`, `.hpp`, `.hh`, `.hxx`, `.cuh`) in a C-family language.
+    fn is_header_file(&self, path: &str) -> bool {
+        self.dialect_group() == DialectGroup::CFamily
+            && matches!(
+                Path::new(path).extension().and_then(|e| e.to_str()),
+                Some("h" | "hpp" | "hh" | "hxx" | "cuh")
+            )
+    }
+
     /// True if definitions in this language represent SQL tables targeted by `RefRole::Read` / `RefRole::Write`.
     fn is_table_read_write_target(&self) -> bool {
         false
@@ -312,6 +326,21 @@ pub trait LanguageSemantics: Sync {
         None
     }
 
+    /// Manifest whose nearest ancestor copy selects this language's test runner (e.g. `package.json`).
+    fn test_runner_manifest(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// Command that runs the test file at repo-relative `path`, from its source and nearest manifest text.
+    fn test_run_command(
+        &self,
+        _path: &str,
+        _source: &str,
+        _manifest: Option<&str>,
+    ) -> Option<String> {
+        None
+    }
+
     /// Terminator of a literal (quoted) heredoc that `line` opens; the body lines until it are data, not code.
     fn quoted_heredoc_terminator<'a>(&self, _line: &'a str) -> Option<&'a str> {
         None
@@ -328,6 +357,10 @@ pub trait LanguageSemantics: Sync {
         }
     }
 
+    /// Import specifier implied by a module declaration symbol (e.g. Rust `mod foo;` -> `self::foo`).
+    fn symbol_implied_import(&self, _kind: SymKind, _name: &str) -> Option<String> {
+        None
+    }
     /// Resolve an import/include specifier from `importer_path` to a target `file_id` in `file_index`.
     fn resolve_import_target(
         &self,
@@ -538,6 +571,24 @@ pub fn strip_import_quotes(raw: &str) -> &str {
     raw.trim()
         .trim_matches(|c: char| matches!(c, '"' | '\'' | '`' | ';'))
         .trim()
+}
+
+/// JS-family runner: the nearest manifest's vitest/jest, else `require('node:test')` when `node_test` applies.
+#[must_use]
+pub(crate) fn js_test_run_command(
+    path: &str,
+    source: &str,
+    manifest: Option<&str>,
+    node_test: bool,
+) -> Option<String> {
+    match manifest {
+        Some(m) if m.contains("vitest") => Some(format!("npx vitest run {path}")),
+        Some(m) if m.contains("jest") => Some(format!("npx jest {path}")),
+        _ => (node_test
+            && (source.contains("require('node:test')")
+                || source.contains("require(\"node:test\")")))
+        .then(|| format!("node --test {path}")),
+    }
 }
 
 #[must_use]

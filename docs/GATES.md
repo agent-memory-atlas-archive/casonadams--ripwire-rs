@@ -71,13 +71,15 @@ Enforces regression-free commits across 10 architectural quality dimensions agai
 The definitive pre-commit verification gate combining changed symbols, affected test discovery, and untested blast radius analysis.
 
 ```xml
-<test-gate schema="ripwire-rs.test-gate/v1" changed_files="1" changed_symbols="2" tests="1" untested_symbols="1">
-  <test p="tests/test_service.rs"/>
-  <untested p="src/service.rs" n="new_helper"/>
+<test-gate schema="ripwire-rs.test-gate/v1" changed="1" impacted="12" tests="1" untested="1" untested_modscope="0" shown_tests="1" tests_capped="0" shown_untested="1" untested_capped="0" script_gates_unmodelled="0" ccx_bar="15" run_first="1" at="6e9b85eb8" root="." next="python3 tests/test_service.py">
+  <t p="tests/test_service.py" partner="1" run="python3 tests/test_service.py"/>
+  <u sym="new_helper" p="src/service.py" l="42" ccx="9"/>
 </test-gate>
 ```
 
-- **Exit Code**: Returns exit code 4 if modified code leaves untested obligations.
+- **Exit Code**: Returns exit code 4 while any `<t>` test row or `<u>` untested impacted symbol row exists.
+- **Runners**: Derives `run=` from the test file's language (`python3` when `__main__` is present, `bash` for `.sh`, `npx vitest run` / `npx jest` from the nearest `package.json`, `node --test` when `require('node:test')` is present) and emits `run_unknown="1"` otherwise.
+- **Untested Blast Radius**: `<u>` rows list impacted non-test symbols that no test transitively reaches, sorted by cognitive complexity descending and paged by `--limit`/`--offset`; `<file-scope>` owners are counted separately in `untested_modscope=`.
 
 ---
 

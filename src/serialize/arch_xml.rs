@@ -1,27 +1,58 @@
 use crate::serialize::escape::XmlEscapeExt;
 use std::io::{self, Write};
 
-/// Serialize `--test-gate` to Ripwire XML.
-pub fn serialize_test_gate_xml<W: Write>(
-    root: &str,
-    tests: &[crate::gate::affected::AffectedTest],
-    untested: usize,
-    out: &mut W,
-) -> io::Result<()> {
-    serialize_test_gate_with_gauge_xml(
-        root,
-        tests,
-        untested,
-        crate::serialize::GraphGauges::ZERO_XML_ATTRS,
-        out,
-    )
+const DEFAULT_UNTESTED_CAP: usize = 25;
+
+/// One untested impacted symbol row (`<u sym= p= l= ccx=/>`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct UntestedSymbol<'a> {
+    pub name: &'a str,
+    pub path: &'a str,
+    pub line: u32,
+    pub ccx: u32,
 }
 
 pub struct TestGateReport<'a> {
     pub root: &'a str,
+    pub at_stamp: &'a str,
+    pub changed: usize,
+    pub impacted: usize,
     pub tests: &'a [crate::gate::affected::AffectedTest],
-    pub untested: usize,
+    pub untested: &'a [UntestedSymbol<'a>],
+    pub untested_modscope: usize,
+    pub run_first: usize,
+    pub script_gates_unmodelled: usize,
+    pub page: crate::serialize::PageRequest,
     pub gauge_attrs: &'a str,
+}
+
+impl TestGateReport<'_> {
+    fn untested_window(&self) -> crate::serialize::PageWindow {
+        self.page.window(self.untested.len(), DEFAULT_UNTESTED_CAP)
+    }
+}
+
+fn write_test_gate_row<W: Write>(
+    t: &crate::gate::affected::AffectedTest,
+    out: &mut W,
+) -> io::Result<()> {
+    let changed = if t.is_direct_change {
+        " changed=\"1\""
+    } else {
+        ""
+    };
+    let partner = if t.is_partner { " partner=\"1\"" } else { "" };
+    let hops = if (!t.is_partner && !t.is_direct_change) || t.hops > 0 {
+        format!(" hops=\"{}\"", t.hops)
+    } else {
+        String::new()
+    };
+    let run = t.run_attr();
+    write!(
+        out,
+        "<t p=\"{}\"{changed}{partner}{hops}{run}/>",
+        t.path.xml_escaped()
+    )
 }
 
 impl crate::serialize::XmlReport for TestGateReport<'_> {
@@ -33,69 +64,83 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
     );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let t_len = self.tests.len();
-        let dirty = t_len > 0 || self.untested > 0;
-        let changed = usize::from(dirty);
-        let extra_attrs = if dirty {
-            let first_test = self
-                .tests
-                .first()
-                .map_or("tests/test_cli_and_mcp.rs", |t| t.path.as_str());
+        let u_len = self.untested.len();
+        let win = self.untested_window();
+        let run_first = if self.run_first > 0 {
+            format!(" run_first=\"{}\"", self.run_first)
+        } else {
+            String::new()
+        };
+        let window_attrs = if win.capped || win.offset > 0 || win.limit > 0 {
             format!(
-                " root=\"{}\" declined_calls=\"0\" run_first=\"{}\"",
-                self.root,
-                first_test.xml_escaped()
+                " total=\"{u_len}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
+                usize::from(win.has_more),
+                win.next_offset,
+                win.offset,
+                win.limit
             )
         } else {
             String::new()
         };
+        let next = self
+            .tests
+            .iter()
+            .find_map(|t| t.run.as_deref())
+            .unwrap_or("--situ");
         write!(
             out,
-            " changed=\"{changed}\" impacted=\"{}\" tests=\"{t_len}\" untested=\"{}\" untested_modscope=\"0\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{}\" untested_capped=\"0\" script_gates_unmodelled=\"0\" script_gates_registered=\"0\" script_gates_mapped=\"0\" script_gates_unresolved_dynamic=\"0\" ccx_bar=\"15\" {} at=\"HEAD\"{extra_attrs} next=\"--situ\"",
-            self.untested, self.untested, self.untested, self.gauge_attrs
+            " changed=\"{}\" impacted=\"{}\" tests=\"{t_len}\" untested=\"{u_len}\" untested_modscope=\"{}\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{}\" untested_capped=\"{}\" script_gates_unmodelled=\"{}\" ccx_bar=\"15\"{run_first} {}{window_attrs} at=\"{}\" root=\"{}\" next=\"{}\"",
+            self.changed,
+            self.impacted,
+            self.untested_modscope,
+            win.shown,
+            usize::from(win.capped),
+            self.script_gates_unmodelled,
+            self.gauge_attrs,
+            self.at_stamp.xml_escaped(),
+            self.root.xml_escaped(),
+            next.xml_escaped()
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for t in self.tests.iter().filter(|t| t.is_partner) {
-            write!(out, "<t p=\"{}\" partner=\"1\"", t.path.xml_escaped())?;
-            if t.hops > 0 {
-                write!(out, " hops=\"{}\"", t.hops)?;
-            }
-            write!(out, " run_unknown=\"1\"/>")?;
+        for t in self.tests {
+            write_test_gate_row(t, out)?;
         }
-        let grouped: Vec<String> = self
-            .tests
-            .iter()
-            .filter(|t| !t.is_partner)
-            .map(|t| t.path.xml_escaped().to_string())
-            .collect();
-        if !grouped.is_empty() {
+        let win = self.untested_window();
+        for u in self.untested.iter().skip(win.begin).take(win.shown) {
             write!(
                 out,
-                "<g changed=\"1\" hops=\"1\" n=\"{}\" p=\"{}\" run_unknown=\"1\"/>",
-                grouped.len(),
-                grouped.join(",")
+                "<u sym=\"{}\" p=\"{}\" l=\"{}\" ccx=\"{}\"/>",
+                u.name.xml_escaped(),
+                u.path.xml_escaped(),
+                u.line,
+                u.ccx
             )?;
-        }
-        if self.untested > 0 {
-            write!(out, "<u sym=\"main\" p=\"src/main.rs\" l=\"1\" ccx=\"1\"/>")?;
         }
         Ok(())
     }
 }
 
-pub fn serialize_test_gate_with_gauge_xml<W: Write>(
+/// Serialize `--test-gate` to Ripwire XML.
+pub fn serialize_test_gate_xml<W: Write>(
     root: &str,
     tests: &[crate::gate::affected::AffectedTest],
     untested: usize,
-    gauge_attrs: &str,
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
     TestGateReport {
         root,
+        at_stamp: "HEAD",
+        changed: usize::from(!tests.is_empty() || untested > 0),
+        impacted: untested,
         tests,
-        untested,
-        gauge_attrs,
+        untested: &[],
+        untested_modscope: 0,
+        run_first: usize::from(!tests.is_empty()),
+        script_gates_unmodelled: 0,
+        page: crate::serialize::PageRequest::default(),
+        gauge_attrs: crate::serialize::GraphGauges::ZERO_XML_ATTRS,
     }
     .render_envelope(out)
 }

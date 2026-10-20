@@ -7,7 +7,9 @@ pub mod lanes;
 pub mod merge_scout;
 pub mod pr_context;
 pub mod quality_delta;
+pub mod runners;
 pub mod seams;
+pub mod test_gate;
 pub use affected::{AffectedReport, AffectedTest, find_affected_tests, is_test_path};
 pub use arch::{ArchConfig, ArchRule, ArchViolation, check_architecture_rules, serialize_arch_xml};
 pub use baseline::{
@@ -29,4 +31,6 @@ pub use pr_context::{PrContextReport, compute_pr_context, serialize_pr_context_x
 pub use quality_delta::{
     QualityDeltaReport, QualityRegression, compute_quality_delta, evaluate_quality_delta,
 };
+pub use runners::attach_test_runners;
 pub use seams::{SeamsReport, find_integration_seams};
+pub use test_gate::{TestGateSummary, summarize_test_gate};

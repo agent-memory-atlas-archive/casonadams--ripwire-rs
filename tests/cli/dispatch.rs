@@ -5,7 +5,7 @@ use ripwire_rs::cli::{
     execute_dead_code_query_paged, execute_deps_query_paged, execute_exercises_query,
     execute_external_surface_query, execute_html_export, execute_nav_symbol_query,
     execute_navigate_with, execute_path_query, execute_retrieval_dispatch,
-    execute_safe_delete_query, execute_safety_dispatch, execute_situ_query,
+    execute_safe_delete_query, execute_safety_dispatch, execute_safety_verb, execute_situ_query,
     execute_stream_xml_with, execute_test_gate_query, execute_workspace_doc_query,
     print_cochange_groups_paged, run_cli_verb,
 };
@@ -517,6 +517,48 @@ fn test_top_safety_queries() {
             execute_safety_dispatch(&s_case, ".", &ingest, &graph, &interner, &mut out).is_ok()
         );
     }
+}
+
+#[test]
+fn test_safety_verb_pages_untested_rows_and_exits_4() {
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            ("src/core.py", Lang::Python, b"def leaf():\n    return 1\n"),
+            (
+                "src/app.py",
+                Lang::Python,
+                b"def simple():\n    return leaf()\ndef branchy(a, b):\n    if a:\n        if b:\n            return leaf()\n    return 0\n",
+            ),
+        ],
+        &reg,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let args = TopSafetyArgs {
+        test_gate: Some(Some("src/core.py".into())),
+        ..Default::default()
+    };
+    let page = ripwire_rs::serialize::PageRequest {
+        limit: Some(1),
+        offset: None,
+    };
+    let mut out = Vec::new();
+    let code = execute_safety_verb(&args, page, ".", &ingest, &graph, &interner, &mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert_eq!(code, Some(4));
+    assert!(xml.contains(" untested=\"2\" "), "{xml}");
+    assert!(
+        xml.contains(" shown_untested=\"1\" untested_capped=\"1\" "),
+        "{xml}"
+    );
+    assert!(
+        xml.contains(" total=\"2\" has_more=\"1\" next_offset=\"1\" offset=\"0\" limit=\"1\""),
+        "{xml}"
+    );
+    assert!(xml.contains("<u sym=\"branchy\" p=\"src/app.py\""), "{xml}");
+    assert!(!xml.contains("<u sym=\"simple\""), "{xml}");
 }
 
 #[test]

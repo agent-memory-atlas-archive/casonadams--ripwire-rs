@@ -14,6 +14,15 @@ impl LanguageSemantics for BashLanguage {
         &["sh", "bash", "zsh"]
     }
 
+    fn test_run_command(
+        &self,
+        path: &str,
+        _source: &str,
+        _manifest: Option<&str>,
+    ) -> Option<String> {
+        path.ends_with(".sh").then(|| format!("bash {path}"))
+    }
+
     fn display_color(&self) -> &'static str {
         "#89e051"
     }

@@ -1,7 +1,6 @@
 use ripwire_rs::navigate::{
-    GraphQueryPageOptions, evaluate_verify_claim, execute_graph_query_expr,
-    execute_graph_query_expr_paged, execute_pack_task, execute_pack_task_partitioned,
-    truncate_body_to_budget,
+    evaluate_verify_claim, execute_graph_query_expr, execute_graph_query_expr_paged,
+    execute_pack_task, execute_pack_task_partitioned, truncate_body_to_budget,
 };
 use ripwire_rs::serialize::PathLayerExt;
 use ripwire_rs::{
@@ -101,7 +100,7 @@ fn test_graph_query_execution() {
         &ingest,
         &graph,
         &interner,
-        GraphQueryPageOptions {
+        ripwire_rs::serialize::PageRequest {
             limit: Some(1),
             offset: Some(0),
         },

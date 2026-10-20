@@ -32,6 +32,20 @@ pub use xml::{
     write_root_open_with_rank_by, write_symbol_row,
 };
 
+/// A caller's `--limit` / `--offset` request, before it meets a result size.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PageRequest {
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
+}
+
+impl PageRequest {
+    #[must_use]
+    pub fn window(self, total: usize, default_cap: usize) -> PageWindow {
+        PageWindow::compute(total, default_cap, self.limit, self.offset)
+    }
+}
+
 /// Computed pagination slice and Ripwire truncation disclosure metadata.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PageWindow {
@@ -233,10 +247,7 @@ impl PathLayerExt for str {
 
     fn is_inventory_code_file(&self, lang: crate::domain::Lang) -> bool {
         !lang.semantics().is_prose_document()
-            && !matches!(
-                lang,
-                crate::domain::Lang::Json | crate::domain::Lang::Toml | crate::domain::Lang::Yaml
-            )
+            && !lang.semantics().is_data_format()
             && !crate::gate::affected::is_test_or_bench_path(self)
     }
 

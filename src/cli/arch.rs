@@ -3,10 +3,6 @@ use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
 use std::io::{self, Write};
 
-fn is_header_path(p: &str) -> bool {
-    p.ends_with(".h") || p.ends_with(".hpp") || p.ends_with(".hh") || p.ends_with(".hxx")
-}
-
 pub fn sig_has_static_token(source: &[u8], start: u32, end: u32) -> bool {
     let s = (start as usize).min(source.len());
     let e = (end as usize).min(source.len());
@@ -38,7 +34,7 @@ pub fn execute_dead_code_query_paged<W: Write>(
             continue;
         }
         let p = view.sym_path(sym);
-        if is_header_path(p) {
+        if sym.lang.semantics().is_header_file(p) {
             continue;
         }
         let src = file_cache
@@ -409,20 +405,19 @@ fn record_rust_mod_edges(
     let f_len = ingest.files.len();
     for s in &ingest.symbols {
         let uf = s.file_id as usize;
-        if s.kind == crate::domain::SymKind::Section
-            && s.lang == crate::domain::Lang::Rust
-            && uf < f_len
-        {
-            let mod_spec = format!("self::{}", view.sym_name(s));
-            if let Some(vf) =
+        if uf < f_len
+            && let Some(mod_spec) = s
+                .lang
+                .semantics()
+                .symbol_implied_import(s.kind, view.sym_name(s))
+            && let Some(vf) =
                 s.lang
                     .semantics()
                     .resolve_import_target(view.sym_path(s), &mod_spec, file_index)
-                && (vf as usize) != uf
-                && (vf as usize) < f_len
-            {
-                adj_sets[uf].insert(vf as usize);
-            }
+            && (vf as usize) != uf
+            && (vf as usize) < f_len
+        {
+            adj_sets[uf].insert(vf as usize);
         }
     }
 }

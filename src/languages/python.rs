@@ -188,6 +188,16 @@ impl LanguageSemantics for PythonLanguage {
         &["py", "pyi"]
     }
 
+    fn test_run_command(
+        &self,
+        path: &str,
+        source: &str,
+        _manifest: Option<&str>,
+    ) -> Option<String> {
+        (source.contains("__name__ == \"__main__\"") || source.contains("__name__ == '__main__'"))
+            .then(|| format!("python3 {path}"))
+    }
+
     fn display_color(&self) -> &'static str {
         "#3572a5"
     }

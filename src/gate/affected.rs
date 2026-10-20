@@ -13,6 +13,30 @@ pub struct AffectedTest {
     pub is_direct_change: bool,
     /// Named after a changed file by test convention; `hops` is 0 unless the graph also reached it.
     pub is_partner: bool,
+    /// Shell command that runs this test, when its language's runner is derivable.
+    pub run: Option<String>,
+}
+
+impl AffectedTest {
+    #[must_use]
+    pub fn new(path: String, hops: u32, is_direct_change: bool, is_partner: bool) -> Self {
+        Self {
+            path,
+            hops,
+            is_direct_change,
+            is_partner,
+            run: None,
+        }
+    }
+
+    /// ` run="CMD"` when a runner is derivable, else ` run_unknown="1"`.
+    #[must_use]
+    pub fn run_attr(&self) -> String {
+        match &self.run {
+            Some(cmd) => format!(" run=\"{}\"", cmd.xml_escaped()),
+            None => " run_unknown=\"1\"".to_string(),
+        }
+    }
 }
 
 /// Comprehensive affected test reachability report.
@@ -23,6 +47,8 @@ pub struct AffectedReport {
     pub seed_test_files: Vec<String>,
     pub total_tests: usize,
     pub reached_symbols: usize,
+    /// Symbols that transitively call the change, seeds excluded, ascending.
+    pub impacted: Vec<NodeId>,
     pub tests: Vec<AffectedTest>,
 }
 
@@ -61,22 +87,69 @@ impl AffectedTest {
         } else {
             ""
         };
+        let run = self.run_attr();
         writeln!(
             out,
-            "  <test p=\"{}\"{partner}{hops}{direct} run_unknown=\"1\"/>",
+            "  <test p=\"{}\"{partner}{hops}{direct}{run}/>",
             self.path.xml_escaped()
         )
     }
 }
 
-fn matches_path_convention(
-    p: &Path,
-    dir_pred: impl Fn(&str) -> bool,
-    file_pred: impl Fn(&str) -> bool,
-) -> bool {
-    if p.components()
+const PARTNER_SUFFIXES: [&str; 4] = ["_test", "_spec", ".test", ".spec"];
+
+fn can_be_test_file(lang: Lang) -> bool {
+    lang.semantics().supports_slice() || lang == Lang::Bash
+}
+
+fn universal_partner_subject(stem: &str) -> Option<&str> {
+    stem.strip_prefix("test_")
+        .or_else(|| PARTNER_SUFFIXES.iter().find_map(|s| stem.strip_suffix(s)))
+        .filter(|s| !s.is_empty())
+}
+
+fn has_dir_component(p: &Path, pred: impl Fn(&str) -> bool) -> bool {
+    p.parent()
+        .into_iter()
+        .flat_map(Path::components)
         .filter_map(|c| c.as_os_str().to_str())
-        .any(|s| dir_pred(&s.to_ascii_lowercase()))
+        .any(|d| pred(&d.to_ascii_lowercase()))
+}
+
+/// Check if a path corresponds to a test file by directory convention or filename.
+#[must_use]
+pub fn is_test_path<P: AsRef<Path>>(path: P) -> bool {
+    let p = path.as_ref();
+    if has_dir_component(p, |d| {
+        matches!(d, "test" | "tests" | "spec" | "specs" | "testdata")
+    }) {
+        return true;
+    }
+    let lang = Lang::from_path(p);
+    if !can_be_test_file(lang) {
+        return false;
+    }
+    let Some((stem, _)) = p
+        .file_name()
+        .and_then(|s| s.to_str())
+        .and_then(|n| n.rsplit_once('.'))
+    else {
+        return false;
+    };
+    universal_partner_subject(stem).is_some()
+        || lang.semantics().camel_test_partner_subject(stem).is_some()
+}
+
+/// Check if a path is a test, benchmark, or fixture path for ranking and module naming.
+#[must_use]
+pub fn is_test_or_bench_path<P: AsRef<Path>>(path: P) -> bool {
+    let p = path.as_ref();
+    if is_test_path(p)
+        || has_dir_component(p, |d| {
+            matches!(d, "bench" | "benches" | "fixtures" | "__tests__")
+                || d.ends_with("_tests")
+                || d.ends_with("_test")
+        })
     {
         return true;
     }
@@ -85,82 +158,23 @@ fn matches_path_convention(
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    file_pred(&lower)
-}
-
-/// Check if a path corresponds to a test file by directory convention or filename.
-#[must_use]
-pub fn is_test_path<P: AsRef<Path>>(path: P) -> bool {
-    matches_path_convention(
-        path.as_ref(),
-        |d| matches!(d, "test" | "tests" | "spec" | "specs" | "testdata"),
-        |f| {
-            f.starts_with("test_")
-                || [
-                    "_test.rs",
-                    "_test.go",
-                    ".test.ts",
-                    ".test.js",
-                    ".spec.ts",
-                    ".spec.js",
-                    "test.java",
-                ]
-                .iter()
-                .any(|ext| f.ends_with(ext))
-        },
-    )
-}
-
-/// Check if a path is a test, benchmark, or fixture path for ranking and module naming.
-#[must_use]
-pub fn is_test_or_bench_path<P: AsRef<Path>>(path: P) -> bool {
-    let p = path.as_ref();
-    is_test_path(p)
-        || matches_path_convention(
-            p,
-            |d| {
-                matches!(d, "bench" | "benches" | "fixtures" | "__tests__")
-                    || d.ends_with("_tests")
-                    || d.ends_with("_test")
-            },
-            |f| {
-                matches!(f, "tests.rs" | "test.rs")
-                    || [
-                        "_tests.rs",
-                        ".test.tsx",
-                        ".spec.tsx",
-                        "_test.py",
-                        "_test.cpp",
-                        "_test.c",
-                    ]
-                    .iter()
-                    .any(|ext| f.ends_with(ext))
-            },
-        )
-}
-
-const PARTNER_SUFFIXES: [&str; 4] = ["_test", "_spec", ".test", ".spec"];
-
-fn in_test_dir(path: &str) -> bool {
-    path.rsplit_once('/')
-        .is_some_and(|(dir, _)| dir.split('/').any(|d| matches!(d, "test" | "tests")))
+    matches!(lower.as_str(), "tests.rs" | "test.rs") || lower.ends_with("_tests.rs")
 }
 
 /// The source stem a test file at `path` is named after: `test_x`, `x_test`, `x_spec`, `x.test`, `x.spec`
 /// in any language, or the language's own convention (e.g. `WidgetTest`) inside a test dir.
 #[must_use]
 pub fn partner_subject_stem(path: &str, lang: Lang) -> Option<&str> {
+    if !can_be_test_file(lang) {
+        return None;
+    }
     let name = path.rsplit('/').next().unwrap_or(path);
     let (stem, _) = name.rsplit_once('.')?;
-    let subject = stem
-        .strip_prefix("test_")
-        .or_else(|| PARTNER_SUFFIXES.iter().find_map(|s| stem.strip_suffix(s)))
-        .or_else(|| {
-            in_test_dir(path)
-                .then(|| lang.semantics().camel_test_partner_subject(stem))
-                .flatten()
-        })?;
-    (!subject.is_empty()).then_some(subject)
+    universal_partner_subject(stem).or_else(|| {
+        has_dir_component(Path::new(path), |d| matches!(d, "test" | "tests"))
+            .then(|| lang.semantics().camel_test_partner_subject(stem))
+            .flatten()
+    })
 }
 
 fn file_stem_of(path: &str) -> &str {
@@ -326,34 +340,19 @@ pub fn find_affected_tests(
 
     for direct_test in &seeds.seed_test_files {
         seen_test_paths.insert(direct_test.clone());
-        tests.push(AffectedTest {
-            path: direct_test.clone(),
-            hops: 0,
-            is_direct_change: true,
-            is_partner: false,
-        });
+        tests.push(AffectedTest::new(direct_test.clone(), 0, true, false));
     }
 
     for partner in find_partner_tests(&seeds.seed_source_files, ingest, interner) {
         if seen_test_paths.insert(partner.clone()) {
             let hops = test_hops.remove(&partner).unwrap_or(0);
-            tests.push(AffectedTest {
-                path: partner,
-                hops,
-                is_direct_change: false,
-                is_partner: true,
-            });
+            tests.push(AffectedTest::new(partner, hops, false, true));
         }
     }
 
     for (test_path, hops) in test_hops {
         if seen_test_paths.insert(test_path.clone()) {
-            tests.push(AffectedTest {
-                path: test_path,
-                hops,
-                is_direct_change: false,
-                is_partner: false,
-            });
+            tests.push(AffectedTest::new(test_path, hops, false, false));
         }
     }
 
@@ -365,12 +364,21 @@ pub fn find_affected_tests(
             .then_with(|| a.path.cmp(&b.path))
     });
 
+    let seed_set: HashSet<NodeId> = seeds.seed_nodes.iter().copied().collect();
+    let mut impacted: Vec<NodeId> = visited
+        .iter()
+        .copied()
+        .filter(|n| !seed_set.contains(n))
+        .collect();
+    impacted.sort_unstable();
+
     AffectedReport {
         changed_spec: changed_specs.join(","),
         seed_count: seeds.seed_nodes.len(),
         seed_test_files: seeds.seed_test_files,
         total_tests: tests.len(),
         reached_symbols: visited.len(),
+        impacted,
         tests,
     }
 }

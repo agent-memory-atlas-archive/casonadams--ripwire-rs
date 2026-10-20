@@ -22,6 +22,10 @@ impl LanguageSemantics for JsonLanguage {
         false
     }
 
+    fn is_data_format(&self) -> bool {
+        true
+    }
+
     fn supports_slice(&self) -> bool {
         false
     }

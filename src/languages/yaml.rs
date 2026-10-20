@@ -38,6 +38,10 @@ impl LanguageSemantics for YamlLanguage {
         false
     }
 
+    fn is_data_format(&self) -> bool {
+        true
+    }
+
     fn uses_hash_comments(&self) -> bool {
         true
     }

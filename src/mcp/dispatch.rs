@@ -217,10 +217,16 @@ pub fn call_edit_check(state: &McpState, args: &Value) -> Result<Value, String> 
 pub fn call_affected(state: &McpState, args: &Value) -> Result<Value, String> {
     let files_spec = args.req_str("files")?;
     let specs: Vec<&str> = files_spec.split(',').map(str::trim).collect();
-    let rep = crate::gate::affected::find_affected_tests(
+    let mut rep = crate::gate::affected::find_affected_tests(
         &specs,
         &state.ingest,
         &state.graph,
+        &state.interner,
+    );
+    crate::gate::attach_test_runners(
+        &mut rep.tests,
+        std::path::Path::new(&state.root),
+        &state.ingest,
         &state.interner,
     );
     Ok(json!({
@@ -229,10 +235,20 @@ pub fn call_affected(state: &McpState, args: &Value) -> Result<Value, String> {
         "seed_test_files": rep.seed_test_files,
         "total_tests": rep.total_tests,
         "reached_symbols": rep.reached_symbols,
-        "tests": rep.tests.into_iter().map(|t| {
-            json!({ "path": t.path, "hops": t.hops, "direct": t.is_direct_change })
-        }).collect::<Vec<_>>()
+        "tests": rep.tests.into_iter().map(affected_test_json).collect::<Vec<_>>()
     }))
+}
+
+fn affected_test_json(t: crate::gate::affected::AffectedTest) -> Value {
+    let mut row = json!({ "path": t.path, "hops": t.hops, "direct": t.is_direct_change });
+    if t.is_partner {
+        row["partner"] = json!(true);
+    }
+    match t.run {
+        Some(cmd) => row["run"] = json!(cmd),
+        None => row["run_unknown"] = json!(true),
+    }
+    row
 }
 
 pub fn call_quality_baseline(state: &McpState, args: &Value) -> Result<Value, String> {

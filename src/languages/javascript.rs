@@ -243,6 +243,14 @@ impl LanguageSemantics for JavaScriptLanguage {
         &["js", "jsx", "mjs", "cjs"]
     }
 
+    fn test_runner_manifest(&self) -> Option<&'static str> {
+        Some("package.json")
+    }
+
+    fn test_run_command(&self, path: &str, source: &str, manifest: Option<&str>) -> Option<String> {
+        super::js_test_run_command(path, source, manifest, true)
+    }
+
     fn display_color(&self) -> &'static str {
         "#f1e05a"
     }
