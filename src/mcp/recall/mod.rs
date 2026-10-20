@@ -198,7 +198,11 @@ fn doc_units(input: &RecallInput, terms: &[String]) -> DocUnits {
     for (i, s) in sections.iter().enumerate() {
         let chunk = &text[s.start_byte..s.end_byte];
         let (heading, body) = chunk.split_once('\n').unwrap_or((chunk, ""));
-        units.push((Some(i), unit_stats(heading, body, &input.path, terms)));
+        let mut st = unit_stats(heading, body, &input.path, terms);
+        let trim = heading.trim_start_matches(' ');
+        st.title_preamble =
+            i == 0 && sections.len() > 1 && trim.starts_with('#') && !trim.starts_with("##");
+        units.push((Some(i), st));
     }
     DocUnits { sections, units }
 }
