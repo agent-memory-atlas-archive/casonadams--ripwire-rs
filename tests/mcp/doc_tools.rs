@@ -1,8 +1,8 @@
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::mcp::doc_tools::{
     call_mentions_in_root, call_owners, call_stray_content, call_whereis, classify_code_line,
-    collect_file_wanted_tokens, count_rev_list, enrich_drift_item_history, extract_cmake_option,
-    extract_compile_guard, extract_compile_guard_with_default, extract_env_identifier,
+    collect_file_wanted_tokens, conditional_uses, count_rev_list, enrich_drift_item_history,
+    extract_cmake_option, extract_env_identifiers, extract_settings_gate,
     filter_present_in_code_drift, inspect_branch_stray, parse_branch_grep_line,
     scan_doc_text_for_drift, should_scan_branch,
 };
@@ -44,53 +44,149 @@ fn test_owners_attribution() {
 }
 
 #[test]
-fn test_gate_extractors() {
-    assert_eq!(
-        extract_env_identifier("std::env::var(\"FOO\")"),
-        Some("FOO".into())
-    );
-    assert_eq!(
-        extract_env_identifier("getenv(\"BAR\")"),
-        Some("BAR".into())
-    );
-    assert_eq!(
-        extract_env_identifier("os.getenv(\"BAZ\")"),
-        Some("BAZ".into())
-    );
-    assert_eq!(
-        extract_env_identifier("os.environ.get(\"QUX\")"),
-        Some("QUX".into())
-    );
-    assert_eq!(
-        extract_env_identifier("process.env.VAR_123"),
-        Some("VAR_123".into())
-    );
-    assert_eq!(extract_env_identifier("let x = 42;"), None);
+fn test_env_identifier_extraction_table() {
+    let cases: &[(&str, &str, &[&str])] = &[
+        ("a.c", "getenv(\"BAR\")", &["BAR"]),
+        ("a.cpp", "std::getenv(\"CPP1\")", &["CPP1"]),
+        ("a.c", "getenv( \"INSP\" )", &["INSP"]),
+        ("a.py", "x = getenv (\"GSP\")", &["GSP"]),
+        ("a.py", "os.getenv(\"BAZ\")", &["BAZ"]),
+        ("a.py", "os.environ.get(\"QUX\", \"d\")", &["QUX"]),
+        ("a.py", "os.environ.get (\"EGS\")", &["EGS"]),
+        (
+            "a.py",
+            "dsn = os.environ[\"ALPHA_CANARY_DSN\"]",
+            &["ALPHA_CANARY_DSN"],
+        ),
+        ("a.py", "f = os.environ[ \"SPC\" ]", &["SPC"]),
+        ("a.py", "e = environ[\"BARE\"]", &["BARE"]),
+        ("a.py", "x = os.environ[\"lower_case\"]", &["lower_case"]),
+        (
+            "a.py",
+            "h = os.environ[\"X1\"] + os.environ[\"X2\"]",
+            &["X1", "X2"],
+        ),
+        (
+            "a.py",
+            "a = os.environ[\"DUP\"] + os.environ[\"DUP\"]",
+            &["DUP"],
+        ),
+        (
+            "a.py",
+            "_os.environ[\"PR_HEAD_SHA\"] = \"cafebabe\"",
+            &["PR_HEAD_SHA"],
+        ),
+        (
+            "a.py",
+            "c = \"it's\" and os.getenv(\"AFTERAPOS\")",
+            &["AFTERAPOS"],
+        ),
+        (
+            "a.yml",
+            "needs = json.loads(os.environ[\"NEEDS_JSON\"])",
+            &["NEEDS_JSON"],
+        ),
+        (
+            "a.ts",
+            "  * docs (injected via `process.env.PI_DOCS_EMBED`)",
+            &[],
+        ),
+        ("a.ts", "/* process.env.BLOCK */", &[]),
+        (
+            "a.ts",
+            "define: { \"process.env.PI_BUNDLED\": JSON.stringify(\"true\") },",
+            &[],
+        ),
+        ("a.js", "process.env.VAR_123", &["VAR_123"]),
+        ("a.js", "process.env.A + process.env.B", &["A", "B"]),
+        ("a.js", "const a = process.env[\"PDQ\"];", &["PDQ"]),
+        ("a.js", "const b = process.env['PSQ'];", &["PSQ"]),
+        ("a.js", "const b = process.env[`PBT`];", &["PBT"]),
+        ("a.js", "const a = process.env[ \"PSPC\" ];", &["PSPC"]),
+        (
+            "a.rs",
+            "fn f<'a>(x: &'a str) { let c = 'c'; getenv(\"RSGET\") }",
+            &["RSGET"],
+        ),
+        ("a.rs", "let a = std::env::var(\"FOO\");", &[]),
+        ("a.py", "b = os.environ['SQ']", &[]),
+        ("a.py", "c = os.getenv('GSQ')", &[]),
+        ("a.py", "d = os.environ.get('EGSQ')", &[]),
+        ("a.py", "i = os.environ  [\"SP2\"]", &[]),
+        ("a.py", "c = myenviron[\"MYENV\"]", &[]),
+        ("a.py", "g = env[\"PLAINENV\"]", &[]),
+        ("a.py", "b = mygetenv(\"MYG\")", &[]),
+        ("a.py", "e = os.environ[KEY]", &[]),
+        ("a.py", "f = os.environ[\"A-B\"]", &[]),
+        ("a.py", "i = os.environ[\"9START\"]", &[]),
+        ("a.py", "j = os.environ[\"\"]", &[]),
+        ("a.py", "# os.getenv(\"CMT\")", &[]),
+        ("a.py", "c = 'os.environ[\"INSQ\"]'", &[]),
+        (
+            "a.sh",
+            "python3 -c 'import os; print(os.environ[\"SHPY\"])'",
+            &[],
+        ),
+        ("a.sh", "echo ${SHV} ${SHD:-x} $SHP", &[]),
+        ("a.js", "const b = \"process.env.INSTR\";", &[]),
+        ("a.js", "// process.env.CMT", &[]),
+        ("a.js", "const c = process.env[name];", &[]),
+        ("a.js", "const b = process.env [ \"PSP\" ];", &[]),
+        ("a.js", "const c = myprocess.env.MYP;", &[]),
+        ("a.js", "const d = Deno.env.get(\"DENO\");", &[]),
+        ("a.rs", "let x = 42;", &[]),
+    ];
+    for (path, line, want) in cases {
+        let lang = ripwire_rs::Lang::from_path(std::path::Path::new(path));
+        assert_eq!(extract_env_identifiers(line, lang), *want, "{path}: {line}");
+    }
+}
 
+#[test]
+fn test_gate_extractors() {
+    let gate = |src: &[&str]| {
+        extract_settings_gate(src, 0).map(|g| (g.name, g.default, g.dark, g.define_idx))
+    };
     assert_eq!(
-        extract_compile_guard("#ifndef MY_FLAG"),
-        Some("MY_FLAG".into())
+        gate(&["#ifndef DARK_GATE", "#define DARK_GATE 0", "int x;"]),
+        Some(("DARK_GATE".into(), "0".into(), true, 1))
     );
     assert_eq!(
-        extract_compile_guard("#ifdef OTHER_FLAG"),
-        Some("OTHER_FLAG".into())
+        gate(&["#ifndef LIT_GATE", "", "#define LIT_GATE 1"]),
+        Some(("LIT_GATE".into(), "1".into(), false, 2))
     );
-    assert_eq!(extract_compile_guard("#include <stdio.h>"), None);
-    assert_eq!(extract_compile_guard("#ifndef MY_HEADER_H"), None);
-    let lines = ["#ifndef DARK_GATE", "#define DARK_GATE 0", "int x;"];
+    assert_eq!(gate(&["#ifndef GUARD", "#define GUARD"]), None);
     assert_eq!(
-        extract_compile_guard_with_default(&lines, 0),
-        Some(("DARK_GATE".into(), "0".into(), true))
+        gate(&["#ifndef MY_HEADER_H", "#define MY_HEADER_H 1"]),
+        Some(("MY_HEADER_H".into(), "1".into(), false, 1))
     );
-    let lit_lines = ["#ifndef LIT_GATE", "#define LIT_GATE 1"];
     assert_eq!(
-        extract_compile_guard_with_default(&lit_lines, 0),
-        Some(("LIT_GATE".into(), "1".into(), false))
+        gate(&["#ifdef SOME_FEATURE", "#define SOME_FEATURE 1"]),
+        None
     );
-    let ifdef_lines = ["#ifdef SOME_FEATURE"];
+    assert_eq!(gate(&["#ifndef A", "#define B 1"]), None);
+    let lines = [
+        "#if defined(RW_SIMD) && RW_SIMD",
+        "a;",
+        "b;",
+        "#endif",
+        "#ifndef RW_SIMD",
+        "#endif",
+        "#ifdef RW_TRACE",
+        "#elif 1",
+        "#endif",
+    ];
+    let uses: Vec<(String, usize, usize)> = conditional_uses(&lines)
+        .into_iter()
+        .map(|u| (u.name, u.line_idx, u.loc))
+        .collect();
     assert_eq!(
-        extract_compile_guard_with_default(&ifdef_lines, 0),
-        Some(("SOME_FEATURE".into(), "0".into(), true))
+        uses,
+        [
+            ("RW_SIMD".to_string(), 0, 2),
+            ("RW_SIMD".to_string(), 0, 2),
+            ("RW_TRACE".to_string(), 6, 1),
+        ]
     );
     assert_eq!(
         extract_cmake_option("option(ENABLE_TESTS \"doc\" ON)", "CMakeLists.txt"),

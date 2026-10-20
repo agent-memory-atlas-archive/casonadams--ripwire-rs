@@ -14,6 +14,10 @@ impl LanguageSemantics for DockerfileLanguage {
         &["dockerfile", "containerfile"]
     }
 
+    fn uses_hash_comments(&self) -> bool {
+        true
+    }
+
     fn dialect_group(&self) -> DialectGroup {
         DialectGroup::Isolated(Lang::Dockerfile)
     }

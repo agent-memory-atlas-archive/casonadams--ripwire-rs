@@ -312,6 +312,11 @@ pub trait LanguageSemantics: Sync {
         None
     }
 
+    /// Terminator of a literal (quoted) heredoc that `line` opens; the body lines until it are data, not code.
+    fn quoted_heredoc_terminator<'a>(&self, _line: &'a str) -> Option<&'a str> {
+        None
+    }
+
     /// True if an AST definition node has public visibility in this language.
     fn check_node_visibility(&self, def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
         match self.visibility_mode() {

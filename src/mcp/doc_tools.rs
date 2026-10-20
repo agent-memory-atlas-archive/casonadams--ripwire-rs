@@ -628,71 +628,163 @@ pub fn call_doc_drift_with_history(
     })
 }
 
-pub fn extract_env_identifier(line: &str) -> Option<String> {
-    for pattern in &[
-        "env::var(\"",
-        "getenv(\"",
-        "os.getenv(\"",
-        "os.environ.get(\"",
-        "std::getenv(\"",
-    ] {
-        if let Some(pos) = line.find(pattern) {
-            let rest = &line[pos + pattern.len()..];
-            if let Some(end) = rest.find('"') {
-                let name = &rest[..end];
-                if !name.is_empty() && name.len() <= 128 {
-                    return Some(name.to_string());
-                }
-            }
-        }
-    }
-    if let Some(pos) = line.find("process.env.") {
-        let rest = &line[pos + "process.env.".len()..];
-        let ident: String = rest
-            .chars()
-            .take_while(|c| c.is_alphanumeric() || *c == '_')
-            .collect();
-        if !ident.is_empty() {
-            return Some(ident);
-        }
-    }
-    None
+#[derive(Clone, Copy)]
+struct EnvLineSyntax {
+    hash_comments: bool,
+    char_literals: bool,
 }
 
-pub fn extract_compile_guard(line: &str) -> Option<String> {
-    let trimmed = line.trim();
-    for prefix in ["#ifndef ", "#ifdef "] {
-        if let Some(rest) = trimmed.strip_prefix(prefix) {
-            let name: String = rest
-                .split_whitespace()
-                .next()?
-                .chars()
-                .take_while(|c| c.is_alphanumeric() || *c == '_')
-                .collect();
-            if !name.is_empty()
-                && !name.ends_with("_H")
-                && !name.ends_with("_HPP")
-                && !name.ends_with("_INCLUDED")
-            {
-                return Some(name);
-            }
+impl EnvLineSyntax {
+    fn for_lang(lang: crate::domain::Lang) -> Self {
+        Self {
+            hash_comments: lang.semantics().uses_hash_comments(),
+            char_literals: lang.semantics().has_lifetime_tick_syntax(),
         }
     }
-    None
+
+    fn starts_comment(self, bytes: &[u8], i: usize) -> bool {
+        if self.hash_comments {
+            bytes[i] == b'#' && (i == 0 || bytes[i - 1].is_ascii_whitespace())
+        } else {
+            bytes[i] == b'/' && matches!(bytes.get(i + 1), Some(b'/' | b'*'))
+        }
+    }
+
+    fn opens_quote(self, bytes: &[u8], i: usize) -> bool {
+        match bytes[i] {
+            b'"' | b'`' => true,
+            b'\'' if self.char_literals => {
+                bytes.get(i + 1) == Some(&b'\\') || bytes.get(i + 2) == Some(&b'\'')
+            }
+            b'\'' => i == 0 || !bytes[i - 1].is_ascii_alphanumeric(),
+            _ => false,
+        }
+    }
+
+    /// `true` at byte offsets that are code: outside string literals and before a line comment;
+    /// a C-style block-comment continuation line (`* ...`) is all comment.
+    fn code_mask(self, line: &str) -> Vec<bool> {
+        let bytes = line.as_bytes();
+        let mut mask = vec![false; bytes.len()];
+        if !self.hash_comments && line.trim_start().starts_with('*') {
+            return mask;
+        }
+        let mut quote: Option<u8> = None;
+        let mut i = 0;
+        while i < bytes.len() {
+            match quote {
+                Some(_) if bytes[i] == b'\\' => i += 1,
+                Some(q) if bytes[i] == q => quote = None,
+                Some(_) => {}
+                None if self.starts_comment(bytes, i) => break,
+                None if self.opens_quote(bytes, i) => quote = Some(bytes[i]),
+                None => mask[i] = true,
+            }
+            i += 1;
+        }
+        mask
+    }
 }
 
-fn find_ifndef_default(lines: &[&str], idx: usize, name: &str) -> Option<(String, bool)> {
-    for &next_line in lines.iter().skip(idx + 1).take(3) {
-        if let Some(def_rest) = next_line.trim().strip_prefix("#define ") {
-            let mut parts = def_rest.split_whitespace();
-            if parts.next() == Some(name) {
-                let val = parts.next()?;
-                let dark = val == "0" || val.eq_ignore_ascii_case("false");
-                return Some((val.to_string(), dark));
-            }
+fn is_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && name.len() <= 128
+}
+
+fn quoted_env_name<'a>(rest: &'a str, quotes: &[u8]) -> Option<&'a str> {
+    let rest = rest.trim_start();
+    let quote = *rest.as_bytes().first()?;
+    if !quotes.contains(&quote) {
+        return None;
+    }
+    let body = &rest[1..];
+    let name = &body[..body.find(char::from(quote))?];
+    is_env_name(name).then_some(name)
+}
+
+fn env_name_at(rest: &str) -> Option<&str> {
+    for call in ["getenv", "environ.get"] {
+        if let Some(args) = rest.strip_prefix(call) {
+            return quoted_env_name(args.trim_start().strip_prefix('(')?, b"\"");
         }
     }
-    Some(("0".to_string(), true))
+    if let Some(sub) = rest.strip_prefix("environ[") {
+        return quoted_env_name(sub, b"\"");
+    }
+    let tail = rest.strip_prefix("process.env")?;
+    if let Some(sub) = tail.strip_prefix('[') {
+        return quoted_env_name(sub, b"\"'`");
+    }
+    let member = tail.strip_prefix('.')?;
+    let end = member
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(member.len());
+    let name = &member[..end];
+    is_env_name(name).then_some(name)
+}
+
+/// Environment-variable reads on one source line, in order, deduplicated: `getenv("X")`,
+/// `environ.get("X")`, `environ["X"]`, `process.env.X` and `process.env["X"]`, outside strings and comments.
+pub fn extract_env_identifiers(line: &str, lang: crate::domain::Lang) -> Vec<String> {
+    let mask = EnvLineSyntax::for_lang(lang).code_mask(line);
+    let bytes = line.as_bytes();
+    let mut names: Vec<String> = Vec::new();
+    for (i, &b) in bytes.iter().enumerate() {
+        let at_word_start =
+            i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+        if !(mask[i] && at_word_start && matches!(b, b'g' | b'e' | b'p')) {
+            continue;
+        }
+        if let Some(name) = env_name_at(&line[i..])
+            && !names.iter().any(|n| n.as_str() == name)
+        {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
+/// A C-preprocessor settings gate: `#ifndef NAME` followed by `#define NAME VALUE` (an include guard has no value).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsGate {
+    pub name: String,
+    pub default: String,
+    pub dark: bool,
+    pub define_idx: usize,
+}
+
+fn ifndef_name(line: &str) -> Option<&str> {
+    let rest = line.trim().strip_prefix("#ifndef ")?.trim_start();
+    let end = rest
+        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .unwrap_or(rest.len());
+    let name = &rest[..end];
+    (!name.is_empty()).then_some(name)
+}
+
+#[must_use]
+pub fn extract_settings_gate(lines: &[&str], idx: usize) -> Option<SettingsGate> {
+    let name = ifndef_name(lines[idx])?;
+    lines
+        .iter()
+        .enumerate()
+        .skip(idx + 1)
+        .take(3)
+        .find_map(|(define_idx, line)| {
+            let mut parts = line.trim().strip_prefix("#define ")?.split_whitespace();
+            (parts.next()? == name).then_some(())?;
+            let value = parts.next()?;
+            Some(SettingsGate {
+                name: name.to_string(),
+                default: value.to_string(),
+                dark: value == "0" || value.eq_ignore_ascii_case("false"),
+                define_idx,
+            })
+        })
 }
 
 fn measure_preproc_region_loc(lines: &[&str], start_idx: usize) -> usize {
@@ -711,17 +803,39 @@ fn measure_preproc_region_loc(lines: &[&str], start_idx: usize) -> usize {
     0
 }
 
-pub fn extract_compile_guard_with_default(
-    lines: &[&str],
-    idx: usize,
-) -> Option<(String, String, bool)> {
-    let name = extract_compile_guard(lines[idx])?;
-    let (val, dark) = if lines[idx].trim().starts_with("#ifndef ") {
-        find_ifndef_default(lines, idx, &name)?
-    } else {
-        ("0".to_string(), true)
-    };
-    Some((name, val, dark))
+/// One identifier used in a `#if` / `#ifdef` / `#elif` condition, with the lines its region spans.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConditionalUse {
+    pub name: String,
+    pub line_idx: usize,
+    pub loc: usize,
+}
+
+#[must_use]
+pub fn conditional_uses(lines: &[&str]) -> Vec<ConditionalUse> {
+    let mut uses = Vec::new();
+    for (line_idx, line) in lines.iter().enumerate() {
+        let trimmed = line.trim();
+        let Some(expr) = ["#if ", "#ifdef ", "#elif "]
+            .iter()
+            .find_map(|p| trimmed.strip_prefix(p))
+        else {
+            continue;
+        };
+        let loc = measure_preproc_region_loc(lines, line_idx);
+        uses.extend(
+            expr.split(|c: char| !(c.is_alphanumeric() || c == '_'))
+                .filter(|t| {
+                    t.starts_with(|c: char| c.is_alphabetic() || c == '_') && *t != "defined"
+                })
+                .map(|t| ConditionalUse {
+                    name: t.to_string(),
+                    line_idx,
+                    loc,
+                }),
+        );
+    }
+    uses
 }
 
 pub fn extract_cmake_option(line: &str, path: &str) -> Option<(String, String, bool)> {
@@ -770,6 +884,8 @@ impl GateEntry {
 #[derive(Default)]
 struct FlagsScanTally {
     by_key: std::collections::BTreeMap<(String, &'static str), GateEntry>,
+    settings: Vec<(SettingsGate, String)>,
+    conditional: std::collections::HashMap<String, Vec<(String, usize, usize)>>,
 }
 
 impl FlagsScanTally {
@@ -797,28 +913,108 @@ impl FlagsScanTally {
         entry.reads.push((path.to_string(), line));
         entry
     }
+
+    /// A settings gate counts only where some `#if`-family condition uses it; those uses are its reads.
+    fn resolve_settings_gates(&mut self) {
+        for (gate, path) in std::mem::take(&mut self.settings) {
+            let key = (gate.name.clone(), "compile");
+            let Some(uses) = self.conditional.get(&gate.name) else {
+                continue;
+            };
+            if self.by_key.contains_key(&key) {
+                continue;
+            }
+            let mut reads: Vec<(String, usize)> =
+                uses.iter().map(|(p, l, _)| (p.clone(), *l)).collect();
+            reads.dedup();
+            self.by_key.insert(
+                key,
+                GateEntry {
+                    name: gate.name,
+                    kind: "compile",
+                    default_val: gate.default,
+                    is_dark: gate.dark,
+                    file: path,
+                    line: gate.define_idx + 1,
+                    regions: uses.len(),
+                    loc: uses.iter().map(|(_, _, loc)| loc).sum(),
+                    reads,
+                },
+            );
+        }
+    }
 }
 
-fn scan_file_flags(root_path: &std::path::Path, path: &str, tally: &mut FlagsScanTally) {
+fn scan_file_flags(
+    root_path: &std::path::Path,
+    path: &str,
+    lang: crate::domain::Lang,
+    tally: &mut FlagsScanTally,
+) {
     let Ok(text) = crate::domain::read_rel_string(root_path, path) else {
         return;
     };
     let lines: Vec<&str> = text.lines().collect();
-    for (idx, &line) in lines.iter().enumerate() {
-        if let Some((guard, def_val, is_dark)) = extract_compile_guard_with_default(&lines, idx) {
-            let reg_loc = measure_preproc_region_loc(&lines, idx);
-            let entry = tally.record_site("compile", guard, path, idx + 1);
-            entry.configure(def_val, is_dark);
-            entry.regions += 1;
-            entry.loc += reg_loc;
-        } else if let Some((opt, def_val, is_dark)) = extract_cmake_option(line, path) {
-            tally
-                .record_site("cmake", opt, path, idx + 1)
-                .configure(def_val, is_dark);
-        } else if let Some(env_var) = extract_env_identifier(line) {
-            tally.record_site("env", env_var, path, idx + 1);
+    let literal = literal_block_lines(&lines, lang);
+    let preprocessor = !lang.semantics().uses_hash_comments();
+    if preprocessor {
+        tally.record_conditional_uses(path, &lines);
+    }
+    for idx in (0..lines.len()).filter(|&i| !literal[i]) {
+        tally.scan_line(&lines, idx, path, lang, preprocessor);
+    }
+}
+
+impl FlagsScanTally {
+    fn record_conditional_uses(&mut self, path: &str, lines: &[&str]) {
+        for u in conditional_uses(lines) {
+            self.conditional.entry(u.name).or_default().push((
+                path.to_string(),
+                u.line_idx + 1,
+                u.loc,
+            ));
         }
     }
+
+    fn scan_line(
+        &mut self,
+        lines: &[&str],
+        idx: usize,
+        path: &str,
+        lang: crate::domain::Lang,
+        preprocessor: bool,
+    ) {
+        if let Some(gate) = preprocessor
+            .then(|| extract_settings_gate(lines, idx))
+            .flatten()
+        {
+            self.settings.push((gate, path.to_string()));
+        } else if let Some((opt, def_val, is_dark)) = extract_cmake_option(lines[idx], path) {
+            self.record_site("cmake", opt, path, idx + 1)
+                .configure(def_val, is_dark);
+        } else {
+            for env_var in extract_env_identifiers(lines[idx], lang) {
+                self.record_site("env", env_var, path, idx + 1);
+            }
+        }
+    }
+}
+
+fn literal_block_lines(lines: &[&str], lang: crate::domain::Lang) -> Vec<bool> {
+    let mut literal = vec![false; lines.len()];
+    let mut until: Option<&str> = None;
+    for (idx, line) in lines.iter().enumerate() {
+        match until {
+            Some(term) => {
+                literal[idx] = true;
+                if line.trim() == term {
+                    until = None;
+                }
+            }
+            None => until = lang.semantics().quoted_heredoc_terminator(line),
+        }
+    }
+    literal
 }
 
 pub fn call_flags_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
@@ -828,14 +1024,16 @@ pub fn call_flags_in_root(root: &str, ingest: &IngestResult, interner: &Interner
     for file in &ingest.files {
         if !file.lang.semantics().is_prose_document() {
             let path = interner.resolve(&file.path);
-            scan_file_flags(root_path, path, &mut tally);
+            scan_file_flags(root_path, path, file.lang, &mut tally);
         }
     }
     for cmake_rel in ["CMakeLists.txt", "cmake/options.cmake"] {
         if root_path.join(cmake_rel).is_file() {
-            scan_file_flags(root_path, cmake_rel, &mut tally);
+            let lang = crate::domain::Lang::from_path(std::path::Path::new(cmake_rel));
+            scan_file_flags(root_path, cmake_rel, lang, &mut tally);
         }
     }
+    tally.resolve_settings_gates();
 
     let mut flags = Vec::with_capacity(tally.by_key.len());
     let mut compile_count = 0usize;

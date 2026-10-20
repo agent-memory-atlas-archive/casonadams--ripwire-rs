@@ -26,6 +26,15 @@ impl LanguageSemantics for BashLanguage {
         true
     }
 
+    fn quoted_heredoc_terminator<'a>(&self, line: &'a str) -> Option<&'a str> {
+        let rest = line.split_once("<<")?.1;
+        let rest = rest.strip_prefix('-').unwrap_or(rest).trim_start();
+        let quote = rest.chars().next().filter(|c| matches!(c, '\'' | '"'))?;
+        let word = rest[1..].split(quote).next()?;
+        (!word.is_empty() && word.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+            .then_some(word)
+    }
+
     fn supports_slice(&self) -> bool {
         false
     }
