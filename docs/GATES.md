@@ -9,7 +9,7 @@
 Verifies whether an edited symbol's signature changed in parameters, arity, or public visibility compared to git `HEAD`. Detects and reports all 1-hop callers incompatible with the new contract.
 
 ```xml
-<edit-check schema="ripwire-rs.edit-check/v1" sym="compute" p="src/service.rs" status="contract-change" callers="2" incompatible="1">
+<edit-check schema="ripwire-rs.edit-check/v1" sym="compute" t="fn" p="src/service.rs:10" status="contract-change" defs="1" callers="2" incompatible="1">
   <c n="legacy_worker" p="src/legacy_caller.rs:15" incompatible="1">
     <site line="18" args="2" required="3"/>
   </c>
@@ -19,6 +19,7 @@ Verifies whether an edited symbol's signature changed in parameters, arity, or p
 
 - **Exit Code**: Non-zero if `incompatible > 0`.
 - **Disclosures**: Explicitly reports argument counts and required parameter counts at each callsite.
+- **Rows**: Every caller row is emitted; incompatible callers always print, and `--limit=N --offset=M` pages the compatible ones (`shown_unflagged=`, `total=`, `has_more=`, `next_offset=`).
 
 ---
 

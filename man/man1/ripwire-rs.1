@@ -187,7 +187,7 @@ Recommend the single best ripwire-rs command for natural-language task \fITASK\f
 .SH VERIFICATION & SAFETY GATES
 .TP
 .BI \-\-edit\-check= SYM
-Verify caller compatibility after modifying symbol \fISYM\fR's signature. Verifies parameter count and visibility changes against git \fBHEAD\fR across all 1-hop callers.
+Verify caller compatibility after modifying symbol \fISYM\fR's signature. Verifies parameter count and visibility changes against git \fBHEAD\fR across all 1-hop callers. \fB\-\-limit\fR/\fB\-\-offset\fR page the compatible caller rows; incompatible callers always print.
 .TP
 .BI \-\-affected= PATH
 Transitive reachability mapping from changed file or symbol \fIPATH\fR to affected test suites, ranked by evidence distance.

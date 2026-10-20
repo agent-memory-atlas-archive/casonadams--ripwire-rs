@@ -15,6 +15,8 @@ pub struct GateDispatchArgs<'a> {
     pub ack_only: Option<&'a str>,
     pub show_stale: bool,
     pub allow_dirty: bool,
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 impl GateDispatchArgs<'_> {
@@ -32,7 +34,8 @@ pub fn execute_gate_action<W: Write>(
     out: &mut W,
 ) -> Option<io::Result<()>> {
     if let Some(sym) = args.edit_check {
-        return Some(execute_edit_check_with(sym, state, out));
+        let page = args.limit.map(|l| (args.offset.unwrap_or(0), l));
+        return Some(execute_edit_check_with(sym, page, state, out));
     }
     if let Some(spec) = args.affected {
         return Some(execute_affected_with(spec, state, out));
@@ -841,6 +844,7 @@ pub fn execute_cochange_with_options<W: Write>(
 
 pub fn execute_edit_check_with<W: Write>(
     sym_name: &str,
+    page: Option<(usize, usize)>,
     state: &crate::mcp::McpState,
     out: &mut W,
 ) -> io::Result<()> {
@@ -869,6 +873,7 @@ pub fn execute_edit_check_with<W: Write>(
         if let Some(stamp) = crate::git::history::compute_git_at_stamp(&state.root) {
             report.at_stamp = stamp;
         }
+        report.page = page;
         report.write_xml(out)?;
     }
     Ok(())

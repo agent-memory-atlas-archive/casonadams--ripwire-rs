@@ -197,12 +197,42 @@ fn test_edit_check_arity_break() {
     assert!(modern_caller.sites.is_empty());
 
     let xml = report.to_xml_string();
-    assert!(xml.contains("<edit-check schema=\"ripwire-rs.edit-check/v1\" sym=\"compute\" t=\"fn\" p=\"src/service.rs\" status=\"contract-change\" defs=\"1\" callers=\"2\" incompatible=\"1\""));
+    assert!(xml.contains("<edit-check schema=\"ripwire-rs.edit-check/v1\" sym=\"compute\" t=\"fn\" p=\"src/service.rs:10\" status=\"contract-change\" defs=\"1\" callers=\"2\" incompatible=\"1\""));
     assert!(
         xml.contains("<c n=\"legacy_worker\" p=\"src/legacy_caller.rs:15\" incompatible=\"1\">")
     );
     assert!(xml.contains("<site line=\"18\" args=\"2\" required=\"3\"/>"));
     assert!(xml.contains("<c n=\"modern_worker\" p=\"src/modern_caller.rs:20\"/>"));
+}
+
+#[test]
+fn test_edit_check_clean_unchanged_emits_rows_and_honors_limit() {
+    let interner = Interner::new();
+    let ingest = setup_test_repository(&interner);
+    let graph = Graph::build(&ingest, &interner);
+    let mut report = check_symbol_contract(0, None, &ingest, &graph, &interner).unwrap();
+    report.status = ripwire_rs::ContractStatus::Unchanged;
+    report
+        .callers
+        .iter_mut()
+        .for_each(|c| c.is_incompatible = false);
+    report
+        .callers
+        .sort_by(|a, b| a.caller_name.cmp(&b.caller_name));
+    report.incompatible_callers = 0;
+    report.at_stamp = "6e9b85eb8".to_string();
+
+    let xml = report.to_xml_string();
+    assert!(!xml.contains("rows_next="));
+    assert!(!xml.contains("shown_unflagged="));
+    assert!(xml.contains("<c n=\"legacy_worker\" p=\"src/legacy_caller.rs:15\""));
+    assert!(xml.contains("<c n=\"modern_worker\" p=\"src/modern_caller.rs:20\"/>"));
+
+    report.page = Some((1, 1));
+    let paged = report.to_xml_string();
+    assert!(paged.contains(" shown_unflagged=\"1\" unflagged_capped=\"1\" total=\"2\" has_more=\"0\" next_offset=\"2\" offset=\"1\" limit=\"1\""));
+    assert!(!paged.contains("legacy_worker"));
+    assert!(paged.contains("<c n=\"modern_worker\" p=\"src/modern_caller.rs:20\"/>"));
 }
 
 #[test]
@@ -233,7 +263,7 @@ fn test_cli_gate_execution_and_xml_output() {
     let state = McpState::from_ingest(".", ingest, interner);
 
     let mut out_edit = Cursor::new(Vec::new());
-    execute_edit_check_with("compute", &state, &mut out_edit).expect("execute edit-check");
+    execute_edit_check_with("compute", None, &state, &mut out_edit).expect("execute edit-check");
     let xml_edit = String::from_utf8(out_edit.into_inner()).unwrap();
     assert!(xml_edit.contains("<edit-check schema=\"ripwire-rs.edit-check/v1\" sym=\"compute\""));
 

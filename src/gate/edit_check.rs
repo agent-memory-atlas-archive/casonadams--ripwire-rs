@@ -28,22 +28,41 @@ pub struct CallerCheckResult {
 pub struct EditCheckReport {
     pub symbol_name: String,
     pub file_path: String,
+    pub line: u32,
     pub status: ContractStatus,
     pub total_callers: usize,
     pub incompatible_callers: usize,
     pub callers: Vec<CallerCheckResult>,
     pub gauges: crate::serialize::GraphGauges,
     pub at_stamp: String,
+    /// `(offset, limit)` window over unflagged caller rows; `None` emits every row.
+    pub page: Option<(usize, usize)>,
 }
 
 impl EditCheckReport {
-    #[must_use]
-    fn is_verdict_only_fold(&self) -> bool {
-        self.at_stamp != "HEAD"
-            && !self.at_stamp.ends_with("+dirty")
-            && self.status == ContractStatus::Unchanged
-            && self.incompatible_callers == 0
-            && self.total_callers > 0
+    fn unflagged_window(&self) -> (usize, usize, usize) {
+        let unflagged = self.callers.len() - self.incompatible_callers;
+        match self.page {
+            Some((offset, limit)) => {
+                let start = offset.min(unflagged);
+                (unflagged, start, limit.min(unflagged - start))
+            }
+            None => (unflagged, 0, unflagged),
+        }
+    }
+
+    fn write_page_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let Some((offset, limit)) = self.page else {
+            return Ok(());
+        };
+        let (total, start, shown) = self.unflagged_window();
+        let end = start + shown;
+        write!(
+            out,
+            " shown_unflagged=\"{shown}\" unflagged_capped=\"{}\" total=\"{total}\" has_more=\"{}\" next_offset=\"{end}\" offset=\"{offset}\" limit=\"{limit}\"",
+            u8::from(total > limit),
+            u8::from(end < total)
+        )
     }
 }
 impl crate::serialize::XmlReport for EditCheckReport {
@@ -57,32 +76,27 @@ impl crate::serialize::XmlReport for EditCheckReport {
         Some(self.gauges)
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let est_tokens = 60 + self.callers.len() * 24;
-        let rows_next = if self.is_verdict_only_fold() {
-            format!(
-                " rows_next=\"--edit-check={} --limit={}\"",
-                self.symbol_name, self.total_callers
-            )
-        } else {
-            String::new()
-        };
+        let (_, _, shown) = self.unflagged_window();
+        let est_tokens = 60 + (self.incompatible_callers + shown) * 24;
         write!(
             out,
-            " sym=\"{}\" t=\"fn\" p=\"{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"{}\" root=\".\"{rows_next} next=\"--test-gate={}\" est_tokens=\"{est_tokens}\"",
-            self.symbol_name,
-            self.file_path,
+            " sym=\"{}\" t=\"fn\" p=\"{}:{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"{}\" root=\".\" next=\"--test-gate={}\"",
+            self.symbol_name.xml_escaped(),
+            self.file_path.xml_escaped(),
+            self.line,
             self.status,
             self.total_callers,
             self.incompatible_callers,
             self.at_stamp,
-            self.file_path
-        )
+            self.file_path.xml_escaped()
+        )?;
+        self.write_page_attrs(out)?;
+        write!(out, " est_tokens=\"{est_tokens}\"")
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        if self.is_verdict_only_fold() {
-            return Ok(());
-        }
-        for c in &self.callers {
+        let (_, start, shown) = self.unflagged_window();
+        let (flagged, unflagged) = self.callers.split_at(self.incompatible_callers);
+        for c in flagged.iter().chain(&unflagged[start..start + shown]) {
             write_caller_row(c, out)?;
         }
         Ok(())
@@ -212,11 +226,13 @@ pub fn check_symbol_contract(
     Some(EditCheckReport {
         symbol_name: sym_name,
         file_path,
+        line: sym.line,
         status,
         total_callers,
         incompatible_callers,
         callers,
         gauges: graph.gauges(),
         at_stamp: "HEAD".to_string(),
+        page: None,
     })
 }

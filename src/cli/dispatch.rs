@@ -962,6 +962,8 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
         ack_only: cli.safety.ack_only.as_deref(),
         show_stale: cli.safety.show_stale,
         allow_dirty: cli.safety.allow_dirty,
+        limit: cli.limit_opt(),
+        offset: cli.offset_opt(),
     };
     if let Some(res) = dispatch_gate_command(root, cli_gate) {
         return res;
