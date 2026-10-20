@@ -978,10 +978,21 @@ fn validate_retrieval_modifiers(r: &TopRetrievalArgs) -> io::Result<()> {
         .map_err(io::Error::other)
 }
 
-pub fn run_cli_args(cli: Cli) -> io::Result<()> {
+pub fn run_cli_args(mut cli: Cli) -> io::Result<()> {
+    let refresh_clone = cli.retrieval.refetch.take_if(|h| h.is_empty()).is_some();
+    let checkout = cli
+        .path
+        .as_deref()
+        .filter(|p| crate::git::remote::is_remote_git_url(p))
+        .map(|url| crate::git::remote::checkout_remote_root(url, refresh_clone))
+        .transpose()?;
     validate_arch_modifiers(&cli.arch)?;
     validate_retrieval_modifiers(&cli.retrieval)?;
-    let root = cli.path.as_deref().unwrap_or(".");
+    let root = checkout
+        .as_deref()
+        .and_then(std::path::Path::to_str)
+        .or(cli.path.as_deref())
+        .unwrap_or(".");
     if let Some(res) = dispatch_primary_workflows(&cli, root) {
         return res;
     }

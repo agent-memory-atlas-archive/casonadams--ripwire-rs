@@ -333,6 +333,10 @@ ripwire-rs . --grep="cache" --and="payload" --not="deprecated" --in="src/cache.r
 ripwire-rs . --for="parser" --handles
 ripwire-rs . --refetch="h:abc123"
 
+# Analyze a remote repository: a shallow clone cached under $TMPDIR/ripwire-rs/, reused across runs
+ripwire-rs https://github.com/org/repo --report
+ripwire-rs https://github.com/org/repo --refetch --report
+
 # Recommend the best ripwire verb for a natural-language task
 ripwire-rs . --help-task="find callers of function and test blast radius"
 

@@ -538,8 +538,8 @@ pub struct TopRetrievalArgs {
     /// Emit compact refetch handles on retrieval rows
     #[arg(long = "handles")]
     pub handles: bool,
-    /// Expand a compact handle returned by --handles
-    #[arg(long = "refetch", value_name = "HANDLE")]
+    /// Expand a compact handle returned by --handles; bare, clone a remote URL root fresh
+    #[arg(long = "refetch", value_name = "HANDLE", num_args = 0..=1, default_missing_value = "")]
     pub refetch: Option<String>,
     /// Recommend the best ripwire verb for a natural-language task
     #[arg(long = "help-task", value_name = "TASK")]

@@ -175,8 +175,8 @@ Scope filter: require matches to be located inside enclosing symbol, class, or d
 .B \-\-handles
 Emit compact opaque refetch handles on retrieval rows for low-token follow-ups.
 .TP
-.BI \-\-refetch= HANDLE
-Expand a compact refetch handle previously emitted by \fB\-\-handles\fR.
+.BI \-\-refetch [= HANDLE ]
+With \fIHANDLE\fR, expand a compact refetch handle previously emitted by \fB\-\-handles\fR. Bare, when the root is a remote git URL, clone it fresh instead of reusing the cached clone.
 .TP
 .BI \-\-sections= LIST
 With \fB\-\-for\fR, restore the \fB<lego>\fR section (interfaces declared in the ranked files, with their implementors) that the bundle collapses to a counted stub \fB<lego total= shown="0" capped="1" next=>\fR by default. \fILIST\fR is a closed, comma-separated set of \fBlego\fR and \fBcompose\fR, each at most once; \fBcompose\fR (HAS-A member-field rows) is accepted but never produced because this build does not index member fields. Refused without \fB\-\-for\fR.
@@ -517,6 +517,11 @@ Disambiguates by file path prefix/suffix and symbol name (e.g. \fBsrc/domain.rs:
 Fully qualified canonical identifier (e.g. \fBsrc/domain.rs::Interner::len\fR).
 
 .SH EXAMPLES
+Analyze a remote repository (\fIPATH\fR may be an \fBhttps://\fR, \fBssh://\fR, or \fBgit@\fR URL; it is shallow-cloned once into \fI$TMPDIR/ripwire-rs/\fR and reused until \fB\-\-refetch\fR):
+.RS
+.B ripwire-rs https://github.com/org/repo \-\-report
+.RE
+.PP
 Expand full body of an interned method:
 .RS
 .B ripwire-rs . \-\-expand="Interner::len"
