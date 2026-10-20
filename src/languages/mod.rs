@@ -307,6 +307,11 @@ pub trait LanguageSemantics: Sync {
         !sym_name.starts_with('_')
     }
 
+    /// Subject a camelCase test file (`WidgetTest`) under a `test`/`tests` dir names, for languages with that convention.
+    fn camel_test_partner_subject<'a>(&self, _file_stem: &'a str) -> Option<&'a str> {
+        None
+    }
+
     /// True if an AST definition node has public visibility in this language.
     fn check_node_visibility(&self, def_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> bool {
         match self.visibility_mode() {
@@ -528,6 +533,13 @@ pub fn strip_import_quotes(raw: &str) -> &str {
     raw.trim()
         .trim_matches(|c: char| matches!(c, '"' | '\'' | '`' | ';'))
         .trim()
+}
+
+#[must_use]
+pub(crate) fn strip_camel_test_suffix(file_stem: &str) -> Option<&str> {
+    file_stem
+        .strip_suffix("Test")
+        .filter(|s| s.ends_with(|c: char| c.is_ascii_alphanumeric()))
 }
 
 #[must_use]

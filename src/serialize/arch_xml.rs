@@ -55,17 +55,25 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        if !self.tests.is_empty() {
-            let p_joined: Vec<String> = self
-                .tests
-                .iter()
-                .map(|t| t.path.xml_escaped().to_string())
-                .collect();
+        for t in self.tests.iter().filter(|t| t.is_partner) {
+            write!(out, "<t p=\"{}\" partner=\"1\"", t.path.xml_escaped())?;
+            if t.hops > 0 {
+                write!(out, " hops=\"{}\"", t.hops)?;
+            }
+            write!(out, " run_unknown=\"1\"/>")?;
+        }
+        let grouped: Vec<String> = self
+            .tests
+            .iter()
+            .filter(|t| !t.is_partner)
+            .map(|t| t.path.xml_escaped().to_string())
+            .collect();
+        if !grouped.is_empty() {
             write!(
                 out,
                 "<g changed=\"1\" hops=\"1\" n=\"{}\" p=\"{}\" run_unknown=\"1\"/>",
-                self.tests.len(),
-                p_joined.join(",")
+                grouped.len(),
+                grouped.join(",")
             )?;
         }
         if self.untested > 0 {

@@ -1,5 +1,6 @@
-use crate::domain::{IngestResult, Interner, NodeId};
+use crate::domain::{IngestResult, Interner, Lang, NodeId};
 use crate::graph::Graph;
+use crate::serialize::XmlEscapeExt;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Write};
 use std::path::Path;
@@ -10,6 +11,8 @@ pub struct AffectedTest {
     pub path: String,
     pub hops: u32,
     pub is_direct_change: bool,
+    /// Named after a changed file by test convention; `hops` is 0 unless the graph also reached it.
+    pub is_partner: bool,
 }
 
 /// Comprehensive affected test reachability report.
@@ -37,19 +40,32 @@ impl crate::serialize::XmlReport for AffectedReport {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for t in &self.tests {
-            let direct_attr = if t.is_direct_change {
-                " direct=\"1\""
-            } else {
-                ""
-            };
-            writeln!(
-                out,
-                "  <test p=\"{}\" hops=\"{}\"{}/>",
-                t.path, t.hops, direct_attr
-            )?;
-        }
-        Ok(())
+        self.tests.iter().try_for_each(|t| t.write_row(out))
+    }
+}
+
+impl AffectedTest {
+    fn write_row<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let partner = if self.is_partner {
+            " partner=\"1\""
+        } else {
+            ""
+        };
+        let hops = if !self.is_partner || self.hops > 0 {
+            format!(" hops=\"{}\"", self.hops)
+        } else {
+            String::new()
+        };
+        let direct = if self.is_direct_change {
+            " direct=\"1\""
+        } else {
+            ""
+        };
+        writeln!(
+            out,
+            "  <test p=\"{}\"{partner}{hops}{direct} run_unknown=\"1\"/>",
+            self.path.xml_escaped()
+        )
     }
 }
 
@@ -123,9 +139,74 @@ pub fn is_test_or_bench_path<P: AsRef<Path>>(path: P) -> bool {
         )
 }
 
+const PARTNER_SUFFIXES: [&str; 4] = ["_test", "_spec", ".test", ".spec"];
+
+fn in_test_dir(path: &str) -> bool {
+    path.rsplit_once('/')
+        .is_some_and(|(dir, _)| dir.split('/').any(|d| matches!(d, "test" | "tests")))
+}
+
+/// The source stem a test file at `path` is named after: `test_x`, `x_test`, `x_spec`, `x.test`, `x.spec`
+/// in any language, or the language's own convention (e.g. `WidgetTest`) inside a test dir.
+#[must_use]
+pub fn partner_subject_stem(path: &str, lang: Lang) -> Option<&str> {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let (stem, _) = name.rsplit_once('.')?;
+    let subject = stem
+        .strip_prefix("test_")
+        .or_else(|| PARTNER_SUFFIXES.iter().find_map(|s| stem.strip_suffix(s)))
+        .or_else(|| {
+            in_test_dir(path)
+                .then(|| lang.semantics().camel_test_partner_subject(stem))
+                .flatten()
+        })?;
+    (!subject.is_empty()).then_some(subject)
+}
+
+fn file_stem_of(path: &str) -> &str {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    name.split_once('.').map_or(name, |(stem, _)| stem)
+}
+
+/// Test files named after any of `changed_paths` by convention, sorted by path; a subject with
+/// several candidate tests is ambiguous and gets none.
+#[must_use]
+pub fn find_partner_tests(
+    changed_paths: &[String],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> Vec<String> {
+    let stems: HashSet<&str> = changed_paths.iter().map(|p| file_stem_of(p)).collect();
+    let mut by_subject: HashMap<&str, Vec<&str>> = HashMap::new();
+    for f in &ingest.files {
+        let p = interner.resolve(&f.path);
+        if changed_paths.iter().any(|c| c == p) {
+            continue;
+        }
+        if let Some(subject) = partner_subject_stem(p, f.lang).filter(|s| stems.contains(s)) {
+            by_subject.entry(subject).or_default().push(p);
+        }
+    }
+    let mut partners: Vec<String> = by_subject
+        .into_values()
+        .filter(|tests| tests.len() == 1)
+        .flatten()
+        .map(String::from)
+        .collect();
+    partners.sort_unstable();
+    partners
+}
+
 struct SeedResolution {
     seed_nodes: Vec<NodeId>,
     seed_test_files: Vec<String>,
+    seed_source_files: Vec<String>,
+}
+
+fn push_unique(list: &mut Vec<String>, path: &str) {
+    if !list.iter().any(|p| p == path) {
+        list.push(path.to_string());
+    }
 }
 
 fn match_file_seeds(
@@ -135,16 +216,17 @@ fn match_file_seeds(
     seeds: &mut SeedResolution,
 ) {
     if is_test_path(path_str) {
-        if !seeds.seed_test_files.contains(&path_str.to_string()) {
-            seeds.seed_test_files.push(path_str.to_string());
-        }
-    } else {
-        for s in &ingest.symbols {
-            if s.file_id == f.id {
-                seeds.seed_nodes.push(s.id);
-            }
-        }
+        push_unique(&mut seeds.seed_test_files, path_str);
+        return;
     }
+    push_unique(&mut seeds.seed_source_files, path_str);
+    seeds.seed_nodes.extend(
+        ingest
+            .symbols
+            .iter()
+            .filter(|s| s.file_id == f.id)
+            .map(|s| s.id),
+    );
 }
 
 fn match_symbol_seeds(
@@ -227,6 +309,7 @@ pub fn find_affected_tests(
     let mut seeds = SeedResolution {
         seed_nodes: Vec::new(),
         seed_test_files: Vec::new(),
+        seed_source_files: Vec::new(),
     };
 
     for &spec in changed_specs {
@@ -235,7 +318,8 @@ pub fn find_affected_tests(
     seeds.seed_nodes.sort_unstable();
     seeds.seed_nodes.dedup();
 
-    let (visited, test_hops) = traverse_reverse_callers(&seeds.seed_nodes, graph, ingest, interner);
+    let (visited, mut test_hops) =
+        traverse_reverse_callers(&seeds.seed_nodes, graph, ingest, interner);
 
     let mut tests = Vec::new();
     let mut seen_test_paths = HashSet::new();
@@ -246,7 +330,20 @@ pub fn find_affected_tests(
             path: direct_test.clone(),
             hops: 0,
             is_direct_change: true,
+            is_partner: false,
         });
+    }
+
+    for partner in find_partner_tests(&seeds.seed_source_files, ingest, interner) {
+        if seen_test_paths.insert(partner.clone()) {
+            let hops = test_hops.remove(&partner).unwrap_or(0);
+            tests.push(AffectedTest {
+                path: partner,
+                hops,
+                is_direct_change: false,
+                is_partner: true,
+            });
+        }
     }
 
     for (test_path, hops) in test_hops {
@@ -255,6 +352,7 @@ pub fn find_affected_tests(
                 path: test_path,
                 hops,
                 is_direct_change: false,
+                is_partner: false,
             });
         }
     }
@@ -262,6 +360,7 @@ pub fn find_affected_tests(
     tests.sort_by(|a, b| {
         b.is_direct_change
             .cmp(&a.is_direct_change)
+            .then_with(|| b.is_partner.cmp(&a.is_partner))
             .then_with(|| a.hops.cmp(&b.hops))
             .then_with(|| a.path.cmp(&b.path))
     });

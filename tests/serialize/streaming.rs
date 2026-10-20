@@ -335,6 +335,7 @@ fn test_query_xml_safety_family() {
         path: "tests/foo.rs".into(),
         hops: 1,
         is_direct_change: false,
+        is_partner: false,
     }];
     serialize_test_gate_xml(".", &tests, 2, &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.test-gate/v1\""));

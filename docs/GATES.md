@@ -28,13 +28,15 @@ Verifies whether an edited symbol's signature changed in parameters, arity, or p
 Maps modified files and symbols to transitively reachable test files across the in-process call graph.
 
 ```xml
-<affected schema="ripwire-rs.affected/v1" files="src/service.rs" seeds="1" seed_test_files="0" tests="1" reached="4">
-  <test p="tests/test_service.rs" hops="2"/>
+<affected schema="ripwire-rs.affected/v1" files="src/service.rs" seeds="1" seed_test_files="0" tests="2" reached="4">
+  <test p="tests/test_service.rs" partner="1" hops="2" run_unknown="1"/>
+  <test p="tests/test_billing.rs" hops="3" run_unknown="1"/>
 </affected>
 ```
 
 - **Ranking**: Test files are prioritized by hop distance and coupling evidence.
 - **Transitive Reach**: Identifies tests that execute modified symbols even when located multiple calls away.
+- **Partner Tests**: A test named after a changed file is listed with `partner="1"` even without a call edge (scripts run by a test harness): `test_X`, `X_test`, `X_spec`, `X.test`, `X.spec` in any language, plus `XTest` inside a `test/`/`tests/` dir for Java, Kotlin, C#, and PHP. A file with two or more candidate partners is ambiguous and gets none. `--test-gate` exits 4 while any test row exists.
 
 ---
 

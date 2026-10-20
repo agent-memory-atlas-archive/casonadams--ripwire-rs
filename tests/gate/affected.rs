@@ -103,5 +103,127 @@ fn test_affected_transitive_reachability() {
 
     let xml = report.to_xml_string();
     assert!(xml.contains("<affected schema=\"ripwire-rs.affected/v1\""));
-    assert!(xml.contains("<test p=\"tests/test_service.rs\" hops=\"2\"/>"));
+    assert!(xml.contains("<test p=\"tests/test_service.rs\" hops=\"2\" run_unknown=\"1\"/>"));
+}
+
+#[test]
+fn test_partner_subject_stem_naming_cases() {
+    use ripwire_rs::gate::affected::partner_subject_stem;
+    let cases: [(&str, Option<&str>); 22] = [
+        (
+            "scripts/test_lint_bronze_contract.py",
+            Some("lint_bronze_contract"),
+        ),
+        ("src/lint_test.py", Some("lint")),
+        ("pkg/ring.test.ts", Some("ring")),
+        ("pkg/markdown.test.tsx", Some("markdown")),
+        ("pkg/dirs.spec.js", Some("dirs")),
+        ("src/server_test.go", Some("server")),
+        ("src/widget_test.rs", Some("widget")),
+        ("spec/widget_spec.rb", Some("widget")),
+        ("tests/test_widget.ts", Some("widget")),
+        ("src/widget_test.cpp", Some("widget")),
+        ("tests/WidgetTest.java", Some("Widget")),
+        ("src/test/java/WidgetTest.java", Some("Widget")),
+        ("tests/WidgetTest.kt", Some("Widget")),
+        ("tests/WidgetTest.php", Some("Widget")),
+        ("src/WidgetTest.java", None),
+        ("tests/WidgetTest.py", None),
+        ("test/WidgetTest.scala", None),
+        ("tests/widget.rs", None),
+        ("src/widget_unittest.cc", None),
+        ("tests/Widget_Test.php", None),
+        ("scripts/test_.py", None),
+        ("Makefile", None),
+    ];
+    for (path, want) in cases {
+        let lang = Lang::from_path(std::path::Path::new(path));
+        assert_eq!(partner_subject_stem(path, lang), want, "{path}");
+    }
+}
+
+fn partner_fixture(paths: &[&str]) -> (IngestResult, Interner) {
+    let interner = Interner::new();
+    let mut ingest = IngestResult::new();
+    for (id, p) in paths.iter().enumerate() {
+        ingest.files.push(FileInfo {
+            id: u32::try_from(id).unwrap_or(u32::MAX),
+            path: interner.intern(p),
+            lang: Lang::from_path(std::path::Path::new(p)),
+            line_count: 10,
+            byte_size: 100,
+        });
+    }
+    (ingest, interner)
+}
+
+fn affected_paths(paths: &[&str], changed: &str) -> Vec<String> {
+    let (ingest, interner) = partner_fixture(paths);
+    let graph = Graph::build(&ingest, &interner);
+    let report = find_affected_tests(&[changed], &ingest, &graph, &interner);
+    report.tests.iter().map(|t| t.path.clone()).collect()
+}
+
+#[test]
+fn test_affected_partner_row_for_unique_convention_match() {
+    let (ingest, interner) = partner_fixture(&[
+        "scripts/lint_bronze_contract.py",
+        "scripts/test_lint_bronze_contract.py",
+        "scripts/test_lint_bronze_contract_extra.py",
+        "tests/lint_bronze_contract.py",
+        "jobs/a/lint_bronze_contract.py",
+    ]);
+    let graph = Graph::build(&ingest, &interner);
+    let report = find_affected_tests(
+        &["scripts/lint_bronze_contract.py"],
+        &ingest,
+        &graph,
+        &interner,
+    );
+    let paths: Vec<&str> = report.tests.iter().map(|t| t.path.as_str()).collect();
+    assert_eq!(paths, ["scripts/test_lint_bronze_contract.py"]);
+    assert!(report.tests[0].is_partner && report.tests[0].hops == 0);
+    assert!(report.to_xml_string().contains(
+        "<test p=\"scripts/test_lint_bronze_contract.py\" partner=\"1\" run_unknown=\"1\"/>"
+    ));
+}
+
+#[test]
+fn test_affected_partner_cross_language_and_cross_package() {
+    assert_eq!(
+        affected_paths(
+            &["pkg1/src/env.ts", "pkg2/test/env.test.ts"],
+            "pkg1/src/env.ts"
+        ),
+        ["pkg2/test/env.test.ts"]
+    );
+    assert_eq!(
+        affected_paths(&["src/widget.py", "tests/test_widget.ts"], "src/widget.py"),
+        ["tests/test_widget.ts"]
+    );
+}
+
+#[test]
+fn test_affected_partner_declined_when_ambiguous_or_unnamed() {
+    let cases: [(&[&str], &str); 4] = [
+        (
+            &["a/widget.py", "a/test_widget.py", "a/widget_test.py"],
+            "a/widget.py",
+        ),
+        (
+            &["a/widget.py", "a/test_widget.py", "b/test_widget.py"],
+            "a/widget.py",
+        ),
+        (
+            &["a/widget.ts", "a/widget.test.ts", "a/widget.spec.ts"],
+            "a/widget.ts",
+        ),
+        (
+            &["src/gate/affected.rs", "tests/gate/affected.rs"],
+            "src/gate/affected.rs",
+        ),
+    ];
+    for (paths, changed) in cases {
+        assert!(affected_paths(paths, changed).is_empty(), "{paths:?}");
+    }
 }

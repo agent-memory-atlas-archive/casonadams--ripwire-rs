@@ -231,7 +231,7 @@ pub fn execute_test_gate_query<W: Write>(
         &graph.xml_gauge_attrs(),
         out,
     )?;
-    Ok(report.seed_count > 0 && (!report.tests.is_empty() || untested > 0))
+    Ok(!report.tests.is_empty() || (report.seed_count > 0 && untested > 0))
 }
 
 pub fn format_situ_list<W: Write>(

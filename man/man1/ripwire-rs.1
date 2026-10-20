@@ -190,7 +190,7 @@ Recommend the single best ripwire-rs command for natural-language task \fITASK\f
 Verify caller compatibility after modifying symbol \fISYM\fR's signature. Verifies parameter count and visibility changes against git \fBHEAD\fR across all 1-hop callers. \fB\-\-limit\fR/\fB\-\-offset\fR page the compatible caller rows; incompatible callers always print.
 .TP
 .BI \-\-affected= PATH
-Transitive reachability mapping from changed file or symbol \fIPATH\fR to affected test suites, ranked by evidence distance.
+Transitive reachability mapping from changed file or symbol \fIPATH\fR to affected test suites, ranked by evidence distance. Tests named after a changed file (\fBtest_X\fR, \fBX_test\fR, \fBX_spec\fR, \fBX.test\fR, \fBX.spec\fR; \fBXTest\fR in a test dir for Java, Kotlin, C#, PHP) are listed with \fBpartner="1"\fR; a file with several candidates gets none.
 .TP
 .BI \-\-test\-gate [=FILES]
 Pre-PR verification gate: names tests to run and untested blast radius. Exits with code \fB4\fR if non-empty obligations exist. Defaults to git diff.
