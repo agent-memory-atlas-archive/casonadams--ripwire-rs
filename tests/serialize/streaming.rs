@@ -7,7 +7,7 @@ use ripwire_rs::{
     serialize_external_surface_xml, serialize_flags_xml, serialize_for_xml,
     serialize_from_trace_xml, serialize_grep_xml, serialize_lego_xml, serialize_mentions_xml,
     serialize_owners_xml, serialize_pack_top_n_xml, serialize_path_between_xml,
-    serialize_recall_xml, serialize_safe_delete_xml, serialize_stray_content_xml,
+    serialize_recall_text, serialize_safe_delete_xml, serialize_stray_content_xml,
     serialize_test_gate_xml, serialize_tree_xml, serialize_whereis_xml, serialize_xml_to_string,
 };
 use serde_json::json;
@@ -444,10 +444,15 @@ fn test_query_xml_task_retrieval_family() {
     buf.clear();
 
     let val_recall = json!({
-        "matches": [{ "path": "README.md", "snippet": "context router" }]
+        "relevant": 1,
+        "documents": 1,
+        "docs": [{ "path": "README.md", "score": 0.5, "content": "context router\n" }]
     });
-    serialize_recall_xml(".", "router", &val_recall, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.recall/v1\""));
+    serialize_recall_text("router", &val_recall, &mut buf).unwrap();
+    assert!(
+        String::from_utf8_lossy(&buf)
+            .contains("━━ README.md  (relevance 0.500) ━━\ncontext router\n")
+    );
     buf.clear();
 
     let val_trace = json!({

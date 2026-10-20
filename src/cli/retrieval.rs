@@ -227,10 +227,6 @@ pub fn execute_retrieval_dispatch<W: Write>(
         let mut val = crate::mcp::retrieval::call_lego(ingest, interner, iface);
         val.attach_gauges(graph);
         crate::serialize::serialize_lego_xml(root, &val, out)
-    } else if let Some(rec) = ret.recall.as_deref() {
-        let val =
-            crate::mcp::retrieval::call_memory_recall_in_root(root, ingest, interner, rec, None);
-        crate::serialize::serialize_recall_xml(root, rec, &val, out)
     } else {
         execute_advanced_retrieval(ret, root, ingest, graph, interner, out)
     }

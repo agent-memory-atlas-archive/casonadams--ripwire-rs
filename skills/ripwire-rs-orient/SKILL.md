@@ -44,8 +44,8 @@ orient step, the `map_next=` on an `--expand` root is the call that prints it.
 
 **0. Recall what you already KNOW** — `ripwire-rs <dir> --recall="<the task>"`
 The most relevant DOCS' FULL bodies (docs only, so code never swamps them — markdown memory notes,
-planning/design docs, skills, READMEs, plus `.ipynb`/`.html`/`.csv`/Office/PDF via the optional
-markitdown bridge). Point it at the **memory dir** for what past sessions learned, or the **repo root** for
+planning/design docs, skills, READMEs, plus `.rst`/`.adoc`/`.org`/`.html`/`.csv`/`.ipynb`). Point it at the
+**memory dir** for what past sessions learned, or the **repo root** for
 plans/designs — ~47× fewer tokens than loading everything. A design doc may already answer the question; if
 so, stop here. It also works unmodified as a zero-setup knowledge base over a scratch dir of dumped tool
 output (a git log, fetched docs, `--help` text) — not just a source repo. Two conditions are yours to meet

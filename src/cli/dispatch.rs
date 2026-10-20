@@ -333,6 +333,15 @@ impl CliVerb for TopRetrievalArgs {
                 out,
             );
         }
+        if let Some(task) = self.recall.as_deref() {
+            let val = crate::mcp::retrieval::call_memory_recall_in_root(
+                ctx.root,
+                task,
+                ctx.cli.top_k,
+                ctx.cli.max_tokens,
+            );
+            return crate::serialize::serialize_recall_text(task, &val, out);
+        }
         if let Some(expr) = self.graph_query.as_deref() {
             return crate::navigate::execute_graph_query_expr_paged(
                 expr,

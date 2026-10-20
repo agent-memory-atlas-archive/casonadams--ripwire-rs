@@ -271,106 +271,47 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
     })
 }
 
-fn extract_ipynb_text(raw: &str) -> String {
-    let Ok(val) = serde_json::from_str::<Value>(raw) else {
-        return raw.to_string();
-    };
-    let Some(cells) = val["cells"].as_array() else {
-        return String::new();
-    };
-    let mut out = String::new();
-    for cell in cells {
-        if let Some(arr) = cell["source"].as_array() {
-            for line in arr.iter().filter_map(Value::as_str) {
-                out.push_str(line);
-            }
-            out.push('\n');
-        } else if let Some(s) = cell["source"].as_str() {
-            out.push_str(s);
-            out.push('\n');
-        }
-    }
-    out
-}
-
-fn collect_ipynb_docs(
-    root_path: &std::path::Path,
-    terms: &[String],
-    matched_docs: &mut Vec<(usize, String, String)>,
-) {
+fn collect_recall_inputs(root_path: &std::path::Path) -> Vec<super::recall::RecallInput> {
+    let mut inputs = Vec::new();
     for entry in ignore::WalkBuilder::new(root_path)
         .sort_by_file_path(Ord::cmp)
         .build()
         .flatten()
     {
         let p = entry.path();
-        if p.extension().and_then(|e| e.to_str()) != Some("ipynb") {
+        let rel = p.strip_prefix(root_path).unwrap_or(p).to_string_lossy();
+        let Some(format) = super::recall::doc_format(&rel) else {
+            continue;
+        };
+        if !entry.file_type().is_some_and(|t| t.is_file()) {
             continue;
         }
         let Ok(raw) = std::fs::read_to_string(p) else {
             continue;
         };
-        let content = extract_ipynb_text(&raw);
-        let lower = content.to_ascii_lowercase();
-        let score = terms.iter().filter(|&t| lower.contains(t)).count();
-        if score > 0 {
-            let rel = p
-                .strip_prefix(root_path)
-                .unwrap_or(p)
-                .to_string_lossy()
-                .into_owned();
-            matched_docs.push((score, rel, content));
-        }
+        inputs.push(super::recall::RecallInput {
+            path: rel.into_owned(),
+            format,
+            text: super::recall::render_doc(format, &raw),
+        });
     }
+    inputs
 }
 
+/// Execute `memory_recall`: BM25-ranked document sections under a token ceiling.
 pub fn call_memory_recall_in_root(
     root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
     task: &str,
     top_k: Option<usize>,
+    max_tokens: Option<usize>,
 ) -> Value {
-    let terms: Vec<String> = task
-        .split_whitespace()
-        .map(|s| s.to_ascii_lowercase())
-        .collect();
-    let root_path = std::path::Path::new(root);
-
-    let mut matched_docs: Vec<(usize, String, String)> = Vec::new();
-    for file in &ingest.files {
-        let path = interner.resolve(&file.path);
-        if (path.ends_with(".md") || path.contains("doc") || path.contains("notes"))
-            && let Ok(content) = crate::domain::read_rel_string(root_path, path)
-        {
-            let lower = content.to_ascii_lowercase();
-            let score = terms.iter().filter(|&t| lower.contains(t)).count();
-            if score > 0 {
-                matched_docs.push((score, path.to_string(), content));
-            }
-        }
-    }
-    collect_ipynb_docs(root_path, &terms, &mut matched_docs);
-    matched_docs.sort_by_key(|b| std::cmp::Reverse(b.0));
-    let limit = top_k.unwrap_or(5).min(matched_docs.len());
-
-    let results: Vec<Value> = matched_docs[..limit]
-        .iter()
-        .map(|(score, path, text)| {
-            let preview = text.lines().take(20).collect::<Vec<_>>().join("\n");
-            json!({
-                "path": path,
-                "score": score,
-                "content": preview
-            })
-        })
-        .collect();
-
-    json!({
-        "task": task,
-        "docs": results,
-        "count": results.len()
-    })
+    let inputs = collect_recall_inputs(std::path::Path::new(root));
+    let defaults = super::recall::RecallOptions::default();
+    let opts = super::recall::RecallOptions {
+        top_k: top_k.unwrap_or(defaults.top_k),
+        max_tokens: max_tokens.unwrap_or(defaults.max_tokens),
+    };
+    super::recall::recall(&inputs, task, opts).to_json(task)
 }
 
 /// Execute `grep` tool: literal search annotated with enclosing symbol.

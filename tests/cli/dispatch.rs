@@ -410,10 +410,6 @@ fn test_top_retrieval_and_workspace_queries() {
             ..Default::default()
         },
         TopRetrievalArgs {
-            recall: Some("plan".into()),
-            ..Default::default()
-        },
-        TopRetrievalArgs {
             from_trace: Some("error at src/lib.rs:1".into()),
             ..Default::default()
         },

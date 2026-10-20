@@ -584,26 +584,124 @@ pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io:
     writeln!(out, "</iface></lego></ctx>")
 }
 
-/// Serialize `--recall` to Ripwire XML.
-pub fn serialize_recall_xml<W: Write>(
-    root: &str,
-    query: &str,
-    val: &Value,
-    out: &mut W,
-) -> io::Result<()> {
-    let empty = Vec::new();
-    let matches = val.array_any(&["docs", "matches"]).unwrap_or(&empty);
-    writeln!(
-        out,
-        "<recall schema=\"ripwire-rs.recall/v1\" root=\"{root}\" query=\"{query}\" docs=\"{}\">",
-        matches.len()
-    )?;
-    for d in matches {
-        let p = d.str_or("path", "");
-        let text = d.str_any(&["content", "snippet"], "");
-        writeln!(out, "  <doc p=\"{p}\"><![CDATA[{text}]]></doc>")?;
+fn push_recall_sections_note(buf: &mut String, s: &Value, whole_bytes: u64) {
+    let selected = s.u64_or("selected", 0);
+    let total = s.u64_or("total", 0);
+    let lines = s.str_or("lines", "");
+    let dropped = s.u64_or("dropped_by_budget", 0);
+    if dropped == 0 {
+        buf.push_str(&format!(
+            "  [sections: {selected} of {total}, section-granular; whole doc {whole_bytes} B; lines=\"{lines}\"]"
+        ));
+    } else {
+        let matched = s.u64_or("matched", 0);
+        buf.push_str(&format!(
+            "  [sections: {selected} of {matched} selected ({total} in doc), section-granular; whole doc {whole_bytes} B; lines=\"{lines}\"; dropped_by_budget={dropped}]"
+        ));
     }
-    writeln!(out, "</recall>")
+}
+
+fn push_recall_doc(buf: &mut String, d: &Value) {
+    buf.push_str(&format!(
+        "━━ {}  (relevance {:.3}) ━━",
+        d.str_or("path", ""),
+        d.f64_any(&["score"], 0.0)
+    ));
+    if d.bool_or("generated", false) {
+        buf.push_str("  [generated_demoted: marker]");
+    }
+    if let Some(s) = d.get("sections") {
+        push_recall_sections_note(buf, s, d.u64_or("whole_bytes", 0));
+    }
+    if let Some(t) = d.get("truncated") {
+        buf.push_str(&format!(
+            "  [truncated: {} of {} bytes]",
+            t.u64_or("shown_bytes", 0),
+            t.u64_or("of_bytes", 0)
+        ));
+    }
+    buf.push('\n');
+    buf.push_str(d.str_or("content", ""));
+    buf.push_str("\n\n");
+}
+
+fn push_recall_footer(buf: &mut String, val: &Value) {
+    let relevant = val.u64_or("relevant", 0);
+    if relevant == 0 {
+        buf.push_str("(no relevant documents — try different terms)\n");
+        return;
+    }
+    let by_k = val.u64_or("omitted_top_k", 0);
+    let by_budget = val.u64_or("omitted_budget", 0);
+    let mut parts = Vec::new();
+    if by_k > 0 {
+        let default_k = val.u64_or("default_top_k", 8);
+        parts.push(format!(
+            "raise --top-k/top_k (default {default_k}) for {by_k} more"
+        ));
+    }
+    if by_budget > 0 {
+        let budget = val.u64_or("budget_bytes", 0);
+        parts.push(format!(
+            "raise --max-tokens/budget_tokens or narrow the query for {by_budget} more (~{budget}-byte budget)"
+        ));
+    }
+    if !parts.is_empty() {
+        buf.push_str(&format!(
+            "(capped: {} of {relevant} relevant document files omitted — {})\n",
+            by_k + by_budget,
+            parts.join("; ")
+        ));
+    }
+}
+
+fn recall_header(query: &str, val: &Value, shown: usize, est_tokens: u64) -> String {
+    let relevant = val.u64_or("relevant", 0);
+    let mut h = format!(
+        "ripwire-rs recall — \"{query}\" — {relevant} relevant of {} document files, best-first — total={relevant} shown={shown} capped={}",
+        val.u64_or("documents", 0),
+        u8::from(val.bool_or("capped", false))
+    );
+    for key in ["truncated", "generated_demoted"] {
+        let n = val.u64_or(key, 0);
+        if n > 0 {
+            h.push_str(&format!(" {key}={n}"));
+        }
+    }
+    let max_tokens = val.u64_or("max_tokens", 0);
+    if est_tokens > max_tokens {
+        h.push_str(" over_ceiling=1");
+    }
+    h.push_str(&format!(" max_tokens={max_tokens}"));
+    if let Some(share) = val.get("share_bytes").and_then(Value::as_u64) {
+        h.push_str(&format!(" share_bytes={share}"));
+    }
+    h.push_str(&format!(" est_tokens={est_tokens}\n\n"));
+    h
+}
+
+/// Serialize `--recall` as plain text (upstream's rendering): header, ranked doc blocks, cap footer.
+pub fn serialize_recall_text<W: Write>(query: &str, val: &Value, out: &mut W) -> io::Result<()> {
+    let empty = Vec::new();
+    let docs = val.array_any(&["docs"]).unwrap_or(&empty);
+    let mut rest = String::new();
+    for d in docs {
+        push_recall_doc(&mut rest, d);
+    }
+    push_recall_footer(&mut rest, val);
+    let mut est_tokens = 0u64;
+    let mut header = recall_header(query, val, docs.len(), est_tokens);
+    for _ in 0..4 {
+        let total_bytes = (header.len() + rest.len()) as u64;
+        let next = (total_bytes * 2).div_ceil(5);
+        if next == est_tokens {
+            break;
+        }
+        est_tokens = next;
+        header = recall_header(query, val, docs.len(), est_tokens);
+    }
+    out.write_all(header.as_bytes())?;
+    out.write_all(rest.as_bytes())
 }
 
 /// Serialize `--from-trace` to Ripwire XML.

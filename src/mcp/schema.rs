@@ -361,19 +361,27 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
     ),
     mcp_tool!(
         "memory_recall",
-        "Most relevant memory notes / docs for a task, full text",
+        "Most relevant doc sections for a task, BM25-ranked under a token ceiling",
         &[
             ("task", "string", "Task description"),
-            ("top_k", "integer", "Maximum number of notes"),
+            (
+                "top_k",
+                "integer",
+                "Maximum number of documents (default 8)"
+            ),
+            (
+                "budget_tokens",
+                "integer",
+                "Body token ceiling (default 8000)"
+            ),
         ],
         &["task"],
         |s, a| {
             Ok(retrieval::call_memory_recall_in_root(
                 &s.root,
-                &s.ingest,
-                &s.interner,
                 a.str_or("task", ""),
                 a.opt_usize("top_k"),
+                a.opt_usize("budget_tokens"),
             ))
         }
     ),

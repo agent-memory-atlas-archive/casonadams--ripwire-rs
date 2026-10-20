@@ -156,20 +156,17 @@ pub fn build_handoff_verified_rows(
     rows
 }
 
-fn build_handoff_doc_rows(
-    root: &str,
-    query: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
-) -> (String, usize) {
-    let recall =
-        crate::mcp::retrieval::call_memory_recall_in_root(root, ingest, interner, query, Some(4));
+fn build_handoff_doc_rows(root: &str, query: &str) -> (String, usize) {
+    let recall = crate::mcp::retrieval::call_memory_recall_in_root(root, query, Some(4), None);
     let mut rows = String::new();
     let mut cnt = 0usize;
     if let Some(docs) = recall.get("docs").and_then(|v| v.as_array()) {
         for d in docs {
             let p = d.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            let sc = d.get("score").and_then(|v| v.as_u64()).unwrap_or(1) as f64;
+            let sc = d
+                .get("score")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(1.0);
             if !p.is_empty() {
                 rows.push_str(&format!("<doc p=\"{}\" s=\"{sc:.3}\"/>", p.xml_escaped()));
                 cnt += 1;
@@ -204,8 +201,7 @@ pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner)
         ));
         heur_cnt += 1;
     }
-    let (doc_rows, doc_cnt) =
-        build_handoff_doc_rows(root, &format!("{branch} {subject}"), ingest, interner);
+    let (doc_rows, doc_cnt) = build_handoff_doc_rows(root, &format!("{branch} {subject}"));
     heur_rows.push_str(&doc_rows);
     heur_cnt += doc_cnt;
     if heur_cnt == 0 {
