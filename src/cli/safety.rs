@@ -180,23 +180,7 @@ pub fn get_working_tree_changed_files(root: &str) -> Vec<String> {
     if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
         return Vec::new();
     }
-    if let Ok(output) = crate::git::git_command(root)
-        .args(["diff", "--name-only", "HEAD"])
-        .output()
-        && output.status.success()
-    {
-        let text = String::from_utf8_lossy(&output.stdout);
-        let files: Vec<String> = text
-            .lines()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect();
-        if !files.is_empty() {
-            return files;
-        }
-    }
-    Vec::new()
+    crate::git::repo::working_tree_changes(root)
 }
 
 fn resolve_changed_or_spec_files(root: &str, files_spec: Option<&str>) -> Vec<String> {
@@ -411,17 +395,9 @@ pub fn execute_exercises_query<W: Write>(
 
 fn validate_merge_scout_branches(root: &str, branches: &str) -> bool {
     for branch in branches.split(',').map(str::trim).filter(|b| !b.is_empty()) {
-        let ref_exists = if let Ok(repo) = gix::open(root) {
+        let git_ok = gix::open(root).is_ok_and(|repo| {
             repo.rev_parse_single(branch).is_ok() || repo.find_reference(branch).is_ok()
-        } else {
-            false
-        };
-        let git_ok = ref_exists
-            || crate::git::git_command(root)
-                .args(["rev-parse", "--verify", &format!("{branch}^{{commit}}")])
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
+        });
         if !git_ok {
             eprintln!("ripwire-rs: --merge-scout: unknown ref '{branch}'");
             return false;

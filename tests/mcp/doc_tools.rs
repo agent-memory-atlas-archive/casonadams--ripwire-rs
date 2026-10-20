@@ -1,10 +1,9 @@
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::mcp::doc_tools::{
     call_mentions_in_root, call_owners, call_stray_content, call_whereis, classify_code_line,
-    collect_file_wanted_tokens, conditional_uses, count_rev_list, enrich_drift_item_history,
-    extract_cmake_option, extract_env_identifiers, extract_settings_gate,
-    filter_present_in_code_drift, inspect_branch_stray, parse_branch_grep_line,
-    scan_doc_text_for_drift, should_scan_branch,
+    collect_file_wanted_tokens, conditional_uses, enrich_drift_item_history, extract_cmake_option,
+    extract_env_identifiers, extract_settings_gate, filter_present_in_code_drift,
+    inspect_branch_stray, scan_doc_text_for_drift, should_scan_branch,
 };
 use ripwire_rs::{
     FileInfo, IngestResult, Interner, Lang, SymKind, Symbol, serialize_doc_drift_xml,
@@ -200,12 +199,18 @@ fn test_gate_extractors() {
 
 #[test]
 fn test_branch_stray_inspection() {
-    assert_eq!(inspect_branch_stray(".", "", "main"), None);
-    assert_eq!(inspect_branch_stray(".", "HEAD", "main"), None);
-    assert_eq!(inspect_branch_stray(".", "main", "main"), None);
-    let res = inspect_branch_stray(".", "nonexistent-branch-xyz", "main");
-    assert!(res.is_some());
-    assert_eq!(count_rev_list(".", "HEAD", "HEAD"), 0);
+    let repo = ripwire_rs::git::repo::discover(".").unwrap();
+    assert_eq!(inspect_branch_stray(&repo, "", "main"), None);
+    assert_eq!(inspect_branch_stray(&repo, "HEAD", "main"), None);
+    assert_eq!(inspect_branch_stray(&repo, "main", "main"), None);
+    let (verdict, _) = inspect_branch_stray(&repo, "nonexistent-branch-xyz", "main").unwrap();
+    assert_eq!(verdict, "unknown");
+    let (base, ahead) = ripwire_rs::git::repo::unmerged_commits(&repo, "HEAD").unwrap();
+    assert_eq!(ahead, 0);
+    assert_eq!(
+        base,
+        ripwire_rs::git::repo::short_id(repo.head_id().unwrap())
+    );
 }
 
 #[test]
@@ -251,17 +256,6 @@ fn test_branch_grep_parsing() {
     assert!(!should_scan_branch("", true));
     assert!(!should_scan_branch("main", true));
     assert!(should_scan_branch("main", false));
-
-    let hit = parse_branch_grep_line(
-        "origin/main:src/lib.rs:42:fn hello()",
-        "origin/main",
-        "hello",
-    );
-    assert!(hit.is_some());
-    let val = hit.unwrap();
-    assert_eq!(val["kind"], "def");
-    assert_eq!(val["line"], 42);
-    assert_eq!(val["file"], "src/lib.rs");
 }
 
 #[test]

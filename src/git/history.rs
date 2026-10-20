@@ -265,36 +265,93 @@ where
 
 struct RawCommitMeta {
     id: gix::ObjectId,
-    parent_id: Option<gix::ObjectId>,
     timestamp: i64,
 }
 
-fn collect_commit_metas<'a>(
-    rev_walk: impl IntoIterator<Item = Result<gix::revision::walk::Info<'a>, gix::Error>>,
+fn walk_err(e: impl fmt::Display) -> GitHistoryError {
+    GitHistoryError::Walk(e.to_string())
+}
+
+fn commit_time(repo: &gix::Repository, id: gix::ObjectId) -> Result<i64, GitHistoryError> {
+    let commit = repo.find_commit(id).map_err(walk_err)?;
+    Ok(commit.time().map_err(walk_err)?.seconds)
+}
+
+fn tree_at_prefix(commit: &gix::Commit<'_>, prefix: &str) -> Option<gix::ObjectId> {
+    let tree = commit.tree().ok()?;
+    if prefix.is_empty() {
+        return Some(tree.id);
+    }
+    let entry = tree
+        .lookup_entry_by_path(prefix.trim_end_matches('/'))
+        .ok()??;
+    Some(entry.object_id())
+}
+
+/// Parents to follow from `commit`: a merge identical under `prefix` to one parent follows only that
+/// parent, as git's default history simplification does for a `-- <prefix>` pathspec.
+fn followed_parents(
+    repo: &gix::Repository,
+    commit: &gix::Commit<'_>,
+    prefix: &str,
+) -> Vec<gix::ObjectId> {
+    let parents: Vec<gix::ObjectId> = commit.parent_ids().map(gix::Id::detach).collect();
+    if parents.len() < 2 {
+        return parents;
+    }
+    let own = tree_at_prefix(commit, prefix);
+    parents
+        .iter()
+        .copied()
+        .find(|&p| {
+            repo.find_commit(p)
+                .ok()
+                .and_then(|pc| tree_at_prefix(&pc, prefix))
+                == own
+        })
+        .map_or(parents, |p| vec![p])
+}
+
+type CommitQueue = std::collections::BinaryHeap<(i64, gix::ObjectId)>;
+
+fn push_unseen(
+    repo: &gix::Repository,
+    ids: impl IntoIterator<Item = gix::ObjectId>,
+    seen: &mut std::collections::HashSet<gix::ObjectId>,
+    queue: &mut CommitQueue,
+) -> Result<(), GitHistoryError> {
+    for id in ids {
+        if seen.insert(id) {
+            queue.push((commit_time(repo, id)?, id));
+        }
+    }
+    Ok(())
+}
+
+fn collect_commit_metas(
+    repo: &gix::Repository,
+    head: gix::ObjectId,
+    prefix: &str,
     cutoff_timestamp: Option<i64>,
 ) -> Result<Vec<RawCommitMeta>, GitHistoryError> {
     let mut metas = Vec::new();
-    let cutoff_with_safety = cutoff_timestamp.map(|c| c - 14 * 86400);
-
-    for info in rev_walk {
-        let info = info.map_err(|e| GitHistoryError::Walk(e.to_string()))?;
-        let commit = info
-            .object()
-            .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
-        let time = commit
-            .time()
-            .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
-        if let Some(cutoff) = cutoff_with_safety
-            && time.seconds < cutoff
-        {
+    let mut seen = std::collections::HashSet::new();
+    let mut queue = CommitQueue::new();
+    push_unseen(repo, [head], &mut seen, &mut queue)?;
+    while let Some((timestamp, id)) = queue.pop() {
+        if cutoff_timestamp.is_some_and(|cutoff| timestamp < cutoff) {
             break;
         }
-        let parent_id = commit.parent_ids().next().map(|p| p.detach());
-        metas.push(RawCommitMeta {
-            id: info.id,
-            parent_id,
-            timestamp: time.seconds,
-        });
+        let commit = repo.find_commit(id).map_err(walk_err)?;
+        if commit.parent_ids().nth(1).is_none() {
+            metas.push(RawCommitMeta { id, timestamp });
+        }
+        push_unseen(
+            repo,
+            followed_parents(repo, &commit, prefix),
+            &mut seen,
+            &mut queue,
+        )?;
     }
     Ok(metas)
 }
@@ -304,36 +361,16 @@ fn diff_commit_tree(
     meta: &RawCommitMeta,
 ) -> Result<CommitInfo, GitHistoryError> {
     let commit = repo
-        .find_object(meta.id)
-        .map_err(|e| GitHistoryError::Walk(e.to_string()))?
-        .into_commit();
-    let tree = commit
-        .tree()
-        .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
-
-    let changed_files = if let Some(parent_id) = meta.parent_id {
-        if let Ok(parent_obj) = repo.find_object(parent_id)
-            && let Ok(parent_commit) = parent_obj.try_into_commit()
-            && let Ok(parent_tree) = parent_commit.tree()
-        {
-            let mut changes = parent_tree
-                .changes()
-                .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
-            let mut files = Vec::new();
-            changes
-                .for_each_to_obtain_tree(&tree, |change| {
-                    files.push(change.location().to_string());
-                    Ok::<_, gix::Error>(std::ops::ControlFlow::Continue(()))
-                })
-                .map_err(|e| GitHistoryError::TreeDiff(e.to_string()))?;
-            files
-        } else {
-            Vec::new()
+        .find_commit(meta.id)
+        .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
+    let mut changed_files = Vec::new();
+    super::repo::for_each_change(repo, &commit, |change| {
+        if !change.entry_mode().is_tree() {
+            changed_files.push(change.location().to_string());
         }
-    } else {
-        Vec::new()
-    };
-
+        true
+    })
+    .ok_or_else(|| GitHistoryError::TreeDiff(meta.id.to_string()))?;
     let author = commit
         .author()
         .map(|a| a.email.to_string())
@@ -345,6 +382,7 @@ fn diff_commit_tree(
         changed_files,
     })
 }
+
 fn process_commits_parallel(
     repo: &gix::Repository,
     metas: Vec<RawCommitMeta>,
@@ -360,110 +398,19 @@ fn process_commits_parallel(
         .collect()
 }
 
-/// Walk git commit history and extract changed files per commit using `gix`.
-fn parse_commit_header(line: &[u8]) -> Option<(String, i64, String)> {
-    let rest = line.strip_prefix(b"commit ")?;
-    let mut parts = rest.split(|&b| b == b' ');
-    let sha = parts.next()?;
-    let ts = parts.next()?;
-    let author_raw = parts.next().unwrap_or(b"");
-    let id = String::from_utf8_lossy(sha).into_owned();
-    let timestamp = std::str::from_utf8(ts).ok()?.parse().ok()?;
-    let author = String::from_utf8_lossy(author_raw).into_owned();
-    Some((id, timestamp, author))
-}
-
-fn parse_git_log_stream(output: &[u8]) -> Option<Vec<CommitInfo>> {
-    let mut commits = Vec::new();
-    let mut current_id = String::new();
-    let mut current_ts = 0i64;
-    let mut current_author = String::new();
-    let mut current_files = Vec::new();
-
-    for line in output.split(|&b| b == b'\n') {
-        if let Some((id, ts, author)) = parse_commit_header(line) {
-            if !current_id.is_empty() {
-                commits.push(CommitInfo {
-                    id: std::mem::take(&mut current_id),
-                    timestamp: current_ts,
-                    author: std::mem::take(&mut current_author),
-                    changed_files: std::mem::take(&mut current_files),
-                });
-            }
-            current_id = id;
-            current_ts = ts;
-            current_author = author;
-        } else if !current_id.is_empty() && !line.is_empty() {
-            current_files.push(String::from_utf8_lossy(line).into_owned());
-        }
-    }
-    if !current_id.is_empty() {
-        commits.push(CommitInfo {
-            id: current_id,
-            timestamp: current_ts,
-            author: current_author,
-            changed_files: current_files,
-        });
-    }
-    Some(commits)
-}
-
-fn resolve_git_subdir_prefix(repo_path: &Path) -> Option<String> {
-    let output = super::git_command(repo_path)
-        .args(["rev-parse", "--show-prefix"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let prefix = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .replace('\\', "/");
+fn strip_subdir_prefix(mut commits: Vec<CommitInfo>, prefix: &str) -> Vec<CommitInfo> {
     if prefix.is_empty() {
-        None
-    } else if prefix.ends_with('/') {
-        Some(prefix)
-    } else {
-        Some(format!("{prefix}/"))
-    }
-}
-
-fn strip_subdir_prefix(mut commits: Vec<CommitInfo>, prefix: Option<&str>) -> Vec<CommitInfo> {
-    let Some(pref) = prefix else {
         return commits;
-    };
+    }
     for c in &mut commits {
         c.changed_files = c
             .changed_files
             .drain(..)
-            .filter_map(|f| f.strip_prefix(pref).map(String::from))
+            .filter_map(|f| f.strip_prefix(prefix).map(String::from))
             .collect();
     }
     commits.retain(|c| !c.changed_files.is_empty());
     commits
-}
-
-fn try_git_log_cli(repo_path: &Path, cutoff_timestamp: Option<i64>) -> Option<Vec<CommitInfo>> {
-    let prefix = resolve_git_subdir_prefix(repo_path);
-    let mut cmd = super::git_command(repo_path);
-    cmd.arg("log");
-    if let Some(cutoff) = cutoff_timestamp {
-        cmd.arg(format!("--since={cutoff}"));
-    }
-    cmd.args([
-        "--no-merges",
-        "--no-renames",
-        "--format=commit %H %ct %ae",
-        "--name-only",
-        "--",
-        ".",
-    ]);
-    let output = cmd.output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let commits = parse_git_log_stream(&output.stdout)?;
-    Some(strip_subdir_prefix(commits, prefix.as_deref()))
 }
 
 pub fn walk_repository_history<P: AsRef<Path>>(
@@ -472,38 +419,25 @@ pub fn walk_repository_history<P: AsRef<Path>>(
     walk_repository_history_scoped(repo_path.as_ref(), None)
 }
 
-/// Walk git commit history with an optional cutoff timestamp.
-pub fn walk_repository_history_gix<P: AsRef<Path>>(
-    repo_path: P,
-    cutoff_timestamp: Option<i64>,
-) -> Result<Vec<CommitInfo>, GitHistoryError> {
-    let repo_path = repo_path.as_ref();
-    let prefix = resolve_git_subdir_prefix(repo_path);
-    let repo = gix::discover(repo_path).map_err(|e| GitHistoryError::Open(e.to_string()))?;
-    let head = repo
-        .head_commit()
-        .map_err(|e| GitHistoryError::Head(e.to_string()))?;
-    let rev_walk = repo
-        .rev_walk([head.id()])
-        .all()
-        .map_err(|e| GitHistoryError::Walk(e.to_string()))?;
-    let metas = collect_commit_metas(rev_walk, cutoff_timestamp)?;
-    let commits = process_commits_parallel(&repo, metas)?;
-    Ok(strip_subdir_prefix(commits, prefix.as_deref()))
-}
-
-/// Walk git commit history with an optional cutoff timestamp.
+/// Non-merge commits reachable from `HEAD`, newest first, newer than an optional cutoff timestamp,
+/// with changed paths relative to `repo_path` (`git log --no-merges --no-renames --name-only -- .`).
 pub fn walk_repository_history_scoped<P: AsRef<Path>>(
     repo_path: P,
     cutoff_timestamp: Option<i64>,
 ) -> Result<Vec<CommitInfo>, GitHistoryError> {
     let repo_path = repo_path.as_ref();
-    if let Some(commits) = try_git_log_cli(repo_path, cutoff_timestamp)
-        && !commits.is_empty()
-    {
-        return Ok(commits);
-    }
-    walk_repository_history_gix(repo_path, cutoff_timestamp)
+    let repo = gix::discover(repo_path).map_err(|e| GitHistoryError::Open(e.to_string()))?;
+    let prefix = repo_path
+        .to_str()
+        .and_then(|root| super::repo::workdir_prefix(&repo, root))
+        .unwrap_or_default();
+    let head = repo
+        .head_id()
+        .map_err(|e| GitHistoryError::Head(e.to_string()))?
+        .detach();
+    let metas = collect_commit_metas(&repo, head, &prefix, cutoff_timestamp)?;
+    let commits = process_commits_parallel(&repo, metas)?;
+    Ok(strip_subdir_prefix(commits, &prefix))
 }
 
 /// Full hex id of the repository's HEAD commit, or `None` outside a git repository.

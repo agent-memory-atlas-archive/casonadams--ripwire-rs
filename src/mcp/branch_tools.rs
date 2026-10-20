@@ -170,25 +170,18 @@ pub fn classify_code_line(code: &str) -> &'static str {
     }
 }
 
-pub fn parse_branch_grep_line(line: &str, branch: &str, symbol_name: &str) -> Option<Value> {
-    let mut parts = line.splitn(3, ':');
-    let _ref_prefix = parts.next()?;
-    let path = parts.next().unwrap_or("");
-    let rest = parts.next().unwrap_or("");
-    let mut line_parts = rest.splitn(2, ':');
-    let line_num: u64 = line_parts.next().and_then(|l| l.parse().ok()).unwrap_or(0);
-    let code_text = line_parts.next().unwrap_or("").trim();
-    let kind = classify_code_line(code_text);
-    Some(json!({
+fn branch_hit_json(branch: &str, symbol_name: &str, hit: &crate::git::repo::LineHit) -> Value {
+    let code_text = hit.text.trim();
+    json!({
         "ref": branch,
         "symbol": symbol_name,
-        "kind": kind,
-        "file": path,
-        "path": path,
-        "line": line_num,
+        "kind": classify_code_line(code_text),
+        "file": hit.path,
+        "path": hit.path,
+        "line": hit.line,
         "text": code_text,
         "on_head": false
-    }))
+    })
 }
 
 pub fn should_scan_branch(branch: &str, on_head: bool) -> bool {
@@ -196,38 +189,18 @@ pub fn should_scan_branch(branch: &str, on_head: bool) -> bool {
 }
 
 fn scan_local_branch_hits(root: &str, symbol_name: &str, on_head: bool) -> (usize, Vec<Value>) {
+    let Some(repo) = crate::git::repo::discover(root) else {
+        return (0, Vec::new());
+    };
     let mut hits = Vec::new();
     let mut refs_scanned = 0usize;
-    let Ok(out) = crate::git::git_command(root)
-        .args(["for-each-ref", "--format=%(refname:short)", "refs/heads"])
-        .output()
-    else {
-        return (0, hits);
-    };
-    if !out.status.success() {
-        return (0, hits);
-    }
-    let branch_output = String::from_utf8_lossy(&out.stdout);
-    for raw_branch in branch_output.lines() {
-        let branch = raw_branch.trim();
-        if !should_scan_branch(branch, on_head) {
+    for branch in crate::git::repo::local_branches(&repo) {
+        if !should_scan_branch(&branch, on_head) {
             continue;
         }
         refs_scanned += 1;
-        let Ok(grep_out) = crate::git::git_command(root)
-            .args(["grep", "--threads=1", "-n", "-F", symbol_name, branch])
-            .output()
-        else {
-            continue;
-        };
-        if !grep_out.status.success() {
-            continue;
-        }
-        let text = String::from_utf8_lossy(&grep_out.stdout);
-        for line in text.lines().take(60) {
-            if let Some(hit) = parse_branch_grep_line(line, branch, symbol_name) {
-                hits.push(hit);
-            }
+        for hit in crate::git::repo::grep_rev(&repo, &branch, symbol_name, 60) {
+            hits.push(branch_hit_json(&branch, symbol_name, &hit));
         }
     }
     (refs_scanned, hits)
@@ -305,35 +278,18 @@ fn collect_head_refs(
 }
 
 pub(super) fn probe_name_history(root: &str, sym_name: &str, head_sha: &str) -> Option<Value> {
-    let out = crate::git::git_command(root)
-        .args([
-            "log",
-            "-S",
-            sym_name,
-            "-1",
-            "--format=%h%x09%ad%x09%s",
-            "--date=short",
-        ])
-        .output()
-        .ok()?;
-    if out.status.success() {
-        let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if !text.is_empty() {
-            let mut parts = text.splitn(3, '\t');
-            let sha = parts.next().unwrap_or("").to_string();
-            let date = parts.next().unwrap_or("").to_string();
-            let subject = parts.next().unwrap_or("").to_string();
-            return Some(json!({
-                "probed": 1,
-                "head": head_sha,
-                "fate": {
-                    "v": "removed",
-                    "commit": sha,
-                    "date": date,
-                    "subject": subject
-                }
-            }));
-        }
+    let repo = crate::git::repo::discover(root)?;
+    if let Some(commit) = crate::git::repo::last_count_change(&repo, sym_name) {
+        return Some(json!({
+            "probed": 1,
+            "head": head_sha,
+            "fate": {
+                "v": "removed",
+                "commit": commit.short_id,
+                "date": commit.date,
+                "subject": commit.subject
+            }
+        }));
     }
     Some(json!({
         "probed": 1,
@@ -541,29 +497,17 @@ pub fn call_whereis(
     })
 }
 
-pub fn count_rev_list(root: &str, base: &str, branch: &str) -> u64 {
-    crate::git::git_command(root)
-        .args(["rev-list", "--count", &format!("{base}..{branch}")])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok())
-        .unwrap_or(0)
-}
-
-pub fn inspect_branch_stray(root: &str, branch: &str, head_ref: &str) -> Option<(String, Value)> {
+pub fn inspect_branch_stray(
+    repo: &gix::Repository,
+    branch: &str,
+    head_ref: &str,
+) -> Option<(String, Value)> {
     if branch.is_empty() || branch == "HEAD" || branch == head_ref {
         return None;
     }
-    let mb = crate::git::git_command(root)
-        .args(["merge-base", "HEAD", branch])
-        .output()
-        .ok()?;
-    if !mb.status.success() {
+    let Some((short_base, unmerged)) = crate::git::repo::unmerged_commits(repo, branch) else {
         return Some(("unknown".to_string(), json!({})));
-    }
-    let base = String::from_utf8_lossy(&mb.stdout).trim().to_string();
-    let short_base = base[..9.min(base.len())].to_string();
-    let unmerged = count_rev_list(root, &short_base, branch);
+    };
     if unmerged > 0 {
         Some((
             "unmerged".to_string(),
@@ -581,26 +525,17 @@ pub fn inspect_branch_stray(root: &str, branch: &str, head_ref: &str) -> Option<
     }
 }
 
-fn gather_branch_stray(root: &str, head_ref: &str) -> (usize, usize, usize, usize, Vec<Value>) {
+fn gather_branch_stray(
+    repo: &gix::Repository,
+    head_ref: &str,
+) -> (usize, usize, usize, usize, Vec<Value>) {
     let mut refs_count = 0usize;
     let mut unmerged = 0usize;
     let mut merged = 0usize;
     let mut unknown = 0usize;
     let mut branches = Vec::new();
-
-    let Ok(out) = crate::git::git_command(root)
-        .args(["for-each-ref", "--format=%(refname:short)", "refs/heads/"])
-        .output()
-    else {
-        return (0, 0, 0, 0, Vec::new());
-    };
-    if !out.status.success() {
-        return (0, 0, 0, 0, Vec::new());
-    }
-
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let branch = line.trim();
-        if let Some((verdict, branch_val)) = inspect_branch_stray(root, branch, head_ref) {
+    for branch in crate::git::repo::local_branches(repo) {
+        if let Some((verdict, branch_val)) = inspect_branch_stray(repo, &branch, head_ref) {
             refs_count += 1;
             match verdict.as_str() {
                 "unmerged" => {
@@ -618,20 +553,19 @@ fn gather_branch_stray(root: &str, head_ref: &str) -> (usize, usize, usize, usiz
 /// Execute `stray_content` tool.
 pub fn call_stray_content(root: &str) -> Value {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let head_sha = crate::git::git_command(root)
-        .args(["rev-parse", "--short=9", "HEAD"])
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    let repo = crate::git::repo::discover(root);
+    let head_sha = repo
+        .as_ref()
+        .and_then(|r| r.head_id().ok())
+        .map(crate::git::repo::short_id)
         .unwrap_or_default();
-    let head_ref = crate::git::git_command(root)
-        .args(["rev-parse", "--abbrev-ref", "HEAD"])
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .unwrap_or_else(|| "HEAD".to_string());
-
-    let (refs_count, unmerged, merged, unknown, branches) = gather_branch_stray(root, &head_ref);
+    let head_ref = repo
+        .as_ref()
+        .map_or_else(|| "HEAD".to_string(), crate::git::repo::head_ref);
+    let (refs_count, unmerged, merged, unknown, branches) =
+        repo.as_ref().map_or((0, 0, 0, 0, Vec::new()), |r| {
+            gather_branch_stray(r, &head_ref)
+        });
     json!({
         "head": head_sha,
         "head_ref": head_ref,

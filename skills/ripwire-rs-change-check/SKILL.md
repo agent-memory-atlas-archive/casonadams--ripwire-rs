@@ -163,7 +163,7 @@ callers), the deep detail trims deepest-first, and `truncated=`/`est_tokens=` on
     it with `--whereis-full-text`, every line whole.
     A tree scan only finds what some ref *still carries*, so `hits="0"` cannot by itself tell a name this repo
     never had from one it deleted. Add `--with-history` and a `<fate>` row says which: `v="never"`, or
-    `v="removed" commit=… date=… p=…` naming the commit that took it out. One `git log` pass, memoized per
+    `v="removed" commit=… date=… p=…` naming the commit that took it out. One in-process history pass, memoized per
     (repo, HEAD sha) and shared with `--doc-drift --with-history`.
 
 9d. **"Of all my branches, which still hold REAL work, and in what order should I land them?"** — `ripwire-rs <dir> --stray-content --plan`. Composes 9b + 9 in one call: selects the refs 9b calls `v="unmerged"`,

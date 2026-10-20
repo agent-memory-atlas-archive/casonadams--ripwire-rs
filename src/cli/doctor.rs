@@ -13,7 +13,7 @@ const SNIFF_BYTES: u64 = 8000;
 const AUTO_CACHE_PREFIX: &str = "ripwire-rs-cache-";
 const AUTO_CACHE_SUFFIX: &str = ".json";
 
-const DOCTOR_LEGEND: &str = "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. checks=/passed=: rows emitted / rows with ok=1. n=: binary-path, grammars, cache-dir, git, tree-sitter, tracked-binaries, index-cache, git-config-trust, layout. self=/which=: this binary / the same name found on PATH; on_path=0 fails the row and hint= carries the export line; same_file=1: both resolve to one file. loaded=/expected=: distinct compiled-in grammars ABI-compatible with the linked tree-sitter / distinct compiled-in grammars; a shortfall fails the row. dir=: the temp directory holding auto-cache blobs (ripwire-rs-cache-*.json); unwritable fails the row. blobs=/bytes=: blob count / total size; blobs_floor=1 when the scan stopped at 4096. many=1: more than 50 blobs, informational. truncated=1: scan cut short (cache-dir: cap or I/O error; tracked-binaries: over 20000 tracked files, binaries= omitted). volatile=: attributes reading live machine state. git=0|1: a git executable is on PATH (diff, log, and branch verbs run it); 0 fails the row. repo=0|1: root is inside a git repository. history=0|1: HEAD resolves to a commit; head= its 9-hex short sha. core_abi=/cpp_grammar_abi=: tree-sitter language ABI / the C++ grammar ABI. languages=N: distinct compiled-in grammars. tracked=N: index entries under root. binaries=N: tracked files whose first 8000 bytes hold a NUL. non_git=1: no repository; the row passes unscanned. cache_version=: index cache format version. lean_path=: the auto-cache artifact for root. lean=: ok, absent, cache-version (other format), corrupt or unreadable; only the last two fail the row. fsmonitor=: core.fsmonitor: unset, builtin, off or hook (a command git runs). neutralised=1: a hook is configured but never runs, because every git call ripwire-rs makes passes -c core.fsmonitor=false. filter_drivers=N: filter drivers the repository's own config defines. state=/checked=/units=: C++ struct-layout cross-check; ripwire-rs registers no layout records. -->\n";
+const DOCTOR_LEGEND: &str = "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. checks=/passed=: rows emitted / rows with ok=1. n=: binary-path, grammars, cache-dir, git, tree-sitter, tracked-binaries, index-cache, git-config-trust, layout. self=/which=: this binary / the same name found on PATH; on_path=0 fails the row and hint= carries the export line; same_file=1: both resolve to one file. loaded=/expected=: distinct compiled-in grammars ABI-compatible with the linked tree-sitter / distinct compiled-in grammars; a shortfall fails the row. dir=: the temp directory holding auto-cache blobs (ripwire-rs-cache-*.json); unwritable fails the row. blobs=/bytes=: blob count / total size; blobs_floor=1 when the scan stopped at 4096. many=1: more than 50 blobs, informational. truncated=1: scan cut short (cache-dir: cap or I/O error; tracked-binaries: over 20000 tracked files, binaries= omitted). volatile=: attributes reading live machine state. repo=0|1: root is inside a git repository; git is read in-process, so no git executable is needed. history=0|1: HEAD resolves to a commit; head= its 9-hex short sha. core_abi=/cpp_grammar_abi=: tree-sitter language ABI / the C++ grammar ABI. languages=N: distinct compiled-in grammars. tracked=N: index entries under root. binaries=N: tracked files whose first 8000 bytes hold a NUL. non_git=1: no repository; the row passes unscanned. cache_version=: index cache format version. lean_path=: the auto-cache artifact for root. lean=: ok, absent, cache-version (other format), corrupt or unreadable; only the last two fail the row. fsmonitor=: core.fsmonitor: unset, builtin, off or hook (a command git runs). neutralised=1: a hook is configured but never runs, because ripwire-rs reads git in-process and never invokes git. filter_drivers=N: filter drivers the repository's own config defines. state=/checked=/units=: C++ struct-layout cross-check; ripwire-rs registers no layout records. -->\n";
 
 /// One `<c>` row of the doctor report: a named check, its verdict, and measured attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -279,24 +279,16 @@ fn check_cache_dir() -> DoctorCheck {
 }
 
 fn check_git(repo: Option<&gix::Repository>) -> DoctorCheck {
-    let git_bin = find_on_path("git").is_some();
     let head = repo
         .and_then(|r| r.head_commit().ok())
         .map(|c| c.id().to_string());
-    let check = DoctorCheck::new("git", git_bin)
-        .flag("git", git_bin)
+    let check = DoctorCheck::new("git", true)
         .flag("repo", repo.is_some())
         .flag("history", head.is_some());
     match head {
         Some(sha) => check.attr("head", &sha[..9.min(sha.len())]),
         None => check,
     }
-}
-
-fn root_prefix_in_workdir(root: &str, repo: &gix::Repository) -> Option<PathBuf> {
-    let workdir = std::fs::canonicalize(repo.workdir()?).ok()?;
-    let root = std::fs::canonicalize(root).ok()?;
-    root.strip_prefix(&workdir).ok().map(Path::to_path_buf)
 }
 
 fn sniff_binary(path: &Path) -> bool {
@@ -308,7 +300,7 @@ fn sniff_binary(path: &Path) -> bool {
 
 fn tracked_paths(root: &str, repo: &gix::Repository) -> Option<Vec<PathBuf>> {
     let workdir = repo.workdir()?;
-    let prefix = root_prefix_in_workdir(root, repo)?;
+    let prefix = crate::git::repo::workdir_prefix(repo, root)?;
     let index = repo.index_or_empty().ok()?;
     Some(
         index
@@ -319,7 +311,7 @@ fn tracked_paths(root: &str, repo: &gix::Repository) -> Option<Vec<PathBuf>> {
                     .ok()
                     .map(Cow::into_owned)
             })
-            .filter(|rel| rel.starts_with(&prefix))
+            .filter(|rel| rel.to_str().is_some_and(|r| r.starts_with(&prefix)))
             .map(|rel| workdir.join(rel))
             .collect(),
     )

@@ -1,7 +1,7 @@
 use ripwire_rs::git::history::{
     CommitInfo, SinceScope, civil_from_days, compute_file_churn, days_from_civil,
     filter_commits_by_scope, months_before_epoch, parse_since_scope, walk_repository_history,
-    walk_repository_history_gix,
+    walk_repository_history_scoped,
 };
 
 #[test]
@@ -113,11 +113,24 @@ fn test_walk_repository_history_nonexistent() {
 }
 
 #[test]
-fn test_in_process_history_diffing() {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let commits = walk_repository_history_gix(".", Some(now + 100_000)).unwrap();
-    assert!(!commits.is_empty());
+fn test_history_walk_is_newest_first_non_merge_with_exact_cutoff() {
+    let repo = gix::discover(".").unwrap();
+    let recent_tip = repo.head_commit().unwrap().time().unwrap().seconds - 30 * 86_400;
+    let commits = walk_repository_history_scoped(".", Some(recent_tip)).unwrap();
+    assert!(commits.windows(2).all(|w| w[0].timestamp >= w[1].timestamp));
+    assert!(commits.iter().all(|c| {
+        let id = gix::ObjectId::from_hex(c.id.as_bytes()).unwrap();
+        repo.find_commit(id).unwrap().parent_ids().count() <= 1
+    }));
+    let cutoff = commits[commits.len() / 2].timestamp;
+    let newer = walk_repository_history_scoped(".", Some(cutoff)).unwrap();
+    let expected: Vec<&str> = commits
+        .iter()
+        .filter(|c| c.timestamp >= cutoff)
+        .map(|c| c.id.as_str())
+        .collect();
+    assert_eq!(
+        newer.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+        expected
+    );
 }
