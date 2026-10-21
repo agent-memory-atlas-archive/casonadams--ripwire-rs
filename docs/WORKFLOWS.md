@@ -1,6 +1,6 @@
-# Real-World Workflows: When, Where, & Why to Use ripwire
+# Real-World Workflows: When, Where, & Why to Use ripwire-rs
 
-`ripwire` (`ripwire-rs`) provides static analysis, call graph navigation, and pre-commit verification gates. Rather than running commands in isolation, `ripwire-rs` is designed around 7 high-impact development and agentic workflows.
+`ripwire-rs` provides static analysis, call graph navigation, and pre-commit verification gates. Rather than running commands in isolation, `ripwire-rs` is designed around 7 high-impact development and agentic workflows.
 
 ---
 
@@ -11,20 +11,27 @@
 - Starting a new issue or feature request.
 - Feeding high-level, budget-bounded context to an AI coding agent without blowing prompt token limits.
 
-### Commands
-```bash
-# Architecture map of top 200 ranked symbols by Personalized PageRank
-ripwire-rs . --top-k=200
+### Core Operations
 
-# File-by-file structural inventory showing top 3 symbols per file
-ripwire-rs . --tree
+- **Global Architecture Map**: Retrieve the top 200 globally central symbols ranked by Personalized PageRank to understand the project backbone.
+  ```bash
+  ripwire-rs . --top-k=200
+  ```
 
-# Task-lens relevance ranking: retrieves ranked declarations relevant to a goal
-ripwire-rs . --for="implement user authentication"
+- **File-by-File Inventory**: Compact structural tree displaying the top 3 symbols per file under a strict token budget.
+  ```bash
+  ripwire-rs . --tree
+  ```
 
-# Export interactive, self-contained SVG/HTML call graph to open in browser
-ripwire-rs . --html=graph.html --color-by=community
-```
+- **Goal-Directed Task Scoping**: Retrieve declarations and signatures semantically and structurally relevant to a prompt or goal.
+  ```bash
+  ripwire-rs . --for="implement user authentication"
+  ```
+
+- **Interactive Visual Graph**: Export an in-browser, self-contained SVG/HTML call graph colorized by Louvain community.
+  ```bash
+  ripwire-rs . --html=graph.html --color-by=community
+  ```
 
 ### Benefits
 - **Zero Hallucinated Dependencies**: Produces an in-context AST schema dictionary teaching agents the meaning of minified attributes (`t`, `n`, `sc`, `k`, `c`).
@@ -41,34 +48,41 @@ ripwire-rs . --html=graph.html --color-by=community
 - Verifying the blast radius of modifying a core data model or interface.
 - Auditing database migration impact before altering SQL schemas or renaming tables.
 
-### Commands
-```bash
-# Query direct 1-hop callers that depend on a symbol
-ripwire-rs . --callers="Interner::len"
+### Core Operations
 
-# Query outgoing dependencies called by a function
-ripwire-rs . --callees="ingest_files"
+- **1-Hop Callers & Outgoing Callees**: Query direct incoming callers or outgoing dependencies for a specific symbol.
+  ```bash
+  ripwire-rs . --callers="Interner::len"
+  ripwire-rs . --callees="ingest_files"
+  ```
 
-# Transitive reachability graph: full blast radius across the whole codebase
-ripwire-rs . --impact="Interner"
+- **Transitive Blast Radius**: Trace full transitive reachability across downstream callers (up to 16 hops deep) ranked by PageRank.
+  ```bash
+  ripwire-rs . --impact="Interner"
+  ```
 
+- **Local Ego-Graph Neighborhood**: Extract the local call graph around a symbol with custom depth and fanout limits.
+  ```bash
+  ripwire-rs . --around="Interner::new" --around-depth=2 --around-fanout=16
+  ```
 
-# Cross-language embedded SQL table lineage (zero extra flags required)
-ripwire-rs . --callers="user_accounts"
-ripwire-rs . --uses="user_accounts"
-ripwire-rs . --impact="user_accounts"
-# Extract ego-graph around a symbol (depth 1, fanout 32)
-ripwire-rs . --around="Interner::new" --around-depth=2 --around-fanout=16
+- **Shortest Paths & Connecting Subgraphs**: Find the shortest directed call chain between two functions, or compute the minimal connecting subgraph spanning up to 16 symbols.
+  ```bash
+  ripwire-rs . --path-between="main:execute"
+  ripwire-rs . --connect="main,resolve_symbol,emit_xml"
+  ```
 
-# Shortest directed call path between two symbols
-ripwire-rs . --path-between="main:execute"
+- **Cross-Language Embedded SQL Table Lineage**: Zero-flag table dependency tracing across application code and SQL schemas.
+  ```bash
+  ripwire-rs . --callers="user_accounts"
+  ripwire-rs . --uses="user_accounts"
+  ripwire-rs . --impact="user_accounts"
+  ```
 
-# Minimal connecting subgraph relating 2..16 symbols
-ripwire-rs . --connect="main,resolve_symbol,emit_xml"
-
-# Intra-procedural def-use variable dataflow slicing (ARISE)
-ripwire-rs . --slice="compute:x" --slice-flow=both
-```
+- **Intra-Procedural Dataflow Slicing (ARISE)**: Trace variable def-use chains, mutation sites, and lifetimes inside a function body.
+  ```bash
+  ripwire-rs . --slice="compute:x" --slice-flow=both
+  ```
 
 ### Benefits
 - **Full Transitive Impact**: Identifies downstream callers up to 16 hops deep ranked by Personalized PageRank.
@@ -86,38 +100,41 @@ ripwire-rs . --slice="compute:x" --slice-flow=both
 - Before running `git push` or opening a pull request.
 - In automated CI/CD PR verification workflows.
 
-### Commands
-```bash
-# Verify caller compatibility after modifying a symbol contract
-ripwire-rs . --edit-check="symbol_name"
+### Core Operations
 
-# Transitive reachability mapping to affected test suites
-ripwire-rs . --affected="src/lib.rs"
+- **Caller Contract Compatibility**: Verify that modified signatures, parameter counts, or visibility did not break 1-hop callers before committing.
+  ```bash
+  ripwire-rs . --edit-check="symbol_name"
+  ripwire-rs . --safe-delete="Interner::len"
+  ```
 
-# Pre-PR gate: names tests to run and untested blast radius (exits with code 4)
-ripwire-rs . --test-gate
+- **Situational Awareness & Targeted Tests**: Map git diff to exact reaching tests and uncover historically coupled co-change files.
+  ```bash
+  ripwire-rs . --situ
+  ripwire-rs . --affected="src/lib.rs"
+  ```
 
-# Situational awareness report for working tree diff: blast radius, tests, co-change
-ripwire-rs . --situ
+- **Untested Blast Radius Gate**: Enforce that changes touch only test-covered code paths (exits code 4 on violation).
+  ```bash
+  ripwire-rs . --test-gate
+  ```
 
-# Assess whether a symbol can be safely deleted without breaking callers
-ripwire-rs . --safe-delete="Interner::len"
+- **Quality Regression Delta Gate**: Prevent regressions in cognitive complexity, nesting depth, or AST clones vs base branch (exits non-zero on regressions).
+  ```bash
+  ripwire-rs . --quality-delta
+  ```
 
-# Measure code quality regressions against git HEAD across 10 facets (exits with code 2)
-ripwire-rs . --quality-delta
+- **Diff Re-Ranking & Integration Seams**: Re-rank the architecture map toward dirty files, or discover untested cross-module integration seams.
+  ```bash
+  ripwire-rs . --map-diff --top-k=30
+  ripwire-rs . --seams
+  ```
 
-# Re-rank architecture map toward git-changed files so active work floats up
-ripwire-rs . --map-diff --top-k=30
-
-# Discover untested cross-module call boundaries (integration seams)
-ripwire-rs . --seams
-
-# Generate composite PR review context bundle vs base branch
-ripwire-rs . --pr-context=main
-
-# Predict symbol merge conflicts across concurrent divergent branches
-ripwire-rs . --merge-scout="branch-a,branch-b"
-```
+- **PR Review Bundle & Merge Conflict Scouting**: Generate a composite PR review context bundle vs base branch, or predict semantic conflicts between divergent branches.
+  ```bash
+  ripwire-rs . --pr-context=main
+  ripwire-rs . --merge-scout="branch-a,branch-b"
+  ```
 
 ### Benefits
 - **Surgical Test Execution**: Identifies the exact test files that transitively reach your changes, letting you run a 5-second test subset instead of a 20-minute test suite.
@@ -134,45 +151,40 @@ ripwire-rs . --merge-scout="branch-a,branch-b"
 - Architectural reviews and modularity health checks.
 - Eliminating dead weight and duplicate logic.
 
-### Commands
-```bash
-# Detect internal functions with zero incoming callers across the repository
-ripwire-rs . --dead-code
+### Core Operations
 
-# Rank repository files by maintenance risk (churn * cognitive complexity)
-ripwire-rs . --hotspots
+- **Dead Code Elimination**: Identify internal functions across the codebase with zero incoming callers.
+  ```bash
+  ripwire-rs . --dead-code
+  ```
 
-# Detect AST code clones and near-miss duplicates (Type-1, Type-2, Type-3)
-ripwire-rs . --clones --min-tokens=40
+- **Maintenance Risk Hotspots**: Rank files where high git churn intersects high cognitive complexity, or sort functions by size.
+  ```bash
+  ripwire-rs . --hotspots
+  ripwire-rs . --biggest-first
+  ```
 
-# Mine historical Git co-change coupling to identify hidden file coupling
-ripwire-rs . --cochange
+- **AST Code Clones & Linter**: Detect exact and near-miss duplicate code blocks (Type 1-3) and scan for syntax/complexity smells.
+  ```bash
+  ripwire-rs . --clones --min-tokens=40
+  ripwire-rs . --lint
+  ripwire-rs . --lint-catalog
+  ```
 
-# Partition call graph into cohesive modules via Louvain community detection
-ripwire-rs . --communities
+- **Modularity & Layering Rules**: Partition the call graph into Louvain communities, inspect hierarchical clusters, or enforce architectural boundaries.
+  ```bash
+  ripwire-rs . --communities
+  ripwire-rs . --zoom
+  ripwire-rs . --arch=rules.txt
+  ripwire-rs . --mermaid
+  ```
 
-# Hierarchical Louvain community zoom clustering
-ripwire-rs . --zoom
-
-# Enforce architectural layering constraints from a rules file (exits 2 on violation)
-ripwire-rs . --arch=rules.txt
-
-# Export Mermaid flowchart of module dependency topology
-ripwire-rs . --mermaid
-
-# Discover symbols referenced in code but never defined (stdlib & external packages)
-ripwire-rs . --external-surface
-
-# Rank functions by readability volume and size, largest first
-ripwire-rs . --biggest-first
-
-# Detect functions accessing reachable global / file-static mutable state
-ripwire-rs . --nonlocal-state
-
-# Scan codebase for AST code smells (complexity spikes, deep nesting, dead code)
-ripwire-rs . --lint
-ripwire-rs . --lint-catalog
-```
+- **Coupling & State Access**: Audit hidden git co-change coupling, inspect external package dependencies, and detect mutable global/static state access.
+  ```bash
+  ripwire-rs . --cochange
+  ripwire-rs . --external-surface
+  ripwire-rs . --nonlocal-state
+  ```
 
 ### Benefits
 - **Data-Driven Refactoring**: Prioritizes refactoring on code hotspots where maintenance pain and churn intersect with high complexity.
@@ -188,51 +200,33 @@ ripwire-rs . --lint-catalog
 - Debugging stack traces and compiler error messages.
 - High-efficiency agent tooling over the Model Context Protocol (MCP).
 
-### Commands
-```bash
-# Expand full source body of symbols and callee signatures in CDATA XML
-ripwire-rs . --expand="Symbol::new"
+### Core Operations
 
-# Outline control-flow skeletons of symbols (loops, branches, declarations)
-ripwire-rs . --outline="Interner::intern"
+- **Symbol Implementation Bodies**: Extract full symbol bodies and callee signatures in CDATA XML blocks, or skeletonize control flow.
+  ```bash
+  ripwire-rs . --expand="Symbol::new"
+  ripwire-rs . --outline="Interner::intern"
+  ripwire-rs . --pack-top-n=5
+  ripwire-rs . --at="src/main.rs:25"
+  ```
 
-# Pack source bodies of the top N highest PageRank symbols
-ripwire-rs . --pack-top-n=5
+- **Verification, Queries & Batching**: Prove relationship claims, query call-graphs with DSL, map compiler traces, or run up to 16 heterogeneous queries in a single turn.
+  ```bash
+  ripwire-rs . --verify="calls(main,run_cli)"
+  ripwire-rs . --graph-query="callers(main)"
+  ripwire-rs . --from-trace=error.log
+  ripwire-rs . --batch=queries.txt
+  ripwire-rs . --callers="Interner::len" --json
+  ```
 
-# Resolve innermost symbol chain enclosing a specific FILE:LINE
-ripwire-rs . --at="src/main.rs:25"
-
-# Formally verify relationship claim between two symbols (calls, uses, defines)
-ripwire-rs . --verify="calls(main,run_cli)"
-
-# Single-call orientation task bundle tailored to a task description
-ripwire-rs . --pack-task="search"
-
-# Functional graph query DSL
-ripwire-rs . --graph-query="callers(main)"
-
-# Map compiler error / stack trace frames directly onto indexed symbols
-ripwire-rs . --from-trace=error.log
-
-# Execute up to 16 heterogeneous sub-queries in a single turn
-ripwire-rs . --batch=queries.txt
-
-# Structured JSON output for navigation queries
-ripwire-rs . --callers="Interner::len" --json
-
-# Engine self-diagnostics and repository health check
-ripwire-rs . --doctor
-
-# Pinned session gotchas and notes
-ripwire-rs . --notes
-ripwire-rs . --note-add="symbol: gotcha note"
-
-# Launch native stdio Model Context Protocol (MCP) server for coding agents
-ripwire-rs mcp
-
-# Install 17 pre-packaged ripwire-rs agent skills to ~/.agents/skills (or custom path)
-ripwire-rs --add-skills
-```
+- **Diagnostics, Notes & Agent Protocols**: Run engine health checks, persist symbol notes across sessions, run the stdio MCP server, or install agent skills.
+  ```bash
+  ripwire-rs . --doctor
+  ripwire-rs . --notes
+  ripwire-rs . --note-add="symbol: gotcha note"
+  ripwire-rs mcp
+  ripwire-rs --add-skills
+  ```
 
 ### Benefits
 - **Precision Context Bundles**: Extracts only relevant symbol bodies into CDATA blocks, conserving prompt token budgets.
@@ -247,26 +241,48 @@ ripwire-rs --add-skills
 ### When & Where
 - Automated GitHub Actions (`.github/workflows/`), GitLab CI, or Jenkins pipelines.
 - Enforcing pull request quality standards and preventing regressions before merge.
-- Validating 1:1 behavioral parity against upstream specifications.
 
-### Commands & CI Pipeline Recipe
-```bash
-# PR Gate: names tests to run and untested blast radius (exits 4 on violation)
-ripwire-rs . --test-gate
+### Core PR Verification Gates
 
-# Quality Regression Gate: checks quality regressions against base branch / HEAD (exits 2 on violation)
-ripwire-rs . --quality-delta
+The 4 automated gates designed to run in continuous integration pipelines:
 
-# Upstream Parity Validation: verifies 1:1 input/output equivalence across 67 commands
-make validate REPO=.
+- **PR Situational Awareness**: Generates markdown summary of blast radius, reaching tests, and co-change files for the PR review UI.
+  ```bash
+  ripwire-rs . --situ
+  ```
 
-# Performance & Resource Benchmark: benchmarks speed and peak memory against upstream ripwire
-make bench REPO=.
+- **Architectural Boundary Gate**: Enforces module layering rules from `rules.txt` (exits code 2 on violation).
+  ```bash
+  ripwire-rs . --arch=rules.txt
+  ```
 
-# In-Memory Cargo Pipeline Benchmark: runs statistical micro-benchmarks (cargo bench)
-make bench-pipeline
+- **Test Reachability Gate**: Verifies that modified paths have test coverage; blocks merge if changes leave an untested blast radius (exits code 4).
+  ```bash
+  ripwire-rs . --test-gate
+  ```
 
-#### GitHub Actions Workflow Example (`.github/workflows/ripwire-gate.yml`)
+- **Quality Delta Regression Gate**: Blocks PR merge if cognitive complexity, nesting depth, or AST clones regress vs base branch (exits non-zero).
+  ```bash
+  ripwire-rs . --quality-delta
+  ```
+
+### What is `.github/workflows/ripwire-rs-gate.yml`?
+
+The `ripwire-rs-gate.yml` file is a continuous integration (CI) workflow that automatically validates every Pull Request against deterministic static analysis gates before merging into `main` or `master`. It provides 1:1 remote parity with the local pre-commit checks enforced in `AGENTS.md`.
+
+### When to Use It
+
+- **Governing AI Coding Agents**: When AI coding agents (Omp, Claude Code, Cursor, Windsurf, Copilot) generate code and open PRs, this gate blocks untested code paths, broken caller contracts, or complexity spikes automatically.
+- **Preventing Architectural Rot**: When teams want automated enforcement of module boundaries (`rules.txt`), zero quality regressions (`--quality-delta`), and test coverage reachability (`--test-gate`).
+- **Automated PR Review Summaries**: When you want blast radius, affected test files, and historical co-change files rendered directly into GitHub's `$GITHUB_STEP_SUMMARY` review UI on every push.
+
+### How to Create & Configure It
+
+1. **Create the file**: Add `.github/workflows/ripwire-rs-gate.yml` to your repository.
+2. **Install `ripwire-rs`**: Install the CLI in your CI runner via `cargo install ripwire-rs` or `cargo binstall ripwire-rs`.
+3. **Adapt for your language stack**: In Step 5 of the workflow below, replace `cargo test --all` with your project's test runner (`npm test`, `pytest`, `go test ./...`, etc.).
+
+### Production GitHub Actions Workflow (`.github/workflows/ripwire-rs-gate.yml`)
 ```yaml
 name: ripwire-rs PR Safety Gates
 on:
@@ -274,13 +290,11 @@ on:
     branches: [main, master]
 
 jobs:
-  ripwire-gate:
+  ripwire-rs-gate:
     name: Architecture, Quality & Safety Gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # Full git history for diff and quality delta comparison
 
       - name: Install ripwire-rs
         run: cargo install ripwire-rs
@@ -313,6 +327,21 @@ jobs:
         run: cargo test --all
 ```
 
+### Contributor Benchmarks & Parity Testing (Optional)
+
+For contributors developing `ripwire-rs` itself, the repository provides Makefile targets to benchmark performance and verify upstream parity:
+
+```bash
+# Verify 1:1 input/output equivalence across upstream test matrices
+make validate REPO=.
+
+# Benchmark execution speed and peak memory against upstream C++ ripwire
+make bench REPO=.
+
+# Run statistical micro-benchmarks across in-memory indexing pipelines
+make bench-pipeline
+```
+
 ### Benefits
 - **Automated Merge Blocking**: Fails PR jobs automatically (exit code 4 on `--test-gate` or exit code 2 on `--quality-delta`) before untested changes or architectural rot merge into production branches.
 - **Microsecond Gate Execution**: Executes static analysis and graph traversals in milliseconds, eliminating slow CI runner bottlenecks.
@@ -328,31 +357,36 @@ jobs:
 - Predicting symbol-level merge conflicts, same-file risks, and contract-touch dependencies *before* writing code or before landing concurrent branches.
 - Handing off in-flight work and institutional gotcha notes across agent sessions.
 
-### Commands
-```bash
-# Carve a task bundle into 1 shared core + N minimally-overlapping community slices (N=2..16)
-ripwire-rs . --pack-task="refactor serialization" --partition=4
+### Core Operations
 
-# Pre-hoc worktree lane planner: predict pairwise collisions, contract touches, and landing order (1-line JSON)
-ripwire-rs . --plan-lanes=3 --task="refactor serialization"
+- **Louvain Community Task Slicing**: Carve a goal into 1 shared core plus $N$ disjoint subagent bundles (N=2..16) along call-graph communities.
+  ```bash
+  ripwire-rs . --pack-task="refactor serialization" --partition=4
+  ```
 
-# Explicit per-lane brief file: one non-blank task line per lane, ranked independently
-ripwire-rs . --plan-lanes --brief=lanes.txt
+- **Pre-Hoc Lane Conflict Planning**: Predict pairwise symbol collisions, same-file risks, and contract-touch dependencies across worktree lanes before writing code.
+  ```bash
+  ripwire-rs . --plan-lanes=3 --task="refactor serialization"
+  ripwire-rs . --plan-lanes --brief=lanes.txt
+  ```
 
-# Post-hoc cross-branch conflict oracle and fewest-conflicts-first landing order
-ripwire-rs . --merge-scout="feat/auth,feat/billing"
+- **Cross-Branch Merge Scouting**: Scout semantic collisions and compute optimal fewest-conflicts-first landing order across concurrent branches.
+  ```bash
+  ripwire-rs . --merge-scout="feat/auth,feat/billing"
+  ```
 
-# Deterministic intent router: recommend one ripwire-rs verb with score/margin/repo facts (or abstain)
-ripwire-rs . --help-task="plan the new feature for authentication"
+- **Epistemic Intent Routing & Verification**: Recommend the optimal ripwire-rs verb based on repository evidence, or prove 6 closed relation shapes.
+  ```bash
+  ripwire-rs . --help-task="plan the new feature for authentication"
+  ripwire-rs . --verify="calls(main,run_cli)"
+  ```
 
-# Closed-world 6-shape relationship verifier (calls, uses, unused, contains, defines, reaches)
-ripwire-rs . --verify="calls(main,run_cli)"
-
-# Session handoff bundle (verified changed symbols + co-change partners + doc recall) and persistent symbol notes
-ripwire-rs . --handoff
-ripwire-rs . --note-add="Interner: Spur IDs are 1-based; never index directly without resolve()"
-ripwire-rs . --notes
-```
+- **Session Handoff & Symbol Notes**: Package verified changes and co-change partners for subsequent agents, or persist symbol-level gotchas.
+  ```bash
+  ripwire-rs . --handoff
+  ripwire-rs . --note-add="Interner: Spur IDs are 1-based; never index directly without resolve()"
+  ripwire-rs . --notes
+  ```
 
 ### Benefits
 - **Zero Redundant Orientation**: `--pack-task --partition=N` carves the task surface along Louvain call-graph communities (with file-level fallback for edgeless data types and median splitting when $K < N$), emitting a `<ctx-partitions>` bundle with a shared core plus $N$ disjoint subagent `<bundle>` slices and Jaccard overlap telemetry (`overlap_mean`, `overlap_max`, `core_overlap`).

@@ -1,6 +1,6 @@
 # Architecture
 
-`ripwire` is a deterministic static analysis engine and agent context router implemented in pure Rust.
+`ripwire-rs` is a deterministic static analysis engine and agent context router implemented in pure Rust.
 
 ## Pipeline Overview
 

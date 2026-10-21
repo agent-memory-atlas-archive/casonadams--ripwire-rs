@@ -1,6 +1,6 @@
 # Algorithms & Academic Lenses
 
-`ripwire` implements 11 academic and algorithmic lenses over codebase graphs and behavioral histories.
+`ripwire-rs` implements 11 academic and algorithmic lenses over codebase graphs and behavioral histories.
 
 ## 1. Personalized PageRank
 - **Reference**: [Wikipedia: PageRank](https://en.wikipedia.org/wiki/PageRank)

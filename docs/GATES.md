@@ -1,6 +1,6 @@
 # Pre-Commit Safety Gates
 
-`ripwire` includes zero-configuration verification gates for pre-commit hooks, developer workflows, and CI pipelines.
+`ripwire-rs` includes zero-configuration verification gates for pre-commit hooks, developer workflows, and CI pipelines.
 
 ---
 

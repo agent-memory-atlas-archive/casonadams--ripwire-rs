@@ -1,6 +1,6 @@
 # Model Context Protocol (MCP)
 
-`ripwire` provides a native stdio Model Context Protocol (MCP) server conforming to JSON-RPC 2.0.
+`ripwire-rs` provides a native stdio Model Context Protocol (MCP) server conforming to JSON-RPC 2.0.
 
 ## Client Registration
 

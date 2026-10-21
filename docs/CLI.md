@@ -1,6 +1,6 @@
 # CLI Reference
 
-`ripwire` provides both workflow-categorized subcommands and backward-compatible top-level flags.
+`ripwire-rs` provides both workflow-categorized subcommands and backward-compatible top-level flags.
 
 ## Basic Usage
 
@@ -347,7 +347,7 @@ ripwire-rs . --refetch="h:abc123"
 ripwire-rs https://github.com/org/repo --report
 ripwire-rs https://github.com/org/repo --refetch --report
 
-# Recommend the best ripwire verb for a natural-language task
+# Recommend the best ripwire-rs verb for a natural-language task
 ripwire-rs . --help-task="find callers of function and test blast radius"
 
 # Crawler filtering: exclude patterns, ignore gitignore, ignore test files, file size limits

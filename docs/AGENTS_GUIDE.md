@@ -158,7 +158,7 @@ flowchart LR
 
 The verification gates enforced in `AGENTS.md` are designed for 1:1 parity with your remote CI pipeline:
 
-| Local Agent Gate (`AGENTS.md`) | Remote CI Gate (`ripwire-gate.yml`) | Automated Guarantee |
+| Local Agent Gate (`AGENTS.md`) | Remote CI Gate (`ripwire-rs-gate.yml`) | Automated Guarantee |
 | :--- | :--- | :--- |
 | `ripwire-rs . --edit-check="<sym>"` | Pre-commit / PR Check | Verifies zero broken 1-hop caller contracts. |
 | `ripwire-rs . --situ` | `$GITHUB_STEP_SUMMARY` | Emits blast radius, tests to run, and co-change directly to PR review UI. |
