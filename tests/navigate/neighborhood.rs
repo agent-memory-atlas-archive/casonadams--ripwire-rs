@@ -114,3 +114,54 @@ fn test_navigate_1hop_and_impact() {
     assert!(same_file_str.contains(" importers=\"0\""));
     assert!(!same_file_str.contains("<f via="));
 }
+
+#[test]
+fn test_callers_page_advances_and_points_at_uses() {
+    use ripwire_rs::navigate::{NavItemsReport, SymbolNavInfo};
+    use ripwire_rs::serialize::{PageRequest, XmlReport};
+    let callers: Vec<SymbolNavInfo> = (0..45)
+        .map(|i| SymbolNavInfo {
+            id: i,
+            name: format!("caller_{i}"),
+            path: "src/lib.rs".into(),
+            line: i + 1,
+            kind: "fn",
+            rank: 0.0,
+            weight: 1.0,
+            tested: false,
+            sites: Vec::new(),
+        })
+        .collect();
+    let render = |offset| {
+        let mut out = Vec::new();
+        NavItemsReport {
+            tag: "callers",
+            root: ".",
+            of: "target",
+            defs: 2,
+            items: &callers,
+            gauge_attrs: GraphGauges::ZERO_XML_ATTRS,
+            page: PageRequest {
+                limit: None,
+                offset,
+            },
+        }
+        .render_envelope(&mut out)
+        .unwrap();
+        String::from_utf8(out).unwrap()
+    };
+    let first = render(None);
+    assert!(first.contains(" defs=\"2\" count=\"45\""), "{first}");
+    assert!(
+        first.contains(" next=\"--callers=target --offset=40\" uses_next=\"--uses=target\""),
+        "{first}"
+    );
+    assert_eq!(first.matches("<s t=").count(), 40);
+    let last = render(Some(40));
+    assert_eq!(last.matches("<s t=").count(), 5);
+    assert!(
+        last.contains("n=\"caller_40\"") && !last.contains("n=\"caller_39\""),
+        "{last}"
+    );
+    assert!(last.contains(" next=\"--uses=target\""), "{last}");
+}

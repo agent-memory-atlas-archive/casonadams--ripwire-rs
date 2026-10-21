@@ -4,11 +4,6 @@ use crate::graph::Graph;
 use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};
 
-#[inline]
-fn symbol_spans_line(sym: &crate::domain::Symbol, line_num: u32) -> bool {
-    sym.line <= line_num && (sym.line + sym.loc) >= line_num
-}
-
 pub fn resolve_symbol_chain_at<'a>(
     file_spec: &str,
     line_num: u32,
@@ -22,7 +17,7 @@ pub fn resolve_symbol_chain_at<'a>(
             let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
             sym.kind != crate::domain::SymKind::ModuleScope
                 && (p == file_spec || p.ends_with(file_spec))
-                && symbol_spans_line(sym, line_num)
+                && sym.spans_line(line_num)
         })
         .collect();
     chain.sort_by_key(|s| (s.line, std::cmp::Reverse(s.loc)));

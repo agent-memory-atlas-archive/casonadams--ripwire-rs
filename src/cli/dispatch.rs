@@ -73,6 +73,7 @@ pub fn execute_navigate(args: &NavigateArgs) -> io::Result<()> {
         graph: &graph,
         ranks: &pr.ranks,
         interner: &interner,
+        page: crate::serialize::PageRequest::default(),
     };
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
@@ -236,6 +237,10 @@ pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             graph: &graph,
             ranks: &pr.ranks,
             interner: &interner,
+            page: crate::serialize::PageRequest {
+                limit: cli.modifiers.limit,
+                offset: cli.modifiers.offset,
+            },
         };
         execute_nav_symbol_query_in_root(root, sym, mode, &nav_ctx, &mut stdout)?;
         stdout.flush()

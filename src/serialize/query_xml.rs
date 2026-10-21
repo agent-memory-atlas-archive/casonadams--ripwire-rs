@@ -270,7 +270,7 @@ fn write_for_hops_section<W: Write>(out: &mut W, val: &Value) -> io::Result<()> 
 }
 
 /// Serialize `grep` search result to Ripwire XML.
-type GrepEncMap = std::collections::BTreeMap<String, (u64, u64)>;
+type GrepEncMap = std::collections::BTreeMap<String, (u64, u64, bool)>;
 
 fn collect_grep_summary(
     hits: Option<&Vec<Value>>,
@@ -295,7 +295,8 @@ fn collect_grep_summary(
         if let Some(e) = h.opt_str("enclosing").filter(|s| !s.is_empty()) {
             let callers = h.u64_or("enclosing_callers", 0);
             let cx = h.u64_or("enclosing_cx", 1);
-            enc_map.entry(e.to_string()).or_insert((callers, cx));
+            let floor = h["enclosing_floor"].as_bool().unwrap_or(false);
+            enc_map.entry(e.to_string()).or_insert((callers, cx, floor));
         }
     }
     (files_set, enc_map, first_loc)
@@ -317,29 +318,31 @@ fn write_grep_context_lines<W: Write>(
 }
 
 fn write_grep_hit_row<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
-    let file = h.str_any(&["file", "path"], "src/lib.rs").xml_escaped();
+    let file = h.str_any(&["file", "path"], "").xml_escaped();
     let line = h.u64_or("line", 1);
-    let enc = h.str_or("enclosing", "main").xml_escaped();
+    let enc = h
+        .opt_str("enclosing")
+        .filter(|e| !e.is_empty())
+        .map_or_else(String::new, |e| format!(" in=\"{}\"", e.xml_escaped()));
     let text = h.str_or("text", "");
     write!(out, "  <f p=\"{file}\">")?;
     write_grep_context_lines(out, "b", h["before"].as_array())?;
-    write!(
-        out,
-        "<hit l=\"{line}\" in=\"{enc}\"><![CDATA[{text}]]></hit>"
-    )?;
+    write!(out, "<hit l=\"{line}\"{enc}><![CDATA[{text}]]></hit>")?;
     write_grep_context_lines(out, "a", h["after"].as_array())?;
     writeln!(out, "</f>")
 }
 
 fn write_grep_enc_rows<W: Write>(out: &mut W, enc_map: &GrepEncMap) -> io::Result<()> {
-    if enc_map.is_empty() {
-        return writeln!(out, "  <enc n=\"main\" callers=\"0\" cx=\"1\"/>");
-    }
-    for (e, &(callers, cx)) in enc_map {
+    for (e, &(callers, cx, floor)) in enc_map {
+        let name = e.xml_escaped();
+        let floor_attrs = if floor {
+            format!(" callers_floor=\"1\" floor_next=\"--uses={name}\"")
+        } else {
+            String::new()
+        };
         writeln!(
             out,
-            "  <enc n=\"{}\" callers=\"{callers}\" cx=\"{cx}\"/>",
-            e.xml_escaped()
+            "  <enc n=\"{name}\" callers=\"{callers}\"{floor_attrs} cx=\"{cx}\"/>"
         )?;
     }
     Ok(())

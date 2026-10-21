@@ -4,17 +4,20 @@ use crate::serialize::XmlEscapeExt;
 use std::collections::BTreeSet;
 use std::io::{self, Write};
 
-fn format_nav_page_attrs(_shown: usize, total: usize) -> String {
-    crate::serialize::PageWindow::compute(total, 40, None, None).xml_attrs()
-}
-
 pub struct NavItemsReport<'a> {
     pub tag: &'static str,
     pub root: &'a str,
     pub of: &'a str,
+    pub defs: usize,
     pub items: &'a [SymbolNavInfo],
-    pub next_flag: &'static str,
     pub gauge_attrs: &'a str,
+    pub page: crate::serialize::PageRequest,
+}
+
+impl NavItemsReport<'_> {
+    fn window(&self) -> crate::serialize::PageWindow {
+        self.page.window(self.items.len(), 40)
+    }
 }
 
 impl crate::serialize::XmlReport for NavItemsReport<'_> {
@@ -40,28 +43,44 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let count = self.items.len();
-        let shown = count.min(40);
-        let page_attrs = format_nav_page_attrs(shown, count);
+        let win = self.window();
         let hop_tested = self
             .items
             .iter()
             .filter(|it| it.tested || crate::gate::affected::is_test_path(&it.path))
             .count();
         let hop_untested = count.saturating_sub(hop_tested);
+        let of = self.of.xml_escaped();
+        let next = match (win.has_more, self.tag) {
+            (true, tag) => format!(
+                " next=\"--{tag}={of} --offset={}\"{}",
+                win.next_offset,
+                if tag == "callers" {
+                    format!(" uses_next=\"--uses={of}\"")
+                } else {
+                    String::new()
+                }
+            ),
+            (false, "callers") => format!(" next=\"--uses={of}\""),
+            (false, _) => format!(" next=\"--expand={of}\""),
+        };
         write!(
             out,
-            " of=\"{}\" defs=\"1\" count=\"{count}\" root=\"{}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{page_attrs} {} next=\"{}={}\"",
-            self.of, self.root, self.gauge_attrs, self.next_flag, self.of
+            " of=\"{of}\" defs=\"{}\" count=\"{count}\" root=\"{}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{} {}{next}",
+            self.defs,
+            self.root.xml_escaped(),
+            win.xml_attrs(),
+            self.gauge_attrs
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let shown = self.items.len().min(40);
+        let win = self.window();
         let via_attr = if self.tag == "callees" {
             " via=\"name\""
         } else {
             ""
         };
-        for it in self.items.iter().take(shown) {
+        for it in &self.items[win.begin..win.end] {
             let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
                 " tested=\"1\""
             } else {
@@ -85,23 +104,21 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
     }
 }
 
-fn write_nav_items<W: Write>(
+fn render_nav_items<W: Write>(
     tag: &'static str,
-    root: &str,
-    of: &str,
+    sym_name: &str,
     items: &[SymbolNavInfo],
-    next_flag: &'static str,
-    gauge_attrs: &str,
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
     NavItemsReport {
         tag,
-        root,
-        of,
+        root: ".",
+        of: sym_name,
+        defs: 1,
         items,
-        next_flag,
-        gauge_attrs,
+        gauge_attrs: crate::serialize::GraphGauges::ZERO_XML_ATTRS,
+        page: crate::serialize::PageRequest::default(),
     }
     .render_envelope(out)
 }
@@ -112,31 +129,7 @@ pub fn serialize_callers_xml<W: Write>(
     callers: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    serialize_callers_with_gauge_xml(
-        ".",
-        sym_name,
-        callers,
-        crate::serialize::GraphGauges::ZERO_XML_ATTRS,
-        out,
-    )
-}
-
-pub fn serialize_callers_with_gauge_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    callers: &[SymbolNavInfo],
-    gauge_attrs: &str,
-    out: &mut W,
-) -> io::Result<()> {
-    write_nav_items(
-        "callers",
-        root,
-        sym_name,
-        callers,
-        "--uses",
-        gauge_attrs,
-        out,
-    )
+    render_nav_items("callers", sym_name, callers, out)
 }
 
 /// Serialize direct callees to Ripwire-compatible XML.
@@ -145,31 +138,7 @@ pub fn serialize_callees_xml<W: Write>(
     callees: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    serialize_callees_with_gauge_xml(
-        ".",
-        sym_name,
-        callees,
-        crate::serialize::GraphGauges::ZERO_XML_ATTRS,
-        out,
-    )
-}
-
-pub fn serialize_callees_with_gauge_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    callees: &[SymbolNavInfo],
-    gauge_attrs: &str,
-    out: &mut W,
-) -> io::Result<()> {
-    write_nav_items(
-        "callees",
-        root,
-        sym_name,
-        callees,
-        "--expand",
-        gauge_attrs,
-        out,
-    )
+    render_nav_items("callees", sym_name, callees, out)
 }
 
 pub struct ImpactReport<'a> {
@@ -350,8 +319,7 @@ impl crate::serialize::XmlReport for UsesReport<'_> {
     );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let total = self.sites.len();
-        let shown = total.min(40);
-        let page_attrs = format_nav_page_attrs(shown, total);
+        let page_attrs = crate::serialize::PageWindow::compute(total, 40, None, None).xml_attrs();
         write!(
             out,
             " of=\"{}\" defs=\"1\" external=\"0\" count=\"{total}\" root=\"{}\"{page_attrs} {}",

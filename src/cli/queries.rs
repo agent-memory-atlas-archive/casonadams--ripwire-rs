@@ -62,6 +62,7 @@ pub struct NavContext<'a> {
     pub graph: &'a Graph,
     pub ranks: &'a [f64],
     pub interner: &'a Interner,
+    pub page: crate::serialize::PageRequest,
 }
 
 impl<'a> crate::domain::CorpusView<'a> for NavContext<'a> {
@@ -76,31 +77,37 @@ impl<'a> crate::domain::CorpusView<'a> for NavContext<'a> {
     }
 }
 
+/// One navigation request: the symbol asked about, how, under which root, and which page.
+pub struct NavQuery<'a> {
+    pub root: &'a str,
+    pub sym: &'a str,
+    pub mode: NavMode,
+    pub page: crate::serialize::PageRequest,
+}
+
 pub fn serialize_1hop_mode<W: Write>(
-    root: &str,
-    sym: &str,
-    mode: NavMode,
+    query: &NavQuery<'_>,
+    defs: usize,
     nav: &crate::navigate::NavNeighborhood,
     out: &mut W,
 ) -> io::Result<()> {
-    match mode {
-        NavMode::Callers => crate::navigate::serialize_callers_with_gauge_xml(
-            root,
-            sym,
-            &nav.callers,
-            &nav.gauge_attrs,
-            out,
-        ),
-        NavMode::Callees => crate::navigate::serialize_callees_with_gauge_xml(
-            root,
-            sym,
-            &nav.callees,
-            &nav.gauge_attrs,
-            out,
-        ),
-        NavMode::FindSymbol => crate::navigate::serialize_find_symbol_xml(nav, out),
-        _ => Ok(()),
+    use crate::serialize::XmlReport;
+    let (tag, items) = match query.mode {
+        NavMode::Callers => ("callers", &nav.callers),
+        NavMode::Callees => ("callees", &nav.callees),
+        NavMode::FindSymbol => return crate::navigate::serialize_find_symbol_xml(nav, out),
+        _ => return Ok(()),
+    };
+    crate::navigate::NavItemsReport {
+        tag,
+        root: query.root,
+        of: query.sym,
+        defs,
+        items,
+        gauge_attrs: &nav.gauge_attrs,
+        page: query.page,
     }
+    .render_envelope(out)
 }
 
 pub fn execute_nav_symbol_query<W: Write>(
@@ -117,6 +124,7 @@ pub fn execute_nav_symbol_query<W: Write>(
         graph,
         ranks,
         interner,
+        page: crate::serialize::PageRequest::default(),
     };
     execute_nav_symbol_query_in_root(".", sym, mode, &ctx, out)
 }
@@ -184,7 +192,13 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
                 ctx.ranks,
                 ctx.interner,
             ) {
-                serialize_1hop_mode(root, sym, mode, &nav, out)?;
+                let query = NavQuery {
+                    root,
+                    sym,
+                    mode,
+                    page: ctx.page,
+                };
+                serialize_1hop_mode(&query, ids.len(), &nav, out)?;
             }
             Ok(())
         }

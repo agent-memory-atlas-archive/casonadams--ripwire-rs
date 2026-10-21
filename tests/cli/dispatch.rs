@@ -206,6 +206,7 @@ fn test_cli_execution_modes() {
         graph: &graph,
         ranks: &pr.ranks,
         interner: &interner,
+        page: ripwire_rs::serialize::PageRequest::default(),
     };
 
     for args in &nav_modes {

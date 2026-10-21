@@ -391,7 +391,10 @@ pub fn call_grep_with_context(
                 let enc_sym = file_syms
                     .and_then(|syms| {
                         syms.iter()
-                            .filter(|s| s.line <= line_num)
+                            .filter(|s| {
+                                s.kind != crate::domain::SymKind::ModuleScope
+                                    && s.spans_line(line_num)
+                            })
                             .max_by_key(|s| s.line)
                     })
                     .copied();
@@ -400,6 +403,7 @@ pub fn call_grep_with_context(
                 let enc_callers = enc_sym
                     .and_then(|s| callers_by_name.get(&s.name).copied())
                     .unwrap_or(0);
+                let enc_floor = enc_sym.is_some_and(|s| !s.is_callable());
 
                 let b_start = line_idx.saturating_sub(before_lines);
                 let before: Vec<Value> = (b_start..line_idx)
@@ -417,6 +421,7 @@ pub fn call_grep_with_context(
                     "enclosing": enclosing,
                     "enclosing_callers": enc_callers,
                     "enclosing_cx": enc_cx,
+                    "enclosing_floor": enc_floor,
                     "before": before,
                     "after": after
                 }));

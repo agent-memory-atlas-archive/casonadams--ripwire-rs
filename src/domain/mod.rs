@@ -332,6 +332,13 @@ impl Symbol {
         self.kind.is_callable()
     }
 
+    /// True when 1-based `line_num` falls within this definition's lines.
+    #[inline]
+    #[must_use]
+    pub const fn spans_line(&self, line_num: u32) -> bool {
+        self.line <= line_num && line_num < self.line + if self.loc == 0 { 1 } else { self.loc }
+    }
+
     #[inline]
     #[must_use]
     pub const fn is_code_symbol(&self) -> bool {
