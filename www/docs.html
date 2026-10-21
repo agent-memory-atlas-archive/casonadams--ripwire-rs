@@ -4,10 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <title>Documentation · ripwire-rs Code Intelligence</title>
-  <meta name="description" content="Reference documentation for ripwire-rs: CLI commands, 33 Model Context Protocol (MCP) context routing tools, pre-commit gates, and Rust library integration.">
+  <meta name="description" content="Reference documentation for ripwire-rs: CLI commands, Model Context Protocol (MCP) context routing tools, pre-commit gates, and Rust library integration.">
 
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
-  <link rel="stylesheet" href="css/style.css?v=2">
+  <link rel="stylesheet" href="css/style.css?v=3">
 
   <script>
     (function() {
@@ -65,7 +65,7 @@
         <li><a href="#cli" class="docs-nav-link">CLI Commands</a></li>
         <li><a href="#subcommands" class="docs-nav-link">Subcommands</a></li>
         <li><a href="#gates" class="docs-nav-link">Pre-Commit Verification Gates</a></li>
-        <li><a href="#mcp" class="docs-nav-link">33 MCP Context Tools</a></li>
+        <li><a href="#mcp" class="docs-nav-link">MCP Context Tools</a></li>
         <li><a href="#algorithms" class="docs-nav-link">Algorithms &amp; Lenses</a></li>
         <li><a href="#library" class="docs-nav-link">Rust Library API</a></li>
       </ul>
@@ -95,7 +95,7 @@
       <div class="docs-nav-group">
         <div class="docs-nav-title">Protocol &amp; Library</div>
         <ul class="docs-nav-links">
-          <li><a href="#mcp" class="docs-nav-link">33 MCP Tools</a></li>
+          <li><a href="#mcp" class="docs-nav-link">MCP Tools</a></li>
           <li><a href="#algorithms" class="docs-nav-link">Algorithms &amp; Lenses</a></li>
           <li><a href="#library" class="docs-nav-link">Rust Library API</a></li>
         </ul>
@@ -147,6 +147,7 @@ cargo install ripwire-rs</code></pre>
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
             <p class="cmd-desc">Parses the repository at <code>PATH</code> (defaults to current directory), builds the workspace call graph across 36 languages, executes Personalized PageRank, and streams ranked symbol definitions with incoming callers as canonical XML (bounded by <code>--top-k</code> symbol count or <code>--max-tokens</code> / <code>--pack-budget</code> streaming limits). Automatically caches compiled call graphs in <code>TMPDIR</code> for sub-second repeat queries (use <code>--no-cache</code> for cold parse). <code>--scip=index.scip</code> overlays a compiler-backed SCIP index: the call sites it resolves bind exactly (<code>prov="scip"</code>, header <code>precise=K</code>) and bypass the cache.</p>
+            <p class="cmd-desc">The same global <code>--scip=PATH</code> overlay works before or after <code>navigate</code>, plain or task-ranked <code>orient</code>, and <code>mcp</code>. MCP retains its indexed graph for the session. Multiline calls match the callee identifier's index line; reports preserve the call expression's start line. Unreadable or malformed indexes fail explicitly without a name-only fallback.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
@@ -457,7 +458,7 @@ cargo install ripwire-rs</code></pre>
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>ripwire-rs --impact &lt;SYM&gt;</code></div>
+          <div class="cmd-title"><code>ripwire-rs --impact &lt;SYM&gt; [--impact-depth &lt;N&gt;]</code></div>
           <span class="cmd-badge">Navigation</span>
         </div>
         <div class="cmd-body">
@@ -672,7 +673,7 @@ cargo install ripwire-rs</code></pre>
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>ripwire-rs orient [PATH] --for &lt;TASK&gt;</code></div>
+          <div class="cmd-title"><code>ripwire-rs orient [PATH] [--for &lt;TASK&gt;] [--scip &lt;FILE&gt;]</code></div>
           <span class="cmd-badge">Exploration</span>
         </div>
         <div class="cmd-body">
@@ -693,7 +694,7 @@ cargo install ripwire-rs</code></pre>
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>ripwire-rs navigate [PATH] --symbol &lt;SYM&gt; [--callers | --callees | --impact]</code></div>
+          <div class="cmd-title"><code>ripwire-rs navigate [PATH] --symbol &lt;SYM&gt; [--callers | --callees | --impact] [--scip &lt;FILE&gt;]</code></div>
           <span class="cmd-badge">Navigation</span>
         </div>
         <div class="cmd-body">
@@ -777,17 +778,19 @@ cargo install ripwire-rs</code></pre>
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>ripwire-rs mcp</code></div>
+          <div class="cmd-title"><code>ripwire-rs mcp [PATH] [--scip &lt;FILE&gt;]</code></div>
           <span class="cmd-badge">Integration</span>
         </div>
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Starts a persistent stdio JSON-RPC server implementing the Model Context Protocol (MCP) with 33 tools for AI coding assistants.</p>
+            <p class="cmd-desc">Starts a persistent stdio JSON-RPC server implementing the Model Context Protocol (MCP) for AI coding assistants.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
-            <p class="cmd-desc">Streams JSON-RPC 2.0 frames over standard I/O, executing cached in-memory graph, slicing, and git queries in sub-millisecond response times.</p>
+            <p class="cmd-desc">Overlapping tools return canonical CLI XML/text in <code>result.content[0].text</code>, with identical facts, defaults, errors, limits, grouping, provenance, and declined evidence. Maps default to 200 symbols / 65536 bytes; rank signals are pagerank, authority, hub, degree, ccx, and stable (unknown signals error). Connect defaults to radius 2. Situational awareness emits <code>ripwire-rs.situ/v1</code> XML. Slice shares CLI root, flow/depth validation, and errors.</p>
+            <p class="cmd-desc">Impact's optional MCP <code>max_depth</code> matches global CLI <code>--impact-depth=N</code>, also with <code>navigate --impact</code>. Reports preserve legends without session mutation. CLI <code>--json</code> preserves XML hierarchy and text/CDATA: root tag/attributes/items, leaf <code>text</code>, mixed text interleaved in <code>items</code>, reserved-name attributes under <code>attributes</code>, and namespaced names as <code>{uri}local</code>; malformed reports error. Batch uses the real root and shared registry, caps both transports at 16, and rejects recursive batches/writes per item.</p>
+            <p class="cmd-desc">Batch success entries retain <code>tool/result/kind</code> (<code>xml|text|json</code>); malformed names fail per item, and CLI XML safely escapes text/JSON results. MCP <code>owners</code> accepts integer <code>detail &gt; 0</code>; <code>whereis</code> accepts <code>listing=defs|refs|all</code> and boolean <code>full_text</code>, rejecting invalid listings. Detail 2 includes all requested bodies with accurate <code>shown/total</code>; root/revision and effective connect radius remain canonical.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">When To Use It</span>
@@ -834,9 +837,9 @@ cargo install ripwire-rs</code></pre>
         <li><strong>Situational Awareness (<code>--situ</code>)</strong>: Computes 5-point diff situational awareness: blast radius, tests to run, forgotten co-change partners, hotspots, and modules touched.</li>
       </ul>
 
-      <h2 id="mcp">33 Model Context Protocol (MCP) Tools</h2>
+      <h2 id="mcp">Model Context Protocol (MCP) Tools</h2>
       <p>
-        Ripwire embeds a native JSON-RPC stdio server exposing 33 context routing tools directly to any MCP-compatible coding agent:
+        Ripwire embeds a native JSON-RPC stdio server exposing context routing tools directly to any MCP-compatible coding agent:
       </p>
       <div class="table-wrap">
         <table>
@@ -857,12 +860,14 @@ cargo install ripwire-rs</code></pre>
             <tr><td><code>grep</code></td><td>Search</td><td>Trigram literal search annotated with enclosing symbols and definitions.</td></tr>
             <tr><td><code>find_symbol</code></td><td>Navigation</td><td>1-hop symbol neighborhood: callers, callees, definitions, and ambiguity metrics.</td></tr>
             <tr><td><code>find_referencing_symbols</code></td><td>Navigation</td><td>Direct (1-hop) callers of a symbol or database table.</td></tr>
+            <tr><td><code>callers</code></td><td>Navigation</td><td>Canonical direct caller report with definition grouping.</td></tr>
+            <tr><td><code>callees</code></td><td>Navigation</td><td>Canonical direct callee report with provenance and declined evidence.</td></tr>
             <tr><td><code>impact</code></td><td>Navigation</td><td>Transitive blast radius of a symbol or database table via call and reference hierarchy.</td></tr>
             <tr><td><code>uses</code></td><td>Navigation</td><td>Statically resolvable use-sites (call, read, write, import, extends), including embedded SQL table lineage from application strings.</td></tr>
             <tr><td><code>path_between</code></td><td>Architecture</td><td>Shortest directed call path between two symbols.</td></tr>
             <tr><td><code>connect</code></td><td>Architecture</td><td>Minimal directed connecting subgraph relating 2..16 symbols.</td></tr>
             <tr><td><code>analyze</code></td><td>Architecture</td><td>Architecture map ranked by PageRank or chosen metric.</td></tr>
-            <tr><td><code>rank_by</code></td><td>Architecture</td><td>Architecture map ranked by alternate signal (authority, hub, churn).</td></tr>
+            <tr><td><code>rank_by</code></td><td>Architecture</td><td>Architecture map ranked by pagerank, authority, hub, degree, ccx, or stable; unknown signals error.</td></tr>
             <tr><td><code>situational_awareness</code></td><td>Architecture</td><td>Diff context: blast radius, tests to run, and forgotten co-change partners.</td></tr>
             <tr><td><code>from_trace</code></td><td>Debugging</td><td>Maps stack trace frames and compiler errors onto indexed symbol definitions.</td></tr>
             <tr><td><code>slice</code></td><td>Slicing</td><td>Intra-procedural def-use variable slicing (forward, backward, or both).</td></tr>

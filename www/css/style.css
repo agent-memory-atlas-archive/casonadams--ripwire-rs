@@ -1,9 +1,11 @@
 :root {
   --bg-primary: #090d16;
   --bg-secondary: #0f172a;
+  --bg-surface: #111a2e;
   --bg-card: #141e33;
   --bg-input: #1e293b;
   --border: #1e293b;
+  --border-light: rgba(255, 255, 255, 0.08);
   --border-focus: #38bdf8;
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
@@ -15,6 +17,7 @@
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
+  --error: #ef4444;
   --code-bg: #090e17;
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -26,18 +29,24 @@
 [data-theme="light"] {
   --bg-primary: #f8fafc;
   --bg-secondary: #f1f5f9;
+  --bg-surface: #f1f5f9;
   --bg-card: #ffffff;
-  --bg-input: #f8fafc;
+  --bg-input: #ffffff;
   --border: #e2e8f0;
+  --border-light: #edf2f7;
   --border-focus: #0284c7;
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #64748b;
-  --accent: #0284c7;
-  --accent-hover: #0369a1;
-  --accent-rgb: 2, 132, 199;
+  --accent: #0369a1;
+  --accent-hover: #075985;
+  --accent-rgb: 3, 105, 161;
   --rose: #e11d48;
-  --code-bg: #1e293b;
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+  --error: #dc2626;
+  --code-bg: #f8fafc;
   --shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
 }
 
@@ -118,7 +127,7 @@ a:hover, a:focus-visible {
   border-radius: var(--radius-sm);
 }
 
-.brand:hover {
+.brand:hover, .brand:visited {
   color: var(--text-primary);
 }
 
@@ -135,6 +144,10 @@ a:hover, a:focus-visible {
   padding: 6px 12px;
   border-radius: var(--radius-sm);
   transition: all 0.15s ease;
+}
+
+.nav-link:visited {
+  color: var(--text-secondary);
 }
 
 .nav-link:hover, .nav-link.active {
@@ -498,6 +511,10 @@ a:hover, a:focus-visible {
   transition: all 0.15s ease;
 }
 
+.docs-nav-link:visited {
+  color: var(--text-secondary);
+}
+
 .docs-nav-link:hover, .docs-nav-link.active {
   color: var(--accent);
   background: var(--bg-secondary);
@@ -547,21 +564,51 @@ a:hover, a:focus-visible {
   margin-bottom: 8px;
 }
 
+code {
+  font-family: var(--font-mono);
+}
+
+:not(pre) > code:not(.cmd-title code):not(.code-wrap code) {
+  font-family: var(--font-mono);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.88em;
+  color: var(--accent);
+}
+
 .docs-content code {
   font-family: var(--font-mono);
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.9em;
+  border-radius: var(--radius-sm);
+  font-size: 0.88rem;
   color: var(--accent);
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  color: inherit;
 }
 
 .docs-content pre {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 16px 20px;
   overflow-x: auto;
   margin-bottom: 24px;
 }
@@ -570,8 +617,24 @@ a:hover, a:focus-visible {
   background: none;
   border: none;
   padding: 0;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   color: var(--text-primary);
+}
+
+th {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.cmd-code {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 16px 20px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-x: auto;
 }
 /* Command Card */
 .cmd-card {
@@ -680,6 +743,10 @@ a:hover, a:focus-visible {
   text-decoration: none;
 }
 
+.wf-pill:visited {
+  color: var(--text-secondary);
+}
+
 .wf-pill:hover {
   color: var(--text-primary);
   border-color: var(--accent);
@@ -767,7 +834,7 @@ a:hover, a:focus-visible {
 
 .workflow-step .code-wrap code {
   font-size: 0.88rem;
-  color: var(--accent);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow-x: auto;
 }
@@ -807,8 +874,8 @@ a:hover, a:focus-visible {
 
 .recipe-code {
   margin: 0;
-  padding: 16px;
-  background: transparent;
+  padding: 16px 20px;
+  background: var(--code-bg);
   border: none;
   border-radius: 0;
   overflow-x: auto;
@@ -823,7 +890,7 @@ a:hover, a:focus-visible {
   background: none;
   border: none;
   padding: 0;
-  color: inherit;
+  color: var(--text-primary);
   font-size: inherit;
 }
 

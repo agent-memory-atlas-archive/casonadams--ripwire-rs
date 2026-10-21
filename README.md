@@ -18,7 +18,6 @@ Built for **maximum intelligence in the smallest token footprint**:
 - **Noise-Free Ranking**: Filters out non-callable noise, test/fixture helpers, language builtins, and prose backticks before ranking; partitions unresolvable calls into `unresolved`, `external`, and `declined`.
 - **Actionable Context in One Turn**: Bundles top implementation bodies, resolved callee signatures (`<calls>`), architectural layer tags (`layer=`), and causal def-use slices (`--slice`) directly into responses.
 - **Sub-50ms Zero-Buffer Pipeline**: Interned `Spur`/`NodeId` tables, contiguous CSR graphs, in-process `gix` history walking, and direct `io::Write` XML/JSON streaming across 36 Tree-Sitter languages (with automatic embedded SQL table lineage).
-- **100% Local & Zero Telemetry**: Offline-by-design. Zero network calls, zero tracking, zero model training, and zero data leakage. Code never leaves your workstation; `ripwire-rs` purely extracts AST context and feeds it to your chosen local or remote agent harness. Secret redaction is enabled by default.
 
 ---
 
@@ -54,8 +53,24 @@ See the **[Workflow Guide](docs/WORKFLOWS.md)** (or **[online](https://casonadam
 3. **[Pre-Commit & PR Safety Gates](docs/WORKFLOWS.md#3-pre-commit--pr-safety-gates-zero-broken-contracts)**: Contract checks, test reachability, and diff awareness (`--edit-check`, `--affected`, `--test-gate`, `--situ`, `--pr-context`).
 4. **[Code Health & Technical Debt](docs/WORKFLOWS.md#4-code-health--technical-debt-auditing)**: Quality regressions, dead code, hotspots, clones, and coupling (`--quality-delta`, `--quality-panel`, `--dead-code`, `--hotspots`, `--clones`, `--cochange`, `--deps`).
 5. **[Deep Inspection & Agent Context](docs/WORKFLOWS.md#5-deep-inspection--agent-context-delivery)**: Token-budgeted symbol bodies, trace mapping, and multi-query batching (`--expand`, `--outline`, `--compress`, `--from-trace`, `--batch`, `--json`).
-6. **[CI Gates & Agent Integration](docs/WORKFLOWS.md#6-continuous-integration-ci-workflows--automated-pr-gates)**: Automated PR gates, 33-tool stdio MCP server, LSP bridge, and 17 agent skills (`--add-skills`, `ripwire-rs mcp`, `--lsp`, `--scan-skills`).
+6. **[CI Gates & Agent Integration](docs/WORKFLOWS.md#6-continuous-integration-ci-workflows--automated-pr-gates)**: Automated PR gates, stdio MCP server, LSP bridge, and 17 agent skills (`--add-skills`, `ripwire-rs mcp`, `--lsp`, `--scan-skills`).
 7. **[Multi-Agent Fleet Orchestration](docs/WORKFLOWS.md#7-multi-agent-fleet-orchestration-parallel-worktrees--subagent-slicing)**: Community-carved task partitioning, pre-hoc worktree lane collision planning, cross-branch merge scouting, and session handoffs (`--pack-task --partition=N`, `--plan-lanes`, `--brief`, `--merge-scout`, `--handoff`, `--help-task`, `--verify`).
+
+Compiler-backed resolution is available with `--scip=index.scip` on top-level
+queries, `navigate`, `orient` (including `--for`), and `mcp`:
+`ripwire-rs navigate . --symbol main --callees --scip=index.scip`.
+The overlay bypasses the analysis cache; MCP retains it for the session.
+Unreadable or malformed indexes fail explicitly without a name-only fallback.
+`--scip` is global (before or after a subcommand). Multiline calls match the
+callee identifier's index line; report lines preserve the call expression start.
+Overlapping MCP tools return canonical CLI XML/text in
+`result.content[0].text`, with the same facts, defaults, errors, and limits.
+Maps default to 200 symbols / 65536 bytes; rank signals are `pagerank`,
+`authority`, `hub`, `degree`, `ccx`, and `stable` (unknown signals error).
+`--situ` emits `ripwire-rs.situ/v1` XML; connecting subgraphs default to radius 2.
+`--impact-depth=N` optionally limits impact traversal (MCP `max_depth`), including
+`navigate --impact`. CLI `--json` preserves canonical XML hierarchy and text/CDATA;
+malformed reports fail instead of producing summary fallbacks.
 
 Navigation reports expose their limits: `--impact` lists unbound candidate call
 sites as `<dc>` rows, never as graph edges. `--uses` lists all indexed sites by
@@ -76,27 +91,27 @@ binding forms remain evidence floors.
 - **[AGENTS.md Governance Guide](docs/AGENTS_GUIDE.md)** — Drop-in `AGENTS.md` template, 5-step autonomous verification loop, and CI/CD parity.
 - **[CLI Reference](docs/CLI.md)** — Complete command catalog, top-level flags, streaming budgets, and selector syntax.
 - **[Pre-Commit Safety Gates](docs/GATES.md)** — Verification gates (`--edit-check`, `--affected`, `--quality-delta`, `--test-gate`, `--seams`, `--pr-context`, `--merge-scout`, `--arch`).
-- **[Model Context Protocol (MCP)](docs/MCP.md)** — Optional 33-tool stdio MCP server for clients without direct CLI/skill support.
+- **[Model Context Protocol (MCP)](docs/MCP.md)** — Optional stdio MCP server for clients without direct CLI/skill support.
 - **[Architecture & Pipeline](docs/ARCHITECTURE.md)** — Tree-Sitter grammars, lock-free interning, CSR in-edge graph, and streaming XML.
 - **[Algorithms & Academic Lenses](docs/ALGORITHMS.md)** — PageRank, HITS, Louvain modularity, clone detector, and dataflow slicing.
 - **[Interactive Documentation Site](https://casonadams.github.io/ripwire-rs/)** — Showcase, command catalog, and visualizer.
 
 ---
 
-## Supported Languages (39)
+## Supported Languages (36)
 
-First-class Tree-Sitter AST queries extract definitions, signatures, imports, and call sites across 39 languages, with automatic embedded SQL table lineage (`SELECT`, `JOIN`, `INSERT`, `UPDATE`, `DELETE`) resolved across host-language string literals.
+First-class Tree-Sitter AST queries extract definitions, signatures, imports, and call sites across 36 languages, with automatic embedded SQL table lineage (`SELECT`, `JOIN`, `INSERT`, `UPDATE`, `DELETE`) resolved across host-language string literals.
 
 | Domain | Supported Languages & Extensions |
 | :--- | :--- |
 | **Systems & Native** | **Rust** (`.rs`), **C** (`.c`, `.h`), **C++** (`.cpp`, `.cc`, `.cxx`, `.hpp`, `.hxx`, `.hh`, `.h`), **Zig** (`.zig`, `.zon`), **Go** (`.go`), **Objective-C / Objective-C++** (`.m`, `.mm`), **Fortran** (`.f`, `.for`, `.f90`, `.f95`, `.f03`, `.f08`), **COBOL** (`.cbl`, `.cob`, `.cpy`) |
 | **GPU & Shaders** | **CUDA** (`.cu`, `.cuh`), **Metal** (`.metal`) |
-| **Web & Frontend** | **TypeScript** (`.ts`, `.tsx`, `.mts`, `.cts`, `.astro`), **JavaScript** (`.js`, `.jsx`, `.mjs`, `.cjs`), **HTML** (`.html`, `.htm`), **CSS / Sass / Less** (`.css`, `.scss`, `.sass`, `.less`) |
+| **Web & Frontend** | **TypeScript** (`.ts`, `.tsx`, `.mts`, `.cts`, `.astro`), **JavaScript** (`.js`, `.jsx`, `.mjs`, `.cjs`) |
 | **JVM & Enterprise** | **Java** (`.java`), **Kotlin** (`.kt`, `.kts`), **Scala** (`.scala`, `.sc`), **C#** (`.cs`) |
 | **Scripting & Backend** | **Python** (`.py`, `.pyi`), **Ruby** (`.rb`, `.rake`, `.jbuilder`), **PHP** (`.php`, `.phtml`), **Elixir** (`.ex`, `.exs`), **Erlang** (`.erl`, `.hrl`), **Lua** (`.lua`), **Bash / Shell** (`.sh`, `.bash`, `.zsh`) |
 | **Mobile, Game & Media** | **Swift** (`.swift`), **Dart** (`.dart`), **GDScript** (`.gd`), **BrightScript** (`.brs`, `.bs`) |
 | **Data, Schema & Smart Contracts** | **SQL** (`.sql`), **GraphQL** (`.graphql`, `.gql`), **Protocol Buffers** (`.proto`), **Solidity** (`.sol`) |
-| **Infra, Config & Docs** | **HCL / Terraform** (`.tf`, `.hcl`, `.tfvars`), **Dockerfile** (`Dockerfile`, `.dockerfile`, `.containerfile`), **YAML** (`.yml`, `.yaml`), **TOML** (`.toml`), **JSON** (`.json`), **Markdown / Docs** (`.md`, `.markdown`, `.mdx`, `.rst`, `.adoc`, `.org`) |
+| **Infra, Config & Docs** | **HCL / Terraform** (`.tf`, `.hcl`, `.tfvars`), **YAML** (`.yml`, `.yaml`), **TOML** (`.toml`), **JSON** (`.json`), **Markdown / Docs** (`.md`, `.markdown`, `.mdx`, `.rst`, `.adoc`, `.org`) |
 
 ---
 
