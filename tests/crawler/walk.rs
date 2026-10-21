@@ -72,3 +72,56 @@ fn test_crawl_scope_ignore_tests_and_max_file_size() {
         );
     }
 }
+
+#[test]
+fn test_single_file_candidate_keeps_typed_path_and_applies_file_rules() {
+    use ripwire_rs::crawler::single_file_candidate;
+    use std::path::Path;
+    let defaults = CrawlerOptions::default();
+    let no_tests = CrawlerOptions {
+        ignore_tests: true,
+        ..CrawlerOptions::default()
+    };
+    let small = CrawlerOptions {
+        max_file_size: 100,
+        ..CrawlerOptions::default()
+    };
+    type Case<'a> = (&'a str, u64, &'a CrawlerOptions, Option<(&'a str, Lang)>);
+    let cases: &[Case<'_>] = &[
+        (
+            "data/member/lib/a.dart",
+            10,
+            &defaults,
+            Some(("data/member/lib/a.dart", Lang::Dart)),
+        ),
+        ("a.dart", 10, &defaults, Some(("a.dart", Lang::Dart))),
+        (
+            "/abs/build/a.rs",
+            10,
+            &defaults,
+            Some(("/abs/build/a.rs", Lang::Rust)),
+        ),
+        ("lib/notes.xyz", 10, &defaults, None),
+        ("api/x.pb.go", 10, &defaults, None),
+        ("lib/a.rs", 101, &small, None),
+        ("tests/helper.py", 10, &no_tests, None),
+        (
+            "tests/a_test.go",
+            10,
+            &defaults,
+            Some(("tests/a_test.go", Lang::Go)),
+        ),
+    ];
+    for &(typed, size, opts, expected) in cases {
+        let got = single_file_candidate(Path::new(typed), size, opts)
+            .map(|f| (f.rel_path, f.lang, f.path));
+        assert_eq!(
+            got.as_ref().map(|(rel, lang, _)| (rel.as_str(), *lang)),
+            expected,
+            "{typed}"
+        );
+        if let Some((_, _, path)) = got {
+            assert_eq!(path, Path::new(typed));
+        }
+    }
+}

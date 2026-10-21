@@ -173,8 +173,38 @@ fn append_tracked_paths(root: &Path, options: &CrawlerOptions, paths: &mut Vec<S
     paths.dedup();
 }
 
+/// Evaluate a file passed directly as the crawl root: language, size and generated-name rules apply
+/// to its file name, the test-path rule to the path as typed; directory denylists never apply.
+#[must_use]
+pub fn single_file_candidate(
+    path: &Path,
+    byte_size: u64,
+    options: &CrawlerOptions,
+) -> Option<CrawledFile> {
+    let name = path.file_name()?.to_str()?;
+    let typed = path.to_string_lossy().replace('\\', "/");
+    if options.ignore_tests && crate::gate::affected::is_test_path(&typed) {
+        return None;
+    }
+    let mut file = evaluate_candidate(name, byte_size, false, options)?;
+    file.rel_path = typed;
+    file.path = path.to_path_buf();
+    Some(file)
+}
+
+fn crawl_single_file(path: &Path, options: &CrawlerOptions) -> Vec<CrawledFile> {
+    path.metadata()
+        .ok()
+        .and_then(|metadata| single_file_candidate(path, metadata.len(), options))
+        .into_iter()
+        .collect()
+}
+
 pub fn crawl_directory<P: AsRef<Path>>(root: P, options: &CrawlerOptions) -> Vec<CrawledFile> {
     let root = root.as_ref();
+    if root.is_file() {
+        return crawl_single_file(root, options);
+    }
     let mut files = Vec::new();
     for entry in build_walker(root, options).flatten() {
         if let Some(file) = process_crawl_entry(&entry, root, options) {
@@ -269,11 +299,13 @@ fn classify_skipped_entry(
         return;
     }
     let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
-    let rel_path = path
-        .strip_prefix(root)
-        .unwrap_or(path)
-        .to_string_lossy()
-        .replace('\\', "/");
+    let rel_path = if path == root {
+        path.file_name().unwrap_or_default()
+    } else {
+        path.strip_prefix(root).unwrap_or(path).as_os_str()
+    }
+    .to_string_lossy()
+    .replace('\\', "/");
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
