@@ -1,4 +1,4 @@
-; ripwire GraphQL tags
+; ripwire-rs GraphQL tags
 (object_type_definition
   (name) @name) @definition.class
 

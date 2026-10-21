@@ -1,4 +1,4 @@
-; ripwire Zig tags
+; ripwire-rs Zig tags
 (function_declaration
   (identifier) @name) @definition.function
 

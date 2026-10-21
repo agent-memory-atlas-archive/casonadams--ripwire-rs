@@ -1,4 +1,4 @@
-; ripwire Lua tags — written for ripwire (.lua). Derived from the upstream
+; ripwire-rs Lua tags — written for ripwire-rs (.lua). Derived from the upstream
 ; tree-sitter-grammars/tree-sitter-lua v0.5.0 node-types.json and verified against real parses
 ; (test/luafix + the lua/busted shape-recall run).
 ;
@@ -20,7 +20,7 @@
 ; Deliberately NOT captured (CANNOT be, and it is disclosed rather than faked) — the honest floor:
 ;   - METATABLES. `setmetatable( obj, { __index = Base } )` is Lua's entire inheritance mechanism, and
 ;     it is an ordinary runtime function call over an ordinary table. There is no syntax to read, so
-;     ripwire emits NO inheritance edge for Lua: `--lego` and --uses role="extends" are empty on a Lua
+;     ripwire-rs emits NO inheritance edge for Lua: `--lego` and --uses role="extends" are empty on a Lua
 ;     corpus. A zero there means "none found", never "none exists" — the house rule, stated out loud.
 ;     `Base.__index = Base` likewise mints nothing.
 ;   - Dispatch through a variable: `local fn = M.f; fn()` calls `fn`, and `obj[ key ]()` names nothing

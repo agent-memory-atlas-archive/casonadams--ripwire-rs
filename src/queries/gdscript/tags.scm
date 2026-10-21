@@ -1,4 +1,4 @@
-; ripwire GDScript tags — authored here, not vendored: PrestonKnopp/tree-sitter-gdscript ships no
+; ripwire-rs GDScript tags — authored here, not vendored: PrestonKnopp/tree-sitter-gdscript ships no
 ; queries/tags.scm. Every pattern below was read off a real parse (ts_node_string) of a fixture
 ; exercising the construct, not from node-types.json, because two of the shapes are not what the
 ; node-type list suggests (see the @export/@onready note under VARIABLES).

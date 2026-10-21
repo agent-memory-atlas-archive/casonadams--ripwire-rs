@@ -36,7 +36,7 @@
 ### Benefits
 - **Zero Hallucinated Dependencies**: Produces an in-context AST schema dictionary teaching agents the meaning of minified attributes (`t`, `n`, `sc`, `k`, `c`).
 - **Prompt Token Savings**: Emits `shown="K"` truncation markers so LLMs know absence in a top-K slice does not mean absence in the codebase.
-- **Sub-Second Speed**: Renders complete repository topologies across 36 languages in ~25 ms.
+- **Sub-Second Speed**: Renders complete repository topologies across 39 languages in ~25 ms.
 
 ---
 
@@ -272,7 +272,7 @@ The `ripwire-rs-gate.yml` file is a continuous integration (CI) workflow that au
 
 ### When to Use It
 
-- **Governing AI Coding Agents**: When AI coding agents (Omp, Claude Code, Cursor, Windsurf, Copilot) generate code and open PRs, this gate blocks untested code paths, broken caller contracts, or complexity spikes automatically.
+- **Governing AI Coding Agents**: When AI coding agents generate code and open PRs, this gate blocks untested code paths, broken caller contracts, or complexity spikes automatically.
 - **Preventing Architectural Rot**: When teams want automated enforcement of module boundaries (`rules.txt`), zero quality regressions (`--quality-delta`), and test coverage reachability (`--test-gate`).
 - **Automated PR Review Summaries**: When you want blast radius, affected test files, and historical co-change files rendered directly into GitHub's `$GITHUB_STEP_SUMMARY` review UI on every push.
 

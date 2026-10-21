@@ -207,6 +207,9 @@ pub enum Lang {
     Graphql,
     Dockerfile,
     ObjC,
+    BrightScript,
+    Fortran,
+    Cobol,
     Unknown,
 }
 

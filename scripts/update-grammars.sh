@@ -26,6 +26,9 @@ GRAMMARS=(
     "graphql|https://github.com/bkegley/tree-sitter-graphql|master|src"
     "dockerfile|https://github.com/camdencheek/tree-sitter-dockerfile|main|src"
     "sql|https://github.com/DerekStride/tree-sitter-sql|gh-pages|src"
+    "brightscript|https://github.com/ajdelcimmuto/tree-sitter-brightscript|master|src"
+    "fortran|https://github.com/stadelmanma/tree-sitter-fortran|master|src"
+    "cobol|https://github.com/yutaro-sakamoto/tree-sitter-cobol|main|src"
 )
 
 TARGET_FILTER="${1:-all}"

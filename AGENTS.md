@@ -2,7 +2,7 @@
 
 ## Core mission: Maximum intelligence in the smallest token footprint
 
-`ripwire-rs` exists to replace blind `grep` and whole-file reads with deterministic, token-budgeted codebase intelligence across 36 languages, delivering the exact symbols, blast radius, and safety verification an agent or developer needs in one turn.
+`ripwire-rs` exists to replace blind `grep` and whole-file reads with deterministic, token-budgeted codebase intelligence across 39 languages, delivering the exact symbols, blast radius, and safety verification an agent or developer needs in one turn.
 
 - **Seven core workflows**: Every feature serves one of (1) *Orientation & Scoping* (`--top-k`, `--for`, `--tree`), (2) *Navigation & Blast Radius* (`--callers`, `--impact`, `--uses`, `--connect`, `--slice`, plus zero-flag embedded SQL table lineage), (3) *Pre-Commit & PR Safety Gates* (`--edit-check`, `--affected`, `--test-gate`, `--situ`), (4) *Code Health & Architecture* (`--quality-delta`, `--quality-panel`, `--hotspots`, `--clones`, `--cochange`, `--deps`, `--dmm`), (5) *Deep Inspection & Context Delivery* (`--expand`, `--outline`, `--compress`, `--from-trace`, `--batch`, `--verify`), (6) *Agent & CI Integration* (`ripwire-rs mcp`, `--lsp`, `--add-skills`, `--scan-skills`, `--help-task`), or (7) *Multi-Agent Fleet Orchestration* (`--pack-task --partition=N`, `--plan-lanes=N --task=GOAL`, `--plan-lanes --brief=FILE`, `--merge-scout`, `--handoff`, `--notes`, `--note-add`).
 - **Present-only serialization**: Omit zero/unit default attributes (e.g.,

@@ -112,6 +112,10 @@
       <div style="font-size: 0.95rem; color: var(--text-muted); background: var(--bg-secondary); border-left: 3px solid var(--accent); padding: 14px 18px; border-radius: var(--radius-sm); margin-bottom: 28px;">
         <strong style="color: var(--text-primary);">Lineage &amp; Attribution:</strong> ripwire-rs is an idiomatic Rust port and rewrite of the original <a href="https://github.com/redhat-et/ripwire" target="_blank" rel="noopener">C++23 ripwire engine</a> authored by <strong>David Brewster</strong> at <strong>Red Hat Emerging Technologies</strong>. We gratefully acknowledge their foundational work on token-budgeted streaming call graphs, pre-commit delta heuristics, and deterministic code intelligence for AI agents.
       </div>
+
+      <div style="font-size: 0.95rem; color: var(--text-secondary); background: var(--bg-surface); border-left: 4px solid var(--success); padding: 14px 18px; border-radius: var(--radius-sm); margin-bottom: 28px; border: 1px solid var(--border); border-left-color: var(--success);">
+        <strong style="color: var(--text-primary);">100% Local &amp; Zero Telemetry Guarantee:</strong> ripwire-rs is completely offline-by-design. It makes <strong>zero network calls, contains zero analytics or telemetry, and performs zero model training</strong>. Your proprietary source code never leaves your workstation. It functions purely as an in-process local AST parser that emits structured context to stdout or stdio MCP for the agent harness or LLM <em>you</em> control. Automated secret redaction is active by default.
+      </div>
       <h2 id="installation">Installation</h2>
       <h3>Homebrew (macOS &amp; Linux)</h3>
       <pre><code>brew install casonadams/tap/ripwire-rs</code></pre>
@@ -142,7 +146,7 @@ cargo install ripwire-rs</code></pre>
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Parses the repository at <code>PATH</code> (defaults to current directory), builds the workspace call graph across 36 languages, executes Personalized PageRank, and streams ranked symbol definitions with incoming callers as canonical XML (bounded by <code>--top-k</code> symbol count or <code>--max-tokens</code> / <code>--pack-budget</code> streaming limits). Automatically caches compiled call graphs in <code>TMPDIR</code> for sub-second repeat queries (use <code>--no-cache</code> for cold parse).</p>
+            <p class="cmd-desc">Parses the repository at <code>PATH</code> (defaults to current directory), builds the workspace call graph across 39 languages, executes Personalized PageRank, and streams ranked symbol definitions with incoming callers as canonical XML (bounded by <code>--top-k</code> symbol count or <code>--max-tokens</code> / <code>--pack-budget</code> streaming limits). Automatically caches compiled call graphs in <code>TMPDIR</code> for sub-second repeat queries (use <code>--no-cache</code> for cold parse).</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
@@ -485,7 +489,7 @@ cargo install ripwire-rs</code></pre>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
-            <p class="cmd-desc">Zero extra flags required. During standard AST ingestion across all 36 languages, string literals containing SQL DML (<code>SELECT ... FROM</code>, <code>JOIN</code>, <code>INSERT INTO</code>, <code>UPDATE</code>, <code>DELETE FROM</code>) automatically emit <code>RefRole::Read</code> and <code>RefRole::Write</code> references attributed to the enclosing function or method, resolving directly to <code>.sql</code> table definitions in the workspace graph.</p>
+            <p class="cmd-desc">Zero extra flags required. During standard AST ingestion across all 39 languages, string literals containing SQL DML (<code>SELECT ... FROM</code>, <code>JOIN</code>, <code>INSERT INTO</code>, <code>UPDATE</code>, <code>DELETE FROM</code>) automatically emit <code>RefRole::Read</code> and <code>RefRole::Write</code> references attributed to the enclosing function or method, resolving directly to <code>.sql</code> table definitions in the workspace graph.</p>
             <p class="cmd-desc">Python, JavaScript/TypeScript, and Rust also index bare non-local variable reads, excluding bindings, writes, labels, and lexical shadows. Grep's <code>reads</code> and <code>reads_at</code> use these references rather than text estimates; unsupported binding forms remain evidence floors.</p>
           </div>
           <div class="cmd-field">

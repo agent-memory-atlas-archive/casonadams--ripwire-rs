@@ -1,4 +1,4 @@
-; ripwire Ruby tags — written for ripwire (.rb). Derived from the upstream
+; ripwire-rs Ruby tags — written for ripwire-rs (.rb). Derived from the upstream
 ; tree-sitter-ruby v0.23.1 grammar node-types, verified against an AST dump (see the
 ; javarubycheck fixture).
 ;

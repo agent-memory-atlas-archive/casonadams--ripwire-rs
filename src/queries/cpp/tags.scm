@@ -1,4 +1,4 @@
-; ripwire C++ tags — vendored from tree-sitter-cpp v0.23.4 queries/tags.scm,
+; ripwire-rs C++ tags — vendored from tree-sitter-cpp v0.23.4 queries/tags.scm,
 ; AUGMENTED with @reference.call (the upstream C++ tags ship definitions ONLY).
 
 ; ---- definitions (upstream) ----

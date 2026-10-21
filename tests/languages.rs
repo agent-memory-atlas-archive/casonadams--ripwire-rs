@@ -1,6 +1,8 @@
 mod languages {
     mod bash;
+    mod brightscript;
     mod c;
+    mod cobol;
     mod cpp;
     mod csharp;
     mod css;
@@ -9,6 +11,7 @@ mod languages {
     mod dockerfile;
     mod elixir;
     mod erlang;
+    mod fortran;
     mod gdscript;
     mod go;
     mod graphql;

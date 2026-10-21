@@ -1,4 +1,4 @@
-; ripwire Solidity tags
+; ripwire-rs Solidity tags
 (function_definition
     name: (identifier) @name) @definition.function
 

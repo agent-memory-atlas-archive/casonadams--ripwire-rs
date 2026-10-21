@@ -1,4 +1,4 @@
-; ripwire TOML tags — written for ripwire (.toml). Derived from the upstream
+; ripwire-rs TOML tags — written for ripwire-rs (.toml). Derived from the upstream
 ; tree-sitter-grammars/tree-sitter-toml v0.7.0 grammar node-types, verified against an AST dump
 ; (see the tomllangcheck fixture).
 ;

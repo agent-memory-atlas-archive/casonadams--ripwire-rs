@@ -112,7 +112,7 @@ These aren't a "moment" you land in; they're reflexes you carry into every momen
 
 ## Wrong tool for the job
 
-ripwire-rs parses **36 languages across systems, cloud, functional, and web codebases**: Rust, TypeScript, JavaScript, Astro, Python, Go, C, C++, CUDA, Metal, Objective-C, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS, SQL, Protobuf, GraphQL, and Dockerfile. A repo in an unindexed language gets a thin or empty map, not an error — don't mistake that for
+ripwire-rs parses **39 languages across systems, cloud, functional, and web codebases**: Rust, TypeScript, JavaScript, Astro, Python, Go, C, C++, CUDA, Metal, Objective-C, Java, C#, Swift, Bash, Ruby, PHP, Lua, Elixir, Dart, Kotlin, GDScript, JSON, TOML, YAML, Markdown, Zig, Solidity, HCL/Terraform, Scala, Erlang, HTML, CSS, SQL, Protobuf, GraphQL, Dockerfile, BrightScript, Fortran, and COBOL. A repo in an unindexed language gets a thin or empty map, not an error — don't mistake that for
 "nothing here." Reach for plain `rg` + reads instead. And ripwire maps *structure*, not build/link state — a
 build failure or a linker error is the compiler's/linker's question, not ripwire's; it can still tell you
 *where* the broken symbol lives (`--grep`/`--callers`), just not why the toolchain rejected it.

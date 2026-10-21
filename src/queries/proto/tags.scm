@@ -1,4 +1,4 @@
-; ripwire Protobuf tags
+; ripwire-rs Protobuf tags
 (message
   (message_name) @name) @definition.class
 

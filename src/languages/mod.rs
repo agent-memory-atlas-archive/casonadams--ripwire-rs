@@ -32,7 +32,9 @@ macro_rules! impl_grammar_method {
 pub(crate) use impl_grammar_method;
 
 pub mod bash;
+pub mod brightscript;
 pub mod c;
+pub mod cobol;
 pub mod cpp;
 pub mod csharp;
 pub mod css;
@@ -41,6 +43,7 @@ pub mod dart;
 pub mod dockerfile;
 pub mod elixir;
 pub mod erlang;
+pub mod fortran;
 pub mod gdscript;
 pub mod go;
 pub mod graphql;
@@ -526,7 +529,7 @@ impl LanguageSemantics for UnknownLanguage {
     }
 }
 
-pub const ALL_LANGS: [Lang; 36] = [
+pub const ALL_LANGS: [Lang; 39] = [
     Lang::Rust,
     Lang::TypeScript,
     Lang::JavaScript,
@@ -563,9 +566,12 @@ pub const ALL_LANGS: [Lang; 36] = [
     Lang::Graphql,
     Lang::Dockerfile,
     Lang::ObjC,
+    Lang::BrightScript,
+    Lang::Fortran,
+    Lang::Cobol,
 ];
 
-static SEMANTICS_TABLE: [&dyn LanguageSemantics; 37] = [
+static SEMANTICS_TABLE: [&dyn LanguageSemantics; 40] = [
     &rust::RUST_LANG,
     &typescript::TYPESCRIPT_LANG,
     &javascript::JAVASCRIPT_LANG,
@@ -602,6 +608,9 @@ static SEMANTICS_TABLE: [&dyn LanguageSemantics; 37] = [
     &graphql::GRAPHQL_LANG,
     &dockerfile::DOCKERFILE_LANG,
     &objc::OBJC_LANG,
+    &brightscript::BRIGHTSCRIPT_LANG,
+    &fortran::FORTRAN_LANG,
+    &cobol::COBOL_LANG,
     &UNKNOWN_LANG,
 ];
 

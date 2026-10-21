@@ -1,6 +1,6 @@
 # Autonomous Agent Governance with AGENTS.md
 
-`ripwire-rs` serves as the deterministic runtime engine and static verification backbone for AI coding agents (such as Omp, Claude Code, Cursor, Windsurf, Copilot, and custom autonomous swarms).
+`ripwire-rs` serves as the deterministic runtime engine and static verification backbone for AI coding agents and autonomous developer workflows.
 
 Rather than relying on vague, aspirational instructions ("write clean code", "be careful not to break tests"), `ripwire-rs` enables engineering teams to govern agents through **deterministic static analysis gates, call-graph data, and exit codes**.
 
@@ -133,9 +133,9 @@ A common design question is whether `AGENTS.md` should invoke skills (e.g., `ski
 ### The Proven Architecture
 
 - **`AGENTS.md` Contains Executable Commands**:  
-  Empirical data shows that providing explicit commands with flags (`ripwire-rs . --edit-check="<sym>"`) produces deterministic, immediate execution without extra model round-trips. It also ensures full compatibility across tools that do not support dynamic skill loading (such as Cursor, Windsurf, and Copilot).
+  Empirical data shows that providing explicit commands with flags (`ripwire-rs . --edit-check="<sym>"`) produces deterministic, immediate execution without extra model round-trips. It also ensures full compatibility across tools and environments that do not support dynamic skill loading.
 - **Skill Manifests Handle Deep Diagnostics**:  
-  For skill-aware runners (like Omp or Claude Code), pre-packaged skills installed via:
+  For skill-aware agent runners, pre-packaged skills installed via:
   ```bash
   ripwire-rs --add-skills
   ```
@@ -167,3 +167,14 @@ The verification gates enforced in `AGENTS.md` are designed for 1:1 parity with 
 | `ripwire-rs . --quality-delta` | Quality Delta Gate | Blocks merge if complexity, nesting, or AST clones regressed vs base branch. |
 
 For the complete, production-grade GitHub Actions workflow recipe and CI benchmark steps, see [Workflow 6: Continuous Integration (CI) Workflows & Automated PR Gates](WORKFLOWS.md#6-continuous-integration-ci-workflows--automated-pr-gates).
+
+---
+
+## 6. Security, Privacy & Zero-Telemetry Guarantee
+
+`ripwire-rs` is engineered for strict enterprise security and air-gapped environments:
+
+- **100% Local Execution**: `ripwire-rs` contains zero network sockets, zero telemetry, zero analytics SDKs, and zero phone-home routines. It executes entirely in-process on your local hardware.
+- **Zero Model Training**: Source code, ASTs, and git history are never stored externally or used to train AI models.
+- **Passive Context Provider**: `ripwire-rs` does not execute LLM inferences itself; it parses local source trees and outputs structured XML/JSON to stdout or stdio MCP. You retain full control over which local or remote LLM receives that context.
+- **Automated Secret Redaction**: Built-in credential sanitization actively redacts API keys, bearer tokens, and private secrets from emitted code snippets before they enter prompt windows.

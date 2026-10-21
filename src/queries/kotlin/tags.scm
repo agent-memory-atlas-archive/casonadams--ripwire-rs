@@ -1,4 +1,4 @@
-; ripwire Kotlin tags — written for ripwire (.kt). Derived from fwcd/tree-sitter-kotlin's own
+; ripwire-rs Kotlin tags — written for ripwire-rs (.kt). Derived from fwcd/tree-sitter-kotlin's own
 ; upstream queries/tags.scm (commit 1852ea17, vendored at third_party/deps/kotlin), adapted onto
 ; this repo's capture vocabulary — NOT copied verbatim, unlike Python's (whose grammar happens to
 ; already match). class_declaration/object_declaration/companion_object/property_declaration carry

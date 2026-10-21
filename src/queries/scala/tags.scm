@@ -1,4 +1,4 @@
-; ripwire Scala tags
+; ripwire-rs Scala tags
 (function_definition
   name: (identifier) @name) @definition.function
 

@@ -1,4 +1,4 @@
-; ripwire SQL tags
+; ripwire-rs SQL tags
 (create_table
   (object_reference
     name: (identifier) @name)) @definition.class

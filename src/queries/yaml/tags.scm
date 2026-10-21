@@ -1,4 +1,4 @@
-; ripwire YAML tags — written for ripwire (.yml/.yaml). Derived from the upstream
+; ripwire-rs YAML tags — written for ripwire-rs (.yml/.yaml). Derived from the upstream
 ; tree-sitter-grammars/tree-sitter-yaml v0.7.2 grammar, verified against an AST dump of the
 ; yamllangcheck fixtures (probe-first: every decision below names the node shape that forced it).
 ;

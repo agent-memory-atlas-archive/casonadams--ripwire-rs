@@ -1,4 +1,4 @@
-; ripwire HCL / Terraform tags
+; ripwire-rs HCL / Terraform tags
 (block
   (identifier) @name) @definition.class
 

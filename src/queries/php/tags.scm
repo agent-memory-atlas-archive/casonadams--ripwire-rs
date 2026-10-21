@@ -1,4 +1,4 @@
-; ripwire PHP tags — written for ripwire (.php). Derived from the upstream
+; ripwire-rs PHP tags — written for ripwire-rs (.php). Derived from the upstream
 ; tree-sitter/tree-sitter-php v0.24.2 `php/` sub-grammar's node-types.json and verified against real
 ; parses (test/phpfix + the laravel/framework shape-recall run). The upstream queries/tags.scm was the
 ; starting point but is NOT what ships here: it captures properties as fields, calls a method a

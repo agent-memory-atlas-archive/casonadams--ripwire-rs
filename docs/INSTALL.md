@@ -86,3 +86,12 @@ ripwire-rs --add-skills
 # Verify installation and environment health
 ripwire-rs . --doctor
 ```
+
+---
+
+## Security, Privacy & Zero Telemetry
+
+- **Air-Gapped & Offline**: `ripwire-rs` operates 100% locally with zero internet access, zero telemetry, and zero phone-home beacons.
+- **Zero Training**: Code is never transmitted to external servers or used to train models.
+- **Local Context Only**: The binary parses local Tree-Sitter ASTs and outputs structured XML/JSON to stdout or stdio MCP for consumption by your configured agent harness.
+- **Automatic Secret Masking**: Detects and redacts secrets and authentication credentials from emitted source snippets by default.

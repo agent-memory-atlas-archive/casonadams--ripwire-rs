@@ -1,4 +1,4 @@
-; ripwire Erlang tags
+; ripwire-rs Erlang tags
 (function_clause
   name: (atom) @name) @definition.function
 

@@ -1,4 +1,4 @@
-; ripwire Swift tags — for alex-pinkus/tree-sitter-swift (node types verified vs node-types.json).
+; ripwire-rs Swift tags — for alex-pinkus/tree-sitter-swift (node types verified vs node-types.json).
 ; Definitions + @reference.call (the stock tree-sitter-swift tags.scm ships definitions only).
 
 ; ---- definitions ----

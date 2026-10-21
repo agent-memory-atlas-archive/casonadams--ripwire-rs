@@ -1,4 +1,4 @@
-; ripwire CSS tags
+; ripwire-rs CSS tags
 (rule_set
   (selectors) @name) @definition.class
 

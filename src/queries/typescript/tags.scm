@@ -1,4 +1,4 @@
-; ripwire TypeScript tags — written for ripwire.
+; ripwire-rs TypeScript tags — written for ripwire-rs.
 ; The upstream tree-sitter-typescript tags.scm targets .d.ts declaration files
 ; (function_signature / method_signature) and ships no @reference.call, so it extracts
 ; almost nothing from ordinary .ts source. This set covers real source: concrete

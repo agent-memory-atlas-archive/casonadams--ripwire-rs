@@ -1,4 +1,4 @@
-; ripwire JavaScript tags — written for ripwire (.js/.jsx/.mjs/.cjs).
+; ripwire-rs JavaScript tags — written for ripwire-rs (.js/.jsx/.mjs/.cjs).
 ; tree-sitter-javascript is the PARENT grammar of tree-sitter-typescript, so this mirrors
 ; queries/typescript/tags.scm almost exactly — the differences are all "JS has no type layer":
 ;   - a class name is (identifier), NOT (type_identifier)   [JS has no distinct type namespace]
