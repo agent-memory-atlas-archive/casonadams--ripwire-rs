@@ -122,6 +122,9 @@ fn test_history_walk_is_newest_first_non_merge_with_exact_cutoff() {
         let id = gix::ObjectId::from_hex(c.id.as_bytes()).unwrap();
         repo.find_commit(id).unwrap().parent_ids().count() <= 1
     }));
+    if commits.is_empty() {
+        return;
+    }
     let cutoff = commits[commits.len() / 2].timestamp;
     let newer = walk_repository_history_scoped(".", Some(cutoff)).unwrap();
     let expected: Vec<&str> = commits

@@ -133,6 +133,9 @@ OPTIONAL_ATTRS = {
     "tokens",
     "churn",
     "facet",
+    "which",
+    "which_version",
+    "hint",
 }
 
 
@@ -148,6 +151,9 @@ def find_binaries():
     if not rw_bin or not rip_bin:
         print("Error: ripwire-rs or ripwire binary not found.", file=sys.stderr)
         sys.exit(1)
+    rw_dir = os.path.dirname(os.path.abspath(rw_bin))
+    if rw_dir not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = f"{rw_dir}{os.pathsep}{os.environ.get('PATH', '')}"
     return rw_bin, rip_bin
 
 

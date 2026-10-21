@@ -272,9 +272,18 @@ fn walk_err(e: impl fmt::Display) -> GitHistoryError {
     GitHistoryError::Walk(e.to_string())
 }
 
-fn commit_time(repo: &gix::Repository, id: gix::ObjectId) -> Result<i64, GitHistoryError> {
-    let commit = repo.find_commit(id).map_err(walk_err)?;
-    Ok(commit.time().map_err(walk_err)?.seconds)
+fn commit_time(repo: &gix::Repository, id: gix::ObjectId) -> Result<Option<i64>, GitHistoryError> {
+    match repo.try_find_object(id) {
+        Ok(Some(obj)) => Ok(Some(
+            obj.try_into_commit()
+                .map_err(walk_err)?
+                .time()
+                .map_err(walk_err)?
+                .seconds,
+        )),
+        Ok(None) => Ok(None),
+        Err(e) => Err(walk_err(e)),
+    }
 }
 
 fn tree_at_prefix(commit: &gix::Commit<'_>, prefix: &str) -> Option<gix::ObjectId> {
@@ -321,8 +330,10 @@ fn push_unseen(
     queue: &mut CommitQueue,
 ) -> Result<(), GitHistoryError> {
     for id in ids {
-        if seen.insert(id) {
-            queue.push((commit_time(repo, id)?, id));
+        if seen.insert(id)
+            && let Some(time) = commit_time(repo, id)?
+        {
+            queue.push((time, id));
         }
     }
     Ok(())
@@ -337,7 +348,14 @@ fn collect_commit_metas(
     let mut metas = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let mut queue = CommitQueue::new();
-    push_unseen(repo, [head], &mut seen, &mut queue)?;
+    let head_time = repo
+        .find_commit(head)
+        .map_err(walk_err)?
+        .time()
+        .map_err(walk_err)?
+        .seconds;
+    seen.insert(head);
+    queue.push((head_time, head));
     while let Some((timestamp, id)) = queue.pop() {
         if cutoff_timestamp.is_some_and(|cutoff| timestamp < cutoff) {
             break;

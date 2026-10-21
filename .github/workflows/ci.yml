@@ -62,6 +62,8 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Fetch vendored grammars
         run: ./scripts/update-grammars.sh
@@ -123,4 +125,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           "$HOME/.local/bin/ripwire" -v
       - name: Run 1:1 Parity Validation Matrix
-        run: make validate
+        run: |
+          echo "$PWD/target/release" >> $GITHUB_PATH
+          export PATH="$PWD/target/release:$PATH"
+          make validate
