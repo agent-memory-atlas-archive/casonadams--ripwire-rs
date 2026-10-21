@@ -57,13 +57,13 @@ clean: ## Clean cargo build artifacts
 	$(CARGO) clean
 
 .PHONY: coverage
-coverage: ## Generate LCOV test coverage trace (uses nextest when available)
+coverage: ## Generate LCOV and nextest JUnit reports with quiet test output
 	@$(MAKE) ensure-grammars
 	@$(CARGO) llvm-cov clean --workspace
 	@$(CARGO) test --workspace --doc
 	@ulimit -n 10240 2>/dev/null || ulimit -n 4096 2>/dev/null || true; \
 	if $(CARGO) nextest --version >/dev/null 2>&1; then \
-		$(CARGO) llvm-cov nextest --workspace --no-report && $(CARGO) llvm-cov report --workspace --lcov --output-path target/lcov.info --ignore-filename-regex 'src/(cli|ingest|mcp)/mod\.rs$$'; \
+		NEXTEST_PROFILE="$${NEXTEST_PROFILE:-ci}" NEXTEST_SHOW_PROGRESS="$${NEXTEST_SHOW_PROGRESS:-none}" $(CARGO) llvm-cov nextest --workspace --no-report && $(CARGO) llvm-cov report --workspace --lcov --output-path target/lcov.info --ignore-filename-regex 'src/(cli|ingest|mcp)/mod\.rs$$'; \
 	else \
 		$(CARGO) llvm-cov --workspace --lcov --output-path target/lcov.info --ignore-filename-regex 'src/(cli|ingest|mcp)/mod\.rs$$'; \
 	fi

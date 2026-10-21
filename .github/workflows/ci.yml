@@ -84,12 +84,20 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           cargo crap --version
 
-      - name: Run doc tests
-        run: cargo test --workspace --doc
-
       - name: Generate test coverage trace
         id: coverage
+        env:
+          NEXTEST_PROFILE: ci
+          NEXTEST_SHOW_PROGRESS: none
         run: make coverage
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nextest-results
+          path: target/nextest/ci/junit.xml
+          if-no-files-found: ignore
 
       - name: Emit GitHub PR annotations
         if: always() && steps.coverage.outcome == 'success'

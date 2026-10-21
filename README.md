@@ -127,3 +127,17 @@ make crap
 # Format code
 make fmt
 ```
+
+`make all`, `make crap`, and `make coverage` use the nextest `ci` profile
+when nextest is installed: passing tests stay quiet, failure output appears
+once at the end, and all tests run even after a failure. Doc tests run
+separately within `make coverage`. Without nextest, coverage uses cargo test.
+
+Agents can parse `target/nextest/ci/junit.xml` for test names, results,
+durations, and captured failure output. GitHub Actions uploads this report
+as the `nextest-results` artifact when available. Console output is concise
+text, not a machine-readable stream.
+
+Override `NEXTEST_PROFILE` or `NEXTEST_SHOW_PROGRESS` to select different
+reporting, for example `NEXTEST_PROFILE=default make coverage` for per-test
+status lines.
