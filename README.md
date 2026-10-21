@@ -41,41 +41,8 @@ cargo binstall ripwire-rs
 cargo install ripwire-rs
 ```
 
-See the **[Installation Guide](docs/INSTALL.md)** for standalone `.deb`/`.rpm` downloads, source builds (`make install`), and post-install setup.
+Install the 17 embedded agent skills with `ripwire-rs --add-skills`—agents with shell and skill support invoke the CLI directly and **do not need an MCP server**. See the **[Installation Guide](docs/INSTALL.md)** for standalone `.deb`/`.rpm` downloads and source builds, or **[MCP Configuration](docs/MCP.md)** if your client requires stdio MCP.
 
----
-
-## Quickstart
-
-```bash
-# 1. Orientation & Scoping: ranked architecture map or task-focused bundle
-ripwire-rs . --top-k=200
-ripwire-rs . --for="implement user authentication"
-
-# 2. Navigation & Blast Radius: callers, transitive impact, or def-use slice
-ripwire-rs . --callers="Interner::len"
-ripwire-rs . --impact="Interner"
-
-# 3. Pre-Commit & PR Safety Gates: affected tests and contract verification
-ripwire-rs . --test-gate
-ripwire-rs . --edit-check="Interner::len"
-
-# 4. Code Health & Architecture: quality regressions, hotspots, and clones
-ripwire-rs . --quality-delta
-ripwire-rs . --hotspots
-
-# 5. Deep Inspection & Agent Context: compressed bodies or stack-trace mapping
-ripwire-rs . --expand="Interner::len" --compress
-
-# 6. Agent Skills & MCP Server: install 17 skills or run stdio MCP server
-ripwire-rs --add-skills
-ripwire-rs mcp
-
-# 7. Multi-Agent Fleet Orchestration: partition task bundles, plan parallel worktrees, and scout branch merges
-ripwire-rs . --pack-task="refactor serialization" --partition=4
-ripwire-rs . --plan-lanes=3 --task="refactor serialization"
-ripwire-rs . --merge-scout="branch-a,branch-b"
-```
 ---
 
 ## Workflows
@@ -109,27 +76,10 @@ binding forms remain evidence floors.
 - **[AGENTS.md Governance Guide](docs/AGENTS_GUIDE.md)** — Drop-in `AGENTS.md` template, 5-step autonomous verification loop, and CI/CD parity.
 - **[CLI Reference](docs/CLI.md)** — Complete command catalog, top-level flags, streaming budgets, and selector syntax.
 - **[Pre-Commit Safety Gates](docs/GATES.md)** — Verification gates (`--edit-check`, `--affected`, `--quality-delta`, `--test-gate`, `--seams`, `--pr-context`, `--merge-scout`, `--arch`).
-- **[Model Context Protocol (MCP)](docs/MCP.md)** — Reference for all 33 MCP tools and agent configuration.
+- **[Model Context Protocol (MCP)](docs/MCP.md)** — Optional 33-tool stdio MCP server for clients without direct CLI/skill support.
 - **[Architecture & Pipeline](docs/ARCHITECTURE.md)** — Tree-Sitter grammars, lock-free interning, CSR in-edge graph, and streaming XML.
 - **[Algorithms & Academic Lenses](docs/ALGORITHMS.md)** — PageRank, HITS, Louvain modularity, clone detector, and dataflow slicing.
 - **[Interactive Documentation Site](https://casonadams.github.io/ripwire-rs/)** — Showcase, command catalog, and visualizer.
-
----
-
-## MCP Server Configuration
-
-Register `ripwire-rs` with any MCP-compatible client or coding agent:
-
-```json
-{
-  "mcpServers": {
-    "ripwire-rs": {
-      "command": "ripwire-rs",
-      "args": ["mcp"]
-    }
-  }
-}
-```
 
 ---
 
