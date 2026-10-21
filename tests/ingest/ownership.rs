@@ -123,27 +123,27 @@ fn test_script_calling_at_module_scope_is_affected() {
 
 #[test]
 fn test_python_module_alias_qualifier_binds_into_that_module() {
-    let other_checks: Vec<(String, &[u8])> = (0..5)
+    let other_areas: Vec<(String, &[u8])> = (0..5)
         .map(|i| {
             (
-                format!("scripts/other_{i}.py"),
-                b"def check(x):\n    return x\n".as_slice(),
+                format!("pkg/shape_{i}.py"),
+                b"def area(x):\n    return x\n".as_slice(),
             )
         })
         .collect();
-    let mut files: Vec<(&str, Lang, &[u8])> = other_checks
+    let mut files: Vec<(&str, Lang, &[u8])> = other_areas
         .iter()
         .map(|(p, src)| (p.as_str(), Lang::Python, *src))
         .collect();
     files.push((
-        "scripts/lint_safe.py",
+        "pkg/geometry.py",
         Lang::Python,
-        b"def check(graph):\n    return graph\n",
+        b"def area(side):\n    return side * side\n",
     ));
     files.push((
-        "scripts/test_lint_safe.py",
+        "pkg/report.py",
         Lang::Python,
-        b"import lint_safe as L\ndef fires():\n    return L.check(1)\n",
+        b"import geometry as geo\ndef summarize():\n    return geo.area(1)\n",
     ));
     let (ingest, interner) = ingest(&files);
     let graph = Graph::build(&ingest, &interner);
@@ -151,7 +151,7 @@ fn test_python_module_alias_qualifier_binds_into_that_module() {
     let callers_by_file: Vec<(String, Vec<String>)> = ingest
         .symbols
         .iter()
-        .filter(|s| interner.resolve(&s.name) == "check")
+        .filter(|s| interner.resolve(&s.name) == "area")
         .map(|s| {
             let nav = navigate_1hop(s.id, &ingest, &graph, &ranks, &interner).unwrap();
             (
@@ -166,10 +166,7 @@ fn test_python_module_alias_qualifier_binds_into_that_module() {
         .collect();
     assert_eq!(
         callers_by_file,
-        [(
-            "scripts/lint_safe.py".to_string(),
-            vec!["fires".to_string()]
-        )]
+        [("pkg/geometry.py".to_string(), vec!["summarize".to_string()])]
     );
 }
 
@@ -179,34 +176,34 @@ fn test_parameter_shadows_same_named_function() {
         (
             "a.py",
             Lang::Python,
-            b"def text(n):\n    return n\n\ndef walk(root, text):\n    return text(root)\n\ndef plain():\n    return text(1)\n",
-            &["plain"],
+            b"def scale(n):\n    return n\n\ndef apply(item, scale):\n    return scale(item)\n\ndef direct():\n    return scale(1)\n",
+            &["direct"],
         ),
         (
             "a.js",
             Lang::JavaScript,
-            b"function text(n) { return n; }\nfunction walk(root, text) { return text(root); }\nfunction plain() { return text(1); }\n",
-            &["plain"],
+            b"function scale(n) { return n; }\nfunction apply(item, scale) { return scale(item); }\nfunction direct() { return scale(1); }\n",
+            &["direct"],
         ),
         (
             "a.rs",
             Lang::Rust,
-            b"fn text(n: u32) -> u32 { n }\nfn walk(root: u32, text: fn(u32) -> u32) -> u32 { text(root) }\nfn plain() -> u32 { text(1) }\n",
-            &["plain"],
+            b"fn scale(n: u32) -> u32 { n }\nfn apply(item: u32, scale: fn(u32) -> u32) -> u32 { scale(item) }\nfn direct() -> u32 { scale(1) }\n",
+            &["direct"],
         ),
         (
             "a.rb",
             Lang::Ruby,
-            b"def text(n)\n  n\nend\n\ndef walk(root, text)\n  text(root)\nend\n\ndef plain\n  text(1)\nend\n",
-            &["plain", "walk"],
+            b"def scale(n)\n  n\nend\n\ndef apply(item, scale)\n  scale(item)\nend\n\ndef direct\n  scale(1)\nend\n",
+            &["apply", "direct"],
         ),
     ];
     for &(path, lang, src, want) in cases {
         let (ingest, interner) = ingest(&[(path, lang, src)]);
         let graph = Graph::build(&ingest, &interner);
         let ranks = vec![1.0; ingest.symbols.len()];
-        let text = sym_id(&ingest, &interner, "text");
-        let nav = navigate_1hop(text, &ingest, &graph, &ranks, &interner).unwrap();
+        let scale = sym_id(&ingest, &interner, "scale");
+        let nav = navigate_1hop(scale, &ingest, &graph, &ranks, &interner).unwrap();
         let mut callers: Vec<&str> = nav.callers.iter().map(|c| c.name.as_str()).collect();
         callers.sort_unstable();
         assert_eq!(callers, want, "{path}");

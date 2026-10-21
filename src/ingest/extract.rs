@@ -30,6 +30,8 @@ pub struct RawRef {
     pub arg_count_known: bool,
     /// Language the reference is written in when it differs from its file's (embedded SQL).
     pub lang: Option<crate::domain::Lang>,
+    /// Bare identifier receiver (`x` in `x.f()`) not kept as the qualifier.
+    pub receiver: Option<String>,
 }
 
 /// Parsed facts from a single file.
@@ -306,6 +308,18 @@ fn extract_member_receiver_qualifier(
     }
     let keep = is_pascal_type_ident(text) || lang.semantics().is_std_or_builtin_qualifier(text);
     keep.then(|| text.to_string())
+}
+
+fn bare_member_receiver(name_node: tree_sitter::Node<'_>, source_bytes: &[u8]) -> Option<String> {
+    let parent = name_node.parent()?;
+    if !is_member_receiver_parent(parent.kind()) {
+        return None;
+    }
+    let recv = find_member_receiver_node(parent).filter(|r| *r != name_node)?;
+    let text = recv.utf8_text(source_bytes).ok()?.trim();
+    text.bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        .then(|| text.to_string())
 }
 
 fn find_call_qualifier(
@@ -625,6 +639,13 @@ fn record_ref_item(
             }
         })
     });
+    let receiver = qualifier
+        .is_none()
+        .then(|| {
+            ext.name_node
+                .and_then(|n| bare_member_receiver(n, source_bytes))
+        })
+        .flatten();
     let shadow_applies = role == RefRole::Read
         || (role == RefRole::Call && lang.semantics().parameters_shadow_calls());
     if qualifier.is_none()
@@ -655,6 +676,7 @@ fn record_ref_item(
         arg_count,
         arg_count_known,
         lang: None,
+        receiver,
     });
 }
 
@@ -749,6 +771,7 @@ fn scan_macro_body_calls(
                 arg_count: 0,
                 arg_count_known: false,
                 lang: None,
+                receiver: None,
             });
         }
     }
@@ -895,6 +918,7 @@ fn scan_sql_tokens_in_literal(text: &str, start_byte: usize, line: u32, refs: &m
                     arg_count: 0,
                     arg_count_known: false,
                     lang: Some(Lang::Sql),
+                    receiver: None,
                 });
             }
         }
@@ -993,6 +1017,7 @@ pub fn parse_file_tree(
         if lang.semantics().supports_embedded_sql() && has_sql_dml_anchor_bytes(source_bytes) {
             extract_embedded_sql_refs(tree.root_node(), source_bytes, &mut refs);
         }
+        qualify_import_bound_receivers(&mut refs, lang);
 
         defs.sort_by(|a, b| {
             a.start_byte
@@ -1013,4 +1038,22 @@ pub fn parse_file_tree(
             refs,
         }
     })
+}
+
+/// Give `alias.f()` the qualifier `alias` when this file's own imports bind `alias`.
+fn qualify_import_bound_receivers(refs: &mut [RawRef], lang: Lang) {
+    let bound: Vec<String> = refs
+        .iter()
+        .filter(|r| r.role == RefRole::Import)
+        .filter_map(|r| lang.semantics().import_binding(&r.callee_name))
+        .map(|(_, name)| name.to_string())
+        .collect();
+    if bound.is_empty() {
+        return;
+    }
+    for r in refs.iter_mut() {
+        if r.receiver.as_ref().is_some_and(|recv| bound.contains(recv)) {
+            r.qualifier = r.receiver.take();
+        }
+    }
 }
