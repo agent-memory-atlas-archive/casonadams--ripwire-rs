@@ -225,7 +225,7 @@ fn check_tree_sitter(census: &GrammarCensus) -> DoctorCheck {
     if let Some(abi) = census.cpp_abi {
         check = check.attr("cpp_grammar_abi", abi);
     }
-    check.attr("languages", census.distinct)
+    check.attr("languages", crate::languages::ALL_LANGS.len())
 }
 
 #[derive(Default)]
