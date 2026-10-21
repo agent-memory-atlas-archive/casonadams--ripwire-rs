@@ -3,6 +3,7 @@ use gix::status::plumbing::index_as_worktree::EntryStatus;
 
 const SHORT_ID_LEN: usize = 9;
 const BINARY_PROBE_LEN: usize = 8000;
+const MAX_WORD_BLOB_BYTES: u64 = 2 * 1024 * 1024;
 
 /// One line of a blob that contains a searched string.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +49,22 @@ pub fn workdir_prefix(repo: &gix::Repository, root: &str) -> Option<String> {
     })
 }
 
+pub fn for_each_tracked_path(root: &str, mut visit: impl FnMut(&str)) {
+    let Some(repo) = discover(root) else { return };
+    let Some(scope) = workdir_prefix(&repo, root) else {
+        return;
+    };
+    let Ok(index) = repo.index() else { return };
+    for path in index
+        .entries()
+        .iter()
+        .filter_map(|entry| entry.path(&index).to_str().ok())
+        .filter_map(|path| path.strip_prefix(scope.as_str()))
+    {
+        visit(path);
+    }
+}
+
 /// Paths of tracked files whose working-tree content differs from `HEAD` (`git diff --name-only HEAD`).
 #[must_use]
 pub fn working_tree_changes(root: &str) -> Vec<String> {
@@ -57,7 +74,13 @@ pub fn working_tree_changes(root: &str) -> Vec<String> {
 /// True when tracked files differ from `HEAD` or an untracked, non-ignored file exists (`+dirty`).
 #[must_use]
 pub fn is_dirty(root: &str) -> bool {
-    !status_paths(root, gix::status::UntrackedFiles::Files).is_empty()
+    !dirty_paths(root).is_empty()
+}
+
+/// Repo-relative paths that differ from `HEAD`: changed tracked files plus untracked, non-ignored ones.
+#[must_use]
+pub fn dirty_paths(root: &str) -> Vec<String> {
+    status_paths(root, gix::status::UntrackedFiles::Files)
 }
 
 fn status_paths(root: &str, untracked: gix::status::UntrackedFiles) -> Vec<String> {
@@ -119,37 +142,61 @@ pub fn head_ref(repo: &gix::Repository) -> String {
         .map_or_else(|| "HEAD".to_string(), |n| n.shorten().to_string())
 }
 
-/// Per rev, the lines of its text blobs holding `word` as a whole identifier, path-sorted
-/// (`git grep -n -w -F`); a blob shared by several revs is read once.
-#[must_use]
-pub fn grep_word_revs(repo: &gix::Repository, revs: &[String], word: &str) -> Vec<Vec<LineHit>> {
-    let mut by_blob: std::collections::HashMap<gix::ObjectId, Vec<(usize, String)>> =
-        std::collections::HashMap::new();
-    let mut per_rev = Vec::with_capacity(revs.len());
-    for rev in revs {
-        let mut hits = Vec::new();
-        for (path, oid) in sorted_blobs(repo, rev) {
-            let lines = by_blob
-                .entry(oid)
-                .or_insert_with(|| word_lines(repo, oid, word));
-            hits.extend(lines.iter().map(|(line, text)| LineHit {
-                path: path.clone(),
-                line: *line,
-                text: text.clone(),
-                blob: oid,
-            }));
-        }
-        per_rev.push(hits);
-    }
-    per_rev
+#[derive(Debug)]
+pub struct WordGrep {
+    pub per_rev: Vec<Vec<LineHit>>,
+    pub blobs: usize,
 }
 
-fn sorted_blobs(repo: &gix::Repository, rev: &str) -> Vec<(String, gix::ObjectId)> {
-    let Some(tree) = repo
-        .rev_parse_single(rev)
-        .ok()
-        .and_then(|id| id.object().ok()?.peel_to_tree().ok())
-    else {
+/// Match `git grep -n -w -F` within a `dir/` scope; paths are scope-relative.
+/// Shared revision blobs are read once.
+#[must_use]
+pub fn grep_word_revs(repo: &gix::Repository, revs: &[&str], scope: &str, word: &str) -> WordGrep {
+    use rayon::prelude::*;
+    let sync_repo = repo.clone().into_sync();
+    let trees: Vec<Vec<(String, gix::ObjectId)>> = revs
+        .par_iter()
+        .map_init(
+            || sync_repo.to_thread_local(),
+            |r, rev| sorted_blobs(r, rev, scope),
+        )
+        .collect();
+    let mut oids: Vec<gix::ObjectId> = trees.iter().flatten().map(|(_, oid)| *oid).collect();
+    oids.sort_unstable();
+    oids.dedup();
+    let blobs = oids.len();
+    let by_blob: std::collections::HashMap<gix::ObjectId, Vec<(usize, String)>> = oids
+        .into_par_iter()
+        .map_init(
+            || sync_repo.to_thread_local(),
+            |r, oid| (oid, word_lines(r, oid, word)),
+        )
+        .filter(|(_, lines)| !lines.is_empty())
+        .collect();
+    let per_rev = trees
+        .into_iter()
+        .map(|tree| {
+            tree.into_iter()
+                .flat_map(|(path, oid)| {
+                    by_blob
+                        .get(&oid)
+                        .into_iter()
+                        .flatten()
+                        .map(move |(line, text)| LineHit {
+                            path: path.clone(),
+                            line: *line,
+                            text: text.clone(),
+                            blob: oid,
+                        })
+                })
+                .collect()
+        })
+        .collect();
+    WordGrep { per_rev, blobs }
+}
+
+fn sorted_blobs(repo: &gix::Repository, rev: &str, scope: &str) -> Vec<(String, gix::ObjectId)> {
+    let Some(tree) = scoped_tree(repo, rev, scope) else {
         return Vec::new();
     };
     let mut recorder = gix::traverse::tree::Recorder::default();
@@ -166,7 +213,33 @@ fn sorted_blobs(repo: &gix::Repository, rev: &str) -> Vec<(String, gix::ObjectId
     blobs
 }
 
+fn scoped_tree<'r>(repo: &'r gix::Repository, rev: &str, scope: &str) -> Option<gix::Tree<'r>> {
+    let tree = repo
+        .rev_parse_single(rev)
+        .ok()?
+        .object()
+        .ok()?
+        .peel_to_tree()
+        .ok()?;
+    let scope = scope.trim_end_matches('/');
+    if scope.is_empty() {
+        return Some(tree);
+    }
+    tree.lookup_entry_by_path(scope)
+        .ok()??
+        .object()
+        .ok()?
+        .try_into_tree()
+        .ok()
+}
+
 fn word_lines(repo: &gix::Repository, oid: gix::ObjectId, word: &str) -> Vec<(usize, String)> {
+    if repo
+        .find_header(oid)
+        .is_ok_and(|header| header.size() > MAX_WORD_BLOB_BYTES)
+    {
+        return Vec::new();
+    }
     let Ok(blob) = repo.find_blob(oid) else {
         return Vec::new();
     };

@@ -15,6 +15,18 @@ impl LanguageSemantics for CppLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_cpp::LANGUAGE, "../queries/cpp/tags.scm");
 
+    fn lint_return_type<'a>(&self, sig: &'a str, name: &str) -> Option<&'a str> {
+        super::lint_hooks::prefix_return_type(sig, name)
+    }
+
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["typedef", "enum", "using"]
+    }
+
+    fn supports_cache_lint(&self) -> bool {
+        true
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         &["h", "cpp", "cc", "cxx", "hpp", "hxx", "hh"]
     }

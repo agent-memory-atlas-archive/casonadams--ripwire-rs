@@ -123,11 +123,44 @@ fn resolve_dart_package_import(
     None
 }
 
+/// The leading identifier of a pure selector chain (`x.f(a)[0]`), else the whole expression.
+fn dart_selector_root(rhs: &str) -> &str {
+    let is_word = |c: char| c.is_alphanumeric() || matches!(c, '_' | '$');
+    let (root, rest) = rhs.split_at(rhs.find(|c: char| !is_word(c)).unwrap_or(rhs.len()));
+    let mut depth = 0i32;
+    let chain = rest.chars().all(|c| {
+        match c {
+            '(' | '[' => depth += 1,
+            ')' | ']' => depth -= 1,
+            _ => {}
+        }
+        depth > 0 || is_word(c) || matches!(c, '.' | '?' | '!' | '(' | '[' | ')' | ']')
+    });
+    if root.is_empty() || !chain { rhs } else { root }
+}
+
 impl LanguageSemantics for DartLanguage {
     fn tag(&self) -> &'static str {
         "dart"
     }
     super::impl_grammar_method!(ffi tree_sitter_dart, include_str!("../queries/dart/tags.scm"));
+
+    fn lint_extra_rules(&self) -> &'static [&'static str] {
+        &[
+            "do-while",
+            "self-assign",
+            "unreachable-code",
+            "redundant-parens",
+        ]
+    }
+
+    fn assigned_value_root<'a>(&self, rhs: &'a str) -> &'a str {
+        dart_selector_root(rhs)
+    }
+
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["typedef"]
+    }
 
     fn display_color(&self) -> &'static str {
         "#00b4ab"

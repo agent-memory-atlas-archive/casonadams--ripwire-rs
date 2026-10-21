@@ -1,3 +1,4 @@
+pub use super::grep::*;
 pub use super::search::*;
 
 use crate::domain::{IngestResult, Interner, SymKind};

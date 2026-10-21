@@ -183,10 +183,37 @@ impl LanguageSemantics for PythonLanguage {
         "py"
     }
 
+    fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {
+        super::lint_hooks::arrow_return_type(sig)
+    }
+
+    fn lint_name_scope<'a>(&self, scope: Option<&'a str>) -> Option<&'a str> {
+        scope
+    }
+
     fn is_generated_file_name(&self, file_name: &str) -> bool {
         file_name.ends_with("_pb2.py")
     }
     super::impl_grammar_method!(crate tree_sitter_python::LANGUAGE, "../queries/python/tags.scm");
+
+    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>) -> bool {
+        python_read_position(node)
+    }
+
+    fn read_bindings<'a>(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> super::reads::ReadBindings<'a> {
+        super::reads::ReadBindings::collect(root, source, |node| {
+            python_binding_scope(node).map(|scope| {
+                scope
+                    .child_by_field_name("body")
+                    .unwrap_or(scope)
+                    .byte_range()
+            })
+        })
+    }
 
     fn extensions(&self) -> &'static [&'static str] {
         &["py", "pyi"]
@@ -266,4 +293,125 @@ impl LanguageSemantics for PythonLanguage {
             &[".py", "/__init__.py"],
         )
     }
+}
+
+fn python_scope(kind: &str) -> bool {
+    matches!(
+        kind,
+        "function_definition"
+            | "lambda"
+            | "class_definition"
+            | "list_comprehension"
+            | "set_comprehension"
+            | "dictionary_comprehension"
+            | "generator_expression"
+    )
+}
+
+fn python_binding_target(parent: tree_sitter::Node<'_>, node: tree_sitter::Node<'_>) -> bool {
+    let field = match parent.kind() {
+        "assignment" | "augmented_assignment" | "for_statement" | "for_in_clause" => "left",
+        "named_expression"
+        | "function_definition"
+        | "class_definition"
+        | "default_parameter"
+        | "typed_default_parameter" => "name",
+        "aliased_import" => "alias",
+        "parameters" | "lambda_parameters" => return node.parent() == Some(parent),
+        "typed_parameter" => return parent.named_child(0) == Some(node),
+        "import_statement" => return true,
+        "import_from_statement" => return !super::reads::in_field(parent, node, "module_name"),
+        "list_splat_pattern" | "dictionary_splat_pattern" | "as_pattern_target" => return true,
+        _ => return false,
+    };
+    super::reads::in_field(parent, node, field)
+}
+
+fn python_binding_scope(node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    if node.kind() != "identifier" {
+        return None;
+    }
+    let mut ancestor = node.parent();
+    while let Some(parent) = ancestor {
+        if python_binding_target(parent, node) {
+            let owner = if matches!(parent.kind(), "function_definition" | "class_definition") {
+                parent
+            } else {
+                node
+            };
+            return super::reads::enclosing_scope(owner, python_scope)
+                .filter(|scope| scope.kind() != "class_definition");
+        }
+        if python_scope(parent.kind()) {
+            break;
+        }
+        ancestor = parent.parent();
+    }
+    None
+}
+
+fn python_non_value(parent: tree_sitter::Node<'_>, node: tree_sitter::Node<'_>) -> bool {
+    if python_binding_target(parent, node) {
+        return true;
+    }
+    match parent.kind() {
+        "type"
+        | "import_statement"
+        | "import_from_statement"
+        | "global_statement"
+        | "nonlocal_statement"
+        | "dotted_name"
+        | "pattern_list"
+        | "case_pattern" => true,
+        "call" => parent.child_by_field_name("function") == Some(node),
+        "attribute" => parent.child_by_field_name("attribute") == Some(node),
+        "keyword_argument" => super::reads::in_field(parent, node, "name"),
+        _ => false,
+    }
+}
+
+fn python_read_position(node: tree_sitter::Node<'_>) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    // Class namespaces are not lexical parents of method bodies. Class-body lookup is not
+    // resolved by these bare non-local captures.
+    if super::reads::enclosing_scope(node, python_scope)
+        .is_some_and(|scope| scope.kind() == "class_definition")
+    {
+        return false;
+    }
+    let expression = matches!(
+        parent.kind(),
+        "return_statement"
+            | "binary_operator"
+            | "boolean_operator"
+            | "comparison_operator"
+            | "unary_operator"
+            | "not_operator"
+            | "argument_list"
+            | "list"
+            | "tuple"
+            | "set"
+            | "dictionary"
+            | "pair"
+            | "subscript"
+            | "conditional_expression"
+            | "await"
+            | "yield"
+            | "expression_statement"
+            | "assignment"
+            | "named_expression"
+            | "keyword_argument"
+            | "attribute"
+            | "if_statement"
+            | "while_statement"
+            | "default_parameter"
+            | "typed_default_parameter"
+            | "interpolation"
+            | "for_statement"
+            | "for_in_clause"
+            | "parenthesized_expression"
+    );
+    expression && super::reads::value_position(node, python_non_value, python_scope)
 }

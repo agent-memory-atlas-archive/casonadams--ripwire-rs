@@ -52,6 +52,10 @@ Every `@reference.*` or `@import.path` match produces a `Reference` record:
 
 $$\text{Total Call Refs} = \text{Resolved} + \text{External} + \text{Declined} + \text{Unresolved}$$
 
+Only calls, macros, and SQL table read/write lineage enter the call CSR.
+Ordinary variable reads/writes remain indexed evidence for `--uses`, grep read
+locations, and `--nonlocal-state`; target resolution does not turn them into calls.
+
 1. **`RefOutcome::Resolved`**:
    - Bound via the deterministic precedence ladder within the same `DialectGroup`:
      1. Explicit qualifier matching `Symbol::scope`, else the module file an import binds that qualifier to (`LanguageSemantics::import_binding`, e.g. Python `import x as y` for `y.f()`)
@@ -65,8 +69,10 @@ $$\text{Total Call Refs} = \text{Resolved} + \text{External} + \text{Declined} +
 2. **`RefOutcome::External`**:
    - Unresolved call whose qualifier matches `LanguageSemantics::is_std_or_builtin_qualifier` (`std`, `fmt`, `os`, `Array`, `Promise`, `System`, `Console`, `Enum`, `NSString`, etc.) or whose unpinned member name matches `LanguageSemantics::is_std_or_builtin_member`.
 3. **`RefOutcome::Declined`**:
-   - Ambiguous multi-candidate global call or unpinned standard-member call that cannot be uniquely bound without type inference.
-4. **`RefOutcome::Unresolved`**:
+   - Ambiguous multi-candidate global call that cannot be uniquely bound without type inference.
+4. **`RefOutcome::Builtin`**:
+   - A rejected standard-member candidate remains in the declined gauge but never appears as an unbound candidate call in `--impact`'s `<dc>` sample.
+5. **`RefOutcome::Unresolved`**:
    - Call to a symbol name with zero in-tree definitions and no stdlib qualifier/member match.
 
 ---

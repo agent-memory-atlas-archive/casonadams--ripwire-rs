@@ -1,17 +1,26 @@
-use super::lint::{LINT_RULES, LintFinding, LintRuleDesc};
+use super::lint::{LintFinding, LintRuleDesc};
+use super::lint_naming::NameCorpus;
 use crate::domain::{IngestResult, Interner, Lang, SymKind, Symbol};
+use crate::ingest::registry::PARSER_STATE;
+use crate::languages::LanguageSemantics;
 
-pub type SymSpan<'a> = (&'a Symbol, &'a str);
+#[derive(Clone, Copy)]
+pub struct FileSym<'a> {
+    pub sym: &'a Symbol,
+    pub name: &'a str,
+    pub scope: Option<&'a str>,
+}
 
-/// Precomputed per-file context passed to every `FileLintRule`.
 pub struct FileLintContext<'a> {
     pub path: &'a str,
     pub lang: Lang,
+    pub sem: &'static dyn LanguageSemantics,
     pub raw: &'a str,
-    pub code: &'a str,
-    pub code_lines: Vec<(&'a str, &'a str)>,
-    pub syms: Vec<SymSpan<'a>>,
-    pub loop_lines: Vec<bool>,
+    pub code: String,
+    pub syms: Vec<FileSym<'a>>,
+    pub corpus: &'a NameCorpus,
+    pub tree: Option<tree_sitter::Tree>,
+    line_starts: Vec<u32>,
 }
 
 impl<'a> FileLintContext<'a> {
@@ -20,712 +29,175 @@ impl<'a> FileLintContext<'a> {
         path: &'a str,
         lang: Lang,
         raw: &'a str,
-        code: &'a str,
-        syms: Vec<SymSpan<'a>>,
+        syms: Vec<FileSym<'a>>,
+        corpus: &'a NameCorpus,
     ) -> Self {
-        let mut loop_lines = Vec::new();
-        let mut loop_brace_depth: Option<i32> = None;
-        let mut brace_depth: i32 = 0;
-        let mut code_lines = Vec::new();
-        for line in code.lines() {
-            let trimmed = line.trim();
-            let opens_loop = trimmed.starts_with("for ")
-                || trimmed.starts_with("for(")
-                || trimmed.starts_with("while ")
-                || trimmed.starts_with("while(");
-            if opens_loop && loop_brace_depth.is_none() {
-                loop_brace_depth = Some(brace_depth);
-            }
-            let in_loop = loop_brace_depth.is_some() && !opens_loop;
-            loop_lines.push(in_loop);
-            code_lines.push((line, trimmed));
-            brace_depth += line.bytes().filter(|&b| b == b'{').count() as i32;
-            brace_depth -= line.bytes().filter(|&b| b == b'}').count() as i32;
-            if loop_brace_depth.is_some_and(|d| brace_depth <= d) {
-                loop_brace_depth = None;
-            }
-        }
+        let newlines = raw.bytes().enumerate().filter(|&(_, b)| b == b'\n');
+        let line_starts = std::iter::once(0)
+            .chain(newlines.map(|(i, _)| (i + 1) as u32))
+            .collect();
+        let sem = lang.semantics();
+        let tree = parse_source(sem, path, raw);
+        let code = tree.as_ref().map_or_else(
+            || super::source_mask::mask_source(raw, lang).code,
+            |tree| super::source_mask::mask_source_in_tree(raw, lang, tree).code,
+        );
         Self {
             path,
             lang,
+            sem,
             raw,
             code,
-            code_lines,
             syms,
-            loop_lines,
+            corpus,
+            tree,
+            line_starts,
         }
     }
 
     #[must_use]
-    pub fn is_c_family(&self) -> bool {
-        self.lang.semantics().dialect_group() == crate::languages::DialectGroup::CFamily
+    pub fn line_of(&self, pos: usize) -> u32 {
+        self.line_starts.partition_point(|&s| s as usize <= pos) as u32
     }
 
-    #[must_use]
-    pub fn enclosing_at(&self, line_1based: u32) -> &'a str {
+    fn callable_at(&self, pos: usize) -> Option<FileSym<'a>> {
         self.syms
             .iter()
-            .filter(|(s, _)| s.line <= line_1based && line_1based <= s.line.saturating_add(s.loc))
-            .min_by_key(|(s, _)| s.loc)
-            .map_or("<top>", |(_, n)| *n)
+            .copied()
+            .filter(|s| {
+                s.sym.is_callable()
+                    && (s.sym.sig_start_byte as usize..s.sym.end_byte as usize).contains(&pos)
+            })
+            .min_by_key(|s| s.sym.end_byte - s.sym.sig_start_byte)
+    }
+
+    #[must_use]
+    pub fn enclosing_at(&self, pos: usize) -> &'a str {
+        self.callable_at(pos).map_or("", |s| s.name)
+    }
+
+    #[must_use]
+    pub fn in_callable(&self, pos: usize) -> bool {
+        self.callable_at(pos).is_some()
+    }
+
+    #[must_use]
+    pub fn signature(&self, sym: &Symbol) -> &'a str {
+        self.raw
+            .get(sym.sig_start_byte as usize..sym.sig_end_byte as usize)
+            .unwrap_or("")
+    }
+
+    #[must_use]
+    pub fn declaration(&self, sym: &Symbol) -> &'a str {
+        self.raw.get(sym.sig_start_byte as usize..).unwrap_or("")
+    }
+
+    #[must_use]
+    pub fn body(&self, sym: &Symbol) -> &str {
+        self.code
+            .get(sym.sig_end_byte as usize..sym.end_byte as usize)
+            .unwrap_or("")
     }
 }
 
-/// Trait implemented by every file-, scope-, or line-level lint rule.
-pub trait FileLintRule: Sync {
-    fn desc(&self) -> LintRuleDesc;
-    fn check_file(&self, ctx: &FileLintContext<'_>, findings: &mut Vec<LintFinding>);
+fn parse_source(
+    sem: &dyn LanguageSemantics,
+    path: &str,
+    source: &str,
+) -> Option<tree_sitter::Tree> {
+    let grammar = sem.source_grammar(path)?;
+    PARSER_STATE.with(|state| {
+        let mut borrowed = state.borrow_mut();
+        let (parser, _) = &mut *borrowed;
+        parser.set_language(grammar).ok()?;
+        parser.parse(source, None)
+    })
+}
 
-    fn emit(
-        &self,
-        ctx: &FileLintContext<'_>,
-        line: u32,
-        enclosing: &str,
-        message: &str,
-        findings: &mut Vec<LintFinding>,
-    ) {
-        let d = self.desc();
-        findings.push(LintFinding {
-            rule: d.name.to_string(),
-            message: message.to_string(),
-            path: ctx.path.to_string(),
+pub struct Sink<'a> {
+    desc: &'static LintRuleDesc,
+    ctx: &'a FileLintContext<'a>,
+    pub out: Vec<LintFinding>,
+    pub capped: bool,
+}
+
+impl<'a> Sink<'a> {
+    #[must_use]
+    pub fn new(desc: &'static LintRuleDesc, ctx: &'a FileLintContext<'a>) -> Self {
+        Self {
+            desc,
+            ctx,
+            out: Vec::new(),
+            capped: false,
+        }
+    }
+
+    fn push(&mut self, pos: usize, line: u32, enclosing: &str, message: String) {
+        self.out.push(LintFinding {
+            rule: self.desc.name,
+            path: self.ctx.path.to_string(),
             line,
-            severity: d.severity.to_string(),
+            pos: pos as u32,
             enclosing: enclosing.to_string(),
+            message,
         });
     }
-}
 
-pub enum FileLintKind {
-    AllLines(fn(usize, &str, &FileLintContext<'_>) -> Option<&'static str>),
-    CFamilyLines(fn(usize, &str, &FileLintContext<'_>) -> Option<&'static str>),
-    Custom(fn(&FileLintSpec, &FileLintContext<'_>, &mut Vec<LintFinding>)),
-}
-
-pub struct FileLintSpec {
-    pub desc: LintRuleDesc,
-    pub kind: FileLintKind,
-}
-
-impl FileLintRule for FileLintSpec {
-    fn desc(&self) -> LintRuleDesc {
-        self.desc
+    pub fn at(&mut self, pos: usize, message: impl Into<String>) {
+        let enclosing = self.ctx.enclosing_at(pos);
+        self.push(pos, self.ctx.line_of(pos), enclosing, message.into());
     }
-    fn check_file(&self, ctx: &FileLintContext<'_>, findings: &mut Vec<LintFinding>) {
-        let line_fn = match self.kind {
-            FileLintKind::AllLines(f) => f,
-            FileLintKind::CFamilyLines(f) => {
-                if !ctx.is_c_family() {
-                    return;
-                }
-                f
-            }
-            FileLintKind::Custom(custom) => {
-                custom(self, ctx, findings);
-                return;
-            }
-        };
-        for (idx, &(_, trimmed)) in ctx.code_lines.iter().enumerate() {
-            if !trimmed.is_empty()
-                && let Some(msg) = line_fn(idx, trimmed, ctx)
-            {
-                let line_no = (idx + 1) as u32;
-                self.emit(ctx, line_no, ctx.enclosing_at(line_no), msg, findings);
-            }
-        }
+
+    pub fn at_symbol(&mut self, s: FileSym<'_>, message: impl Into<String>) {
+        self.push(
+            s.sym.sig_start_byte as usize,
+            s.sym.line,
+            s.name,
+            message.into(),
+        );
     }
 }
 
-fn strip_digit_suffix(name: &str) -> Option<&str> {
-    let trimmed = name.trim_end_matches(|c: char| c.is_ascii_digit());
-    (trimmed.len() < name.len() && !trimmed.is_empty()).then_some(trimmed)
-}
-
-fn sig_return_type<'a>(raw: &'a str, sym: &Symbol) -> Option<&'a str> {
-    let sig = raw.get(sym.sig_start_byte as usize..sym.sig_end_byte as usize)?;
-    let (_, ret) = sig.rsplit_once("->")?;
-    let ret = ret.trim().trim_end_matches('{').trim();
-    (!ret.is_empty()).then_some(ret)
-}
-
-fn edit_distance_one(a: &str, b: &str) -> bool {
-    let (ab, bb) = (a.as_bytes(), b.as_bytes());
-    if ab.len() == bb.len() {
-        return ab.iter().zip(bb).filter(|(x, y)| x != y).count() == 1;
-    }
-    let (short, long) = if ab.len() < bb.len() {
-        (ab, bb)
-    } else {
-        (bb, ab)
-    };
-    if long.len() != short.len() + 1 {
-        return false;
-    }
-    let i = short
-        .iter()
-        .zip(long)
-        .position(|(x, y)| x != y)
-        .unwrap_or(short.len());
-    short[i..] == long[i + 1..]
-}
-
-fn extract_cond(t: &str) -> Option<&str> {
-    let head = t.split('{').next()?;
-    head.strip_prefix("if (")
-        .or_else(|| head.strip_prefix("if("))
-        .or_else(|| head.strip_prefix("while ("))
-        .or_else(|| head.strip_prefix("while("))?
-        .rsplit_once(')')
-        .map(|(c, _)| c)
-}
-
-const GENERIC_SUBTOKENS: &[&str] = &[
-    "get", "set", "do", "run", "handle", "process", "data", "item", "val", "value", "info", "obj",
-    "tmp", "fn", "func", "helper", "util",
-];
-
-const C_STYLE_CASTS: &[&str] = &[
-    "(int)",
-    "(unsigned)",
-    "(unsigned ",
-    "(long)",
-    "(long ",
-    "(short)",
-    "(char)",
-    "(char*)",
-    "(const char*)",
-    "(void*)",
-    "(const void*)",
-    "(size_t)",
-    "(std::size_t)",
-    "(uint32_t)",
-    "(uint64_t)",
-    "(int32_t)",
-    "(int64_t)",
-    "(double)",
-    "(float)",
-];
-
-const ALLOWED_NUM_LITERALS: &[&str] = &[
-    "10", "12", "16", "20", "24", "32", "40", "48", "60", "64", "80", "100", "120", "128", "200",
-    "256", "500", "512", "1000", "1024", "2048", "4096", "8192", "65536",
-];
-
-fn check_inconsistent_return(
-    rule: &FileLintSpec,
-    ctx: &FileLintContext<'_>,
-    findings: &mut Vec<LintFinding>,
-) {
-    for &(sym, name) in &ctx.syms {
-        if sym.is_callable()
-            && let Some(body) = ctx
-                .code
-                .get(sym.sig_end_byte as usize..sym.end_byte as usize)
-            && body.contains("return;")
-            && body.contains("return ")
-        {
-            rule.emit(
-                ctx,
-                sym.line,
-                name,
-                &format!("Function '{name}' mixes bare and value returns"),
-                findings,
-            );
-        }
-    }
-}
-
-fn check_unreachable_code(
-    rule: &FileLintSpec,
-    ctx: &FileLintContext<'_>,
-    findings: &mut Vec<LintFinding>,
-) {
-    let mut prev_jump = false;
-    for (idx, &(_, t)) in ctx.code_lines.iter().enumerate() {
-        if t.is_empty() {
-            continue;
-        }
-        let closes = ["}", "case ", "default:", "else", "catch", "except"]
-            .iter()
-            .any(|p| t.starts_with(p))
-            || t.ends_with(':');
-        if prev_jump && !closes {
-            let line_no = (idx + 1) as u32;
-            rule.emit(
-                ctx,
-                line_no,
-                ctx.enclosing_at(line_no),
-                "statement after unconditional jump",
-                findings,
-            );
-        }
-        prev_jump = t == "break;"
-            || t == "continue;"
-            || t == "return;"
-            || (t.starts_with("return ") && t.ends_with(';') && !t.contains("if "))
-            || (t.starts_with("throw ") && t.ends_with(';'))
-            || (t.starts_with("goto ") && t.ends_with(';'));
-    }
-}
-
-fn check_naming_series(
-    rule: &FileLintSpec,
-    ctx: &FileLintContext<'_>,
-    findings: &mut Vec<LintFinding>,
-) {
-    let mut series = std::collections::HashMap::<_, Vec<(&Symbol, &str)>>::new();
-    for &(sym, name) in &ctx.syms {
-        let short = name.rsplit("::").next().unwrap_or(name);
-        if let Some(base) = strip_digit_suffix(short) {
-            series
-                .entry((sym.scope, base))
-                .or_default()
-                .push((sym, short));
-        }
-    }
-    for ((_, base), mut group) in series {
-        group.sort_by_key(|(_, s)| *s);
-        group.dedup_by_key(|(_, s)| *s);
-        if group.len() >= 2 {
-            let (sym, name) = group[0];
-            rule.emit(
-                ctx,
-                sym.line,
-                name,
-                &format!("Digit-suffixed series '{base}1/{base}2/...'"),
-                findings,
-            );
-        }
-    }
-}
-
-fn check_return_type_lint(
-    rule: &FileLintSpec,
-    ctx: &FileLintContext<'_>,
-    findings: &mut Vec<LintFinding>,
-    check: fn(&str, &str) -> Option<String>,
-) {
-    for &(sym, name) in &ctx.syms {
-        let short = name.rsplit("::").next().unwrap_or(name);
-        if let Some(ret) = sig_return_type(ctx.raw, sym)
-            && let Some(msg) = check(short, ret)
-        {
-            rule.emit(ctx, sym.line, name, &msg, findings);
-        }
-    }
-}
-
-fn check_naming_predicate(
-    rule: &FileLintSpec,
-    ctx: &FileLintContext<'_>,
-    findings: &mut Vec<LintFinding>,
-) {
-    check_return_type_lint(rule, ctx, findings, |short, ret| {
-        (["is_", "has_", "can_", "should_", "was_"]
-            .iter()
-            .any(|p| short.starts_with(p))
-            && !ret.contains("bool"))
-        .then(|| format!("Predicate '{short}' returns '{ret}'"))
-    });
-}
-
-fn check_naming_setter(
-    rule: &FileLintSpec,
-    ctx: &FileLintContext<'_>,
-    findings: &mut Vec<LintFinding>,
-) {
-    check_return_type_lint(rule, ctx, findings, |short, ret| {
-        (short.starts_with("set_") && ret != "()" && !ret.contains("Result<()>"))
-            .then(|| format!("Setter '{short}' returns '{ret}'"))
-    });
-}
-
-fn check_naming_confusable(
-    rule: &FileLintSpec,
-    ctx: &FileLintContext<'_>,
-    findings: &mut Vec<LintFinding>,
-) {
-    for (i, &(sa, na)) in ctx.syms.iter().enumerate() {
-        let sha = na.rsplit("::").next().unwrap_or(na);
-        if sha.len() < 4 || strip_digit_suffix(sha).is_some() {
-            continue;
-        }
-        if let Some((_, nb)) = ctx.syms[i + 1..].iter().find(|&&(sb, nb)| {
-            let shb = nb.rsplit("::").next().unwrap_or(nb);
-            sa.scope == sb.scope
-                && shb.len() >= 4
-                && strip_digit_suffix(shb).is_none()
-                && edit_distance_one(sha, shb)
-        }) {
-            rule.emit(
-                ctx,
-                sa.line,
-                na,
-                &format!("Confusable names '{sha}' and '{nb}'"),
-                findings,
-            );
-        }
-    }
-}
-
-fn check_naming_uninformative(
-    rule: &FileLintSpec,
-    ctx: &FileLintContext<'_>,
-    findings: &mut Vec<LintFinding>,
-) {
-    for &(sym, name) in &ctx.syms {
-        if sym.is_callable() && sym.loc >= 20 {
-            let short = name.rsplit("::").next().unwrap_or(name);
-            let parts: Vec<&str> = short.split('_').filter(|s| !s.is_empty()).collect();
-            if !parts.is_empty()
-                && parts
-                    .iter()
-                    .all(|p| GENERIC_SUBTOKENS.contains(&p.to_ascii_lowercase().as_str()))
-            {
-                rule.emit(
-                    ctx,
-                    sym.line,
-                    name,
-                    &format!("Function '{short}' uses only generic subtokens"),
-                    findings,
-                );
-            }
-        }
-    }
-}
-
-fn check_shared_ptr_by_value(
-    rule: &FileLintSpec,
-    ctx: &FileLintContext<'_>,
-    findings: &mut Vec<LintFinding>,
-) {
-    if !ctx.is_c_family() {
-        return;
-    }
-    for &(sym, name) in &ctx.syms {
-        if sym.is_callable()
-            && let Some(sig) = ctx
-                .code
-                .get(sym.sig_start_byte as usize..sym.sig_end_byte as usize)
-            && let Some(after) = sig.split("shared_ptr<").nth(1)
-            && let Some(tail) = after.split([',', ')']).next()
-            && !tail.contains('&')
-            && !tail.contains('*')
-        {
-            rule.emit(
-                ctx,
-                sym.line,
-                name,
-                &format!("Function '{name}' takes shared_ptr by value"),
-                findings,
-            );
-        }
-    }
-}
-
-/// Complete registry of all 33 file-, scope-, and line-level lint rules.
-pub static FILE_LINT_RULES: &[&dyn FileLintRule] = &[
-    &FileLintSpec {
-        desc: LINT_RULES[10],
-        kind: FileLintKind::CFamilyLines(|_, t, _| {
-            C_STYLE_CASTS
-                .iter()
-                .any(|c| t.contains(c))
-                .then_some("C-style cast")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[11],
-        kind: FileLintKind::AllLines(|_, t, _| t.contains("goto ").then_some("goto statement")),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[12],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            (t.starts_with("} while (") || t.starts_with("} while(")).then_some("do/while loop")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[13],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            ["strcpy(", "strcat(", "sprintf(", "gets("]
-                .iter()
-                .any(|f| t.contains(f))
-                .then_some("unbounded C string call")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[14],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            ["MD5(", "SHA1(", "MD4(", "RC4("]
-                .iter()
-                .any(|c| t.contains(c))
-                .then_some("weak cryptographic primitive")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[15],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            ["if ((", "while ((", "return (("]
-                .iter()
-                .any(|p| {
-                    t.strip_prefix(p)
-                        .and_then(|r| r.split_once("))"))
-                        .is_some_and(|(inner, _)| {
-                            !inner.is_empty()
-                                && inner.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                        })
-                })
-                .then_some("doubly-parenthesized expression")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[16],
-        kind: FileLintKind::CFamilyLines(|_, t, _| {
-            ((t.starts_with("if (") || t.starts_with("if("))
-                && t.strip_suffix(';')
-                    .is_some_and(|s| s.trim_end().ends_with(')')))
-            .then_some("if condition followed immediately by ';'")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[17],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            t.contains("typedef struct ")
-                .then_some("C-style typedef struct")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[18],
-        kind: FileLintKind::CFamilyLines(|idx, t, ctx| {
-            let line_no = (idx + 1) as u32;
-            let is_decl = ["const ", "constexpr ", "#define", "case ", "enum "]
-                .iter()
-                .any(|p| t.contains(p));
-            if is_decl || ctx.enclosing_at(line_no) == "<top>" {
-                return None;
-            }
-            t.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-                .any(|tok| {
-                    tok.len() >= 2
-                        && tok.bytes().all(|b| b.is_ascii_digit())
-                        && !ALLOWED_NUM_LITERALS.contains(&tok)
-                })
-                .then_some("non-trivial numeric literal in function body")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[19],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            (t.contains("catch {}") || t.contains("catch (...) {}")).then_some("empty catch block")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[20],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            let (lhs, rhs) = t.strip_suffix(';')?.split_once('=')?;
-            if lhs.ends_with(['=', '!', '<', '>', '+', '-', '*', '/', '%', '&', '|', '^'])
-                || rhs.starts_with('=')
-            {
-                return None;
-            }
-            let (l, r) = (lhs.trim(), rhs.trim());
-            (!l.is_empty()
-                && l == r
-                && l.chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.')))
-            .then_some("self-assignment x = x")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[21],
-        kind: FileLintKind::Custom(check_inconsistent_return),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[22],
-        kind: FileLintKind::Custom(check_unreachable_code),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[23],
-        kind: FileLintKind::Custom(check_naming_series),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[24],
-        kind: FileLintKind::Custom(check_naming_predicate),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[25],
-        kind: FileLintKind::Custom(check_naming_setter),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[26],
-        kind: FileLintKind::Custom(check_naming_confusable),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[27],
-        kind: FileLintKind::Custom(check_naming_uninformative),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[28],
-        kind: FileLintKind::CFamilyLines(|_, t, _| {
-            let (first_lhs, _) = t.split_once('=')?;
-            (!t.starts_with("for")
-                && t.ends_with(';')
-                && !t.contains('(')
-                && !first_lhs.trim().contains(' ')
-                && t.matches('=').count() >= 2
-                && t.contains(", "))
-            .then_some("comma operator in expression statement")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[29],
-        kind: FileLintKind::CFamilyLines(|_, t, _| {
-            if t.starts_with("for ")
-                || t.starts_with("for(")
-                || !(t.contains("++") || t.contains("--"))
-            {
-                return None;
-            }
-            let has_outer_expr = t.contains(" = ")
-                || t.contains("+ ")
-                || t.contains("- ")
-                || (t.contains('[') && (t.contains("++]") || t.contains("--]")));
-            has_outer_expr.then_some("++/-- embedded inside a larger expression")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[30],
-        kind: FileLintKind::CFamilyLines(|_, t, _| {
-            extract_cond(t)
-                .is_some_and(|c| c.contains(" = "))
-                .then_some("assignment used as condition value")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[31],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            (t.matches('?').count() >= 2 && t.replace("::", "").matches(':').count() >= 2)
-                .then_some("nested conditional ?: expression")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[32],
-        kind: FileLintKind::CFamilyLines(|_, t, _| {
-            let cond = extract_cond(t)?;
-            let has_cmp = ["==", "!=", "<=", ">=", "<", ">", "&&", "||", "!"]
-                .iter()
-                .any(|op| cond.contains(op));
-            (!has_cmp && (cond.contains("strcmp(") || cond.contains(" + ") || cond.contains(" % ")))
-                .then_some("arithmetic or strcmp used as truth value")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[33],
-        kind: FileLintKind::CFamilyLines(|_, t, _| {
-            t.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-                .any(|tok| {
-                    tok.len() >= 2
-                        && tok.starts_with('0')
-                        && tok.bytes().all(|b| (b'0'..=b'7').contains(&b))
-                })
-                .then_some("leading-zero octal integer literal")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[34],
-        kind: FileLintKind::CFamilyLines(|_, t, _| {
-            let b = t.as_bytes();
-            (1..b.len())
-                .any(|i| {
-                    b[i] == b'['
-                        && b[i - 1].is_ascii_digit()
-                        && (i < 2 || !(b[i - 2].is_ascii_alphanumeric() || b[i - 2] == b'_'))
-                })
-                .then_some("reversed subscript literal[expr]")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[35],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            ["std::map<", "std::list<", "std::set<"]
-                .iter()
-                .any(|c| t.contains(c))
-                .then_some("node-based std container")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[36],
-        kind: FileLintKind::CFamilyLines(|_, t, _| {
-            t.split("vector<")
-                .nth(1)
-                .and_then(|a| a.split('>').next())
-                .is_some_and(|ty| ty.contains('*'))
-                .then_some("vector<T*> scatters pointees")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[37],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            [
-                "std::vector<std::unique_ptr<",
-                "std::vector<std::shared_ptr<",
-            ]
-            .iter()
-            .any(|c| t.contains(c))
-            .then_some("vector of smart pointers")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[38],
-        kind: FileLintKind::CFamilyLines(|idx, t, ctx| {
-            (ctx.loop_lines[idx]
-                && ["new ", "malloc(", "calloc(", "realloc(", "strdup("]
-                    .iter()
-                    .any(|a| t.contains(a)))
-            .then_some("heap allocation inside loop")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[39],
-        kind: FileLintKind::CFamilyLines(|idx, t, ctx| {
-            (ctx.loop_lines[idx] && t.contains('=') && t.contains("->next"))
-                .then_some("pointer-chase ->next inside loop")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[40],
-        kind: FileLintKind::CFamilyLines(|idx, t, ctx| {
-            (ctx.loop_lines[idx]
-                && t.split_once('[')
-                    .and_then(|(_, r)| r.split_once(']'))
-                    .is_some_and(|(inner, _)| inner.contains('[')))
-            .then_some("nested gather subscript a[b[i]] in loop")
-        }),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[41],
-        kind: FileLintKind::Custom(check_shared_ptr_by_value),
-    },
-    &FileLintSpec {
-        desc: LINT_RULES[42],
-        kind: FileLintKind::AllLines(|_, t, _| {
-            (t.contains("_mm_prefetch(") || t.contains("__builtin_prefetch("))
-                .then_some("manual prefetch intrinsic")
-        }),
-    },
-];
-
-/// Collect `(symbol, resolved_name)` pairs belonging to `file_id`.
 #[must_use]
 pub fn symbols_in_file<'a>(
     ingest: &'a IngestResult,
     interner: &'a Interner,
     file_id: u32,
-) -> Vec<SymSpan<'a>> {
-    ingest
+) -> Vec<FileSym<'a>> {
+    let mut syms: Vec<FileSym<'a>> = ingest
         .symbols
         .iter()
         .filter(|s| s.file_id == file_id && s.kind != SymKind::Section)
-        .map(|s| (s, interner.resolve(&s.name)))
+        .map(|s| FileSym {
+            sym: s,
+            name: interner.resolve(&s.name),
+            scope: s.scope.as_ref().and_then(|sc| interner.try_resolve(sc)),
+        })
+        .collect();
+    syms.sort_by_key(|s| (s.sym.sig_start_byte, s.sym.line));
+    syms
+}
+
+pub(crate) fn large_function(ctx: &FileLintContext<'_>, sink: &mut Sink<'_>) {
+    for &s in ctx
+        .syms
+        .iter()
+        .filter(|s| s.sym.is_callable() && s.sym.loc.saturating_sub(1) > 80)
+    {
+        sink.at_symbol(s, format!("{} ({} lines)", s.name, s.sym.loc - 1));
+    }
+}
+
+pub(crate) fn one_line(raw: &str) -> String {
+    raw.chars()
+        .take(120)
+        .map(|c| {
+            if matches!(c, '\n' | '\r' | '\t') {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect()
 }

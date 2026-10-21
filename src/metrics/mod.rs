@@ -5,6 +5,8 @@ pub mod eval;
 pub mod hotspots;
 pub mod layout;
 pub mod lint;
+mod lint_naming;
+mod lint_report;
 pub mod lint_rules;
 pub mod nonlocal;
 pub mod quality_panel;

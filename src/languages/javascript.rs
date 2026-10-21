@@ -314,6 +314,20 @@ impl LanguageSemantics for JavaScriptLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_javascript::LANGUAGE, "../queries/javascript/tags.scm");
 
+    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>) -> bool {
+        javascript_read_position(node)
+    }
+
+    fn read_bindings<'a>(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> super::reads::ReadBindings<'a> {
+        super::reads::ReadBindings::collect(root, source, |node| {
+            javascript_binding_scope(node).map(|scope| scope.byte_range())
+        })
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         &["js", "jsx", "mjs", "cjs"]
     }
@@ -375,4 +389,152 @@ impl LanguageSemantics for JavaScriptLanguage {
     ) -> Option<u32> {
         resolve_web_import_target(importer_path, raw_target, file_index)
     }
+}
+
+fn javascript_scope(kind: &str) -> bool {
+    matches!(
+        kind,
+        "function_declaration"
+            | "function_expression"
+            | "generator_function"
+            | "generator_function_declaration"
+            | "arrow_function"
+            | "method_definition"
+            | "statement_block"
+            | "catch_clause"
+            | "for_statement"
+            | "for_in_statement"
+    )
+}
+
+fn javascript_binding_target(parent: tree_sitter::Node<'_>, node: tree_sitter::Node<'_>) -> bool {
+    let field = match parent.kind() {
+        "variable_declarator"
+        | "function_declaration"
+        | "function_expression"
+        | "class_declaration"
+        | "class"
+        | "generator_function"
+        | "generator_function_declaration" => "name",
+        "required_parameter" | "optional_parameter" => "pattern",
+        "catch_clause" | "arrow_function" => "parameter",
+        "assignment_pattern" | "pair_pattern" | "for_in_statement" => "left",
+        "formal_parameters" => return node.parent() == Some(parent),
+        "rest_pattern" | "object_pattern" | "array_pattern" | "import_specifier"
+        | "namespace_import" | "import_clause" => return true,
+        _ => return false,
+    };
+    super::reads::in_field(parent, node, field)
+}
+
+pub(super) fn javascript_binding_scope(
+    node: tree_sitter::Node<'_>,
+) -> Option<tree_sitter::Node<'_>> {
+    if !matches!(
+        node.kind(),
+        "identifier" | "shorthand_property_identifier_pattern"
+    ) {
+        return None;
+    }
+    let mut ancestor = node.parent();
+    while let Some(parent) = ancestor {
+        if javascript_binding_target(parent, node) {
+            let owner = if matches!(
+                parent.kind(),
+                "function_declaration" | "generator_function_declaration" | "class_declaration"
+            ) {
+                parent
+            } else {
+                node
+            };
+            return javascript_binding_owner(owner, parent);
+        }
+        if javascript_scope(parent.kind()) {
+            break;
+        }
+        ancestor = parent.parent();
+    }
+    None
+}
+
+fn javascript_binding_owner<'a>(
+    owner: tree_sitter::Node<'a>,
+    binding: tree_sitter::Node<'a>,
+) -> Option<tree_sitter::Node<'a>> {
+    let function_scoped = binding.kind() == "variable_declarator"
+        && binding
+            .parent()
+            .is_some_and(|parent| parent.kind() == "variable_declaration");
+    super::reads::enclosing_scope(owner, |kind| {
+        javascript_scope(kind)
+            && (!function_scoped
+                || !matches!(
+                    kind,
+                    "statement_block" | "catch_clause" | "for_statement" | "for_in_statement"
+                ))
+    })
+}
+
+fn javascript_non_value(parent: tree_sitter::Node<'_>, node: tree_sitter::Node<'_>) -> bool {
+    if javascript_binding_target(parent, node) {
+        return true;
+    }
+    match parent.kind() {
+        "type_annotation"
+        | "type_arguments"
+        | "type_parameters"
+        | "import_statement"
+        | "jsx_opening_element"
+        | "jsx_closing_element"
+        | "jsx_self_closing_element" => true,
+        "call_expression" | "new_expression" => {
+            parent.child_by_field_name("function") == Some(node)
+                || parent.child_by_field_name("constructor") == Some(node)
+        }
+        "assignment_expression" | "augmented_assignment_expression" => {
+            super::reads::in_field(parent, node, "left")
+        }
+        "update_expression" => true,
+        "pair" => super::reads::in_field(parent, node, "key"),
+        _ => false,
+    }
+}
+
+pub(super) fn javascript_read_position(node: tree_sitter::Node<'_>) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    let expression = matches!(
+        parent.kind(),
+        "return_statement"
+            | "binary_expression"
+            | "ternary_expression"
+            | "arguments"
+            | "array"
+            | "object"
+            | "pair"
+            | "subscript_expression"
+            | "member_expression"
+            | "expression_statement"
+            | "unary_expression"
+            | "await_expression"
+            | "yield_expression"
+            | "spread_element"
+            | "template_substitution"
+            | "variable_declarator"
+            | "assignment_expression"
+            | "augmented_assignment_expression"
+            | "parenthesized_expression"
+            | "if_statement"
+            | "while_statement"
+            | "for_statement"
+            | "for_in_statement"
+            | "non_null_expression"
+            | "as_expression"
+            | "satisfies_expression"
+            | "assignment_pattern"
+            | "required_parameter"
+            | "optional_parameter"
+    );
+    expression && super::reads::value_position(node, javascript_non_value, javascript_scope)
 }

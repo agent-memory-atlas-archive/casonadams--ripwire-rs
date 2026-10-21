@@ -77,25 +77,12 @@ fn execute_pattern_or_match<W: Write>(
             ingest,
             interner,
             pat,
-            ret.grep_in.as_deref(),
+            ret.in_scope.as_deref(),
         );
         crate::serialize::serialize_grep_xml(&val, out)?;
     } else if let Some(q) = ret.ast_match.as_deref() {
         let val = crate::mcp::retrieval::call_ast_match(root, ingest, interner, q)
             .map_err(io::Error::other)?;
-        crate::serialize::serialize_grep_xml(&val, out)?;
-    } else if let Some(pat) = ret.regex.as_deref() {
-        let before = ret.grep_before.or(ret.grep_context).unwrap_or(0);
-        let after = ret.grep_after.or(ret.grep_context).unwrap_or(0);
-        let val = crate::mcp::retrieval::call_grep_with_context(
-            root,
-            ingest,
-            interner,
-            pat,
-            ret.grep_in.as_deref(),
-            before,
-            after,
-        );
         crate::serialize::serialize_grep_xml(&val, out)?;
     } else if let Some(task) = ret.help_task.as_deref() {
         super::task_route::write_help_task_xml(task, root, ingest, interner, out)?;
@@ -138,42 +125,57 @@ fn execute_advanced_retrieval<W: Write>(
     }
 }
 
-fn execute_grep_cli_dispatch<W: Write>(
+pub fn execute_grep_cli_dispatch<W: Write>(
     ret: &TopRetrievalArgs,
+    verb: &str,
     pat: &str,
-    root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
+    ctx: &super::dispatch::ExecutionContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
-    let before = ret.grep_before.or(ret.grep_context).unwrap_or(0);
-    let after = ret.grep_after.or(ret.grep_context).unwrap_or(0);
-    let path_filter = ret
-        .grep_in
-        .as_deref()
-        .or(ret.grep_scope.as_deref())
-        .or(ret.in_scope.as_deref());
-    let mut val = crate::mcp::retrieval::call_grep_with_context(
-        root,
-        ingest,
-        interner,
-        pat,
-        path_filter,
-        before,
-        after,
-    );
-    if let Some(arr) = val
-        .get_mut("hits")
-        .and_then(serde_json::Value::as_array_mut)
-    {
-        if let Some(and_p) = ret.and_pat.as_deref() {
-            arr.retain(|h| h["text"].as_str().is_some_and(|t| t.contains(and_p)));
-        }
-        if let Some(not_p) = ret.not_pat.as_deref() {
-            arr.retain(|h| !h["text"].as_str().is_some_and(|t| t.contains(not_p)));
-        }
+    let req = crate::mcp::retrieval::GrepRequest {
+        verb,
+        path_filter: ret.in_scope.as_deref(),
+        any_tier: ret.grep_in.as_deref() == Some("any"),
+        before: ret.grep_before.or(ret.grep_context).unwrap_or(0),
+        after: ret.grep_after.or(ret.grep_context).unwrap_or(0),
+        and_terms: &ret.and_pat,
+        not_terms: &ret.not_pat,
+        file_scope: ret.grep_scope.as_deref() == Some("file"),
+        graph: Some(ctx.graph),
+        ..crate::mcp::retrieval::GrepRequest::new(ctx.root, pat)
+    };
+    let mut val = crate::mcp::retrieval::call_grep(ctx.ingest, ctx.interner, &req);
+    if let Some(limit) = ctx.cli.modifiers.limit {
+        val["limit"] = limit.into();
+    }
+    if let Some(offset) = ctx.cli.modifiers.offset {
+        val["offset"] = offset.into();
     }
     crate::serialize::serialize_grep_xml(&val, out)
+}
+
+pub fn execute_retrieval_verb<W: Write>(
+    ret: &TopRetrievalArgs,
+    ctx: &super::dispatch::ExecutionContext<'_>,
+    out: &mut W,
+) -> io::Result<()> {
+    let target = ret
+        .grep
+        .as_deref()
+        .map(|p| ("grep", p))
+        .or_else(|| ret.regex.as_deref().map(|p| ("regex", p)));
+    match target {
+        Some((verb, pat)) => execute_grep_cli_dispatch(ret, verb, pat, ctx, out),
+        None => execute_retrieval_dispatch(
+            ret,
+            ctx.root,
+            ctx.ingest,
+            ctx.graph,
+            ctx.pr,
+            ctx.interner,
+            out,
+        ),
+    }
 }
 
 pub fn execute_retrieval_dispatch<W: Write>(
@@ -188,9 +190,7 @@ pub fn execute_retrieval_dispatch<W: Write>(
     if execute_task_or_signatures(ret, root, ingest, graph, pr, interner, out)? {
         return Ok(());
     }
-    if let Some(pat) = ret.grep.as_deref() {
-        execute_grep_cli_dispatch(ret, pat, root, ingest, interner, out)
-    } else if let Some(syms) = ret.connect.as_deref() {
+    if let Some(syms) = ret.connect.as_deref() {
         execute_connect_query_with_radius(
             root,
             syms,

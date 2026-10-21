@@ -37,6 +37,20 @@ impl LanguageSemantics for PhpLanguage {
     }
     super::impl_grammar_method!(ffi tree_sitter_php, include_str!("../queries/php/tags.scm"));
 
+    fn lint_extra_rules(&self) -> &'static [&'static str] {
+        &[
+            "c-style-cast",
+            "redundant-parens",
+            "do-while",
+            "self-assign",
+            "unreachable-code",
+        ]
+    }
+
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["enum"]
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         &["php", "phtml"]
     }

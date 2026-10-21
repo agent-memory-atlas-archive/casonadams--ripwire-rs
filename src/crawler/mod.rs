@@ -104,6 +104,75 @@ fn process_crawl_entry(
     Some(file)
 }
 
+fn tracked_path(root: &Path, relative: &Path) -> Option<PathBuf> {
+    let mut path = root.to_path_buf();
+    for part in relative.components() {
+        path.push(part);
+        if path.is_symlink() {
+            return None;
+        }
+    }
+    Some(path)
+}
+
+fn tracked_file(root: &Path, relative: &str, options: &CrawlerOptions) -> Option<(PathBuf, u64)> {
+    let relative_path = Path::new(relative);
+    if !relative_path
+        .components()
+        .all(|part| matches!(part, std::path::Component::Normal(_)))
+        || is_path_denylisted(relative_path, &options.custom_excludes)
+    {
+        return None;
+    }
+    let path = tracked_path(root, relative_path)?;
+    let metadata = path.symlink_metadata().ok()?;
+    metadata.is_file().then_some((path, metadata.len()))
+}
+
+fn append_tracked_files(root: &Path, options: &CrawlerOptions, files: &mut Vec<CrawledFile>) {
+    let Some(root_str) = root.to_str() else {
+        return;
+    };
+    let mut added = Vec::new();
+    crate::git::repo::for_each_tracked_path(root_str, |relative| {
+        if files
+            .binary_search_by(|file| file.rel_path.as_str().cmp(relative))
+            .is_ok()
+        {
+            return;
+        }
+        let Some((path, size)) = tracked_file(root, relative, options) else {
+            return;
+        };
+        if let Some(mut file) = evaluate_candidate(relative, size, false, options) {
+            file.path = path;
+            added.push(file);
+        }
+    });
+    files.extend(added);
+    files.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+    files.dedup_by(|a, b| a.rel_path == b.rel_path);
+}
+
+fn append_tracked_paths(root: &Path, options: &CrawlerOptions, paths: &mut Vec<String>) {
+    let Some(root_str) = root.to_str() else {
+        return;
+    };
+    let mut added = Vec::new();
+    crate::git::repo::for_each_tracked_path(root_str, |relative| {
+        if paths
+            .binary_search_by(|path| path.as_str().cmp(relative))
+            .is_err()
+            && tracked_file(root, relative, options).is_some()
+        {
+            added.push(relative.to_string());
+        }
+    });
+    paths.extend(added);
+    paths.sort_unstable();
+    paths.dedup();
+}
+
 pub fn crawl_directory<P: AsRef<Path>>(root: P, options: &CrawlerOptions) -> Vec<CrawledFile> {
     let root = root.as_ref();
     let mut files = Vec::new();
@@ -113,6 +182,7 @@ pub fn crawl_directory<P: AsRef<Path>>(root: P, options: &CrawlerOptions) -> Vec
         }
     }
     files.sort_by(|a, b| a.rel_path.as_bytes().cmp(b.rel_path.as_bytes()));
+    append_tracked_files(root, options, &mut files);
     files
 }
 
@@ -239,4 +309,45 @@ pub fn scan_skipped_census<P: AsRef<Path>>(root: P, options: &CrawlerOptions) ->
     exts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     census.unindexed_exts = exts;
     census
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct CorpusWalk {
+    pub rel_paths: Vec<String>,
+    pub pruned_dirs: usize,
+}
+
+fn count_denylisted_children(dir: &Path, custom_excludes: &[String]) -> usize {
+    std::fs::read_dir(dir).map_or(0, |entries| {
+        entries
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|ft| ft.is_dir()))
+            .filter(|e| {
+                e.file_name()
+                    .to_str()
+                    .is_some_and(|n| is_entry_denylisted(n, true, custom_excludes))
+            })
+            .count()
+    })
+}
+
+#[must_use]
+pub fn walk_corpus<P: AsRef<Path>>(root: P, options: &CrawlerOptions) -> CorpusWalk {
+    let root = root.as_ref();
+    let mut walk = CorpusWalk::default();
+    for entry in build_walker(root, options).flatten() {
+        let Some(ft) = entry.file_type() else {
+            continue;
+        };
+        if ft.is_dir() {
+            walk.pruned_dirs += count_denylisted_children(entry.path(), &options.custom_excludes);
+        } else if ft.is_file() {
+            let rel = entry.path().strip_prefix(root).unwrap_or(entry.path());
+            walk.rel_paths
+                .push(rel.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    walk.rel_paths.sort_unstable();
+    append_tracked_paths(root, options, &mut walk.rel_paths);
+    walk
 }

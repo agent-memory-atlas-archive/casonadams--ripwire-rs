@@ -304,16 +304,17 @@ pub static MCP_TOOL_HANDLERS: &[&dyn McpToolHandler] = &[
         &[
             ("pattern", "string", "Literal pattern to search"),
             ("path", "string", "Optional path filter"),
+            ("in", "string", "Span tier: code (default) or any"),
         ],
         &["pattern"],
         |s, a| {
-            Ok(retrieval::call_grep_in_root(
-                &s.root,
-                &s.ingest,
-                &s.interner,
-                a.str_or("pattern", ""),
-                a.opt_str("path"),
-            ))
+            let req = retrieval::GrepRequest {
+                path_filter: a.opt_str("path"),
+                any_tier: a.opt_str("in") == Some("any"),
+                graph: Some(&s.graph),
+                ..retrieval::GrepRequest::new(&s.root, a.str_or("pattern", ""))
+            };
+            Ok(retrieval::call_grep(&s.ingest, &s.interner, &req))
         }
     ),
     mcp_tool!(

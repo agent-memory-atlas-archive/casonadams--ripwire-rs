@@ -1,0 +1,188 @@
+use ripwire_rs::mcp::graph_tools::call_uses;
+use ripwire_rs::mcp::grep::{TierCounts, enclosing_metadata, tier_attrs};
+use ripwire_rs::serialize::serialize_grep_xml;
+use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
+use serde_json::{Value, json};
+
+fn counts(code: usize, comment: usize, literal: usize) -> TierCounts {
+    TierCounts {
+        code,
+        comment,
+        literal,
+    }
+}
+
+#[test]
+fn test_few_code_hits_lift_strings_and_hold_back_comments() {
+    let attrs = tier_attrs(counts(5, 2, 2), 3, false);
+    assert_eq!(attrs["suppressed_comment"], json!(2));
+    assert!(!attrs.contains_key("suppressed_string"));
+    assert_eq!(attrs["tier"], json!("code+string"));
+    assert_eq!(attrs["string_hits"], json!(2));
+    assert_eq!(attrs["tier_parsed"], json!(3));
+}
+
+#[test]
+fn test_many_code_hits_hold_back_strings() {
+    let attrs = tier_attrs(counts(8, 0, 1), 1, false);
+    assert_eq!(attrs["suppressed_string"], json!(1));
+    assert!(!attrs.contains_key("tier"));
+    assert!(!attrs.contains_key("suppressed_comment"));
+}
+
+#[test]
+fn test_empty_code_tier_serves_comments_and_strings_together() {
+    let attrs = tier_attrs(counts(0, 1, 1), 1, false);
+    assert_eq!(attrs["tier"], json!("comment+string"));
+    assert!(!attrs.contains_key("suppressed_comment"));
+    assert!(!attrs.contains_key("string_hits"));
+}
+
+#[test]
+fn test_no_tier_disclosure_when_every_hit_is_served_as_is() {
+    assert!(tier_attrs(counts(4, 0, 0), 2, false).is_empty());
+    assert!(tier_attrs(counts(4, 3, 3), 2, true).is_empty());
+}
+
+fn semantic_read_report(path: &str, lang: Lang, source: &[u8]) -> (Value, String) {
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(&[(path, lang, source)], &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let symbol = ingest
+        .symbols
+        .iter()
+        .find(|symbol| interner.resolve(&symbol.name) == "LIMIT")
+        .unwrap();
+    assert!(graph.callers(symbol.id).next().is_none());
+    let hits = vec![json!({
+        "path": path, "line": symbol.line, "text": "LIMIT", "enclosing": "LIMIT", "enc_id": 1
+    })];
+    let enc = enclosing_metadata(&ingest, &interner, Some(&graph), &hits);
+    let mut xml = Vec::new();
+    serialize_grep_xml(
+        &json!({
+            "pattern": "LIMIT", "verb": "grep", "literal": true, "hits": hits, "enc": enc
+        }),
+        &mut xml,
+    )
+    .unwrap();
+    (
+        call_uses(&ingest, &interner, "LIMIT"),
+        String::from_utf8(xml).unwrap(),
+    )
+}
+
+fn assert_read_sites(uses: &Value, lines: &[u32]) {
+    let sites = uses["uses"].as_array().unwrap();
+    assert_eq!(sites.len(), lines.len(), "{uses}");
+    for (site, line) in sites.iter().zip(lines) {
+        assert_eq!(site["role"], "read", "{uses}");
+        assert_eq!(site["line"], *line, "{uses}");
+    }
+}
+
+#[test]
+fn test_python_constant_reads_reach_uses_and_grep_metadata() {
+    let source = b"LIMIT = 10\n\ndef first():\n    text = 'LIMIT'\n    return LIMIT\n\ndef second():\n    return LIMIT\n\ndef parameter(LIMIT):\n    return LIMIT\n\ndef local():\n    LIMIT = 3\n    return LIMIT\n\ndef write():\n    global LIMIT\n    LIMIT = 4\n\ndef keyword():\n    return object(LIMIT=2)\n# LIMIT\n";
+    let (uses, xml) = semantic_read_report("src/sample.py", Lang::Python, source);
+    assert_read_sites(&uses, &[5, 8]);
+    assert!(
+        xml.contains("reads=\"2\" reads_at=\"src/sample.py:5 src/sample.py:8\""),
+        "{xml}"
+    );
+    assert!(xml.contains("next=\"--uses=LIMIT\""), "{xml}");
+}
+
+#[test]
+fn test_javascript_and_typescript_variable_reads_ignore_targets_and_shadowing() {
+    let source = b"const LIMIT = 10;\nfunction first() { return LIMIT; }\nfunction second() { return { value: LIMIT }; }\nfunction parameter(LIMIT) { return LIMIT; }\nfunction local() { const LIMIT = 3; return LIMIT; }\nfunction write() { LIMIT = 4; return { LIMIT: 'LIMIT' }; }\n// LIMIT\n";
+    for (path, lang) in [
+        ("src/sample.js", Lang::JavaScript),
+        ("src/sample.ts", Lang::TypeScript),
+    ] {
+        let (uses, xml) = semantic_read_report(path, lang, source);
+        assert_read_sites(&uses, &[2, 3]);
+        assert!(xml.contains("reads=\"2\""), "{xml}");
+    }
+}
+
+#[test]
+fn test_rust_constant_reads_ignore_bindings_parameters_and_writes() {
+    let source = b"const LIMIT: u32 = 10;\nfn first() -> u32 { LIMIT }\nfn second() -> u32 { LIMIT }\nfn parameter(LIMIT: u32) -> u32 { LIMIT }\nfn local() -> u32 { let LIMIT = 3; LIMIT }\nfn write() { let mut LIMIT = 0; LIMIT = 4; let text = \"LIMIT\"; }\n// LIMIT\n";
+    let (uses, xml) = semantic_read_report("src/sample.rs", Lang::Rust, source);
+    assert_read_sites(&uses, &[2, 3]);
+    assert!(
+        xml.contains("reads=\"2\" reads_at=\"src/sample.rs:2 src/sample.rs:3\""),
+        "{xml}"
+    );
+}
+
+#[test]
+fn test_callable_values_do_not_add_call_edges() {
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let source =
+        b"def helper():\n    pass\ndef store():\n    return helper\ndef invoke():\n    helper()\n";
+    let ingest = ingest_in_memory_files(
+        &[("src/sample.py", Lang::Python, source.as_slice())],
+        &registry,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let helper = ingest
+        .symbols
+        .iter()
+        .find(|symbol| interner.resolve(&symbol.name) == "helper")
+        .unwrap();
+    assert_eq!(graph.callers(helper.id).count(), 1);
+    let uses = call_uses(&ingest, &interner, "helper");
+    let sites = uses["uses"].as_array().unwrap();
+    assert_eq!(sites.len(), 2, "{uses}");
+    assert_eq!(sites[0]["role"], "read");
+    assert_eq!(sites[1]["role"], "call");
+}
+
+#[test]
+fn test_rust_local_shadow_starts_after_initializer() {
+    let source = b"const LIMIT: u32 = 10;\nfn sample() -> u32 {\n    let before = LIMIT;\n    let LIMIT = LIMIT + 1;\n    LIMIT + before\n}\n";
+    let (uses, _) = semantic_read_report("src/sample.rs", Lang::Rust, source);
+    assert_read_sites(&uses, &[3, 4]);
+}
+
+#[test]
+fn test_javascript_function_scoped_var_and_destructuring_shadow_repository_names() {
+    let source = b"const LIMIT = 10;\nfunction first() { return { LIMIT }; }\nfunction nested() { if (true) { var LIMIT = 3; } return LIMIT; }\nfunction block() { { const LIMIT = 3; } return LIMIT; }\nfunction pattern({LIMIT}) { return LIMIT; }\n";
+    let (uses, _) = semantic_read_report("src/sample.js", Lang::JavaScript, source);
+    assert_read_sites(&uses, &[2, 4]);
+}
+
+#[test]
+fn test_python_class_namespace_is_not_a_method_lexical_parent() {
+    let source =
+        b"LIMIT = 10\nclass Sample:\n    LIMIT = 3\n    def sample(self):\n        return LIMIT\n";
+    let (uses, _) = semantic_read_report("src/sample.py", Lang::Python, source);
+    assert_read_sites(&uses, &[5]);
+}
+
+#[test]
+fn test_python_local_import_shadows_repository_name() {
+    let source = b"LIMIT = 10\ndef first():\n    return LIMIT\ndef imported():\n    from sample import LIMIT\n    return LIMIT\n";
+    let (uses, _) = semantic_read_report("src/sample.py", Lang::Python, source);
+    let reads: Vec<Value> = uses["uses"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|site| site["role"] == "read")
+        .cloned()
+        .collect();
+    assert_eq!(reads.len(), 1, "{uses}");
+    assert_eq!(reads[0]["line"], 3);
+}
+
+#[test]
+fn test_python_default_value_is_outside_the_function_local_binding_scope() {
+    let source = b"LIMIT = 10\ndef sample(value=LIMIT):\n    LIMIT = 3\n    return LIMIT\n";
+    let (uses, _) = semantic_read_report("src/sample.py", Lang::Python, source);
+    assert_read_sites(&uses, &[2]);
+}

@@ -443,6 +443,14 @@ impl LanguageSemantics for CLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_c::LANGUAGE, "../queries/c/tags.scm");
 
+    fn lint_return_type<'a>(&self, sig: &'a str, name: &str) -> Option<&'a str> {
+        super::lint_hooks::prefix_return_type(sig, name)
+    }
+
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["typedef", "enum"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#555555"
     }

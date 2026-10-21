@@ -463,6 +463,7 @@ cargo install ripwire-rs</code></pre>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
             <p class="cmd-desc">Seeds Personalized PageRank with mass focused on <code>&lt;SYM&gt;</code> and runs power iteration across outgoing call edges to measure relative dependency concentration.</p>
+            <p class="cmd-desc">Unbound candidate calls appear separately as <code>&lt;dc&gt;</code> rows, not graph edges. Follow <code>dc_next</code> to expand a capped list.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">When To Use It</span>
@@ -479,10 +480,12 @@ cargo install ripwire-rs</code></pre>
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
             <p class="cmd-desc">Emits every statically resolvable use-site of <code>&lt;SYM&gt;</code> across the repository (calls, reads, writes, imports, inheritance)—including cross-language embedded SQL table lineage extracted automatically from application string literals.</p>
+            <p class="cmd-desc">Lists every indexed site by default. Use <code>--limit=N --offset=M</code> for a path-and-line ordered window, then continue at <code>next_offset</code>.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
             <p class="cmd-desc">Zero extra flags required. During standard AST ingestion across all 36 languages, string literals containing SQL DML (<code>SELECT ... FROM</code>, <code>JOIN</code>, <code>INSERT INTO</code>, <code>UPDATE</code>, <code>DELETE FROM</code>) automatically emit <code>RefRole::Read</code> and <code>RefRole::Write</code> references attributed to the enclosing function or method, resolving directly to <code>.sql</code> table definitions in the workspace graph.</p>
+            <p class="cmd-desc">Python, JavaScript/TypeScript, and Rust also index bare non-local variable reads, excluding bindings, writes, labels, and lexical shadows. Grep's <code>reads</code> and <code>reads_at</code> use these references rather than text estimates; unsupported binding forms remain evidence floors.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">When To Use It</span>
@@ -536,17 +539,17 @@ cargo install ripwire-rs</code></pre>
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>ripwire-rs . --grep &lt;PAT&gt; [--grep-in &lt;DIR&gt;] [--and &lt;PAT&gt;] [--not &lt;PAT&gt;] [--in &lt;SCOPE&gt;]</code></div>
+          <div class="cmd-title"><code>ripwire-rs . --grep &lt;PAT&gt; [--grep-in code|any] [--grep-scope line|file] [--and &lt;PAT&gt;] [--not &lt;PAT&gt;] [--in &lt;PATH&gt;]</code></div>
           <span class="cmd-badge">Search</span>
         </div>
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Literal trigram search with boolean filtering (<code>--and</code>, <code>--not</code>), path substring restriction (<code>--grep-in</code>), and enclosing symbol scoping (<code>--in</code>, <code>--grep-scope</code>), annotating every hit with its enclosing AST definition.</p>
+            <p class="cmd-desc">Literal search with span tiering (code by default, <code>--grep-in=any</code> adds comments and strings), boolean filtering (<code>--and</code>, <code>--not</code>, <code>--grep-scope</code>) and path restriction (<code>--in</code>), annotating every hit with its enclosing AST definition and listing matches in off-index text files in a trailing <code>&lt;unindexed&gt;</code> element.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
-            <p class="cmd-desc">Scans source files with boundary checking and filters by path or symbol scope, resolving the innermost AST symbol spanning each matching line.</p>
+            <p class="cmd-desc">Classifies code, comment, and literal spans through language semantics. Comments are withheld when code hits exist; strings ride along with fewer than eight code hits. The innermost AST byte span identifies each hit's enclosing symbol.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">When To Use It</span>

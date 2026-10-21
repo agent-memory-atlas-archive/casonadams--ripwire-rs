@@ -123,3 +123,6 @@
             name: (type_identifier) @name))) @reference.implementation
 (use_declaration
     argument: (_) @import.path)
+
+; Value-position and lexical-binding rules live in languages/rust.rs.
+(identifier) @name @reference.read

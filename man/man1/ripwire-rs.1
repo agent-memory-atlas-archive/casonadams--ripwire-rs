@@ -112,9 +112,12 @@ Query direct 1-hop outgoing callees called by symbol \fISYM\fR.
 .TP
 .BI \-\-impact= SYM
 Compute transitive blast radius (reachability graph) reaching symbol \fISYM\fR across code and database schema migrations.
+Unbound candidate call sites appear separately as \fB<dc>\fR rows and are not graph edges. A capped candidate list includes \fBdc_next\fR; use \fB\-\-limit\fR to expand it.
 .TP
 .BI \-\-uses= SYM
 Query all static use-sites (calls, definitions, reads, writes, imports, extends) of symbol \fISYM\fR, including cross-language embedded SQL table lineage from application string literals.
+All indexed sites are shown by default. Use \fB\-\-limit=N \-\-offset=M\fR for a path-and-line ordered window; \fBnext_offset\fR advances the window.
+Bare non-local variable reads are indexed for Python, JavaScript/TypeScript, and Rust; declarations, assignment targets, labels, and lexical shadows are excluded. Unsupported binding forms remain evidence floors.
 .TP
 .BI \-\-find\-symbol= SYM
 Query both incoming callers and outgoing callees of symbol \fISYM\fR in one view.
@@ -135,9 +138,11 @@ Task-lens relevance ranking: retrieves ranked declarations, signatures, and cont
 .TP
 .BI \-\-grep= PAT
 Search for literal trigram text pattern \fIPAT\fR; every match is annotated with its enclosing AST symbol.
+Span tiers distinguish code, comments, and strings. \fB\-\-grep\-in=any\fR includes all tiers; \fB\-\-in=PATH\fR restricts paths. Repeat \fB\-\-and=PAT\fR and \fB\-\-not=PAT\fR to combine literal terms; \fB\-\-grep\-scope=file\fR applies them across the entire file instead of the matched line. Off-index text hits are reported separately.
 .TP
 .BI \-\-whereis= SYM
 Locate which branches, revisions, or tree locations define symbol \fISYM\fR.
+Scans HEAD and local branch trees, reading each distinct blob up to 2 MiB once. Changed and untracked worktree paths replace the corresponding HEAD rows; a subdirectory root scopes every tree scan.
 .TP
 .BI \-\-mentions= SYM
 Locate Markdown documentation and specification files that reference symbol \fISYM\fR in backticks.
@@ -250,7 +255,7 @@ Scan codebase for AST code smells (complexity spikes, deep nesting, dead functio
 Print built-in AST code smell catalog with severity rankings.
 .TP
 .BI \-\-lint\-select= RULES
-Select specific comma-separated AST lint rules to run (e.g. \fBcomplexity-spike,deep-nesting\fR).
+Select comma-separated AST lint rule prefixes to run (e.g. \fBlarge-function,deep-nesting\fR).
 .TP
 .BI \-\-lint\-ignore= RULES
 Ignore specific comma-separated AST lint rules during lint scan.

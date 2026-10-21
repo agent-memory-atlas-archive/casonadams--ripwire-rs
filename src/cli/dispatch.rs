@@ -1,5 +1,6 @@
 use super::args::*;
 use super::queries::*;
+use super::retrieval::execute_retrieval_verb;
 use super::safety::*;
 use super::stream::*;
 use crate::domain::Interner;
@@ -22,25 +23,7 @@ pub fn execute_navigate_with<W: Write>(
         return writeln!(out, "Symbol '{sym_name}' not found");
     }
     if args.impact {
-        use crate::domain::CorpusView;
-        let impact = crate::navigate::transitive_impact_multi(
-            &ids,
-            ctx.ingest,
-            ctx.graph,
-            ctx.ranks,
-            ctx.interner,
-            None,
-        );
-        let importers = (ctx.ingest, ctx.interner).resolve_symbol_importers(&ids);
-        return crate::navigate::serialize_impact_with_importers_xml(
-            ".",
-            sym_name,
-            &impact,
-            importers,
-            &ctx.graph.xml_gauge_attrs(),
-            1,
-            out,
-        );
+        return execute_nav_symbol_query_in_root(".", sym_name, NavMode::Impact, ctx, out);
     }
     if (args.callers || args.callees)
         && let Some(nav) = crate::navigate::navigate_1hop_multi(
@@ -361,15 +344,7 @@ impl CliVerb for TopRetrievalArgs {
                 out,
             );
         }
-        execute_retrieval_dispatch(
-            self,
-            ctx.root,
-            ctx.ingest,
-            ctx.graph,
-            ctx.pr,
-            ctx.interner,
-            out,
-        )
+        execute_retrieval_verb(self, ctx, out)
     }
 }
 
@@ -553,30 +528,24 @@ fn split_csv_patterns(raw: &str) -> Vec<&str> {
         .collect()
 }
 
-fn filter_and_cap_lint_findings(
-    findings: &mut Vec<crate::metrics::lint::LintFinding>,
-    detail: &TopDetailArgs,
-) {
-    if let Some(sel) = detail
-        .lint_select
-        .as_deref()
-        .or(detail.lint_rules.as_deref())
-    {
-        let pats = split_csv_patterns(sel);
-        findings.retain(|f| pats.is_empty() || pats.iter().any(|&p| f.rule.contains(p)));
-    }
-    if let Some(ign) = detail.lint_ignore.as_deref() {
-        let pats = split_csv_patterns(ign);
-        findings.retain(|f| !pats.iter().any(|&p| f.rule.contains(p)));
-    }
-    if let Some(limit) = detail.lint_max_per_rule {
-        let mut rule_counts: std::collections::HashMap<String, usize> =
-            std::collections::HashMap::new();
-        findings.retain(|f| {
-            let c = rule_counts.entry(f.rule.clone()).or_insert(0);
-            *c += 1;
-            *c <= limit
-        });
+fn lint_options(detail: &TopDetailArgs) -> crate::metrics::lint::LintOptions {
+    let patterns = |raw: Option<&str>| {
+        raw.into_iter()
+            .flat_map(split_csv_patterns)
+            .map(str::to_owned)
+            .collect()
+    };
+    crate::metrics::lint::LintOptions {
+        select: patterns(
+            detail
+                .lint_select
+                .as_deref()
+                .or(detail.lint_rules.as_deref()),
+        ),
+        ignore: patterns(detail.lint_ignore.as_deref()),
+        budget: detail
+            .lint_max_per_rule
+            .unwrap_or(crate::metrics::lint::DEFAULT_RULE_BUDGET),
     }
 }
 
@@ -591,13 +560,21 @@ fn execute_detail_extended<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W)
     );
     let detail = &cli.detail;
     if detail.lint {
-        let mut findings =
-            crate::metrics::lint::run_lint_scan_in_root(root, ingest, graph, interner);
-        filter_and_cap_lint_findings(&mut findings, detail);
+        let findings = crate::metrics::lint::run_lint_scan_in_root(
+            root,
+            ingest,
+            interner,
+            lint_options(detail),
+        )
+        .map_err(io::Error::other)?;
         if cli.arch.sarif {
             crate::metrics::lint::serialize_lint_sarif(&findings, stdout)
         } else {
-            crate::metrics::lint::serialize_lint_xml(root, &findings, stdout)
+            let page = crate::serialize::PageRequest {
+                limit: cli.limit_opt(),
+                offset: cli.offset_opt(),
+            };
+            crate::metrics::lint::serialize_lint_xml(root, &findings, page, stdout)
         }
     } else if detail.lint_catalog {
         crate::metrics::lint::serialize_lint_catalog(stdout)

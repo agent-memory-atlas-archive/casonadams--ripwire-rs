@@ -520,18 +520,18 @@ pub struct TopRetrievalArgs {
     /// Literal trigram text search
     #[arg(long, value_name = "PAT")]
     pub grep: Option<String>,
-    /// Restrict grep to files matching path substring
-    #[arg(long = "grep-in", value_name = "DIR")]
+    /// Span tier a --grep hit must sit in: code (default) or any
+    #[arg(long = "grep-in", value_name = "code|any")]
     pub grep_in: Option<String>,
-    /// Restrict grep to specific symbol scope
-    #[arg(long = "grep-scope", value_name = "SCOPE")]
+    /// Where --and/--not terms must appear: line (default) or file
+    #[arg(long = "grep-scope", value_name = "line|file")]
     pub grep_scope: Option<String>,
-    /// Conjunction filter for structural search
+    /// Keep only --grep hits where PAT is also present (repeatable)
     #[arg(long = "and", value_name = "PAT")]
-    pub and_pat: Option<String>,
-    /// Negation filter for structural search
+    pub and_pat: Vec<String>,
+    /// Drop --grep hits where PAT is present (repeatable)
     #[arg(long = "not", value_name = "PAT")]
-    pub not_pat: Option<String>,
+    pub not_pat: Vec<String>,
     /// Enclosing symbol or directory filter
     #[arg(long = "in", value_name = "SCOPE")]
     pub in_scope: Option<String>,

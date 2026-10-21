@@ -1,29 +1,31 @@
-# Built-in 43-Rule Lint Catalog & Custom `--lint-rules`
+# Built-in 39-Rule Lint Catalog & Custom `--lint-rules`
 
 Reference for `ripwire-rs-fresh-eyes` (`--lint`, `--lint-catalog`, `--lint-select`, `--lint-ignore`, and `--lint-rules=DIR`).
 
-## 1. Built-In 43-Rule Catalog (`ripwire-rs --lint-catalog`)
+## 1. Built-In Catalog (`ripwire-rs --lint-catalog`)
 
-`ripwire-rs <dir> --lint` evaluates **43 trait-backed rules** (`10 SymbolLintRule` + `33 FileLintRule`):
+`ripwire-rs <dir> --lint` evaluates **39 rules**. The catalog reports each rule's severity, category, applicable languages, and introduction version. Syntax rules inspect AST nodes; naming rules inspect definitions, not text inside comments or strings. Generated files and tests are not excluded.
 
-| Category | Rules | Scope & What They Catch |
-| :--- | :--- | :--- |
-| **`maintainability` (7)** | `complexity-spike`, `deep-nesting`, `parameter-spill`, `verbosity-spike`, `dead-function`, `large-function`, `unreachable-code` | Functions exceeding cognitive complexity (`>15`), nesting (`>5`), parameter count (`>6`), length (`>100` / `>200` LOC), zero-caller private functions, and statements after unconditional `return`/`break`/`continue`/`throw`/`goto`. |
-| **`naming` (8)** | `naming-short`, `naming-wordy`, `naming-underscore`, `naming-case`, `naming-series`, `naming-confusable`, `naming-uninformative`, `naming-predicate`, `naming-setter` | Single-char or overly wordy (`>5` subtokens) names, double/edge underscores, mixed camel+snake case, numbered series (`foo1`/`foo2`), Levenshtein-1 confusable pairs, generic `data`/`info`/`tmp` names, non-boolean `is_*`/`has_*` predicates, and value-returning `set_*` methods. |
-| **`confusion` (7)** | `atom-implicit-predicate`, `atom-nested-ternary`, `atom-assign-as-value`, `atom-comma-operator`, `atom-embedded-crement`, `atom-octal-literal`, `atom-reversed-subscript` | Gopstein FSE 2017 atoms of confusion: nested `? :` ternaries, assignment inside `if`/`while` conditions, comma expressions, `++`/`--` embedded inside larger expressions, leading-zero octal literals (`0755`), and `idx[arr]` reversed subscripts. |
-| **`style` (8)** | `goto`, `do-while`, `c-style-cast`, `typedef-over-using`, `magic-number`, `redundant-parens`, `suspicious-semicolon`, `inconsistent-return` | `goto` and `do-while` loops, C-style `(type)expr` casts in C/C++, C++ `typedef` over `using`, magic numeric literals, `if ((x))` redundant parens, `if (...);` stray semicolons, and mixed bare `return;` vs `return val;`. |
-| **`safety` (5)** | `unsafe-c-fn`, `weak-crypto`, `empty-catch`, `self-assign`, `shared-ptr-by-value` | Unbounded C functions (`strcpy`, `strcat`, `sprintf`, `vsprintf`, `gets`), MD5/SHA-1/DES weak crypto, empty `catch` / `except: pass` blocks, `x = x` self-assignment, and `std::shared_ptr<T>` passed by value (atomic refcount churn). |
-| **`performance` (7)** | `cache-node-container`, `cache-vector-of-raw-ptr`, `cache-virtual-in-loop`, `cache-boolean-field-cluster`, `cache-heap-alloc-in-loop`, `cache-pointer-chase-loop`, `cache-gather-subscript`, `cache-manual-prefetch` | Pointer-chasing containers (`std::list`, `std::map`, `std::set`), `std::vector<T*>` indirect buffers, virtual dispatch or heap allocations inside loops, `>=3` adjacent `bool` fields (use bitfields/flags), `p = p->next` linked-list loops, `a[b[i]]` gather indexing, and manual `__builtin_prefetch` / `_mm_prefetch`. |
+| Family | Rules |
+| :--- | :--- |
+| Control flow and style | `c-style-cast`, `goto`, `do-while`, `redundant-parens`, `suspicious-semicolon`, `typedef-over-using`, `magic-number`, `empty-catch`, `self-assign`, `large-function`, `deep-nesting`, `inconsistent-return`, `unreachable-code` |
+| Security | `unsafe-c-fn`, `weak-crypto` |
+| Naming | `naming-short`, `naming-wordy`, `naming-series`, `naming-underscore`, `naming-case`, `naming-predicate`, `naming-setter`, `naming-confusable`, `naming-uninformative` |
+| Readability | `atom-comma-operator`, `atom-embedded-crement`, `atom-assign-as-value`, `atom-nested-ternary`, `atom-implicit-predicate`, `atom-octal-literal`, `atom-reversed-subscript` |
+| Performance | `cache-node-container`, `cache-vector-of-raw-ptr`, `cache-vector-of-indirect`, `cache-heap-alloc-in-loop`, `cache-pointer-chase-loop`, `cache-gather-subscript`, `cache-shared-ptr-by-value`, `cache-manual-prefetch` |
 
 ### Filtering and Formatting
 
 ```bash
-ripwire-rs <dir> --lint-catalog                             # list all 43 rules with severity and category
-ripwire-rs <dir> --lint --lint-select=cache-,safety         # run only matching rule prefixes
-ripwire-rs <dir> --lint --lint-ignore=naming-               # exclude matching rule prefixes
-ripwire-rs <dir> --lint --lint-max-per-rule=20              # cap findings per rule
-ripwire-rs <dir> --lint --sarif                             # emit SARIF 2.1.0 JSON for GitHub Code Scanning
+ripwire-rs <dir> --lint-catalog
+ripwire-rs <dir> --lint --lint-select=cache-,unsafe-
+ripwire-rs <dir> --lint --lint-ignore=naming-
+ripwire-rs <dir> --lint --lint-max-per-rule=20
+ripwire-rs <dir> --lint --offset=20 --limit=20
+ripwire-rs <dir> --lint --sarif
 ```
+
+Select and ignore values are rule-name prefixes, not category names or substrings. Unknown prefixes are errors. `findings` counts selected rules; `shown`, `capped`, and the pagination attributes describe the printed window. Rule rows disclose `shown_rows` and `rows_capped`; `applicable="0"` identifies inert rules. `findings_next` appears only when rule evaluation itself was capped, never merely because the printed window was cut.
 
 ## 2. Custom Tree-Sitter Rules (`--lint-rules=DIR`)
 

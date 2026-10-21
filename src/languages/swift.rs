@@ -56,6 +56,14 @@ impl LanguageSemantics for SwiftLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_swift::LANGUAGE, "../queries/swift/tags.scm");
 
+    fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {
+        super::lint_hooks::arrow_return_type(sig)
+    }
+
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["typealias", "associatedtype"]
+    }
+
     fn display_color(&self) -> &'static str {
         "#f05138"
     }

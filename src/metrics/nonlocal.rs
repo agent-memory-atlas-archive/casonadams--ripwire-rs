@@ -1,5 +1,7 @@
-use crate::domain::{IngestResult, Interner, SymKind};
+use crate::domain::{IngestResult, Interner, NodeId, RefRole, Reference, SymKind};
 use crate::graph::Graph;
+use crate::resolve::{RefOutcome, ResolutionContext, ResolutionIndex, ResolutionLookup};
+use std::collections::HashMap;
 use std::io::{self, Write};
 
 /// An accessed nonlocal state cell (global or static variable).
@@ -22,31 +24,65 @@ pub struct NonlocalFunction {
     pub cells: Vec<StateCellAccess>,
 }
 
-/// Find functions that read or write nonlocal mutable state.
-#[must_use]
-fn collect_sym_cells(
-    sym_id: crate::domain::NodeId,
-    file_path: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-) -> Vec<StateCellAccess> {
-    use crate::domain::CorpusView;
-    let view = (ingest, interner);
-    let mut cells = Vec::new();
-    for (target_id, _) in graph.callees(sym_id) {
-        if let Some(target) = ingest.sym(target_id)
-            && (target.kind == SymKind::Var || target.kind == SymKind::Field)
-        {
-            cells.push(StateCellAccess {
-                cell_name: view.sym_name(target).to_string(),
-                path: file_path.to_string(),
-                line: target.line,
-                is_write: false,
-            });
+struct StateContext<'a> {
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+    graph: &'a Graph,
+    lookup: ResolutionContext<'a>,
+    references: HashMap<NodeId, Vec<&'a Reference>>,
+}
+
+impl StateContext<'_> {
+    fn cells(&self, sym_id: NodeId) -> Vec<StateCellAccess> {
+        use crate::domain::CorpusView;
+        let view = (self.ingest, self.interner);
+        let mut targets: Vec<(NodeId, bool)> = self
+            .graph
+            .callees(sym_id)
+            .map(|(id, _)| (id, false))
+            .collect();
+        for reference in self.references.get(&sym_id).into_iter().flatten() {
+            if let RefOutcome::Resolved(resolved) = self.lookup.classify_target(reference)
+                && !resolved.is_ambiguous
+            {
+                targets.extend(
+                    resolved
+                        .targets
+                        .into_iter()
+                        .map(|id| (id, reference.role == RefRole::Write)),
+                );
+            }
         }
+        targets.sort_unstable();
+        targets.dedup();
+        targets
+            .into_iter()
+            .filter_map(|(id, is_write)| {
+                let target = self.ingest.sym(id)?;
+                matches!(target.kind, SymKind::Var | SymKind::Field).then(|| StateCellAccess {
+                    cell_name: view.sym_name(target).to_string(),
+                    path: view.sym_path(target).to_string(),
+                    line: target.line,
+                    is_write,
+                })
+            })
+            .collect()
     }
-    cells
+}
+
+fn data_references(ingest: &IngestResult) -> HashMap<NodeId, Vec<&Reference>> {
+    let mut by_owner: HashMap<NodeId, Vec<&Reference>> = HashMap::new();
+    for reference in ingest
+        .references
+        .iter()
+        .filter(|r| matches!(r.role, RefRole::Read | RefRole::Write))
+    {
+        by_owner
+            .entry(reference.from_symbol)
+            .or_default()
+            .push(reference);
+    }
+    by_owner
 }
 
 pub fn find_nonlocal_state(
@@ -56,20 +92,29 @@ pub fn find_nonlocal_state(
 ) -> Vec<NonlocalFunction> {
     use crate::domain::CorpusView;
     let view = (ingest, interner);
+    let index = ResolutionIndex::build(ingest, interner);
+    let context = StateContext {
+        ingest,
+        interner,
+        graph,
+        lookup: index.context(ingest, interner),
+        references: data_references(ingest),
+    };
     let mut out = Vec::new();
     for sym in &ingest.symbols {
         if sym.kind != SymKind::Function && sym.kind != SymKind::Method {
             continue;
         }
         let p = view.sym_path(sym);
-        let cells = collect_sym_cells(sym.id, p, ingest, graph, interner);
+        let cells = context.cells(sym.id);
+        let writes = cells.iter().filter(|cell| cell.is_write).count();
         if !cells.is_empty() {
             out.push(NonlocalFunction {
                 sym_name: view.sym_name(sym).to_string(),
                 path: p.to_string(),
                 line: sym.line,
-                writes: 0,
-                reads: cells.len(),
+                writes,
+                reads: cells.len() - writes,
                 cells,
             });
         }

@@ -269,119 +269,274 @@ fn write_for_hops_section<W: Write>(out: &mut W, val: &Value) -> io::Result<()> 
     write!(out, "</hops>")
 }
 
-/// Serialize `grep` search result to Ripwire XML.
-type GrepEncMap = std::collections::BTreeMap<String, (u64, u64, bool)>;
+const GREP_DEFAULT_CAP: usize = 100;
 
-fn collect_grep_summary(
-    hits: Option<&Vec<Value>>,
-) -> (
-    std::collections::BTreeSet<String>,
-    GrepEncMap,
-    (String, u64),
-) {
-    let mut files_set = std::collections::BTreeSet::new();
-    let mut enc_map = std::collections::BTreeMap::new();
-    let mut first_loc = ("src/lib.rs".to_string(), 1u64);
-    let Some(items) = hits else {
-        return (files_set, enc_map, first_loc);
-    };
-    for (idx, h) in items.iter().enumerate() {
-        let f = h.str_any(&["file", "path"], "src/lib.rs");
-        let l = h.u64_or("line", 1);
-        if idx == 0 {
-            first_loc = (f.to_string(), l);
-        }
-        files_set.insert(f.to_string());
-        if let Some(e) = h.opt_str("enclosing").filter(|s| !s.is_empty()) {
-            let callers = h.u64_or("enclosing_callers", 0);
-            let cx = h.u64_or("enclosing_cx", 1);
-            let floor = h["enclosing_floor"].as_bool().unwrap_or(false);
-            enc_map.entry(e.to_string()).or_insert((callers, cx, floor));
-        }
-    }
-    (files_set, enc_map, first_loc)
-}
-
-fn write_grep_context_lines<W: Write>(
+fn write_grep_context<W: Write>(
     out: &mut W,
     tag: &str,
-    lines_opt: Option<&Vec<Value>>,
+    rows: Option<&Vec<Value>>,
 ) -> io::Result<()> {
-    if let Some(lines) = lines_opt {
-        for row in lines {
-            let l = row["line"].as_u64().unwrap_or(1);
-            let t = row["text"].as_str().unwrap_or("");
-            write!(out, "<{tag} l=\"{l}\"><![CDATA[{t}]]></{tag}>")?;
-        }
+    for t in rows.into_iter().flatten().filter_map(Value::as_str) {
+        write!(out, "<{tag}><![CDATA[{t}]]></{tag}>")?;
     }
     Ok(())
 }
 
-fn write_grep_hit_row<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
-    let file = h.str_any(&["file", "path"], "").xml_escaped();
-    let line = h.u64_or("line", 1);
-    let enc = h
-        .opt_str("enclosing")
+fn grep_enc_attr(h: &Value) -> String {
+    h.opt_str("enclosing")
         .filter(|e| !e.is_empty())
-        .map_or_else(String::new, |e| format!(" in=\"{}\"", e.xml_escaped()));
-    let text = h.str_or("text", "");
-    write!(out, "  <f p=\"{file}\">")?;
-    write_grep_context_lines(out, "b", h["before"].as_array())?;
-    write!(out, "<hit l=\"{line}\"{enc}><![CDATA[{text}]]></hit>")?;
-    write_grep_context_lines(out, "a", h["after"].as_array())?;
-    writeln!(out, "</f>")
+        .map_or_else(String::new, |e| format!(" in=\"{}\"", e.xml_escaped()))
 }
 
-fn write_grep_enc_rows<W: Write>(out: &mut W, enc_map: &GrepEncMap) -> io::Result<()> {
-    for (e, &(callers, cx, floor)) in enc_map {
-        let name = e.xml_escaped();
-        let floor_attrs = if floor {
-            format!(" callers_floor=\"1\" floor_next=\"--uses={name}\"")
-        } else {
-            String::new()
-        };
-        writeln!(
+fn write_grep_hit<W: Write>(out: &mut W, run: &[&Value]) -> io::Result<()> {
+    let h = run[0];
+    let line = h.u64_or("line", 1);
+    let enc = grep_enc_attr(h);
+    let n = if run.len() > 1 {
+        format!(" n=\"{}\"", run.len())
+    } else {
+        String::new()
+    };
+    write!(out, "<hit l=\"{line}\"{enc}{n}>")?;
+    write_grep_context(out, "b", h["before"].as_array())?;
+    write!(out, "<![CDATA[{}]]>", h.str_or("text", ""))?;
+    write_grep_context(out, "a", h["after"].as_array())?;
+    for _ in &run[1..] {
+        write!(out, "<at l=\"{line}\"{enc}/>")?;
+    }
+    out.write_all(b"</hit>")
+}
+
+fn same_site(a: &Value, b: &Value) -> bool {
+    a.str_any(&["file", "path"], "") == b.str_any(&["file", "path"], "") && a["line"] == b["line"]
+}
+
+fn write_grep_rows<W: Write>(out: &mut W, rows: &[Value], merge: bool) -> io::Result<()> {
+    let mut i = 0;
+    while i < rows.len() {
+        let path = rows[i].str_any(&["file", "path"], "");
+        write!(out, "<f p=\"{}\">", path.xml_escaped())?;
+        while i < rows.len() && rows[i].str_any(&["file", "path"], "") == path {
+            let mut run = vec![&rows[i]];
+            while merge && i + run.len() < rows.len() && same_site(&rows[i], &rows[i + run.len()]) {
+                run.push(&rows[i + run.len()]);
+            }
+            i += run.len();
+            write_grep_hit(out, &run)?;
+        }
+        writeln!(out, "</f>")?;
+    }
+    Ok(())
+}
+
+fn write_grep_enc_row<W: Write>(
+    out: &mut W,
+    name: &str,
+    info: &Value,
+    defs: usize,
+) -> io::Result<()> {
+    let n = name.xml_escaped();
+    write!(out, "<enc n=\"{n}\"")?;
+    if let Some(c) = info["callers"].as_u64() {
+        write!(out, " callers=\"{c}\"")?;
+    }
+    if info["floor"].as_bool() == Some(true) {
+        let next = info.str_or("floor_next", "").xml_escaped();
+        write!(out, " callers_floor=\"1\" floor_next=\"{next}\"")?;
+    }
+    if defs > 1 {
+        write!(out, " defs=\"{defs}\"")?;
+    }
+    let cx = info.u64_or("cx", 0);
+    if cx > 0 {
+        write!(out, " cx=\"{cx}\"")?;
+    }
+    let reads = info.u64_or("reads", 0);
+    if reads > 0 {
+        let at: Vec<&str> = info["reads_at"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .collect();
+        write!(
             out,
-            "  <enc n=\"{name}\" callers=\"{callers}\"{floor_attrs} cx=\"{cx}\"/>"
+            " reads=\"{reads}\" reads_at=\"{}\"",
+            at.join(" ").xml_escaped()
         )?;
     }
+    writeln!(out, "/>")
+}
+
+fn grep_enc_order(shown: &[Value]) -> Vec<(&str, usize)> {
+    let mut order: Vec<(&str, std::collections::BTreeSet<u64>)> = Vec::new();
+    for h in shown {
+        let Some(name) = h.opt_str("enclosing").filter(|e| !e.is_empty()) else {
+            continue;
+        };
+        let idx = order
+            .iter()
+            .position(|(n, _)| *n == name)
+            .unwrap_or_else(|| {
+                order.push((name, std::collections::BTreeSet::new()));
+                order.len() - 1
+            });
+        if let Some(id) = h["enc_id"].as_u64() {
+            order[idx].1.insert(id);
+        }
+    }
+    order.into_iter().map(|(n, ids)| (n, ids.len())).collect()
+}
+
+fn write_grep_enc_rows<W: Write>(out: &mut W, val: &Value, shown: &[Value]) -> io::Result<()> {
+    for (name, defs) in grep_enc_order(shown) {
+        write_grep_enc_row(out, name, &val["enc"][name], defs)?;
+    }
     Ok(())
+}
+
+fn first_reads_carrier<'a>(val: &'a Value, shown: &'a [Value]) -> Option<&'a str> {
+    grep_enc_order(shown)
+        .into_iter()
+        .map(|(n, _)| n)
+        .find(|n| val["enc"][*n].u64_or("reads", 0) > 0)
 }
 
 pub struct GrepReport<'a> {
     pub val: &'a Value,
 }
 
+impl GrepReport<'_> {
+    fn hits(&self) -> &[Value] {
+        self.val["hits"].as_array().map_or(&[], Vec::as_slice)
+    }
+
+    fn unindexed(&self) -> &[Value] {
+        self.val["unindexed"].as_array().map_or(&[], Vec::as_slice)
+    }
+
+    fn window(&self, total: usize) -> crate::serialize::PageWindow {
+        let limit = self.val["limit"].as_u64().map(|v| v as usize);
+        let offset = self.val["offset"].as_u64().map(|v| v as usize);
+        crate::serialize::PageWindow::compute(total, GREP_DEFAULT_CAP, limit, offset)
+    }
+
+    fn shown(&self) -> &[Value] {
+        let w = self.window(self.hits().len());
+        &self.hits()[w.begin..w.end]
+    }
+
+    fn next_hint(&self) -> String {
+        let pat = self.val.str_or("pattern", "");
+        let w = self.window(self.hits().len());
+        let shown = self.shown();
+        if w.has_more {
+            let verb = self.val.str_or("verb", "grep");
+            format!("--{verb}={pat} --offset={} --legend=compact", w.next_offset)
+        } else if let Some(name) = first_reads_carrier(self.val, shown) {
+            format!("--uses={name}")
+        } else if let Some(h) = shown.first() {
+            format!(
+                "--at={}:{}",
+                h.str_any(&["file", "path"], ""),
+                h.u64_or("line", 1)
+            )
+        } else {
+            format!("--for={pat}")
+        }
+    }
+
+    fn write_tier_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        for key in ["suppressed_comment", "suppressed_string"] {
+            if let Some(n) = self.val[key].as_u64() {
+                write!(out, " {key}=\"{n}\"")?;
+            }
+        }
+        let suppressed = self.val.get("suppressed_comment").is_some()
+            || self.val.get("suppressed_string").is_some();
+        let w = self.window(self.hits().len());
+        if self.val["literal"].as_bool() == Some(true) && !suppressed && !w.capped {
+            out.write_all(b" complete=\"1\"")?;
+        }
+        if let Some(t) = self.val.opt_str("tier") {
+            write!(out, " tier=\"{t}\"")?;
+        }
+        for key in ["string_hits", "tier_parsed", "tier_unclassified"] {
+            if let Some(n) = self.val[key].as_u64() {
+                write!(out, " {key}=\"{n}\"")?;
+            }
+        }
+        let pruned = self.val.u64_or("corpus_pruned_dirs", 0);
+        if pruned > 0 {
+            write!(out, " corpus_pruned_dirs=\"{pruned}\"")?;
+        }
+        if let Some(scanned) = self.val["unindexed_files_scanned"].as_u64() {
+            let hits = self.unindexed().len();
+            write!(
+                out,
+                " unindexed_hits=\"{hits}\" unindexed_files_scanned=\"{scanned}\""
+            )?;
+        }
+        if self.val["unindexed_candidates_capped"].as_bool() == Some(true) {
+            out.write_all(b" unindexed_candidates_capped=\"1\"")?;
+        }
+        Ok(())
+    }
+
+    fn write_unindexed<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let rows = self.unindexed();
+        if rows.is_empty() {
+            return Ok(());
+        }
+        let w = self.window(rows.len());
+        writeln!(
+            out,
+            "<unindexed count=\"{}\" shown=\"{}\" capped=\"{}\">",
+            rows.len(),
+            w.shown,
+            u8::from(w.capped)
+        )?;
+        write_grep_rows(out, &rows[w.begin..w.end], self.merges())?;
+        writeln!(out, "</unindexed>")
+    }
+
+    fn merges(&self) -> bool {
+        self.val.get("limit").is_none()
+            && self.val.get("offset").is_none()
+            && self.val["context"].as_bool() != Some(true)
+    }
+}
+
 impl crate::serialize::XmlReport for GrepReport<'_> {
     crate::xml_report_meta!("grep", "ripwire-rs.grep/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let pat = escape_xml_str(self.val["pattern"].as_str().unwrap_or(""));
-        let hits = self.val["hits"].as_array();
-        let count = hits.map_or(0, Vec::len);
-        let cap = self.val.u64_or("limit", 100).max(1) as usize;
-        let shown = count.min(cap);
-        let capped = u8::from(shown < count);
-        let (files_set, _, first_loc) = collect_grep_summary(hits);
-        let f_cnt = files_set.len();
+        let hits = self.hits();
+        let files = hits
+            .iter()
+            .map(|h| h.str_any(&["file", "path"], ""))
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
         write!(
             out,
-            " pattern=\"{pat}\" root=\".\" files=\"{f_cnt}\" hits=\"{count}\" shown=\"{shown}\" capped=\"{capped}\" hits_capped=\"{capped}\" suppressed_comment=\"0\" suppressed_string=\"0\" tier_parsed=\"{f_cnt}\" tier_unclassified=\"0\" corpus_pruned_dirs=\"0\" unindexed_hits=\"0\" unindexed_files_scanned=\"0\" next=\"--at={}:{}\"",
-            escape_xml_str(&first_loc.0),
-            first_loc.1
-        )
+            " pattern=\"{}\" root=\"{}\" files=\"{files}\" hits=\"{}\"{} hits_capped=\"0\"",
+            escape_xml_str(self.val.str_or("pattern", "")),
+            escape_xml_str(self.val.str_or("root", ".")),
+            hits.len(),
+            self.window(hits.len()).xml_attrs(),
+        )?;
+        self.write_tier_attrs(out)?;
+        write!(out, " next=\"{}\"", escape_xml_str(&self.next_hint()))
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let hits = self.val["hits"].as_array();
-        let count = hits.map_or(0, Vec::len);
-        let cap = self.val.u64_or("limit", 100).max(1) as usize;
-        let shown = count.min(cap);
-        let (_, enc_set, _) = collect_grep_summary(hits);
-        if let Some(items) = hits {
-            for h in items.iter().take(shown) {
-                write_grep_hit_row(out, h)?;
-            }
+        let shown = self.shown();
+        write_grep_rows(out, shown, self.merges())?;
+        self.write_unindexed(out)?;
+        write_grep_enc_rows(out, self.val, shown)?;
+        if self.hits().is_empty() {
+            let pat = escape_xml_str(self.val.str_or("pattern", ""));
+            writeln!(out, "<suggest next=\"--for=&quot;{pat}&quot;\"/>")?;
         }
-        write_grep_enc_rows(out, &enc_set)
+        Ok(())
     }
 }
 

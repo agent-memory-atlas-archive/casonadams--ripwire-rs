@@ -626,6 +626,10 @@ fn record_ref_item(
     if is_pkg_prefix_extends
         || lang.semantics().is_builtin_keyword(name)
         || (role == RefRole::Call && lang.semantics().should_ignore_call(ext.name_node, name))
+        || (role == RefRole::Read
+            && ext
+                .name_node
+                .is_some_and(|node| !lang.semantics().is_read_capture_allowed(node)))
     {
         return;
     }
@@ -1014,6 +1018,13 @@ pub fn parse_file_tree(
                 record_extracted_item(ext, source_bytes, lang, &mut defs, &mut refs);
             }
         }
+        let bindings = lang
+            .semantics()
+            .read_bindings(tree.root_node(), source_bytes);
+        refs.retain(|reference| {
+            reference.role != RefRole::Read
+                || !bindings.shadows(&reference.callee_name, reference.start_byte)
+        });
         if lang.semantics().supports_embedded_sql() && has_sql_dml_anchor_bytes(source_bytes) {
             extract_embedded_sql_refs(tree.root_node(), source_bytes, &mut refs);
         }

@@ -10,6 +10,10 @@ impl LanguageSemantics for KotlinLanguage {
     }
     super::impl_grammar_method!(ffi tree_sitter_kotlin, include_str!("../queries/kotlin/tags.scm"));
 
+    fn lint_extra_rules(&self) -> &'static [&'static str] {
+        &["redundant-parens"]
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         &["kt", "kts"]
     }

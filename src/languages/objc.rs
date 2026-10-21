@@ -64,6 +64,18 @@ impl LanguageSemantics for ObjCLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_objc::LANGUAGE, "../queries/objc/tags.scm");
 
+    fn lint_tag(&self) -> &'static str {
+        "objc"
+    }
+
+    fn lint_return_type<'a>(&self, sig: &'a str, name: &str) -> Option<&'a str> {
+        super::lint_hooks::prefix_return_type(sig, name)
+    }
+
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["typedef", "enum"]
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         &["m", "mm"]
     }

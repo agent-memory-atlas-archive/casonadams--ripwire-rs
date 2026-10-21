@@ -56,6 +56,40 @@ impl LanguageSemantics for TypeScriptLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_typescript::LANGUAGE_TYPESCRIPT, "../queries/typescript/tags.scm");
 
+    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>) -> bool {
+        super::javascript::javascript_read_position(node)
+    }
+
+    fn read_bindings<'a>(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> super::reads::ReadBindings<'a> {
+        super::reads::ReadBindings::collect(root, source, |node| {
+            super::javascript::javascript_binding_scope(node).map(|scope| scope.byte_range())
+        })
+    }
+
+    fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {
+        super::lint_hooks::colon_return_type(sig)
+    }
+
+    fn lint_bool_types(&self) -> &'static [&'static str] {
+        &["boolean"]
+    }
+
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["type", "interface"]
+    }
+
+    fn source_grammar(&self, path: &str) -> Option<&'static Language> {
+        if path.ends_with(".tsx") {
+            Some(&TSX_LANG_AND_QUERY.0)
+        } else {
+            self.grammar_and_query().map(|(language, _)| language)
+        }
+    }
+
     fn extensions(&self) -> &'static [&'static str] {
         &["ts", "tsx", "mts", "cts", "astro"]
     }

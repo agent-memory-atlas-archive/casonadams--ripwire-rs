@@ -235,3 +235,6 @@
 
 (export_statement
   source: (string) @import.path)
+
+; JavaScript value semantics also apply to TypeScript expressions.
+[(identifier) (shorthand_property_identifier)] @name @reference.read

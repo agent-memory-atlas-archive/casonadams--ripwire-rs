@@ -3,6 +3,7 @@ pub mod dispatch;
 pub mod doc_tools;
 pub mod edit;
 pub mod graph_tools;
+pub mod grep;
 pub mod recall;
 pub mod retrieval;
 pub mod schema;

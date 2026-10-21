@@ -87,6 +87,16 @@ See the **[Workflow Guide](docs/WORKFLOWS.md)** (or **[online](https://casonadam
 6. **[CI Gates & Agent Integration](docs/WORKFLOWS.md#6-continuous-integration-ci-workflows--automated-pr-gates)**: Automated PR gates, 33-tool stdio MCP server, LSP bridge, and 17 agent skills (`--add-skills`, `ripwire-rs mcp`, `--lsp`, `--scan-skills`).
 7. **[Multi-Agent Fleet Orchestration](docs/WORKFLOWS.md#7-multi-agent-fleet-orchestration-parallel-worktrees--subagent-slicing)**: Community-carved task partitioning, pre-hoc worktree lane collision planning, cross-branch merge scouting, and session handoffs (`--pack-task --partition=N`, `--plan-lanes`, `--brief`, `--merge-scout`, `--handoff`, `--help-task`, `--verify`).
 
+Navigation reports expose their limits: `--impact` lists unbound candidate call
+sites as `<dc>` rows, never as graph edges. `--uses` lists all indexed sites by
+default; add `--limit=N --offset=M` to page them. Literal search reports span
+tiers and suppressed mentions; `--grep-in=any` includes comments and strings,
+and `--in=PATH` restricts paths. `--whereis` scans distinct Git blobs up to 2 MiB
+once, including unindexed HEAD files and changed worktree paths.
+Python, JavaScript/TypeScript, and Rust also index bare non-local variable reads;
+grep's `reads=` comes from those references, not text estimates. Unsupported
+binding forms remain evidence floors.
+
 ---
 
 ## Documentation

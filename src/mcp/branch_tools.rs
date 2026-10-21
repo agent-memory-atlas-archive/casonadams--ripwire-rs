@@ -1,7 +1,6 @@
 use crate::domain::{IngestResult, Interner};
 use serde_json::{Value, json};
-use std::collections::HashMap;
-use std::fs;
+use std::collections::{HashMap, HashSet};
 
 /// Execute `owners` tool: git commit author ownership per file.
 fn record_commit_authors(
@@ -112,21 +111,6 @@ pub fn call_owners(
     })
 }
 
-fn get_line_snippet(path: &str, line: u32, fallback: &str) -> String {
-    if line == 0 {
-        return fallback.to_string();
-    }
-    if let Ok(content) = fs::read_to_string(path)
-        && let Some(l) = content.lines().nth(line as usize - 1)
-    {
-        let trimmed = l.trim();
-        if !trimmed.is_empty() {
-            return trimmed.to_string();
-        }
-    }
-    fallback.to_string()
-}
-
 fn branch_hit_json(
     branch: &str,
     stamp: &(String, String),
@@ -149,109 +133,116 @@ fn branch_hit_json(
     })
 }
 
-/// Hits for `symbol_name` on every local branch whose tip is not HEAD's commit, labeled `def`
-/// where the blob's own tags parse defines the name on that line.
-fn scan_local_branch_hits(root: &str, symbol_name: &str) -> (usize, Vec<Value>) {
-    let Some(repo) = crate::git::repo::discover(root) else {
-        return (0, Vec::new());
-    };
+struct WhereisScan {
+    rows: Vec<Value>,
+    on_head: bool,
+    refs_scanned: usize,
+    blobs: usize,
+}
+
+fn scan_repo_whereis(
+    repo: &gix::Repository,
+    root: &str,
+    symbol_name: &str,
+    index_defs: &HashMap<&str, HashSet<u32>>,
+) -> WhereisScan {
+    let scope = crate::git::repo::workdir_prefix(repo, root).unwrap_or_default();
     let head = repo.head_id().ok().map(gix::Id::detach);
-    let branches: Vec<String> = crate::git::repo::local_branches(&repo)
+    let branches: Vec<String> = crate::git::repo::local_branches(repo)
         .into_iter()
         .filter(|b| repo.rev_parse_single(b.as_str()).ok().map(gix::Id::detach) != head)
         .collect();
-    let per_branch = crate::git::repo::grep_word_revs(&repo, &branches, symbol_name);
-    let mut def_lines: std::collections::HashMap<gix::ObjectId, Vec<u32>> =
-        std::collections::HashMap::new();
-    let mut hits = Vec::new();
-    for (branch, branch_hits) in branches.iter().zip(per_branch) {
-        let stamp = crate::git::repo::commit_stamp(&repo, branch).unwrap_or_default();
-        for hit in &branch_hits {
-            let defs = def_lines.entry(hit.blob).or_insert_with(|| {
-                repo.find_blob(hit.blob).map_or_else(
-                    |_| Vec::new(),
-                    |b| crate::ingest::definition_lines(&hit.path, &b.data, symbol_name),
-                )
-            });
-            let kind = if defs.contains(&(hit.line as u32)) {
+    let revs: Vec<&str> = std::iter::once("HEAD")
+        .chain(branches.iter().map(String::as_str))
+        .collect();
+    let grep = crate::git::repo::grep_word_revs(repo, &revs, &scope, symbol_name);
+    let mut per_rev = grep.per_rev.into_iter();
+    let head_hits = per_rev.next().unwrap_or_default();
+    let changed: Vec<String> = crate::git::repo::dirty_paths(root)
+        .into_iter()
+        .filter_map(|p| p.strip_prefix(scope.as_str()).map(str::to_string))
+        .collect();
+    let root_path = std::path::Path::new(root);
+    let mut rows: Vec<Value> = head_hits
+        .iter()
+        .filter(|h| changed.binary_search(&h.path).is_err())
+        .map(|h| {
+            let src = CheckoutLine {
+                label: "HEAD",
+                path: &h.path,
+                line: h.line,
+                text: &h.text,
+            };
+            checkout_row(&src, symbol_name, index_defs.get(h.path.as_str()))
+        })
+        .collect();
+    for path in &changed {
+        let defs = index_defs.get(path.as_str());
+        rows.extend(scan_file_whereis_hits(
+            root_path,
+            path,
+            symbol_name,
+            defs,
+            "worktree",
+        ));
+    }
+    sort_checkout_rows(&mut rows);
+    let on_head = !rows.is_empty();
+    let per_branch: Vec<Vec<crate::git::repo::LineHit>> = per_rev.collect();
+    rows.extend(branch_rows(repo, &branches, &per_branch, symbol_name));
+    WhereisScan {
+        rows,
+        on_head,
+        refs_scanned: branches.len(),
+        blobs: grep.blobs,
+    }
+}
+
+fn branch_rows(
+    repo: &gix::Repository,
+    branches: &[String],
+    per_branch: &[Vec<crate::git::repo::LineHit>],
+    symbol_name: &str,
+) -> Vec<Value> {
+    let def_lines = blob_def_lines(repo, per_branch, symbol_name);
+    let mut rows = Vec::new();
+    for (branch, hits) in branches.iter().zip(per_branch) {
+        let stamp = crate::git::repo::commit_stamp(repo, branch).unwrap_or_default();
+        rows.extend(hits.iter().map(|hit| {
+            let kind = if def_lines[&hit.blob].contains(&(hit.line as u32)) {
                 "def"
             } else {
                 "ref"
             };
-            hits.push(branch_hit_json(branch, &stamp, symbol_name, hit, kind));
-        }
+            branch_hit_json(branch, &stamp, symbol_name, hit, kind)
+        }));
     }
-    (branches.len(), hits)
+    rows
 }
 
-fn resolve_hit_file<'a>(ingest: &'a IngestResult, interner: &'a Interner, file_id: u32) -> &'a str {
-    ingest
-        .files
-        .get(file_id as usize)
-        .map(|f| interner.resolve(&f.path))
-        .unwrap_or("")
-}
-
-fn build_head_hit(
-    file_path: &str,
-    root: &str,
-    line: u32,
-    sym_name: &str,
-    def_kind: Option<crate::domain::SymKind>,
-) -> Value {
-    let full_path = if root == "." {
-        file_path.to_string()
-    } else {
-        format!("{root}/{file_path}")
-    };
-    let (kind, fallback) = match def_kind {
-        Some(k) => ("def", format!("{} {sym_name}", k.tag())),
-        None => ("ref", sym_name.to_string()),
-    };
-    let text = get_line_snippet(&full_path, line, &fallback);
-    json!({
-        "ref": "HEAD",
-        "symbol": sym_name,
-        "kind": kind,
-        "file": file_path,
-        "path": file_path,
-        "line": line,
-        "text": text,
-        "on_head": true
-    })
-}
-
-fn collect_head_defs(
-    ingest: &IngestResult,
-    interner: &Interner,
-    root: &str,
-    sym_name: &str,
-) -> Vec<Value> {
-    ingest
-        .symbols
-        .iter()
-        .filter(|sym| interner.resolve(&sym.name) == sym_name)
-        .map(|sym| {
-            let fp = resolve_hit_file(ingest, interner, sym.file_id);
-            build_head_hit(fp, root, sym.line, sym_name, Some(sym.kind))
-        })
-        .collect()
-}
-
-fn collect_head_refs(
-    ingest: &IngestResult,
-    interner: &Interner,
-    root: &str,
-    sym_name: &str,
-) -> Vec<Value> {
-    ingest
-        .references
-        .iter()
-        .filter(|r| interner.resolve(&r.callee_name) == sym_name)
-        .map(|r| {
-            let fp = resolve_hit_file(ingest, interner, r.file_id);
-            build_head_hit(fp, root, r.line, sym_name, None)
-        })
+fn blob_def_lines(
+    repo: &gix::Repository,
+    per_branch: &[Vec<crate::git::repo::LineHit>],
+    symbol_name: &str,
+) -> HashMap<gix::ObjectId, Vec<u32>> {
+    use rayon::prelude::*;
+    let mut first_path: HashMap<gix::ObjectId, &str> = HashMap::new();
+    for hit in per_branch.iter().flatten() {
+        first_path.entry(hit.blob).or_insert(&hit.path);
+    }
+    let sync_repo = repo.clone().into_sync();
+    first_path
+        .into_par_iter()
+        .map_init(
+            || sync_repo.to_thread_local(),
+            |r, (oid, path)| {
+                let defs = r.find_blob(oid).map_or_else(
+                    |_| Vec::new(),
+                    |b| crate::ingest::definition_lines(path, &b.data, symbol_name),
+                );
+                (oid, defs)
+            },
+        )
         .collect()
 }
 
@@ -279,69 +270,91 @@ pub(super) fn probe_name_history(root: &str, sym_name: &str, head_sha: &str) -> 
     }))
 }
 
+struct CheckoutLine<'a> {
+    label: &'a str,
+    path: &'a str,
+    line: usize,
+    text: &'a str,
+}
+
+fn checkout_row(src: &CheckoutLine<'_>, symbol_name: &str, defs: Option<&HashSet<u32>>) -> Value {
+    let line = src.line as u32;
+    let is_def = defs.is_some_and(|s| s.contains(&line));
+    let code_text: String = src.text.trim().chars().take(200).collect();
+    json!({
+        "ref": src.label,
+        "symbol": symbol_name,
+        "kind": if is_def { "def" } else { "ref" },
+        "file": src.path,
+        "path": src.path,
+        "line": line,
+        "text": code_text,
+        "on_head": true,
+        "is_def": is_def,
+    })
+}
+
 fn scan_file_whereis_hits(
     root_path: &std::path::Path,
     rel_path: &str,
     symbol_name: &str,
-    def_lines: Option<&std::collections::HashSet<u32>>,
+    defs: Option<&HashSet<u32>>,
+    label: &str,
 ) -> Vec<Value> {
-    let mut file_hits = Vec::new();
     let full_path = if root_path == std::path::Path::new(".") {
         std::path::PathBuf::from(rel_path)
     } else {
         root_path.join(rel_path)
     };
     let Ok(content) = std::fs::read_to_string(full_path) else {
-        return file_hits;
+        return Vec::new();
     };
     if !content.contains(symbol_name) {
-        return file_hits;
+        return Vec::new();
     }
-    for (idx, raw_line) in content.lines().enumerate() {
-        if !crate::git::repo::has_word(raw_line, symbol_name) {
-            continue;
-        }
-        let line_num = (idx + 1) as u32;
-        let is_def = def_lines.is_some_and(|s| s.contains(&line_num));
-        let kind = if is_def { "def" } else { "ref" };
-        let code_text: String = raw_line.trim().chars().take(200).collect();
-        file_hits.push(json!({
-            "ref": "HEAD",
-            "symbol": symbol_name,
-            "kind": kind,
-            "file": rel_path,
-            "path": rel_path,
-            "line": line_num,
-            "text": code_text,
-            "on_head": true,
-            "is_def": is_def,
-        }));
-    }
-    file_hits
+    content
+        .lines()
+        .enumerate()
+        .filter(|(_, text)| crate::git::repo::has_word(text, symbol_name))
+        .map(|(idx, text)| {
+            let src = CheckoutLine {
+                label,
+                path: rel_path,
+                line: idx + 1,
+                text,
+            };
+            checkout_row(&src, symbol_name, defs)
+        })
+        .collect()
 }
 
-fn collect_worktree_whereis_hits(
+fn scan_files_whereis(
     ingest: &IngestResult,
     interner: &Interner,
     root: &str,
     symbol_name: &str,
-    defs_by_file: &std::collections::HashMap<u32, std::collections::HashSet<u32>>,
-) -> Vec<Value> {
+    index_defs: &HashMap<&str, HashSet<u32>>,
+) -> WhereisScan {
     let root_path = std::path::Path::new(root);
-    let mut hits: Vec<Value> = ingest
+    let mut rows: Vec<Value> = ingest
         .files
         .iter()
         .flat_map(|fi| {
-            let rel_path = interner.resolve(&fi.path);
-            scan_file_whereis_hits(root_path, rel_path, symbol_name, defs_by_file.get(&fi.id))
+            let path = interner.resolve(&fi.path);
+            scan_file_whereis_hits(root_path, path, symbol_name, index_defs.get(path), "HEAD")
         })
         .collect();
-    if hits.is_empty() {
-        let mut h = collect_head_defs(ingest, interner, root, symbol_name);
-        h.append(&mut collect_head_refs(ingest, interner, root, symbol_name));
-        return h;
+    sort_checkout_rows(&mut rows);
+    WhereisScan {
+        on_head: !rows.is_empty(),
+        rows,
+        refs_scanned: 0,
+        blobs: ingest.files.len(),
     }
-    hits.sort_by(|a, b| {
+}
+
+fn sort_checkout_rows(rows: &mut [Value]) {
+    rows.sort_by(|a, b| {
         let a_def = a["is_def"].as_bool().unwrap_or(false);
         let b_def = b["is_def"].as_bool().unwrap_or(false);
         b_def
@@ -349,7 +362,25 @@ fn collect_worktree_whereis_hits(
             .then_with(|| a["path"].as_str().cmp(&b["path"].as_str()))
             .then_with(|| a["line"].as_u64().cmp(&b["line"].as_u64()))
     });
-    hits
+}
+
+#[must_use]
+pub fn index_def_lines<'a>(
+    ingest: &IngestResult,
+    interner: &'a Interner,
+    symbol_name: &str,
+) -> HashMap<&'a str, HashSet<u32>> {
+    let mut defs: HashMap<&str, HashSet<u32>> = HashMap::new();
+    for sym in &ingest.symbols {
+        if interner.resolve(&sym.name) == symbol_name
+            && let Some(file) = ingest.files.get(sym.file_id as usize)
+        {
+            defs.entry(interner.resolve(&file.path))
+                .or_default()
+                .insert(sym.line);
+        }
+    }
+    defs
 }
 
 /// Execute `whereis` tool: identify where a symbol lives (definitions and references).
@@ -361,45 +392,33 @@ pub fn call_whereis(
     with_history: bool,
 ) -> Value {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let head_date = crate::git::repo::discover(root)
-        .and_then(|repo| crate::git::repo::commit_stamp(&repo, "HEAD"))
+    let repo = crate::git::repo::discover(root);
+    let head_date = repo
+        .as_ref()
+        .and_then(|repo| crate::git::repo::commit_stamp(repo, "HEAD"))
         .map(|(_, date)| date)
         .unwrap_or_default();
-    let mut defs_by_file: std::collections::HashMap<u32, std::collections::HashSet<u32>> =
-        std::collections::HashMap::new();
-    for sym in &ingest.symbols {
-        if interner.resolve(&sym.name) == symbol_name {
-            defs_by_file
-                .entry(sym.file_id)
-                .or_default()
-                .insert(sym.line);
-        }
-    }
-
-    let mut hits =
-        collect_worktree_whereis_hits(ingest, interner, root, symbol_name, &defs_by_file);
-
-    let on_head = !hits.is_empty();
-    let blobs = ingest.files.len();
-    let (refs_scanned, mut branch_hits) = scan_local_branch_hits(root, symbol_name);
-    hits.append(&mut branch_hits);
-
-    let history_info = if with_history && !on_head {
+    let index_defs = index_def_lines(ingest, interner, symbol_name);
+    let scan = match &repo {
+        Some(repo) => scan_repo_whereis(repo, root, symbol_name, &index_defs),
+        None => scan_files_whereis(ingest, interner, root, symbol_name, &index_defs),
+    };
+    let history_info = if with_history && !scan.on_head {
         probe_name_history(root, symbol_name, &at_stamp)
     } else {
         None
     };
 
-    let hits_count = hits.len();
+    let hits_count = scan.rows.len();
     json!({
         "symbol": symbol_name,
-        "on_head": if on_head { 1 } else { 0 },
-        "refs_scanned": refs_scanned,
-        "blobs": blobs,
+        "on_head": u8::from(scan.on_head),
+        "refs_scanned": scan.refs_scanned,
+        "blobs": scan.blobs,
         "hits_count": hits_count,
         "count": hits_count,
-        "hits": hits.clone(),
-        "locations": hits,
+        "hits": scan.rows.clone(),
+        "locations": scan.rows,
         "history": history_info,
         "head_date": head_date,
         "at": at_stamp

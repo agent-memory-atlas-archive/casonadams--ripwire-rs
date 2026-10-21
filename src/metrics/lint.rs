@@ -1,633 +1,592 @@
-use crate::domain::{IngestResult, Interner, Symbol};
-use crate::graph::Graph;
+use super::lint_naming;
+pub use super::lint_report::{serialize_lint_sarif, serialize_lint_xml};
+use super::lint_rules::{FileLintContext, Sink, large_function, symbols_in_file};
+use crate::domain::{IngestResult, Interner, Lang};
+use crate::languages::lint::{
+    atoms as lint_atoms, cache as lint_cache, flow as lint_flow, text as lint_text,
+};
 use std::io::{self, Write};
 
-/// An emitted code smell or lint finding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LintFinding {
-    pub rule: String,
-    pub message: String,
+    pub rule: &'static str,
     pub path: String,
     pub line: u32,
-    pub severity: String,
+    pub pos: u32,
     pub enclosing: String,
+    pub message: String,
 }
 
-/// Catalog entry describing an AST code smell rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LintRuleDesc {
     pub name: &'static str,
     pub severity: &'static str,
     pub category: &'static str,
+    pub langs: &'static str,
+    pub since: &'static str,
     pub description: &'static str,
 }
 
-macro_rules! rule_desc {
-    ($name:expr, $sev:expr, $cat:expr, $desc:expr) => {
-        LintRuleDesc {
-            name: $name,
-            severity: $sev,
-            category: $cat,
-            description: $desc,
+pub type CheckFn = fn(&FileLintContext<'_>, &mut Sink<'_>);
+
+#[derive(Debug)]
+pub struct LintRule {
+    pub desc: LintRuleDesc,
+    pub check: CheckFn,
+}
+
+const C_FAMILY: &str = "cpp,c,objc";
+const NAMING_LANGS: &str =
+    "cpp,c,objc,py,ts,js,go,rs,swift,java,cs,rb,sh,php,lua,ex,dart,kt,gd,clj";
+
+macro_rules! rule {
+    ($name:literal, $sev:literal, $cat:literal, $langs:expr, $since:literal, $desc:literal, $check:path) => {
+        LintRule {
+            desc: LintRuleDesc {
+                name: $name,
+                severity: $sev,
+                category: $cat,
+                langs: $langs,
+                since: $since,
+                description: $desc,
+            },
+            check: $check,
         }
     };
 }
 
-pub const LINT_RULES: &[LintRuleDesc] = &[
-    rule_desc!(
-        "complexity-spike",
-        "major",
-        "maintainability",
-        "Cognitive complexity exceeds the Sonar Campbell ceiling of 15"
-    ),
-    rule_desc!(
-        "deep-nesting",
-        "major",
-        "maintainability",
-        "Maximum control statement nesting depth exceeds 5 levels"
-    ),
-    rule_desc!(
-        "parameter-spill",
-        "minor",
-        "design",
-        "Parameter count exceeds 5 positional arguments"
-    ),
-    rule_desc!(
-        "verbosity-spike",
-        "minor",
-        "readability",
-        "Function length exceeds 100 non-comment lines of code"
-    ),
-    rule_desc!(
-        "dead-function",
-        "major",
-        "architecture",
-        "Internal linkage function with zero callers in workspace graph"
-    ),
-    rule_desc!(
-        "large-function",
-        "info",
-        "maintainability",
-        "a function body over 80 lines"
-    ),
-    rule_desc!(
-        "naming-short",
-        "info",
-        "naming",
-        "a 1-2 letter Function/Method/Var name — visible far beyond any tiny scope"
-    ),
-    rule_desc!(
-        "naming-wordy",
-        "info",
-        "naming",
-        "more than 5 split tokens in one name"
-    ),
-    rule_desc!(
-        "naming-underscore",
-        "info",
-        "naming",
-        "internal consecutive underscores, or a C-family reserved __x/_X form"
-    ),
-    rule_desc!(
-        "naming-case",
-        "info",
-        "naming",
-        "snake_case and camelCase mixed inside one name"
-    ),
-    rule_desc!(
+pub static LINT_RULES: &[LintRule] = &[
+    rule!(
         "c-style-cast",
         "warn",
         "style",
-        "a C-style cast — prefers explicit static_cast/const_cast/reinterpret_cast"
+        "cpp,c,objc,java,cs",
+        "v0.1.0",
+        "a C-style cast — cppcoreguidelines-pro-type-cstyle-cast prefers the explicit static_cast/const_cast/reinterpret_cast",
+        lint_text::c_style_cast
     ),
-    rule_desc!(
+    rule!(
         "goto",
         "warn",
         "control-flow",
-        "a goto statement — cppcoreguidelines-avoid-goto"
+        "cpp,c,objc,go,cs",
+        "v0.1.0",
+        "a goto statement — cppcoreguidelines-avoid-goto",
+        lint_flow::goto
     ),
-    rule_desc!("do-while", "info", "style", "a do/while loop shape"),
-    rule_desc!(
+    rule!(
+        "do-while",
+        "info",
+        "style",
+        "cpp,c,objc,ts,js,swift,java,cs",
+        "v0.1.0",
+        "a do/while loop shape (on Swift, its do/catch block shares the same grammar node and also matches)",
+        lint_flow::do_while
+    ),
+    rule!(
         "unsafe-c-fn",
         "error",
         "security",
-        "a call to an unbounded C string function (strcpy/strcat/sprintf/gets)"
+        "cpp,c,objc,ts,js,go,rs",
+        "v0.1.0",
+        "a call to an unbounded C string function (strcpy/strcat/sprintf/gets)",
+        lint_text::unsafe_c_fn
     ),
-    rule_desc!(
+    rule!(
         "weak-crypto",
         "error",
         "security",
-        "a call to a broken hash or cipher (MD5/SHA1/MD4/RC4)"
+        "cpp,c,objc,ts,js,go,rs",
+        "v0.1.0",
+        "a call to a broken hash or cipher (MD5/SHA1/MD4/RC4)",
+        lint_text::weak_crypto
     ),
-    rule_desc!(
+    rule!(
         "redundant-parens",
         "info",
         "style",
-        "a doubly-parenthesized expression — readability-redundant-parentheses"
+        "cpp,c,objc,py,ts,js,go,rs,java,cs",
+        "v0.1.0",
+        "a doubly-parenthesized expression — readability-redundant-parentheses",
+        lint_text::redundant_parens
     ),
-    rule_desc!(
+    rule!(
         "suspicious-semicolon",
         "warn",
         "correctness",
-        "an if-body that is just `;` — bugprone-suspicious-semicolon"
+        C_FAMILY,
+        "v0.1.0",
+        "an if-body that is just `;` — bugprone-suspicious-semicolon",
+        lint_flow::suspicious_semicolon
     ),
-    rule_desc!(
+    rule!(
         "typedef-over-using",
         "info",
         "style",
-        "a C-style typedef struct/union where `using` is preferred"
+        C_FAMILY,
+        "v0.1.0",
+        "a C-style typedef struct/union where `using` is preferred",
+        lint_text::typedef_over_using
     ),
-    rule_desc!(
+    rule!(
         "magic-number",
         "info",
         "maintainability",
-        "a non-trivial numeric literal inside a function body"
+        C_FAMILY,
+        "v0.1.0",
+        "a non-trivial numeric literal inside a function body, outside a const/constexpr init",
+        lint_atoms::magic_number
     ),
-    rule_desc!(
+    rule!(
         "empty-catch",
         "warn",
         "error-masking",
-        "a catch block with an empty body"
+        C_FAMILY,
+        "v0.1.0",
+        "a catch block with an empty body",
+        lint_flow::empty_catch
     ),
-    rule_desc!(
+    rule!(
         "self-assign",
         "warn",
         "correctness",
-        "x = x — almost always a copy-paste bug"
+        "cpp,c,objc,ts,js,rs,java,cs",
+        "v0.1.0",
+        "x = x — almost always a copy-paste bug",
+        lint_text::self_assign
     ),
-    rule_desc!(
+    rule!(
+        "large-function",
+        "info",
+        "maintainability",
+        "cpp,c",
+        "v0.1.0",
+        "a function body over 80 lines",
+        large_function
+    ),
+    rule!(
+        "deep-nesting",
+        "info",
+        "maintainability",
+        "cpp,c",
+        "v0.1.0",
+        "brace nesting depth over 4 inside a function body",
+        lint_flow::deep_nesting
+    ),
+    rule!(
         "inconsistent-return",
         "info",
         "maintainability",
-        "a bare `return;` mixed with a value-returning return in the same function"
+        "cpp,c",
+        "v0.1.0",
+        "a bare `return;` mixed with a value-returning return in the same function",
+        lint_flow::inconsistent_return
     ),
-    rule_desc!(
+    rule!(
         "unreachable-code",
         "warn",
         "correctness",
-        "a statement after an unconditional return/break/continue/throw/raise"
+        "cpp,c,objc,py,ts,js,go,java,cs",
+        "v0.1.0",
+        "a statement after an unconditional return/break/continue/throw/raise in the same block",
+        lint_flow::unreachable_code
     ),
-    rule_desc!(
+    rule!(
+        "naming-short",
+        "info",
+        "naming",
+        NAMING_LANGS,
+        "v0.2.2",
+        "a 1-2 letter Function/Method/Var name — visible far beyond any tiny scope [Beniamini/Hofmeister]",
+        lint_naming::short
+    ),
+    rule!(
+        "naming-wordy",
+        "info",
+        "naming",
+        NAMING_LANGS,
+        "v0.2.2",
+        "more than 5 split tokens in one name [Butler; AlSuhaibani]",
+        lint_naming::wordy
+    ),
+    rule!(
         "naming-series",
         "info",
         "naming",
-        "foo1/foo2/... digit-suffix siblings sharing a base name in one scope"
+        NAMING_LANGS,
+        "v0.2.2",
+        "foo1/foo2/... digit-suffix siblings sharing a base name in one scope [Butler]",
+        lint_naming::series
     ),
-    rule_desc!(
+    rule!(
+        "naming-underscore",
+        "info",
+        "naming",
+        NAMING_LANGS,
+        "v0.2.2",
+        "internal consecutive underscores, or a C-family reserved __x/_X form [Butler]",
+        lint_naming::underscore
+    ),
+    rule!(
+        "naming-case",
+        "info",
+        "naming",
+        NAMING_LANGS,
+        "v0.2.2",
+        "snake_case and camelCase mixed inside one name [Butler]",
+        lint_naming::mixed_case
+    ),
+    rule!(
         "naming-predicate",
         "info",
         "naming",
-        "an is/has/can/should/was-prefixed name whose return type is not bool-like"
+        NAMING_LANGS,
+        "v0.2.2",
+        "an is/has/can/should/was-prefixed name whose KNOWN return type is not bool-like [LAPD A2]",
+        lint_naming::predicate
     ),
-    rule_desc!(
+    rule!(
         "naming-setter",
         "info",
         "naming",
-        "a set-prefixed name whose return type is not void-like"
+        NAMING_LANGS,
+        "v0.2.2",
+        "a set-prefixed name whose KNOWN return type is not void-like [LAPD A3]",
+        lint_naming::setter
     ),
-    rule_desc!(
+    rule!(
         "naming-confusable",
         "info",
         "naming",
-        "a co-visible pair within edit distance <=2 or reordered tokens"
+        NAMING_LANGS,
+        "v0.2.2",
+        "a co-visible pair within edit distance <=2, reordered tokens, or a bare/digit-suffixed twin [Namesake]",
+        lint_naming::confusable
     ),
-    rule_desc!(
+    rule!(
         "naming-uninformative",
         "info",
         "naming",
-        "every split subtoken is corpus-ubiquitous (BM25 idf) on a body past size floor"
+        NAMING_LANGS,
+        "v0.2.2",
+        "every split subtoken is corpus-ubiquitous (BM25 idf) on a body past the size floor — fires only at the low end [Sparck Jones 1972]",
+        lint_naming::uninformative
     ),
-    rule_desc!(
+    rule!(
         "atom-comma-operator",
         "info",
         "readability",
-        "the comma operator inside an expression [Gopstein FSE 2017]"
+        C_FAMILY,
+        "v0.2.2",
+        "the comma operator inside an expression (never a for-header comma) [Gopstein FSE 2017]",
+        lint_atoms::comma_operator
     ),
-    rule_desc!(
+    rule!(
         "atom-embedded-crement",
         "info",
         "readability",
-        "++/-- evaluated inside a larger expression [Gopstein FSE 2017]"
+        C_FAMILY,
+        "v0.2.2",
+        "++/-- evaluated inside a larger expression (never a whole statement) [Gopstein FSE 2017]",
+        lint_atoms::embedded_crement
     ),
-    rule_desc!(
+    rule!(
         "atom-assign-as-value",
         "info",
         "readability",
-        "an assignment whose VALUE is consumed [Gopstein FSE 2017]"
+        C_FAMILY,
+        "v0.2.2",
+        "an assignment whose VALUE is consumed (a condition, an argument, ...) [Gopstein FSE 2017]",
+        lint_atoms::assign_as_value
     ),
-    rule_desc!(
+    rule!(
         "atom-nested-ternary",
         "info",
         "readability",
-        "a conditional expression inside a conditional expression [Gopstein FSE 2017]"
+        C_FAMILY,
+        "v0.2.2",
+        "a conditional expression inside a conditional expression [Gopstein FSE 2017]",
+        lint_atoms::nested_ternary
     ),
-    rule_desc!(
+    rule!(
         "atom-implicit-predicate",
         "info",
         "readability",
-        "arithmetic used where a truth value is expected [Gopstein FSE 2017]"
+        C_FAMILY,
+        "v0.2.2",
+        "arithmetic (or a non-0/1 integer literal) used where a truth value is expected [Gopstein FSE 2017]",
+        lint_atoms::implicit_predicate
     ),
-    rule_desc!(
+    rule!(
         "atom-octal-literal",
         "info",
         "readability",
-        "a leading-zero integer literal — 0755 is 493, not 755 [Gopstein FSE 2017]"
+        C_FAMILY,
+        "v0.2.2",
+        "a leading-zero integer literal — 0755 is 493, not 755 [Gopstein FSE 2017]",
+        lint_atoms::octal_literal
     ),
-    rule_desc!(
+    rule!(
         "atom-reversed-subscript",
         "info",
         "readability",
-        "1[arr] — legal C, almost never intended [Gopstein FSE 2017]"
+        C_FAMILY,
+        "v0.2.2",
+        "1[arr] — legal C, almost never intended [Gopstein FSE 2017]",
+        lint_atoms::reversed_subscript
     ),
-    rule_desc!(
+    rule!(
         "cache-node-container",
         "info",
         "performance",
-        "a node-based std container (map/list/set/...) — one heap node per element"
+        C_FAMILY,
+        "v0.2.2",
+        "a node-based std container (map/list/set/...) — one heap node per element, a dependent pointer chase per traversal step",
+        lint_cache::node_container
     ),
-    rule_desc!(
+    rule!(
         "cache-vector-of-raw-ptr",
         "info",
         "performance",
-        "vector<T*> — contiguous handles, scattered payloads"
+        C_FAMILY,
+        "v0.2.2",
+        "vector<T*> — contiguous handles, scattered payloads",
+        lint_cache::vector_of_raw_ptr
     ),
-    rule_desc!(
+    rule!(
         "cache-vector-of-indirect",
         "info",
         "performance",
-        "vector<unique_ptr/shared_ptr/vector<...>> — an indirection per element"
+        C_FAMILY,
+        "v0.2.2",
+        "vector<unique_ptr/shared_ptr/vector<...>> — an indirection per element",
+        lint_cache::vector_of_indirect
     ),
-    rule_desc!(
+    rule!(
         "cache-heap-alloc-in-loop",
         "info",
         "performance",
-        "new/malloc/calloc/realloc/strdup inside a loop body"
+        C_FAMILY,
+        "v0.2.2",
+        "new/malloc/calloc/realloc/strdup inside a loop body — per-iteration allocation scatters the loop's output across the heap",
+        lint_cache::heap_alloc_in_loop
     ),
-    rule_desc!(
+    rule!(
         "cache-pointer-chase-loop",
         "info",
         "performance",
-        "p = p->next inside a loop — a serial dependent-load chain"
+        C_FAMILY,
+        "v0.2.2",
+        "p = p->next inside a loop — a serial dependent-load chain the prefetcher cannot predict",
+        lint_cache::pointer_chase_loop
     ),
-    rule_desc!(
+    rule!(
         "cache-gather-subscript",
         "info",
         "performance",
-        "a[b[i]] inside a loop — gather/scatter random access"
+        C_FAMILY,
+        "v0.2.2",
+        "a[b[i]] inside a loop — gather/scatter, random access by construction",
+        lint_cache::gather_subscript
     ),
-    rule_desc!(
+    rule!(
         "cache-shared-ptr-by-value",
         "info",
         "performance",
-        "a by-value shared_ptr parameter — atomic refcount traffic per call"
+        C_FAMILY,
+        "v0.2.2",
+        "a by-value shared_ptr parameter — atomic refcount traffic per call",
+        lint_cache::shared_ptr_by_value
     ),
-    rule_desc!(
+    rule!(
         "cache-manual-prefetch",
         "info",
         "performance",
-        "an existing _mm_prefetch/__builtin_prefetch call"
+        C_FAMILY,
+        "v0.2.2",
+        "an existing _mm_prefetch/__builtin_prefetch call, flagged for re-measurement (2007-era wins are often a wash today)",
+        lint_cache::manual_prefetch
     ),
 ];
 
-/// Trait encapsulating a single AST symbol lint rule and its catalog metadata.
-pub trait SymbolLintRule: Sync {
-    fn desc(&self) -> LintRuleDesc;
-    fn check(&self, sym: &Symbol, file: &str, name: &str, graph: &Graph) -> Option<LintFinding>;
+pub const DEFAULT_RULE_BUDGET: usize = 5000;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LintOptions {
+    pub select: Vec<String>,
+    pub ignore: Vec<String>,
+    pub budget: usize,
 }
 
-pub struct SymbolLintSpec {
-    pub desc: LintRuleDesc,
-    pub check_fn: fn(&Symbol, &str, &str, &Graph) -> Option<String>,
-}
-
-impl SymbolLintRule for SymbolLintSpec {
-    fn desc(&self) -> LintRuleDesc {
-        self.desc
-    }
-    fn check(&self, sym: &Symbol, file: &str, name: &str, graph: &Graph) -> Option<LintFinding> {
-        let message = (self.check_fn)(sym, file, name, graph)?;
-        Some(LintFinding {
-            rule: self.desc.name.to_string(),
-            message,
-            path: file.to_string(),
-            line: sym.line,
-            severity: self.desc.severity.to_string(),
-            enclosing: name.to_string(),
-        })
-    }
-}
-
-pub static SYMBOL_LINT_RULES: &[&dyn SymbolLintRule] = &[
-    &SymbolLintSpec {
-        desc: LINT_RULES[0],
-        check_fn: |sym, _, name, _| {
-            (sym.ccx > 15).then(|| {
-                format!(
-                    "Function '{name}' cognitive complexity {} exceeds 15",
-                    sym.ccx
-                )
-            })
-        },
-    },
-    &SymbolLintSpec {
-        desc: LINT_RULES[1],
-        check_fn: |sym, _, name, _| {
-            (sym.max_nest > 5)
-                .then(|| format!("Function '{name}' max nesting {} exceeds 5", sym.max_nest))
-        },
-    },
-    &SymbolLintSpec {
-        desc: LINT_RULES[2],
-        check_fn: |sym, _, name, _| {
-            (sym.params > 5).then(|| {
-                format!(
-                    "Function '{name}' has {} parameters, exceeding 5",
-                    sym.params
-                )
-            })
-        },
-    },
-    &SymbolLintSpec {
-        desc: LINT_RULES[3],
-        check_fn: |sym, _, name, _| {
-            (sym.loc > 100).then(|| format!("Function '{name}' length {} exceeds 100 LOC", sym.loc))
-        },
-    },
-    &SymbolLintSpec {
-        desc: LINT_RULES[4],
-        check_fn: |sym, file, name, graph| {
-            (graph.in_degree(sym.id) == 0 && !crate::gate::affected::is_test_path(file))
-                .then(|| format!("Internal function '{name}' has zero incoming callers"))
-        },
-    },
-    &SymbolLintSpec {
-        desc: LINT_RULES[5],
-        check_fn: |sym, _, name, _| {
-            (sym.loc > 80).then(|| format!("Function '{name}' body is {} lines (> 80)", sym.loc))
-        },
-    },
-    &SymbolLintSpec {
-        desc: LINT_RULES[6],
-        check_fn: |_, _, name, _| {
-            let short = name.rsplit("::").next().unwrap_or(name);
-            (!short.is_empty() && short.len() <= 2 && short.chars().all(char::is_alphabetic))
-                .then(|| format!("Function '{short}' has a 1-2 character name"))
-        },
-    },
-    &SymbolLintSpec {
-        desc: LINT_RULES[7],
-        check_fn: |_, _, name, _| {
-            let short = name.rsplit("::").next().unwrap_or(name);
-            let words = short.split('_').filter(|s| !s.is_empty()).count();
-            (words > 5).then(|| format!("Function '{short}' has {words} subtokens (> 5)"))
-        },
-    },
-    &SymbolLintSpec {
-        desc: LINT_RULES[8],
-        check_fn: |_, _, name, _| {
-            let short = name.rsplit("::").next().unwrap_or(name);
-            short
-                .contains("__")
-                .then(|| format!("Function '{short}' contains consecutive underscores"))
-        },
-    },
-    &SymbolLintSpec {
-        desc: LINT_RULES[9],
-        check_fn: |_, _, name, _| {
-            let short = name.rsplit("::").next().unwrap_or(name);
-            let mixed = short.contains('_')
-                && short.chars().any(char::is_lowercase)
-                && short.chars().any(char::is_uppercase);
-            mixed.then(|| format!("Function '{short}' mixes snake_case and camelCase"))
-        },
-    },
-];
-
-pub fn scan_file_rules(
-    path: &str,
-    raw_content: &str,
-    lang: crate::domain::Lang,
-    syms: Vec<super::lint_rules::SymSpan<'_>>,
-    findings: &mut Vec<LintFinding>,
-) {
-    let masked = super::source_mask::mask_source(raw_content, lang);
-    let ctx = super::lint_rules::FileLintContext::new(path, lang, raw_content, &masked.code, syms);
-    for rule in super::lint_rules::FILE_LINT_RULES {
-        rule.check_file(&ctx, findings);
-    }
-}
-
-fn run_symbol_lint_rules(
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    findings: &mut Vec<LintFinding>,
-) {
-    use crate::domain::CorpusView;
-    let view = (ingest, interner);
-    for sym in &ingest.symbols {
-        if sym.is_callable() && !view.is_test_symbol(sym) {
-            let p = view.sym_path(sym);
-            let n = view.sym_name(sym);
-            findings.extend(
-                SYMBOL_LINT_RULES
-                    .iter()
-                    .filter_map(|rule| rule.check(sym, p, n, graph)),
-            );
+impl Default for LintOptions {
+    fn default() -> Self {
+        Self {
+            select: Vec::new(),
+            ignore: Vec::new(),
+            budget: DEFAULT_RULE_BUDGET,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct RuleStat {
+    pub rule: &'static LintRule,
+    pub count: usize,
+    pub capped: bool,
+    pub applicable: bool,
+}
+
+#[derive(Debug)]
+pub struct LintScan {
+    pub findings: Vec<LintFinding>,
+    pub stats: Vec<RuleStat>,
+    pub options: LintOptions,
 }
 
 #[must_use]
+pub fn rule_applies(rule: &LintRuleDesc, lang: Lang) -> bool {
+    let sem = lang.semantics();
+    rule.langs.split(',').any(|t| t == sem.lint_tag())
+        || sem.lint_extra_rules().contains(&rule.name)
+}
+
+fn matching_rules(prefixes: &[String], flag: &str) -> Result<Vec<&'static str>, String> {
+    let mut names = Vec::new();
+    for p in prefixes {
+        let before = names.len();
+        names.extend(
+            LINT_RULES
+                .iter()
+                .map(|r| r.desc.name)
+                .filter(|n| n.starts_with(p.as_str())),
+        );
+        if names.len() == before {
+            return Err(format!(
+                "{flag}: '{p}' matches no rule or family — see --lint-catalog for the full registry"
+            ));
+        }
+    }
+    Ok(names)
+}
+
+pub fn selected_rules(options: &LintOptions) -> Result<Vec<&'static LintRule>, String> {
+    let selected = matching_rules(&options.select, "--lint-select")?;
+    let ignored = matching_rules(&options.ignore, "--lint-ignore")?;
+    Ok(LINT_RULES
+        .iter()
+        .filter(|r| {
+            (selected.is_empty() || selected.contains(&r.desc.name))
+                && !ignored.contains(&r.desc.name)
+        })
+        .collect())
+}
+
+fn scan_file(ctx: &FileLintContext<'_>, rules: &[&'static LintRule], buckets: &mut [RuleBucket]) {
+    for (rule, bucket) in rules.iter().zip(buckets.iter_mut()) {
+        if rule_applies(&rule.desc, ctx.lang) {
+            let mut sink = Sink::new(&rule.desc, ctx);
+            (rule.check)(ctx, &mut sink);
+            bucket.capped |= sink.capped;
+            bucket.findings.append(&mut sink.out);
+        }
+    }
+}
+
+#[derive(Default)]
+struct RuleBucket {
+    findings: Vec<LintFinding>,
+    capped: bool,
+}
+
+fn finish_bucket(
+    rule: &'static LintRule,
+    mut bucket: RuleBucket,
+    budget: usize,
+) -> (RuleStat, Vec<LintFinding>) {
+    bucket
+        .findings
+        .sort_by(|a, b| (&a.path, a.pos).cmp(&(&b.path, b.pos)));
+    let capped = bucket.capped || bucket.findings.len() >= budget;
+    bucket.findings.truncate(budget);
+    let stat = RuleStat {
+        rule,
+        count: bucket.findings.len(),
+        capped,
+        applicable: false,
+    };
+    (stat, bucket.findings)
+}
+
+pub fn run_lint_scan(
+    ingest: &IngestResult,
+    interner: &Interner,
+    read: &dyn Fn(&str) -> Option<String>,
+    options: LintOptions,
+) -> Result<LintScan, String> {
+    let rules = selected_rules(&options)?;
+    let corpus = lint_naming::NameCorpus::build(ingest, interner);
+    let mut buckets: Vec<RuleBucket> = rules.iter().map(|_| RuleBucket::default()).collect();
+    let mut file_langs = std::collections::BTreeSet::new();
+    for fi in &ingest.files {
+        if fi.lang.semantics().is_prose_document() {
+            continue;
+        }
+        file_langs.insert(fi.lang as usize);
+        let path = interner.resolve(&fi.path);
+        let Some(content) = read(path) else { continue };
+        let syms = symbols_in_file(ingest, interner, fi.id);
+        let ctx = FileLintContext::new(path, fi.lang, &content, syms, &corpus);
+        scan_file(&ctx, &rules, &mut buckets);
+    }
+    let mut findings = Vec::new();
+    let mut stats = Vec::new();
+    for (rule, bucket) in rules.iter().zip(buckets) {
+        let (mut stat, mut rows) = finish_bucket(rule, bucket, options.budget);
+        stat.applicable = crate::languages::ALL_LANGS
+            .iter()
+            .any(|&l| file_langs.contains(&(l as usize)) && rule_applies(&rule.desc, l));
+        stats.push(stat);
+        findings.append(&mut rows);
+    }
+    findings.sort_by(|a, b| {
+        (&a.path, a.line, a.pos, a.rule, &a.message)
+            .cmp(&(&b.path, b.line, b.pos, b.rule, &b.message))
+    });
+    Ok(LintScan {
+        findings,
+        stats,
+        options,
+    })
+}
+
 pub fn run_lint_scan_in_root(
     root: &str,
     ingest: &IngestResult,
-    graph: &Graph,
     interner: &Interner,
-) -> Vec<LintFinding> {
-    let mut findings = Vec::new();
-    run_symbol_lint_rules(ingest, graph, interner, &mut findings);
+    options: LintOptions,
+) -> Result<LintScan, String> {
     let root_path = std::path::Path::new(root);
-    for fi in &ingest.files {
-        if !fi.lang.semantics().is_prose_document() {
-            let p = interner.resolve(&fi.path);
-            if let Ok(content) = crate::domain::read_rel_string(root_path, p) {
-                let syms = super::lint_rules::symbols_in_file(ingest, interner, fi.id);
-                scan_file_rules(p, &content, fi.lang, syms, &mut findings);
-            }
-        }
-    }
-    findings
+    let read = |p: &str| crate::domain::read_rel_string(root_path, p).ok();
+    run_lint_scan(ingest, interner, &read, options)
 }
 
-/// Serialize lint catalog to canonical format.
 pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
     writeln!(
         out,
-        "<!-- ripwire-rs lint-catalog schema=ripwire-rs.lint-catalog/v1: the built-in lint rule registry: <rule name= sev= cat= lang= since=>. -->\n<lintcatalog schema=\"ripwire-rs.lint-catalog/v1\" rules=\"{}\">",
+        "<!-- ripwire-rs lint-catalog schema=ripwire-rs.lint-catalog/v1: the built-in lint rule registry: <rule name= sev= cat= lang= since=>. rules=N: rules in the built-in registry, one rule row each, never cut. -->\n<lintcatalog schema=\"ripwire-rs.lint-catalog/v1\" rules=\"{}\">",
         LINT_RULES.len()
     )?;
-    for r in LINT_RULES {
+    for r in LINT_RULES.iter().map(|r| &r.desc) {
         writeln!(
             out,
-            "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\" lang=\"all\" since=\"v0.1.0\">{}</rule>",
+            "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\" lang=\"{}\" since=\"{}\">{}</rule>",
             r.name,
             r.severity,
             r.category,
+            r.langs,
+            r.since,
             crate::serialize::XmlEscaped(r.description)
         )?;
     }
     writeln!(out, "</lintcatalog>")
-}
-
-pub struct LintReport<'a> {
-    pub findings: &'a [LintFinding],
-}
-
-impl LintReport<'_> {
-    fn capped_rule_names(&self) -> Vec<&'static str> {
-        if self.findings.len() < 5000 {
-            return Vec::new();
-        }
-        LINT_RULES
-            .iter()
-            .filter(|r| self.findings.iter().filter(|f| f.rule == r.name).count() >= 500)
-            .map(|r| r.name)
-            .collect()
-    }
-}
-
-impl crate::serialize::XmlReport for LintReport<'_> {
-    fn schema_tag(&self) -> &'static str {
-        "lint"
-    }
-    fn schema_version(&self) -> &'static str {
-        "ripwire-rs.lint/v1"
-    }
-    fn legend_comment(&self) -> Option<&'static str> {
-        Some(
-            "ripwire-rs lint schema=ripwire-rs.lint/v1: AST-only checks, facts not gates: <rule name= count= shown_rows= rows_capped= count_capped=> of <f rule= p= in=>.",
-        )
-    }
-    fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = crate::serialize::PageWindow::compute(self.findings.len(), 100, None, None);
-        let active_rules = LINT_RULES
-            .iter()
-            .filter(|r| self.findings.iter().any(|f| f.rule == r.name))
-            .count();
-        let inert_rules = LINT_RULES.len().saturating_sub(active_rules);
-        let capped_rules = self.capped_rule_names();
-        write!(
-            w,
-            " findings=\"{}\" shown=\"{}\" capped=\"{}\" inert_rules=\"{inert_rules}\"",
-            pw.total,
-            pw.shown,
-            usize::from(pw.capped)
-        )?;
-        if !capped_rules.is_empty() {
-            write!(
-                w,
-                " counts_floor=\"1\" findings_capped=\"1\" findings_next=\"--lint --lint-select={} --lint-max-per-rule=50000\"",
-                capped_rules.join(",")
-            )?;
-        }
-        Ok(())
-    }
-    fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let shown = self.findings.len().min(100);
-        let capped_rules = self.capped_rule_names();
-        for r in LINT_RULES {
-            let r_cnt = self.findings.iter().filter(|f| f.rule == r.name).count();
-            if r_cnt == 0 && !SYMBOL_LINT_RULES.iter().any(|sr| sr.desc().name == r.name) {
-                continue;
-            }
-            let r_shown = r_cnt.min(20);
-            let r_cap = usize::from(r_shown < r_cnt);
-            let count_cap_attr = if capped_rules.contains(&r.name) {
-                " count_capped=\"1\""
-            } else {
-                ""
-            };
-            writeln!(
-                w,
-                "  <rule name=\"{}\" count=\"{r_cnt}\" shown_rows=\"{r_shown}\" rows_capped=\"{r_cap}\"{count_cap_attr} applicable=\"1\"/>",
-                r.name
-            )?;
-        }
-        for f in self.findings.iter().take(shown) {
-            use crate::serialize::XmlEscapeExt;
-            writeln!(
-                w,
-                "  <f rule=\"{}\" p=\"{}:{}\" sev=\"{}\" in=\"{}\">{}</f>",
-                f.rule,
-                f.path.xml_escaped(),
-                f.line,
-                f.severity,
-                f.enclosing.xml_escaped(),
-                f.message.xml_escaped()
-            )?;
-        }
-        Ok(())
-    }
-}
-
-/// Serialize lint scan findings to canonical XML format.
-pub fn serialize_lint_xml<W: Write>(
-    root: &str,
-    findings: &[LintFinding],
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    LintReport { findings }.write_xml_report(root, out)
-}
-
-/// Serialize lint scan findings to SARIF 2.1.0 JSON format.
-pub fn serialize_lint_sarif<W: Write>(findings: &[LintFinding], out: &mut W) -> io::Result<()> {
-    let rules_json: Vec<serde_json::Value> = LINT_RULES
-        .iter()
-        .map(|r| {
-            serde_json::json!({
-                "id": r.name,
-                "shortDescription": { "text": r.description },
-                "properties": { "category": r.category, "severity": r.severity }
-            })
-        })
-        .collect();
-    let results_json: Vec<serde_json::Value> = findings
-        .iter()
-        .map(|f| {
-            let level = if f.severity == "major" {
-                "warning"
-            } else {
-                "note"
-            };
-            serde_json::json!({
-                "ruleId": f.rule,
-                "level": level,
-                "message": { "text": f.message },
-                "locations": [{
-                    "physicalLocation": {
-                        "artifactLocation": { "uri": f.path },
-                        "region": { "startLine": f.line }
-                    }
-                }]
-            })
-        })
-        .collect();
-    let sarif = serde_json::json!({
-        "version": "2.1.0",
-        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-        "runs": [{
-            "tool": {
-                "driver": {
-                    "name": "ripwire-rs",
-                    "version": env!("CARGO_PKG_VERSION"),
-                    "rules": rules_json
-                }
-            },
-            "results": results_json
-        }]
-    });
-    serde_json::to_writer_pretty(&mut *out, &sarif)?;
-    writeln!(out)
 }

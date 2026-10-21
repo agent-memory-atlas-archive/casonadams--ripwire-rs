@@ -75,6 +75,14 @@ impl LanguageSemantics for CSharpLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_c_sharp::LANGUAGE, "../queries/csharp/tags.scm");
 
+    fn lint_return_type<'a>(&self, sig: &'a str, name: &str) -> Option<&'a str> {
+        super::lint_hooks::prefix_return_type(sig, name)
+    }
+
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["enum"]
+    }
+
     fn camel_test_partner_subject<'a>(&self, file_stem: &'a str) -> Option<&'a str> {
         super::strip_camel_test_suffix(file_stem)
     }

@@ -3,8 +3,9 @@ pub mod ladder;
 pub use ladder::*;
 
 use crate::domain::{IngestResult, Interner, NodeId, Reference};
+use lasso::Spur;
 use rayon::prelude::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Intermediate structure accumulating confidence and reference counts per directed edge.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -61,7 +62,7 @@ pub fn resolve_reference_chunk_with_context<L: ResolutionLookup>(
             }
             RefOutcome::Unresolved => res.unresolved += 1,
             RefOutcome::External => res.external += 1,
-            RefOutcome::Declined => res.declined += 1,
+            RefOutcome::Declined | RefOutcome::Builtin => res.declined += 1,
             RefOutcome::Ignored => {}
         }
     }
@@ -85,20 +86,45 @@ pub fn merge_resolutions(mut a: ResolutionResult, b: ResolutionResult) -> Resolu
     a
 }
 
+pub struct ResolutionIndex {
+    file_dirs: Vec<u32>,
+    by_name: HashMap<Spur, Vec<NodeId>>,
+    file_scopes: Vec<HashSet<Spur>>,
+    module_qualifiers: Vec<HashMap<Spur, u32>>,
+}
+
+impl ResolutionIndex {
+    #[must_use]
+    pub fn build(ingest: &IngestResult, interner: &Interner) -> Self {
+        Self {
+            file_dirs: compute_file_dirs(&ingest.files, interner),
+            by_name: index_symbols_by_name(&ingest.symbols),
+            file_scopes: index_file_scope_mentions(ingest.files.len(), &ingest.references),
+            module_qualifiers: index_module_qualifiers(ingest, interner),
+        }
+    }
+
+    #[must_use]
+    pub fn context<'a>(
+        &'a self,
+        ingest: &'a IngestResult,
+        interner: &'a Interner,
+    ) -> ResolutionContext<'a> {
+        ResolutionContext {
+            symbols: &ingest.symbols,
+            file_dirs: &self.file_dirs,
+            by_name: &self.by_name,
+            interner: Some(interner),
+            file_scopes: Some(&self.file_scopes),
+            module_qualifiers: Some(&self.module_qualifiers),
+        }
+    }
+}
+
 pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> ResolutionResult {
-    let file_dirs = compute_file_dirs(&ingest.files, interner);
-    let by_name = index_symbols_by_name(&ingest.symbols);
-    let file_scopes = index_file_scope_mentions(ingest.files.len(), &ingest.references);
-    let module_qualifiers = index_module_qualifiers(ingest, interner);
+    let index = ResolutionIndex::build(ingest, interner);
+    let ctx = index.context(ingest, interner);
     let num_symbols = ingest.symbols.len();
-    let ctx = ResolutionContext {
-        symbols: &ingest.symbols,
-        file_dirs: &file_dirs,
-        by_name: &by_name,
-        interner: Some(interner),
-        file_scopes: Some(&file_scopes),
-        module_qualifiers: Some(&module_qualifiers),
-    };
 
     if ingest.references.len() < 256 {
         resolve_reference_chunk_with_context(&ingest.references, &ctx, num_symbols)

@@ -46,6 +46,10 @@ impl LanguageSemantics for GoLanguage {
         "go"
     }
 
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["type"]
+    }
+
     fn is_generated_file_name(&self, file_name: &str) -> bool {
         file_name.ends_with(".pb.go")
     }

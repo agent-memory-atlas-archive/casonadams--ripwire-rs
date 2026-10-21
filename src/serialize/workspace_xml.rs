@@ -80,7 +80,7 @@ fn whereis_rows<'a>(hits: &'a [Value], listing: &str) -> WhereisRows<'a> {
         std::collections::HashMap::new();
     let mut folded = 0;
     for h in hits.iter().filter(|h| !is_ref(h)) {
-        if h.str_or("ref", "HEAD") == "HEAD" {
+        if h.bool_or("on_head", false) || h.str_or("ref", "HEAD") == "HEAD" {
             listed.push((h, 1));
             continue;
         }

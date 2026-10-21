@@ -659,8 +659,10 @@ fn test_all_new_feature_coverage() {
     let funcs = ripwire_rs::metrics::find_nonlocal_state(&ingest, &graph, &interner);
     let _ = ripwire_rs::metrics::serialize_nonlocal_state_xml(".", &funcs, &mut out);
 
-    let findings = ripwire_rs::metrics::run_lint_scan_in_root(".", &ingest, &graph, &interner);
-    let _ = ripwire_rs::metrics::serialize_lint_xml(".", &findings, &mut out);
+    let findings =
+        ripwire_rs::metrics::lint::run_lint_scan(&ingest, &interner, &|_| None, Default::default())
+            .unwrap();
+    let _ = ripwire_rs::metrics::serialize_lint_xml(".", &findings, Default::default(), &mut out);
     let _ = ripwire_rs::metrics::serialize_lint_catalog(&mut out);
     let _ = ripwire_rs::metrics::serialize_lint_sarif(&findings, &mut out);
     let _ = print_cochange_groups_paged(".", &[], None, None, &mut out);

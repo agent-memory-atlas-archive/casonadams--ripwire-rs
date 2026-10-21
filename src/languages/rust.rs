@@ -151,12 +151,36 @@ impl LanguageSemantics for RustLanguage {
         "rs"
     }
 
+    fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {
+        super::lint_hooks::arrow_return_type(sig)
+    }
+
+    fn lint_name_scope<'a>(&self, scope: Option<&'a str>) -> Option<&'a str> {
+        scope
+    }
+
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &["type"]
+    }
+
     fn is_test_module_stem(&self, file_stem: &str) -> bool {
         let lower = file_stem.to_ascii_lowercase();
         matches!(lower.as_str(), "tests" | "test") || lower.ends_with("_tests")
     }
 
     super::impl_grammar_method!(crate tree_sitter_rust::LANGUAGE, "../queries/rust/tags.scm");
+
+    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>) -> bool {
+        rust_read_position(node)
+    }
+
+    fn read_bindings<'a>(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> super::reads::ReadBindings<'a> {
+        super::reads::ReadBindings::collect(root, source, rust_binding_range)
+    }
 
     fn has_lifetime_tick_syntax(&self) -> bool {
         true
@@ -316,4 +340,125 @@ fn resolve_rust_use_target(
         }
     }
     resolve_rust_workspace_crate_target(clean, file_index)
+}
+
+fn rust_scope(kind: &str) -> bool {
+    matches!(
+        kind,
+        "function_item"
+            | "closure_expression"
+            | "block"
+            | "match_arm"
+            | "for_expression"
+            | "if_expression"
+            | "while_expression"
+    )
+}
+
+fn rust_binding_target(parent: tree_sitter::Node<'_>, node: tree_sitter::Node<'_>) -> bool {
+    let field = match parent.kind() {
+        "let_declaration" | "let_condition" | "parameter" | "for_expression" => "pattern",
+        "const_item" | "static_item" | "function_item" => "name",
+        "closure_parameters" => return true,
+        "match_pattern" => return true,
+        _ => return false,
+    };
+    super::reads::in_field(parent, node, field)
+}
+
+fn rust_binding_scope(node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    if node.kind() != "identifier" {
+        return None;
+    }
+    let mut ancestor = node.parent();
+    while let Some(parent) = ancestor {
+        if rust_binding_target(parent, node) {
+            let owner = if matches!(
+                parent.kind(),
+                "const_item" | "static_item" | "function_item"
+            ) {
+                parent
+            } else {
+                node
+            };
+            return super::reads::enclosing_scope(owner, rust_scope);
+        }
+        if rust_scope(parent.kind()) {
+            break;
+        }
+        ancestor = parent.parent();
+    }
+    None
+}
+
+fn rust_non_value(parent: tree_sitter::Node<'_>, node: tree_sitter::Node<'_>) -> bool {
+    if rust_binding_target(parent, node) {
+        return true;
+    }
+    match parent.kind() {
+        "type_arguments"
+        | "type_parameters"
+        | "use_declaration"
+        | "macro_invocation"
+        | "token_tree"
+        | "attribute_item"
+        | "inner_attribute_item" => true,
+        "call_expression" => parent.child_by_field_name("function") == Some(node),
+        "assignment_expression" | "compound_assignment_expr" => {
+            super::reads::in_field(parent, node, "left")
+        }
+        "scoped_identifier" => parent.child_by_field_name("path") == Some(node),
+        _ => false,
+    }
+}
+
+fn rust_read_position(node: tree_sitter::Node<'_>) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    let expression = matches!(
+        parent.kind(),
+        "binary_expression"
+            | "return_expression"
+            | "arguments"
+            | "array_expression"
+            | "tuple_expression"
+            | "reference_expression"
+            | "unary_expression"
+            | "index_expression"
+            | "field_expression"
+            | "let_declaration"
+            | "const_item"
+            | "static_item"
+            | "assignment_expression"
+            | "compound_assignment_expr"
+            | "if_expression"
+            | "while_expression"
+            | "match_expression"
+            | "closure_expression"
+            | "parenthesized_expression"
+            | "expression_statement"
+            | "block"
+            | "field_initializer"
+            | "shorthand_field_initializer"
+            | "scoped_identifier"
+    );
+    expression && super::reads::value_position(node, rust_non_value, rust_scope)
+}
+
+fn rust_binding_range(node: tree_sitter::Node<'_>) -> Option<std::ops::Range<usize>> {
+    let scope = rust_binding_scope(node)?;
+    let mut span = scope.byte_range();
+    let mut ancestor = node.parent();
+    while let Some(parent) = ancestor {
+        if parent.kind() == "let_declaration" {
+            span.start = parent.end_byte();
+            break;
+        }
+        if parent == scope {
+            break;
+        }
+        ancestor = parent.parent();
+    }
+    Some(span)
 }

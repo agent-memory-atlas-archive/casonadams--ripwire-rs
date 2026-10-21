@@ -50,6 +50,8 @@ pub mod java;
 pub mod javascript;
 pub mod json;
 pub mod kotlin;
+pub(crate) mod lint;
+pub(crate) mod lint_hooks;
 pub mod lua;
 pub mod markdown;
 pub mod metal;
@@ -57,10 +59,12 @@ pub mod objc;
 pub mod php;
 pub mod proto;
 pub mod python;
+pub mod reads;
 pub mod ruby;
 pub mod rust;
 pub mod scala;
 pub mod solidity;
+pub mod source;
 pub mod sql;
 pub mod swift;
 pub mod toml;
@@ -136,6 +140,10 @@ pub trait LanguageSemantics: Sync {
     fn has_lifetime_tick_syntax(&self) -> bool {
         false
     }
+
+    fn source_region(&self, kind: &str) -> Option<source::SourceRegion> {
+        source::node_region(kind)
+    }
     /// Visualization fill color for HTML call-graph export.
     fn display_color(&self) -> &'static str {
         "#888888"
@@ -152,6 +160,29 @@ pub trait LanguageSemantics: Sync {
     /// True if `#` introduces a line comment in token stream clone detection.
     fn uses_hash_comments(&self) -> bool {
         false
+    }
+
+    /// True if this language's tags query captures read sites, so `--uses` can list them.
+    fn indexes_reads(&self) -> bool {
+        self.grammar_and_query().is_some_and(|(_, q)| {
+            q.capture_names()
+                .iter()
+                .any(|c| matches!(*c, "reference.read" | "reference.attribute"))
+        })
+    }
+
+    /// Reject declaration targets, labels, types and callees from broad read captures.
+    fn is_read_capture_allowed(&self, _node: tree_sitter::Node<'_>) -> bool {
+        true
+    }
+
+    /// Lexical locals must not resolve to unrelated same-named repository definitions.
+    fn read_bindings<'a>(
+        &self,
+        _root: tree_sitter::Node<'_>,
+        _source: &'a [u8],
+    ) -> reads::ReadBindings<'a> {
+        reads::ReadBindings::default()
     }
 
     /// True if `--layout` C-family byte-layout modeling is supported.
@@ -410,6 +441,67 @@ pub trait LanguageSemantics: Sync {
             return None;
         }
         resolve_relative_or_exact(importer_path, clean, file_index, &[])
+    }
+
+    /// Tag this language carries in the `--lint-catalog` `lang=` lists.
+    fn lint_tag(&self) -> &'static str {
+        self.tag()
+    }
+
+    /// Path-sensitive grammar shared by source analyses.
+    fn source_grammar(&self, _path: &str) -> Option<&'static tree_sitter::Language> {
+        self.grammar_and_query().map(|(language, _)| language)
+    }
+
+    /// Catalog rules that also fire on this language although `lang=` does not list it.
+    fn lint_extra_rules(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    fn lint_name_scope<'a>(&self, _scope: Option<&'a str>) -> Option<&'a str> {
+        None
+    }
+
+    fn is_reserved_identifier(&self, name: &str) -> bool {
+        self.dialect_group() == DialectGroup::CFamily
+            && (name.starts_with("__")
+                || name
+                    .strip_prefix('_')
+                    .is_some_and(|rest| rest.starts_with(char::is_uppercase)))
+    }
+
+    /// Declared return type in a callable's signature text, when the grammar names one.
+    fn lint_return_type<'a>(&self, _sig: &'a str, _name: &str) -> Option<&'a str> {
+        None
+    }
+
+    /// Spellings of the boolean type a predicate-named callable may return.
+    fn lint_bool_types(&self) -> &'static [&'static str] {
+        &["bool", "boolean", "Bool", "Boolean", "_Bool"]
+    }
+
+    fn lint_void_types(&self) -> &'static [&'static str] {
+        &["void", "Void", "None"]
+    }
+
+    /// Leading keywords of a declaration that defines a type instead of a variable.
+    fn type_declaration_keywords(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// The expression a self-assignment compares against its target: grammars that flatten
+    /// selector chains (`x = x.f()`) parse only the leading identifier as the right-hand value.
+    fn assigned_value_root<'a>(&self, rhs: &'a str) -> &'a str {
+        rhs
+    }
+
+    fn lint_constant_initializer(&self, node: tree_sitter::Node<'_>, source: &str) -> bool {
+        lint_hooks::constant_initializer(node, source)
+    }
+
+    /// True when the cache-layout lint family applies (template containers, loop bodies).
+    fn supports_cache_lint(&self) -> bool {
+        false
     }
 }
 

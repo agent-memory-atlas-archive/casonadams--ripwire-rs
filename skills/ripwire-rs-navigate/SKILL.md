@@ -120,6 +120,12 @@ two hops away, a read/write that never calls SYM, or an `#include` that pulls it
 - **The resolvable use-sites of a name** (role=call|read|write|import|extends, file:line; `counts_floor="1"` — the count is a floor) — `ripwire-rs <dir> --uses=SYM --legend=compact`
 - **Who reads/writes a MEMBER VARIABLE** (`t="field"` symbols; per-site owner resolution, `owner_candidates=K` where several owners could match, never a silent pin) — `ripwire-rs <dir> --uses=Owner.field --legend=compact`
 - **Transitive blast radius** — `ripwire-rs <dir> --impact=SYM --legend=compact`
+- `--uses` lists all indexed sites unless `--limit=N` or `--offset=M` requests a window; continue at `next_offset`.
+  `--impact` keeps unbound candidate calls in separate `<dc>` rows. They are not edges or reached symbols;
+  follow `dc_next` to see every candidate site.
+- Python, JavaScript/TypeScript, and Rust index bare non-local variable reads.
+  Grep's `reads=` / `reads_at=` are indexed sites, not text estimates; locals,
+  assignment targets, and unsupported binding forms are not reconstructed.
 - **Neighborhood** (bounded k-hop ego graph) — `ripwire-rs <dir> --around=SYM --legend=compact [--around-depth=2] [--around-fanout=32]`
 - **How does X reach Y** (shortest call-path) — `ripwire-rs <dir> --path=SRC,DST --legend=compact`
 - **How do N symbols relate** (minimal connecting subgraph, shared-caller joins) — `ripwire-rs <dir> --connect=A,B,C --legend=compact [--connect-radius=N]`
@@ -150,12 +156,10 @@ two hops away, a read/write that never calls SYM, or an `#include` that pulls it
   hits where B is ALSO present, `--not=C` (repeatable) drops hits where C IS present — literal-only, so
   they pair with `--grep=`, not `--regex=`. `--grep-scope=line` (default) requires the extra term on the
   SAME matched line; `--grep-scope=file` widens that to anywhere in the same file.
-  Hits are SPAN-TIERED by default: a hit inside a comment or a string literal is a mention, not a use, so
-  the answer serves the CODE tier when any hit is code — and when none is, the ladder COLLAPSES and it
-  serves comment **and** string together as `tier="comment+string"` (so pasting an error message reaches
-  the string literal that emits it, not just some gate script's comment about it; a pattern that lives only
-  in prose is still answered, never emptied) — and says what it held back via
-  `suppressed_comment=`/`suppressed_string=`. When those counters appear and the mention IS what you were
+  Hits are SPAN-TIERED: comments are suppressed while code hits exist; string hits ride along only
+  when fewer than eight code hits exist. With no code, comments and strings are served together.
+  `suppressed_comment=`/`suppressed_string=` disclose withheld mentions. Off-index text hits are
+  listed separately in `<unindexed>`. When the mention IS what you were
   after (an error-message string, a design note), re-ask with `--grep-in=any` for every tier.
 
 `--callers`/`--callees` answer from the call graph directly — no separate index step. Edges are name-based:

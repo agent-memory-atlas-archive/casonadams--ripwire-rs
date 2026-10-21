@@ -190,3 +190,6 @@
 
 (export_statement
   source: (string) @import.path)
+
+; Value-position and lexical-binding rules live in languages/javascript.rs.
+[(identifier) (shorthand_property_identifier)] @name @reference.read

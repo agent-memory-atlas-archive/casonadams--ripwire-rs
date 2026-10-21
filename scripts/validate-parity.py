@@ -96,6 +96,10 @@ OPTIONAL_ATTRS = {
     "doc_mentions_capped",
     "doc_mentions_total",
     "importers_next",
+    "files_next",
+    "dc_next",
+    "dc_shown",
+    "uses_next",
     "rows_next",
     "coverage",
     "tier_budget",
@@ -272,6 +276,35 @@ def compare_xml_children(root_rw, root_rip):
     return None
 
 
+def check_declined_window_invariants(root_rw):
+    rows = len(root_rw.findall("dc"))
+    count = int(root_rw.attrib.get("declined_calls", "0"))
+    if count < rows:
+        return "impact declined_calls is smaller than its sample"
+    if "dc_shown" in root_rw.attrib and int(root_rw.attrib["dc_shown"]) != rows:
+        return "impact dc_shown differs from its sample"
+    if rows < count and not root_rw.attrib.get("dc_next"):
+        return "impact capped declined calls missing dc_next"
+    return None
+
+
+def check_file_window_invariants(root_rw):
+    if root_rw.tag != "impact":
+        return None
+    for node in root_rw.findall("files"):
+        if node.attrib.get("files_capped") == "1" and not node.attrib.get("files_next"):
+            return "impact capped files missing files_next"
+    return check_declined_window_invariants(root_rw)
+
+
+def check_caller_window_invariants(root_rw):
+    if root_rw.tag != "callers":
+        return None
+    if root_rw.attrib.get("has_more") == "1" and not root_rw.attrib.get("uses_next"):
+        return "callers capped rows missing uses_next"
+    return None
+
+
 def check_computed_metric_invariants(cmd, root_rw):
     if "--comment-coherence" in cmd:
         fns = root_rw.findall("fn")
@@ -292,7 +325,9 @@ def check_xml_data_invariants(cmd, root_rw, root_rip):
             return f"dead-code count mismatch: rw={c_rw} vs rip={c_rip}"
     if "--grep=" in cmd and any(not ch.attrib.get("p") for ch in root_rw.findall("f")):
         return "grep <f> has empty p attribute"
-    return check_computed_metric_invariants(cmd, root_rw)
+    return (check_file_window_invariants(root_rw)
+            or check_caller_window_invariants(root_rw)
+            or check_computed_metric_invariants(cmd, root_rw))
 
 def check_xml_parity(cmd, out_rw, out_rip):
     root_rw, err_rw = parse_xml_dom(out_rw)

@@ -34,6 +34,16 @@ ripwire-rs . --uses="user_accounts"
 ripwire-rs . --impact="user_accounts"
 # Export self-contained interactive SVG/HTML visualizer
 ripwire-rs . --html=callgraph.html --color-by=community
+```
+
+`--uses` lists all indexed sites by default; use `--limit=N --offset=M` and
+`next_offset` to page them. `--impact` keeps unbound candidate calls in `<dc>`
+rows outside the graph; `dc_next` expands a capped candidate sample.
+`--whereis` scans distinct Git blobs up to 2 MiB once, including unindexed HEAD
+files, and replaces changed paths with worktree rows.
+`--lint` compares all distinct naming subjects within each namespace through
+512 names. Larger pools compare the next 24 lexicographic successors and mark
+the affected rule `count_capped="1"`; paginating findings does not expand that pool.
 
 ---
 ## Language-Agnostic Embedded SQL Lineage
@@ -236,7 +246,7 @@ ripwire-rs . --comment-coherence
 ripwire-rs . --slice="compute:x" --slice-flow=fwd --slice-depth=12
 
 # Select or ignore specific AST lint rules
-ripwire-rs . --lint --lint-select="complexity-spike,deep-nesting"
+ripwire-rs . --lint --lint-select="large-function,deep-nesting"
 ripwire-rs . --lint --lint-ignore="magic-number"
 
 # Calibrate naming rules against git rename history
@@ -324,9 +334,9 @@ ripwire-rs . --eval-retrieval
 # Install 17 pre-packaged ripwire-rs agent skills to ~/.agents/skills (or custom path)
 ripwire-rs --add-skills
 
-# Restrict grep to path substring, enclosing symbol scope, or include context lines
-ripwire-rs . --grep="Interner" --grep-in="src/" --grep-scope="domain" --grep-context=2
-# Conjunction, negation, and enclosing scope filters for structural search
+# Span-tiered literal search: code tier by default, --grep-in=any serves comments and strings too
+ripwire-rs . --grep="Interner" --grep-in=any --grep-context=2
+# Conjunction and negation terms (repeatable; --grep-scope=file widens them to the whole file), path scope
 ripwire-rs . --grep="cache" --and="payload" --not="deprecated" --in="src/cache.rs"
 
 # Emit compact refetch handles and re-expand them
@@ -357,6 +367,26 @@ ripwire-rs . --eval-skills
 ripwire-rs . --eval-stray
 ```
 * **Benefits:** Minimal prompt token consumption with maximum semantic density for coding agents.
+
+### Indexed variable reads
+
+`--uses=LIMIT` lists actual syntax-backed `role="read"` sites for supported bare
+value expressions in Python, JavaScript/TypeScript, and Rust, in addition to the
+existing Elixir and SQL read captures. `--grep=LIMIT` uses those same references
+for enclosing-row `reads=` / `reads_at=` and the `--uses=LIMIT` continuation.
+No corpus text scan estimates value usage.
+
+Declaration names, assignment targets, keyword/property labels, comments and
+literal text are not reads. Lexical locals and parameters are excluded from
+repository-wide name resolution, including JavaScript block/function bindings
+and Rust's source-ordered `let` shadowing. Callable values remain read sites, not
+call edges; SQL table lineage retains its existing graph semantics.
+
+Read coverage is deliberately conservative, not universal across grammars:
+unresolved local-variable uses, Python class-body namespace lookup, Rust macro
+token trees, and other languages without read captures are not reconstructed
+from text. These results remain static evidence floors, not whole-program
+binding or alias analysis.
 
 ---
 ## Workflow Subcommands

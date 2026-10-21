@@ -149,18 +149,18 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
             "ripwire-rs: {flag} symbol not found: {sym}"
         )));
     }
+    use crate::domain::CorpusView;
+    use crate::serialize::XmlReport;
     let gauge_attrs = ctx.graph.xml_gauge_attrs();
     match mode {
-        NavMode::Uses => crate::navigate::serialize_uses_with_gauge_xml(
+        NavMode::Uses => crate::navigate::UsesReport {
             root,
-            sym,
-            ctx.ingest,
-            ctx.interner,
-            &gauge_attrs,
-            out,
-        ),
+            gauge_attrs: &gauge_attrs,
+            page: ctx.page,
+            ..crate::navigate::UsesReport::collect(sym, ctx.ingest, ctx.interner)
+        }
+        .render_envelope(out),
         NavMode::Impact => {
-            use crate::domain::CorpusView;
             let impact = crate::navigate::transitive_impact_multi(
                 &ids,
                 ctx.ingest,
@@ -169,20 +169,21 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
                 ctx.interner,
                 None,
             );
-            let importers = (ctx.ingest, ctx.interner).resolve_symbol_importers(&ids);
-            let pr_iters = ctx
-                .graph
-                .page_rank(&crate::rank::PageRankConfig::default())
-                .iterations;
-            crate::navigate::serialize_impact_with_importers_xml(
+            crate::navigate::ImpactReport {
                 root,
-                sym,
-                &impact,
-                importers,
-                &gauge_attrs,
-                pr_iters,
-                out,
-            )
+                sym_name: sym,
+                defs: crate::navigate::impact_defs(&ids, ctx.ingest, ctx.interner),
+                nodes: &impact,
+                importers: (ctx.ingest, ctx.interner).resolve_symbol_importers(&ids),
+                declined: crate::navigate::declined_calls(&ids, &impact, ctx.ingest, ctx.interner),
+                gauge_attrs: &gauge_attrs,
+                pr_iters: ctx
+                    .graph
+                    .page_rank(&crate::rank::PageRankConfig::default())
+                    .iterations,
+                page: ctx.page,
+            }
+            .render_envelope(out)
         }
         NavMode::Callers | NavMode::Callees | NavMode::FindSymbol => {
             if let Some(nav) = crate::navigate::navigate_1hop_multi(
@@ -328,7 +329,11 @@ fn run_batch_subquery_dedup<W: Write>(
     if let Ok(mode) = verb_trimmed.parse::<NavMode>() {
         let _ = execute_nav_symbol_query(a, mode, ingest, graph, &pr.ranks, interner, &mut sub_buf);
     } else if verb_trimmed == "grep" {
-        let val = crate::mcp::retrieval::call_grep(ingest, interner, a, None);
+        let req = crate::mcp::retrieval::GrepRequest {
+            graph: Some(graph),
+            ..crate::mcp::retrieval::GrepRequest::new(".", a)
+        };
+        let val = crate::mcp::retrieval::call_grep(ingest, interner, &req);
         let _ = crate::serialize::serialize_grep_xml(&val, &mut sub_buf);
     } else if verb_trimmed == "for" {
         let val = crate::mcp::retrieval::call_for_task_with_options(

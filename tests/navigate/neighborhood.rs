@@ -1,8 +1,7 @@
 use ripwire_rs::navigate::{
-    find_symbols_by_name, navigate_1hop, serialize_callers_xml,
-    serialize_impact_with_importers_xml, transitive_impact,
+    ImpactReport, find_symbols_by_name, navigate_1hop, serialize_callers_xml, transitive_impact,
 };
-use ripwire_rs::serialize::GraphGauges;
+use ripwire_rs::serialize::{GraphGauges, PageRequest, XmlReport};
 use ripwire_rs::{
     FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
 };
@@ -83,34 +82,29 @@ fn test_navigate_1hop_and_impact() {
     assert_eq!(impact[1].name, "a");
     assert_eq!(impact[1].hops, 2);
 
-    let mut imp_xml = Vec::new();
-    serialize_impact_with_importers_xml(
-        ".",
-        "c",
-        &impact,
-        vec!["src/main.rs"],
-        GraphGauges::ZERO_XML_ATTRS,
-        1,
-        &mut imp_xml,
-    )
-    .unwrap();
-    let imp_str = String::from_utf8(imp_xml).unwrap();
+    let render = |importers: Vec<&'static str>| {
+        let mut out = Vec::new();
+        ImpactReport {
+            root: ".",
+            sym_name: "c",
+            defs: Vec::new(),
+            nodes: &impact,
+            importers,
+            declined: Vec::new(),
+            gauge_attrs: GraphGauges::ZERO_XML_ATTRS,
+            pr_iters: 1,
+            page: PageRequest::default(),
+        }
+        .render_envelope(&mut out)
+        .unwrap();
+        String::from_utf8(out).unwrap()
+    };
+    let imp_str = render(vec!["src/main.rs"]);
     assert!(imp_str.contains(" importers=\"1\""));
     assert!(imp_str.contains("<f via=\"import\" p=\"src/main.rs\""));
     assert!(!imp_str.contains("<f via=\"import\" p=\"src/lib.rs\""));
 
-    let mut same_file_xml = Vec::new();
-    serialize_impact_with_importers_xml(
-        ".",
-        "c",
-        &impact,
-        Vec::new(),
-        GraphGauges::ZERO_XML_ATTRS,
-        1,
-        &mut same_file_xml,
-    )
-    .unwrap();
-    let same_file_str = String::from_utf8(same_file_xml).unwrap();
+    let same_file_str = render(Vec::new());
     assert!(same_file_str.contains(" importers=\"0\""));
     assert!(!same_file_str.contains("<f via="));
 }

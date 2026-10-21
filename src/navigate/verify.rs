@@ -66,7 +66,12 @@ fn collect_literal_hits(
     ingest: &IngestResult,
     interner: &Interner,
 ) -> Vec<(String, u32, String, String)> {
-    let val = crate::mcp::retrieval::call_grep(ingest, interner, lit, Some(file_pat));
+    let req = crate::mcp::retrieval::GrepRequest {
+        path_filter: Some(file_pat),
+        any_tier: true,
+        ..crate::mcp::retrieval::GrepRequest::new(".", lit)
+    };
+    let val = crate::mcp::retrieval::call_grep(ingest, interner, &req);
     let mut hits = Vec::new();
     if let Some(arr) = val["hits"].as_array() {
         for h in arr {
@@ -74,10 +79,11 @@ fn collect_literal_hits(
                 h["path"].as_str().unwrap_or("").to_string(),
                 h["line"].as_u64().unwrap_or(1) as u32,
                 h["enclosing"].as_str().unwrap_or("").to_string(),
-                h["text"].as_str().unwrap_or("").to_string(),
+                h["text"].as_str().unwrap_or("").trim().to_string(),
             ));
         }
     }
+    hits.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
     if !hits.is_empty() {
         return hits;
     }

@@ -1,8 +1,10 @@
+pub mod impact;
 pub mod inspect;
 pub mod query;
 pub mod verify;
 pub mod xml;
 
+pub use impact::*;
 pub use inspect::*;
 pub use query::*;
 pub use verify::*;
@@ -406,6 +408,12 @@ pub fn transitive_impact_multi(
         }
     }
 
-    results.sort_by(|a, b| a.hops.cmp(&b.hops).then_with(|| b.rank.total_cmp(&a.rank)));
+    results.sort_by(|a, b| {
+        a.hops
+            .cmp(&b.hops)
+            .then_with(|| b.rank.total_cmp(&a.rank))
+            .then_with(|| a.path.cmp(&b.path))
+            .then_with(|| a.line.cmp(&b.line))
+    });
     results
 }

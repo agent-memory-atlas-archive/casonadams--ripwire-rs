@@ -104,7 +104,10 @@ pub enum RefOutcome {
     Resolved(ResolvedRef),
     Unresolved,
     External,
+    /// In-tree candidates exist but no precedence tier could choose among them.
     Declined,
+    /// A std/builtin member name whose in-tree namesakes were all rejected.
+    Builtin,
 }
 
 /// Assign integer directory IDs based on the parent directory of each file.
@@ -321,7 +324,7 @@ fn classify_rejected_with_interner(r: &Reference, interner: &Interner) -> RefOut
         .try_resolve(&r.callee_name)
         .is_some_and(|cs| r.lang.semantics().is_std_or_builtin_member(cs))
     {
-        return RefOutcome::Declined;
+        return RefOutcome::Builtin;
     }
     RefOutcome::Unresolved
 }
@@ -464,10 +467,7 @@ pub trait ResolutionLookup {
         }
         match r.role {
             RefRole::Call | RefRole::Macro => true,
-            RefRole::Read | RefRole::Write => {
-                r.lang.semantics().is_table_read_write_target()
-                    || self.by_name().contains_key(&r.callee_name)
-            }
+            RefRole::Read | RefRole::Write => r.lang.semantics().is_table_read_write_target(),
             _ => false,
         }
     }
@@ -477,6 +477,10 @@ pub trait ResolutionLookup {
         if !self.is_call_like_ref(r) {
             return RefOutcome::Ignored;
         }
+        self.classify_target(r)
+    }
+
+    fn classify_target(&self, r: &Reference) -> RefOutcome {
         let Some(all_cands) = self.by_name().get(&r.callee_name) else {
             return RefOutcome::External;
         };
