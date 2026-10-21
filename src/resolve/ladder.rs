@@ -97,6 +97,9 @@ pub enum EdgeProv {
     /// One arm of a call split across several definitions.
     #[default]
     Split,
+    /// Bound to a primary template whose specialization is another definition (which one runs is
+    /// unproven).
+    Template,
     /// Bound by the name alone: a same-directory or repository-wide match.
     Name,
     /// Bound by lexical evidence: the caller's own file or enclosing type defines it.
@@ -126,7 +129,7 @@ impl EdgeProv {
             Self::Import => Some("import"),
             Self::Binding => Some("binding"),
             Self::Scip => Some("scip"),
-            Self::Name | Self::Local => None,
+            Self::Template | Self::Name | Self::Local => None,
         }
     }
 
@@ -136,11 +139,12 @@ impl EdgeProv {
         self == Self::Name
     }
 
-    /// Suffix on a caller row's `of_def=K`: split arm or bound by name alone.
+    /// Suffix on a caller row's `of_def=K`: split arm, primary template, or bound by name alone.
     #[must_use]
     pub fn of_def_suffix(self) -> &'static str {
         match self {
             Self::Split => "~s",
+            Self::Template => "~t",
             Self::Name => "~n",
             Self::Local | Self::FinalSegment | Self::Import | Self::Binding | Self::Scip => "",
         }
@@ -414,6 +418,46 @@ fn edge_prov(target_count: usize, narrowing: Narrowing, tier: Tier) -> EdgeProv 
     }
 }
 
+/// True for a bodyless declaration in a language that separates declarations from definitions.
+#[must_use]
+pub fn is_declaration(sym: &Symbol) -> bool {
+    !sym.has_body() && sym.lang.semantics().has_declarations()
+}
+
+/// The bodied definition among `cands` that bodyless `decl` declares, by its language's tie rule.
+#[must_use]
+pub fn tied_definition(decl: &Symbol, cands: &[NodeId], symbols: &[Symbol]) -> Option<NodeId> {
+    if !is_declaration(decl) {
+        return None;
+    }
+    let semantics = decl.lang.semantics();
+    cands.iter().copied().find(|&id| {
+        let def = &symbols[id as usize];
+        def.has_body()
+            && def.name == decl.name
+            && def.lang.semantics().dialect_group() == semantics.dialect_group()
+            && semantics.declaration_ties(decl, def)
+    })
+}
+
+/// The one candidate whose scope every other candidate's scope specializes, if any.
+fn primary_template(defs: &[NodeId], symbols: &[Symbol], interner: &Interner) -> Option<NodeId> {
+    if defs.len() < 2 {
+        return None;
+    }
+    let scope = |id: NodeId| symbols[id as usize].scope.map(|s| interner.resolve(&s));
+    defs.iter().copied().find(|&primary| {
+        let Some(primary_scope) = scope(primary) else {
+            return false;
+        };
+        let semantics = symbols[primary as usize].lang.semantics();
+        defs.iter().all(|&other| {
+            other == primary
+                || scope(other).is_some_and(|s| semantics.is_specialization_of(s, primary_scope))
+        })
+    })
+}
+
 fn is_non_table_read_write(r: &Reference) -> bool {
     matches!(r.role, RefRole::Read | RefRole::Write)
         && !r.lang.semantics().is_table_read_write_target()
@@ -663,6 +707,24 @@ pub trait ResolutionLookup {
         }))
     }
 
+    /// Candidates with tied declarations folded into their definition, and a primary template
+    /// chosen over its specializations (the flag reports that choice).
+    fn collapse_definition_groups(&self, cands: &[NodeId]) -> (Vec<NodeId>, bool) {
+        let symbols = self.symbols();
+        let defs: Vec<NodeId> = cands
+            .iter()
+            .copied()
+            .filter(|&id| tied_definition(&symbols[id as usize], cands, symbols).is_none())
+            .collect();
+        let primary = self
+            .interner()
+            .and_then(|interner| primary_template(&defs, symbols, interner));
+        match primary {
+            Some(primary) => (vec![primary], true),
+            None => (defs, false),
+        }
+    }
+
     fn classify_by_name(&self, r: &Reference) -> RefOutcome {
         let Some(all_cands) = self.by_name().get(&r.callee_name) else {
             return RefOutcome::External;
@@ -670,6 +732,7 @@ pub trait ResolutionLookup {
         let Some((cands, narrowing)) = self.filter_ref_candidates(all_cands, r) else {
             return classify_rejected_candidates(r, self.interner());
         };
+        let (cands, template) = self.collapse_definition_groups(&cands);
         let caller_file_id = r.file_id;
         let caller_dir_id = self
             .file_dirs()
@@ -697,7 +760,11 @@ pub trait ResolutionLookup {
         if real_targets.is_empty() {
             return RefOutcome::Ignored;
         }
-        let prov = edge_prov(real_targets.len(), narrowing, tier);
+        let prov = if template {
+            EdgeProv::Template
+        } else {
+            edge_prov(real_targets.len(), narrowing, tier)
+        };
         let conf_per_target = tier.confidence() / (real_targets.len() as f32);
         RefOutcome::Resolved(ResolvedRef {
             from: r.from_symbol,

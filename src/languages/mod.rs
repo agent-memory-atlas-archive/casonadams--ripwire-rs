@@ -135,6 +135,27 @@ pub trait LanguageSemantics: Sync {
         &["self", "this", "Self"]
     }
 
+    /// True if this language writes bodyless declarations of entities defined elsewhere
+    /// (C prototypes, TypeScript overload signatures).
+    fn has_declarations(&self) -> bool {
+        false
+    }
+
+    /// True if bodyless `decl` declares the same entity as same-named, bodied `def`, so both
+    /// form one definition group. Consulted only when `has_declarations` holds.
+    fn declaration_ties(
+        &self,
+        _decl: &crate::domain::Symbol,
+        _def: &crate::domain::Symbol,
+    ) -> bool {
+        false
+    }
+
+    /// True if scope `spec` names a specialization of the generic scope `primary` (C++ `Box<int>`).
+    fn is_specialization_of(&self, _spec: &str, _primary: &str) -> bool {
+        false
+    }
+
     /// Definitions in this file that a binding framework exposes to another language.
     fn foreign_exports(&self, _root: tree_sitter::Node<'_>, _source: &[u8]) -> Vec<ForeignExport> {
         Vec::new()

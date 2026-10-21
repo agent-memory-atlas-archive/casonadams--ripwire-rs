@@ -3,9 +3,12 @@ use crate::domain::{CorpusView, IngestResult, Interner, NodeId, RefRole, Referen
 use crate::resolve::{RefOutcome, ResolutionIndex, ResolutionLookup};
 use std::collections::{BTreeMap, HashSet};
 
+/// One definition group: a definition and the declarations tied to it (or one untied declaration).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImpactDef<'a> {
     pub id: NodeId,
+    pub members: Vec<NodeId>,
+    pub bodyless: bool,
     pub kind: &'static str,
     pub scope: Option<&'a str>,
     pub path: &'a str,
@@ -35,11 +38,23 @@ pub fn impact_defs<'a>(
     interner: &'a Interner,
 ) -> Vec<ImpactDef<'a>> {
     let view = (ingest, interner);
+    let tied_to = |id: NodeId| {
+        ingest
+            .sym(id)
+            .and_then(|s| crate::resolve::tied_definition(s, ids, &ingest.symbols))
+    };
     let mut defs: Vec<ImpactDef<'a>> = ids
         .iter()
+        .filter(|&&id| tied_to(id).is_none())
         .filter_map(|&id| ingest.sym(id).map(|s| (id, s)))
         .map(|(id, s)| ImpactDef {
             id,
+            members: ids
+                .iter()
+                .copied()
+                .filter(|&m| m == id || tied_to(m) == Some(id))
+                .collect(),
+            bodyless: crate::resolve::is_declaration(s),
             kind: s.kind.tag(),
             scope: view.sym_scope(s),
             path: view.file_path(s.file_id),

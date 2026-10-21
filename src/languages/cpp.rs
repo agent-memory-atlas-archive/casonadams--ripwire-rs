@@ -1,7 +1,7 @@
 use super::c::{
     C_FAMILY_KEYWORDS, CPP_STD_MEMBERS, CPP_STD_QUALIFIERS, blank_c_family_macro_lines,
-    is_c_family_def_allowed, refine_c_header_dialect, resolve_c_family_def_body_and_end,
-    resolve_c_family_include,
+    c_family_declaration_ties, is_c_family_def_allowed, refine_c_header_dialect,
+    resolve_c_family_def_body_and_end, resolve_c_family_include,
 };
 use super::{
     ComplexityKinds, DefCaptureGateContext, DialectGroup, ForeignExport, LanguageSemantics,
@@ -124,12 +124,48 @@ pub(super) const SYNTAX: SyntaxKinds = SyntaxKinds {
     ..SyntaxKinds::NONE
 };
 
+/// Scope of a member inside an explicit specialization keeps its template arguments
+/// (`template <> struct Box<int>` scopes `Box<int>`), so it stays distinct from the primary.
+pub(super) fn specialization_scope(parent: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    if !matches!(parent.kind(), "class_specifier" | "struct_specifier") {
+        return None;
+    }
+    let name = parent.child_by_field_name("name")?;
+    (name.kind() == "template_type")
+        .then(|| name.utf8_text(source).ok())??
+        .split_whitespace()
+        .collect::<String>()
+        .into()
+}
+
+pub(super) fn is_template_specialization(spec: &str, primary: &str) -> bool {
+    spec.strip_prefix(primary)
+        .is_some_and(|args| args.starts_with('<'))
+}
+
 impl LanguageSemantics for CppLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
     }
     fn syntax_kinds(&self) -> &'static SyntaxKinds {
         &SYNTAX
+    }
+    fn has_declarations(&self) -> bool {
+        true
+    }
+    fn declaration_ties(&self, decl: &crate::domain::Symbol, def: &crate::domain::Symbol) -> bool {
+        c_family_declaration_ties(decl, def)
+    }
+    fn is_specialization_of(&self, spec: &str, primary: &str) -> bool {
+        is_template_specialization(spec, primary)
+    }
+    fn extract_custom_scope(
+        &self,
+        parent: tree_sitter::Node<'_>,
+        _name_node: tree_sitter::Node<'_>,
+        source_bytes: &[u8],
+    ) -> Option<String> {
+        specialization_scope(parent, source_bytes)
     }
     fn foreign_exports(&self, root: tree_sitter::Node<'_>, source: &[u8]) -> Vec<ForeignExport> {
         let declares_module = PYTHON_MODULE_MACROS

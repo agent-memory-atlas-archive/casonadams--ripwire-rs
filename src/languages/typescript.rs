@@ -119,6 +119,15 @@ impl LanguageSemantics for TypeScriptLanguage {
         &SYNTAX
     }
 
+    fn has_declarations(&self) -> bool {
+        true
+    }
+
+    /// Overload signatures precede their implementation in the same file and scope.
+    fn declaration_ties(&self, decl: &crate::domain::Symbol, def: &crate::domain::Symbol) -> bool {
+        decl.scope == def.scope && decl.file_id == def.file_id
+    }
+
     fn tag(&self) -> &'static str {
         "ts"
     }

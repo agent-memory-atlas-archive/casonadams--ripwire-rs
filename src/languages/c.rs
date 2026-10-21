@@ -418,6 +418,17 @@ pub(super) fn is_c_family_def_allowed(ctx: &DefCaptureGateContext<'_>, is_cpp: b
     }
 }
 
+/// A declaration ties to the definition with its kind and scope, and its arity when callable (the
+/// edit-check identity rule): a prototype, a member declared in its class, an `@interface`.
+pub(super) fn c_family_declaration_ties(
+    decl: &crate::domain::Symbol,
+    def: &crate::domain::Symbol,
+) -> bool {
+    decl.kind == def.kind
+        && decl.scope == def.scope
+        && (!decl.kind.is_callable() || decl.params == def.params)
+}
+
 pub(super) fn resolve_c_family_def_body_and_end<'a>(
     def_node: Option<tree_sitter::Node<'a>>,
     default_end: usize,
@@ -484,6 +495,12 @@ impl LanguageSemantics for CLanguage {
     }
     fn syntax_kinds(&self) -> &'static SyntaxKinds {
         &SYNTAX
+    }
+    fn has_declarations(&self) -> bool {
+        true
+    }
+    fn declaration_ties(&self, decl: &crate::domain::Symbol, def: &crate::domain::Symbol) -> bool {
+        c_family_declaration_ties(decl, def)
     }
     fn tag(&self) -> &'static str {
         "c"

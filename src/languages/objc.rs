@@ -110,6 +110,12 @@ impl LanguageSemantics for ObjCLanguage {
     fn syntax_kinds(&self) -> &'static SyntaxKinds {
         &SYNTAX
     }
+    fn has_declarations(&self) -> bool {
+        true
+    }
+    fn declaration_ties(&self, decl: &crate::domain::Symbol, def: &crate::domain::Symbol) -> bool {
+        super::c::c_family_declaration_ties(decl, def)
+    }
     fn tag(&self) -> &'static str {
         "m"
     }

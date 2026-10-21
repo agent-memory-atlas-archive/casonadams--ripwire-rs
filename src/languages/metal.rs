@@ -36,6 +36,23 @@ impl LanguageSemantics for MetalLanguage {
     fn syntax_kinds(&self) -> &'static SyntaxKinds {
         &super::cpp::SYNTAX
     }
+    fn has_declarations(&self) -> bool {
+        true
+    }
+    fn declaration_ties(&self, decl: &crate::domain::Symbol, def: &crate::domain::Symbol) -> bool {
+        super::c::c_family_declaration_ties(decl, def)
+    }
+    fn is_specialization_of(&self, spec: &str, primary: &str) -> bool {
+        super::cpp::is_template_specialization(spec, primary)
+    }
+    fn extract_custom_scope(
+        &self,
+        parent: tree_sitter::Node<'_>,
+        _name_node: tree_sitter::Node<'_>,
+        source_bytes: &[u8],
+    ) -> Option<String> {
+        super::cpp::specialization_scope(parent, source_bytes)
+    }
     fn tag(&self) -> &'static str {
         "metal"
     }

@@ -1,5 +1,5 @@
 use super::{DeclinedCall, ImpactDef, ImpactNode, NavNeighborhood, SymbolNavInfo};
-use crate::domain::{IngestResult, Interner};
+use crate::domain::{IngestResult, Interner, SymKind};
 use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};
 
@@ -49,7 +49,7 @@ impl NavItemsReport<'_> {
             .iter()
             .enumerate()
             .filter_map(|(ix, d)| {
-                let (_, prov) = item.of_defs.iter().find(|(id, _)| *id == d.id)?;
+                let (_, prov) = item.of_defs.iter().find(|(id, _)| d.members.contains(id))?;
                 Some(format!("{}{}", ix + 1, prov.of_def_suffix()))
             })
             .collect();
@@ -72,6 +72,24 @@ impl NavItemsReport<'_> {
             n => format!(" declined_calls=\"{n}\""),
         }
     }
+
+    /// `role=`, `prov=`, and `via=` for one row: how the edge to or from it bound.
+    fn binding_attrs(&self, it: &SymbolNavInfo) -> String {
+        let prov = match self.dir {
+            NavDir::Callees => it.prov,
+            NavDir::Callers => it.of_defs.iter().map(|(_, p)| *p).max().unwrap_or(it.prov),
+        };
+        let role = if self.dir == NavDir::Callees && it.kind == SymKind::Macro.tag() {
+            " role=\"macro\""
+        } else {
+            ""
+        };
+        match (self.dir, prov.callee_label()) {
+            (NavDir::Callees, Some(label)) => format!("{role} prov=\"{label}\""),
+            _ if prov.is_by_name() => format!("{role} via=\"name\""),
+            _ => role.to_string(),
+        }
+    }
 }
 
 fn write_def_rows<W: Write>(out: &mut W, defs: &[ImpactDef<'_>]) -> io::Result<()> {
@@ -85,11 +103,12 @@ fn write_def_rows<W: Write>(out: &mut W, defs: &[ImpactDef<'_>]) -> io::Result<(
             .unwrap_or_default();
         write!(
             out,
-            "<def ix=\"{}\" t=\"{}\"{sc} p=\"{}:{}\"/>",
+            "<def ix=\"{}\" t=\"{}\"{sc} p=\"{}:{}\"{}/>",
             ix + 1,
             d.kind,
             d.path.xml_escaped(),
-            d.line
+            d.line,
+            if d.bodyless { " bodyless=\"1\"" } else { "" }
         )?;
     }
     Ok(())
@@ -136,10 +155,10 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
     fn legend_comment(&self) -> Option<&'static str> {
         Some(match self.dir {
             NavDir::Callers => {
-                "ripwire-rs callers schema=ripwire-rs.callers/v1: 1-hop callers of of=. of_def=K[~s|~n]: the <def ix=K> the caller edge reaches (~s: one arm of an ambiguous call; ~n: bound by name alone). via=name: the edge bound by name alone. declined_calls=K: call sites naming of= the resolver left unbound, in no count; <dc in= p= cands= via=declined>: one such site (calling def, file:line), NOT an edge; cands=K: in-tree defs it could have meant."
+                "ripwire-rs callers schema=ripwire-rs.callers/v1: 1-hop callers of of=. <def ix= t= sc= p= bodyless=1>: the groups defs= forms (a definition and the declarations tied to it; bodyless=1 tied to none), listed when there are two or more. of_def=K[~s|~t|~n]: the group the caller edge reaches (~s: one arm of an ambiguous call; ~t: a primary template whose specialization is another group; ~n: bound by name alone). via=name: the edge bound by name alone. declined_calls=K: call sites naming of= the resolver left unbound, in no count; <dc in= p= cands= via=declined>: one such site (calling def, file:line), NOT an edge; cands=K: in-tree defs it could have meant."
             }
             NavDir::Callees => {
-                "ripwire-rs callees schema=ripwire-rs.callees/v1: 1-hop callees of of=. via=name: bound by name alone (same directory or repository-wide). prov=scip|binding|import|final-segment|split: how the edge bound; scip = pinned by a --scip index; binding = exposed to the caller's language by a binding framework (pybind11 .def); import = through a module alias the file imports; final-segment = a type qualifier matched by last name only; split = one arm of an ambiguous call. declined_calls=K: call sites inside of= the resolver left unbound, in no count; <dc n= l= cands= via=declined>: one such site (called name, line), NOT an edge; cands=K: in-tree defs it could have meant."
+                "ripwire-rs callees schema=ripwire-rs.callees/v1: 1-hop callees of of=. role=macro: the callee is a macro expansion. via=name: bound by name alone (same directory or repository-wide). prov=scip|binding|import|final-segment|split: how the edge bound; scip = pinned by a --scip index; binding = exposed to the caller's language by a binding framework (pybind11 .def); import = through a module alias the file imports; final-segment = a type qualifier matched by last name only; split = one arm of an ambiguous call. declined_calls=K: call sites inside of= the resolver left unbound, in no count; <dc n= l= cands= via=declined>: one such site (called name, line), NOT an edge; cands=K: in-tree defs it could have meant."
             }
         })
     }
@@ -184,15 +203,7 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
             write_def_rows(out, self.def_rows)?;
         }
         for it in &self.items[win.begin..win.end] {
-            let prov = match self.dir {
-                NavDir::Callees => it.prov,
-                NavDir::Callers => it.of_defs.iter().map(|(_, p)| *p).max().unwrap_or(it.prov),
-            };
-            let via_attr = match (self.dir, prov.callee_label()) {
-                (NavDir::Callees, Some(label)) => format!(" prov=\"{label}\""),
-                _ if prov.is_by_name() => " via=\"name\"".to_string(),
-                _ => String::new(),
-            };
+            let binding_attrs = self.binding_attrs(it);
             let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
                 " tested=\"1\""
             } else {
@@ -205,7 +216,7 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
             };
             write!(
                 out,
-                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{via_attr}{}{tested_attr}{sites_attr}/>",
+                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{binding_attrs}{}{tested_attr}{sites_attr}/>",
                 it.kind,
                 it.name.xml_escaped(),
                 it.path.xml_escaped(),
@@ -382,7 +393,7 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
         write!(
             out,
             " of=\"{of}\" defs=\"{}\" reaches=\"{reaches}\"{}{} radius_tested=\"{radius_tested}\" radius_untested=\"{radius_untested}\"{} root=\"{}\"{} {} pr_iters=\"{}\" next=\"--safe-delete={of}\"",
-            self.defs.len(),
+            self.defs.iter().map(|d| d.members.len()).sum::<usize>(),
             self.by_depth_attr(),
             self.importer_attrs(),
             self.declined_attrs(),

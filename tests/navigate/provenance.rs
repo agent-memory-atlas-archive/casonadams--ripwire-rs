@@ -291,3 +291,70 @@ fn same_language_definition_wins_over_a_binding_and_no_module_means_no_export() 
     let other = nav_xml(fixtures, "other", NavMode::Callees).unwrap();
     assert!(other.contains("count=\"0\""), "{other}");
 }
+
+#[test]
+fn prototypes_and_overload_signatures_group_with_their_definition() {
+    let fixtures: &[(&str, Lang, &[u8])] = &[
+        ("inc/shape.h", Lang::C, b"int area(int w, int h);\n"),
+        ("inc/old.h", Lang::C, b"int area(int w);\n"),
+        (
+            "src/shape.c",
+            Lang::C,
+            b"int area(int w, int h) { return w * h; }\nint total() { return area(1, 2); }\n",
+        ),
+        (
+            "src/ov.ts",
+            Lang::TypeScript,
+            b"export function fmt(x: string): string;\nexport function fmt(x: number): string;\nexport function fmt(x: any): string { return String(x); }\nexport function callFmt() { return fmt(1); }\n",
+        ),
+    ];
+    let area = nav_xml(fixtures, "area", NavMode::Callers).unwrap();
+    assert!(area.contains("defs=\"3\""), "{area}");
+    assert!(
+        area.contains("<def ix=\"1\" t=\"fn\" p=\"inc/old.h:1\" bodyless=\"1\"/><def ix=\"2\" t=\"fn\" p=\"src/shape.c:1\"/>"),
+        "{area}"
+    );
+    assert!(!area.contains("inc/shape.h"), "{area}");
+    assert!(
+        area.contains("n=\"total\" p=\"src/shape.c:2\" of_def=\"2\""),
+        "{area}"
+    );
+    let fmt = nav_xml(fixtures, "callFmt", NavMode::Callees).unwrap();
+    assert!(
+        fmt.contains("<s t=\"fn\" n=\"fmt\" p=\"src/ov.ts:3\"/>"),
+        "{fmt}"
+    );
+    assert!(!fmt.contains("prov=\"split\""), "{fmt}");
+}
+
+#[test]
+fn primary_template_binds_over_its_specialization_with_tilde_t() {
+    let fixtures: &[(&str, Lang, &[u8])] = &[(
+        "box.cpp",
+        Lang::Cpp,
+        b"template <typename T> struct Box { T get() { return T(); } };\ntemplate <> struct Box<int> { int get() { return 7; } };\nint use_box() { Box<int> b; return b.get(); }\n",
+    )];
+    let xml = nav_xml(fixtures, "get", NavMode::Callers).unwrap();
+    assert!(
+        xml.contains("<def ix=\"2\" t=\"method\" sc=\"Box&lt;int&gt;\""),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("n=\"use_box\" p=\"box.cpp:3\" of_def=\"1~t\""),
+        "{xml}"
+    );
+}
+
+#[test]
+fn macro_callees_carry_role_macro() {
+    let fixtures: &[(&str, Lang, &[u8])] = &[(
+        "mac.c",
+        Lang::C,
+        b"#define SQ(x) ((x)*(x))\nint use_sq() { return SQ(3); }\n",
+    )];
+    let xml = nav_xml(fixtures, "use_sq", NavMode::Callees).unwrap();
+    assert!(
+        xml.contains("<s t=\"macro\" n=\"SQ\" p=\"mac.c:1\" role=\"macro\"/>"),
+        "{xml}"
+    );
+}
