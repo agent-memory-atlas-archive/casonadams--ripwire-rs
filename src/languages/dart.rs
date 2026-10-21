@@ -1,5 +1,6 @@
 use super::{
-    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
+    VisibilityMode,
 };
 use crate::domain::{Lang, SymKind};
 use std::collections::HashMap;
@@ -166,6 +167,36 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &[],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &[
+        "class_definition",
+        "enum_declaration",
+        "mixin_declaration",
+        "extension_declaration",
+    ],
+    scoped_paths: &["scoped_identifier"],
+    member_access: &[
+        "unconditional_assignable_selector",
+        "conditional_assignable_selector",
+    ],
+    body_blocks: &["function_body", "block", "class_body"],
+    body_wrappers: &["function_expression", "parenthesized_expression"],
+    local_bindings: &[
+        "initialized_identifier",
+        "initialized_variable_definition",
+        "static_final_declaration",
+    ],
+    non_local_declarations: &["enum_declaration"],
+    identifiers: &["identifier"],
+    type_contexts: &["type_parameters", "type_parameter", "type_arguments"],
+    callables: &["function_expression"],
+    callable_wrappers: &["parenthesized_expression"],
+    signature_holders: &["method_signature", "declaration"],
+    optional_param_groups: &["optional_formal_parameters"],
+    binding_patterns: &["object_pattern", "rest_pattern"],
+    ..SyntaxKinds::NONE
+};
+
 /// The type or receiver name preceding the called member in `a.B.c(...)`: Dart parses the chain as
 /// sibling `selector` nodes, so the receiver is the previous sibling of the member's selector.
 fn dart_call_qualifier(name_node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
@@ -199,6 +230,19 @@ impl LanguageSemantics for DartLanguage {
 
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
+    }
+
+    fn member_receiver<'a>(&self, access: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+        match access.kind() {
+            "unconditional_assignable_selector" | "conditional_assignable_selector" => access
+                .parent()
+                .and_then(|selector| selector.prev_named_sibling()),
+            _ => None,
+        }
     }
 
     fn tag(&self) -> &'static str {

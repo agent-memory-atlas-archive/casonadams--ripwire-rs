@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct BashLanguage;
@@ -23,9 +23,21 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    body_blocks: &["compound_statement"],
+    body_wrappers: &["parenthesized_expression"],
+    function_defs: &["function_definition"],
+    identifiers: &["variable_name"],
+    callable_wrappers: &["parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for BashLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

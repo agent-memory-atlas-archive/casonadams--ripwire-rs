@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
 
 pub struct ZigLanguage;
@@ -75,9 +75,26 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["and", "or", "orelse"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &["struct_declaration", "enum_declaration"],
+    member_access: &["field_expression"],
+    field_access: &["field_expression"],
+    body_blocks: &["block"],
+    body_wrappers: &["variable_declaration", "parenthesized_expression"],
+    function_defs: &["function_declaration"],
+    non_local_declarations: &["function_declaration", "enum_declaration"],
+    identifiers: &["identifier"],
+    callable_wrappers: &["parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for ZigLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

@@ -1,5 +1,5 @@
 use super::c::{C_FAMILY_KEYWORDS, CPP_STD_MEMBERS, CPP_STD_QUALIFIERS, resolve_c_family_include};
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds};
 use std::collections::HashMap;
 
 pub struct ObjCLanguage;
@@ -70,9 +70,45 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     ..ComplexityKinds::C_STYLE
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &[
+        "class_declaration",
+        "class_interface",
+        "class_implementation",
+        "struct_specifier",
+        "struct_declaration",
+        "protocol_declaration",
+    ],
+    member_access: &["field_expression"],
+    field_access: &["field_expression"],
+    body_blocks: &[
+        "compound_statement",
+        "declaration_list",
+        "field_declaration_list",
+        "implementation_definition",
+    ],
+    body_wrappers: &["property_declaration", "parenthesized_expression"],
+    function_defs: &["function_definition", "method_definition"],
+    function_declarators: &["function_declarator"],
+    non_local_declarations: &["class_declaration"],
+    identifiers: &["identifier"],
+    callables: &["function_declarator"],
+    callable_wrappers: &["parenthesized_expression"],
+    signature_holders: &["declaration"],
+    binding_patterns: &[
+        "pointer_declarator",
+        "array_declarator",
+        "parenthesized_declarator",
+    ],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for ObjCLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
     fn tag(&self) -> &'static str {
         "m"

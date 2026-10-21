@@ -1,3 +1,4 @@
+use crate::languages::SyntaxKinds;
 use serde::{Deserialize, Serialize};
 use tree_sitter::Node;
 
@@ -55,37 +56,12 @@ pub struct VariableOcc {
     pub var_name: String,
 }
 
-fn is_binding_wrapper_kind(kind: &str) -> bool {
-    matches!(
-        kind,
-        "tuple_pattern"
-            | "slice_pattern"
-            | "tuple_struct_pattern"
-            | "struct_pattern"
-            | "field_pattern"
-            | "mut_pattern"
-            | "ref_pattern"
-            | "pointer_declarator"
-            | "reference_declarator"
-            | "array_declarator"
-            | "parenthesized_declarator"
-            | "object_pattern"
-            | "array_pattern"
-            | "pair_pattern"
-            | "rest_pattern"
-            | "assignment_pattern"
-    )
-}
-
-fn unwrap_binding_ancestor(node: Node<'_>) -> Node<'_> {
+fn unwrap_binding_ancestor<'a>(node: Node<'a>, kinds: &SyntaxKinds) -> Node<'a> {
     let mut curr = node;
     while let Some(parent) = curr.parent() {
-        if parent.kind() == "assignment_pattern"
-            && parent.child_by_field_name("right") == Some(curr)
+        if !kinds.binding_patterns.contains(&parent.kind())
+            || parent.child_by_field_name("right") == Some(curr)
         {
-            break;
-        }
-        if !is_binding_wrapper_kind(parent.kind()) {
             break;
         }
         curr = parent;
@@ -112,25 +88,11 @@ fn is_param_node(parent: Node<'_>, binding: Node<'_>) -> bool {
         && !pkind.contains("template_param")
 }
 
-fn is_decl_kind(pkind: &str) -> bool {
+fn is_decl_kind(pkind: &str, kinds: &SyntaxKinds) -> bool {
     (pkind.contains("declarator")
         || pkind.contains("declaration")
-        || pkind == "let_binding"
-        || pkind == "let_condition"
-        || pkind == "for_in_statement"
-        || pkind == "for_range_loop"
-        || pkind == "range_clause"
-        || pkind == "initialized_identifier"
-        || pkind == "initialized_variable_definition"
-        || pkind == "static_final_declaration")
-        && !matches!(
-            pkind,
-            "function_declaration"
-                | "class_declaration"
-                | "interface_declaration"
-                | "type_alias_declaration"
-                | "enum_declaration"
-        )
+        || kinds.local_bindings.contains(&pkind))
+        && !kinds.non_local_declarations.contains(&pkind)
 }
 
 fn lhs_decl_field(parent: Node<'_>) -> Option<Node<'_>> {
@@ -141,14 +103,18 @@ fn lhs_decl_field(parent: Node<'_>) -> Option<Node<'_>> {
         .or_else(|| parent.child_by_field_name("left"))
 }
 
-fn is_decl_node(parent: Node<'_>, binding: Node<'_>) -> bool {
-    if !is_decl_kind(parent.kind()) || is_rhs_or_type_child(parent, binding) {
-        return false;
-    }
-    if parent.kind() == "function_declarator"
-        && parent
+/// True for a declarator naming the function of its enclosing definition (C `int f(int)`).
+fn is_function_declarator(node: Node<'_>, kinds: &SyntaxKinds) -> bool {
+    kinds.function_declarators.contains(&node.kind())
+        && node
             .parent()
-            .is_some_and(|gp| gp.kind() == "function_definition")
+            .is_some_and(|gp| kinds.function_defs.contains(&gp.kind()))
+}
+
+fn is_decl_node(parent: Node<'_>, binding: Node<'_>, kinds: &SyntaxKinds) -> bool {
+    if !is_decl_kind(parent.kind(), kinds)
+        || is_rhs_or_type_child(parent, binding)
+        || is_function_declarator(parent, kinds)
     {
         return false;
     }
@@ -160,8 +126,7 @@ fn is_decl_node(parent: Node<'_>, binding: Node<'_>) -> bool {
 
 fn is_assign_node(parent: Node<'_>, binding: Node<'_>) -> bool {
     let pkind = parent.kind();
-    if pkind.contains("assign") || pkind == "assignment_expression" || pkind == "update_expression"
-    {
+    if pkind.contains("assign") || pkind == "update_expression" {
         if let Some(left) = parent
             .child_by_field_name("left")
             .or_else(|| parent.child_by_field_name("argument"))
@@ -177,8 +142,8 @@ fn is_assign_node(parent: Node<'_>, binding: Node<'_>) -> bool {
 
 fn has_ancestor_before(
     node: Node<'_>,
-    match_pred: fn(&str) -> bool,
-    stop_pred: fn(&str) -> bool,
+    match_pred: impl Fn(&str) -> bool,
+    stop_pred: impl Fn(&str) -> bool,
 ) -> bool {
     let mut curr = node.parent();
     while let Some(p) = curr {
@@ -217,15 +182,15 @@ fn find_stmt_line(node: Node<'_>) -> u32 {
     node.start_position().row as u32 + 1
 }
 
-fn classify_node_role(node: Node<'_>) -> OccRole {
-    let binding = unwrap_binding_ancestor(node);
+fn classify_node_role(node: Node<'_>, kinds: &SyntaxKinds) -> OccRole {
+    let binding = unwrap_binding_ancestor(node, kinds);
     let Some(parent) = binding.parent() else {
         return OccRole::Read;
     };
 
     if is_param_node(parent, binding) {
         OccRole::Param
-    } else if is_decl_node(parent, binding) {
+    } else if is_decl_node(parent, binding, kinds) {
         OccRole::Decl
     } else if is_assign_node(parent, binding) {
         OccRole::Assign
@@ -236,37 +201,15 @@ fn classify_node_role(node: Node<'_>) -> OccRole {
     }
 }
 
-fn is_identifier_node(kind: &str) -> bool {
-    matches!(
-        kind,
-        "identifier"
-            | "simple_identifier"
-            | "shorthand_property_identifier_pattern"
-            | "variable_name"
-            | "name"
-    )
-}
-
-fn is_inside_type_context(node: Node<'_>) -> bool {
+fn is_inside_type_context(node: Node<'_>, kinds: &SyntaxKinds) -> bool {
     has_ancestor_before(
         node,
-        |pk| {
-            matches!(
-                pk,
-                "type_parameters"
-                    | "type_parameter"
-                    | "type_annotation"
-                    | "type_arguments"
-                    | "generic_type"
-                    | "template_argument_list"
-                    | "template_parameter_list"
-            )
-        },
+        |pk| kinds.type_contexts.contains(&pk),
         |pk| pk.contains("statement") || pk.contains("body") || pk == "block",
     )
 }
 
-fn is_member_or_callee_ident(node: Node<'_>) -> bool {
+fn is_member_or_callee_ident(node: Node<'_>, kinds: &SyntaxKinds) -> bool {
     let Some(parent) = node.parent() else {
         return false;
     };
@@ -274,29 +217,15 @@ fn is_member_or_callee_ident(node: Node<'_>) -> bool {
     if parent.child_by_field_name("function") == Some(node) {
         return true;
     }
-    if matches!(
-        pk,
-        "function_declaration" | "function_definition" | "function_item" | "method_definition"
-    ) && parent.child_by_field_name("name") == Some(node)
-    {
+    if kinds.function_defs.contains(&pk) && parent.child_by_field_name("name") == Some(node) {
         return true;
     }
-    if pk == "function_declarator"
+    if is_function_declarator(parent, kinds)
         && parent.child_by_field_name("declarator") == Some(node)
-        && parent
-            .parent()
-            .is_some_and(|gp| gp.kind() == "function_definition")
     {
         return true;
     }
-    if matches!(
-        pk,
-        "member_expression"
-            | "field_expression"
-            | "attribute"
-            | "scoped_identifier"
-            | "qualified_identifier"
-    ) {
+    if kinds.field_access.contains(&pk) || kinds.scoped_paths.contains(&pk) {
         let recv = parent
             .child_by_field_name("object")
             .or_else(|| parent.child_by_field_name("argument"))
@@ -312,32 +241,28 @@ fn collect_occurrences_recursive(
     node: Node<'_>,
     source_bytes: &[u8],
     target_var: Option<&str>,
+    kinds: &SyntaxKinds,
     out: &mut Vec<VariableOcc>,
 ) {
-    let kind = node.kind();
-    if is_identifier_node(kind)
-        && !is_member_or_callee_ident(node)
-        && !is_inside_type_context(node)
+    if kinds.identifiers.contains(&node.kind())
+        && !is_member_or_callee_ident(node, kinds)
+        && !is_inside_type_context(node, kinds)
         && let Ok(name) = node.utf8_text(source_bytes)
         && (target_var.is_none() || target_var == Some(name))
     {
-        let role = classify_node_role(node);
-        let line = node.start_position().row as u32 + 1;
-        let stmt_line = find_stmt_line(node);
         out.push(VariableOcc {
-            line,
-            stmt_line,
+            line: node.start_position().row as u32 + 1,
+            stmt_line: find_stmt_line(node),
             start_byte: node.start_byte(),
             end_byte: node.end_byte(),
-            role,
+            role: classify_node_role(node, kinds),
             var_name: name.to_string(),
         });
     }
 
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i) {
-            collect_occurrences_recursive(child, source_bytes, target_var, out);
-        }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_occurrences_recursive(child, source_bytes, target_var, kinds, out);
     }
 }
 
@@ -347,9 +272,10 @@ pub fn collect_symbol_variables(
     def_node: Node<'_>,
     source_bytes: &[u8],
     target_var: Option<&str>,
+    kinds: &SyntaxKinds,
 ) -> Vec<VariableOcc> {
     let mut out = Vec::new();
-    collect_occurrences_recursive(def_node, source_bytes, target_var, &mut out);
+    collect_occurrences_recursive(def_node, source_bytes, target_var, kinds, &mut out);
     out.sort_by_key(|o| o.start_byte);
     out
 }
@@ -369,6 +295,12 @@ pub fn collect_unique_def_locals(occs: Vec<VariableOcc>) -> Vec<(String, u32, Oc
 pub fn list_sliceable_locals(
     def_node: Node<'_>,
     source_bytes: &[u8],
+    kinds: &SyntaxKinds,
 ) -> Vec<(String, u32, OccRole)> {
-    collect_unique_def_locals(collect_symbol_variables(def_node, source_bytes, None))
+    collect_unique_def_locals(collect_symbol_variables(
+        def_node,
+        source_bytes,
+        None,
+        kinds,
+    ))
 }

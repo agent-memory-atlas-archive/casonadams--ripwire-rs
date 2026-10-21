@@ -1,5 +1,6 @@
 use super::{
-    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
+    VisibilityMode,
 };
 use crate::domain::Lang;
 
@@ -100,9 +101,22 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||", "and", "or"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &["class", "module"],
+    member_access: &["call"],
+    body_blocks: &["block", "do_block", "body_statement"],
+    identifiers: &["identifier"],
+    binding_patterns: &["array_pattern"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for RubyLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

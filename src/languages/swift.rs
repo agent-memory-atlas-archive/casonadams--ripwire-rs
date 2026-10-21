@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct SwiftLanguage;
@@ -74,9 +74,44 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &[],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &["class_declaration", "protocol_declaration"],
+    member_access: &["navigation_expression", "navigation_suffix"],
+    body_blocks: &[
+        "function_body",
+        "class_body",
+        "enum_class_body",
+        "protocol_body",
+    ],
+    body_wrappers: &["property_declaration", "as_expression"],
+    function_defs: &["function_declaration"],
+    non_local_declarations: &["function_declaration", "class_declaration"],
+    identifiers: &["identifier", "simple_identifier"],
+    type_contexts: &[
+        "type_parameters",
+        "type_parameter",
+        "type_annotation",
+        "type_arguments",
+    ],
+    callable_wrappers: &["as_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for SwiftLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
+    }
+
+    fn member_receiver<'a>(&self, access: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+        if access.kind() == "navigation_suffix" {
+            access.parent().and_then(|nav| nav.named_child(0))
+        } else {
+            None
+        }
     }
 
     fn tag(&self) -> &'static str {

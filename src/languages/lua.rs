@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct LuaLanguage;
@@ -42,9 +42,32 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["and", "or"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    member_access: &["dot_index_expression", "method_index_expression"],
+    body_blocks: &["block"],
+    body_wrappers: &[
+        "variable_declaration",
+        "function_definition",
+        "parenthesized_expression",
+        "assignment_statement",
+        "expression_list",
+        "table_constructor",
+        "field",
+    ],
+    function_defs: &["function_declaration", "function_definition"],
+    non_local_declarations: &["function_declaration"],
+    identifiers: &["identifier"],
+    callable_wrappers: &["parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for LuaLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

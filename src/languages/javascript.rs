@@ -1,6 +1,6 @@
 use super::{
-    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, probe_with_suffixes,
-    resolve_relative_or_exact, strip_import_quotes,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
+    probe_with_suffixes, resolve_relative_or_exact, strip_import_quotes,
 };
 use std::collections::HashMap;
 
@@ -330,9 +330,45 @@ pub(super) const JS_KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||", "??"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &["class", "class_declaration"],
+    member_access: &["member_expression"],
+    field_access: &["member_expression"],
+    body_blocks: &["statement_block", "class_body"],
+    body_wrappers: &[
+        "lexical_declaration",
+        "variable_declaration",
+        "variable_declarator",
+        "field_definition",
+        "export_statement",
+        "arrow_function",
+        "function_expression",
+        "generator_function",
+        "parenthesized_expression",
+    ],
+    function_defs: &["function_declaration", "method_definition"],
+    local_bindings: &["for_in_statement"],
+    non_local_declarations: &["function_declaration", "class_declaration"],
+    identifiers: &["identifier", "shorthand_property_identifier_pattern"],
+    callables: &["arrow_function", "function_expression"],
+    callable_wrappers: &["variable_declarator", "parenthesized_expression"],
+    binding_patterns: &[
+        "object_pattern",
+        "array_pattern",
+        "pair_pattern",
+        "rest_pattern",
+        "assignment_pattern",
+    ],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for JavaScriptLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &JS_KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

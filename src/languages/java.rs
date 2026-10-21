@@ -1,5 +1,6 @@
 use super::{
-    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
+    VisibilityMode,
 };
 
 pub struct JavaLanguage;
@@ -109,9 +110,39 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &[
+        "class_declaration",
+        "record_declaration",
+        "enum_declaration",
+        "interface_declaration",
+    ],
+    scoped_paths: &["scoped_identifier"],
+    member_access: &["method_invocation"],
+    body_blocks: &["block", "class_body"],
+    body_wrappers: &["variable_declarator", "parenthesized_expression"],
+    non_local_declarations: &[
+        "class_declaration",
+        "interface_declaration",
+        "enum_declaration",
+    ],
+    identifiers: &["identifier"],
+    type_contexts: &[
+        "type_parameters",
+        "type_parameter",
+        "type_arguments",
+        "generic_type",
+    ],
+    callable_wrappers: &["variable_declarator", "parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for JavaLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
     fn tag(&self) -> &'static str {
         "java"

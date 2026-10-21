@@ -1,6 +1,6 @@
 use super::{
-    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
-    resolve_relative_or_exact, strip_import_quotes,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
+    VisibilityMode, resolve_relative_or_exact, strip_import_quotes,
 };
 use crate::domain::{Lang, SymKind};
 use std::collections::HashMap;
@@ -202,9 +202,31 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["and", "or"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &["class_definition"],
+    member_access: &["attribute"],
+    field_access: &["attribute"],
+    body_blocks: &["block"],
+    body_wrappers: &[
+        "function_definition",
+        "parenthesized_expression",
+        "expression_list",
+    ],
+    function_defs: &["function_definition"],
+    identifiers: &["identifier"],
+    type_contexts: &["type_parameter", "generic_type"],
+    callable_wrappers: &["parenthesized_expression"],
+    binding_patterns: &["tuple_pattern"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for PythonLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

@@ -1,12 +1,21 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
 
 pub struct GraphqlLanguage;
 pub static GRAPHQL_LANG: GraphqlLanguage = GraphqlLanguage;
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    identifiers: &["name"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for GraphqlLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &ComplexityKinds::NONE
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

@@ -1,6 +1,6 @@
 use super::{
-    ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode, normalize_lexical_path,
-    probe_with_suffixes, strip_import_quotes,
+    ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode,
+    normalize_lexical_path, probe_with_suffixes, strip_import_quotes,
 };
 use crate::domain::{Lang, SymKind};
 use std::collections::HashMap;
@@ -168,9 +168,57 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &["mod_item", "trait_item"],
+    scoped_paths: &["scoped_identifier"],
+    member_access: &["field_expression"],
+    field_access: &["field_expression"],
+    body_blocks: &["block", "declaration_list", "field_declaration_list"],
+    body_wrappers: &["parenthesized_expression"],
+    function_defs: &["function_item"],
+    local_bindings: &["let_condition"],
+    identifiers: &["identifier"],
+    type_contexts: &[
+        "type_parameters",
+        "type_parameter",
+        "type_arguments",
+        "generic_type",
+    ],
+    callable_wrappers: &["parenthesized_expression"],
+    binding_patterns: &[
+        "tuple_pattern",
+        "slice_pattern",
+        "tuple_struct_pattern",
+        "struct_pattern",
+        "field_pattern",
+        "mut_pattern",
+        "ref_pattern",
+    ],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for RustLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
+    }
+
+    fn extract_custom_scope(
+        &self,
+        parent: tree_sitter::Node<'_>,
+        _name_node: tree_sitter::Node<'_>,
+        source_bytes: &[u8],
+    ) -> Option<String> {
+        if parent.kind() != "impl_item" {
+            return None;
+        }
+        let ty = parent.child_by_field_name("type")?;
+        let text = ty.utf8_text(source_bytes).ok()?;
+        let name = text.split('<').next().unwrap_or(text).trim();
+        (!name.is_empty()).then(|| name.to_string())
     }
 
     fn tag(&self) -> &'static str {

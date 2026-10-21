@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
 use crate::ingest::{FileParseResult, markdown};
 use tree_sitter::{Language, Query};
@@ -9,6 +9,10 @@ pub static MARKDOWN_LANG: MarkdownLanguage = MarkdownLanguage;
 impl LanguageSemantics for MarkdownLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &ComplexityKinds::NONE
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SyntaxKinds::NONE
     }
 
     fn tag(&self) -> &'static str {

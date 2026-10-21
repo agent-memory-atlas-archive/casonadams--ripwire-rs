@@ -68,7 +68,7 @@ fn parse_rust_fn_stats(code: &[u8]) -> (u16, bool) {
     let tree = parser.parse(code, None).unwrap();
     let fn_node = tree.root_node().child(0).unwrap();
     (
-        extract_param_count(fn_node),
+        extract_param_count(fn_node, Lang::Rust.semantics().syntax_kinds()),
         check_node_visibility(fn_node, code, Lang::Rust),
     )
 }
@@ -85,6 +85,33 @@ fn test_extract_param_and_visibility() {
 fn test_extract_param_count_ignores_generic_type_parameters() {
     let code = b"pub fn collect_with_rank_and_limit<E, H>(&self, rank: Option<u32>, limit: Option<usize>, heartbeat: H) {}";
     assert_eq!(parse_rust_fn_stats(code).0, 4);
+}
+
+#[test]
+fn test_java_varargs_count_as_variadic_so_longer_calls_still_bind() {
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = ripwire_rs::Interner::new();
+    let fixtures: &[(&str, Lang, &[u8])] = &[
+        (
+            "Calc.java",
+            Lang::Java,
+            b"class Calc {\n  static int sum(int... values) { return 0; }\n}\n",
+        ),
+        (
+            "Use.java",
+            Lang::Java,
+            b"class Use {\n  int go() { return Calc.sum(1, 2, 3); }\n}\n",
+        ),
+    ];
+    let ingest = ripwire_rs::ingest_in_memory_files(fixtures, &reg, &interner);
+    let sum = ingest
+        .symbols
+        .iter()
+        .find(|s| interner.resolve(&s.name) == "sum")
+        .unwrap();
+    assert_eq!(sum.params, 64);
+    let graph = ripwire_rs::Graph::build(&ingest, &interner);
+    assert_eq!(graph.callers(sum.id).count(), 1);
 }
 
 #[test]

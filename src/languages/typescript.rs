@@ -2,7 +2,7 @@ use super::javascript::{
     JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_jsx_intrinsic_tag_call,
     parse_tsconfig_paths, resolve_web_import_target,
 };
-use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
 use crate::ingest::{FileParseResult, astro, parse_file_tree};
 use std::collections::HashMap;
@@ -50,9 +50,73 @@ fn parse_astro_file(source_bytes: &[u8], language: &Language, query: &Query) -> 
     res
 }
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &[
+        "class",
+        "class_declaration",
+        "abstract_class_declaration",
+        "enum_declaration",
+        "interface_declaration",
+        "module",
+    ],
+    member_access: &["member_expression"],
+    field_access: &["member_expression"],
+    body_blocks: &["statement_block", "class_body"],
+    body_wrappers: &[
+        "lexical_declaration",
+        "variable_declaration",
+        "variable_declarator",
+        "public_field_definition",
+        "export_statement",
+        "arrow_function",
+        "function_expression",
+        "generator_function",
+        "as_expression",
+        "satisfies_expression",
+        "parenthesized_expression",
+    ],
+    function_defs: &["function_declaration", "method_definition"],
+    local_bindings: &["for_in_statement"],
+    non_local_declarations: &[
+        "function_declaration",
+        "class_declaration",
+        "interface_declaration",
+        "type_alias_declaration",
+        "enum_declaration",
+    ],
+    identifiers: &["identifier", "shorthand_property_identifier_pattern"],
+    type_contexts: &[
+        "type_parameters",
+        "type_parameter",
+        "type_annotation",
+        "type_arguments",
+        "generic_type",
+    ],
+    callables: &["arrow_function", "function_expression"],
+    callable_wrappers: &[
+        "variable_declarator",
+        "as_expression",
+        "satisfies_expression",
+        "parenthesized_expression",
+    ],
+    signature_holders: &["method_signature"],
+    binding_patterns: &[
+        "object_pattern",
+        "array_pattern",
+        "pair_pattern",
+        "rest_pattern",
+        "assignment_pattern",
+    ],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for TypeScriptLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &JS_KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

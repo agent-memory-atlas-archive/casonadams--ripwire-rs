@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct FortranLanguage;
@@ -106,9 +106,25 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &[".and.", ".or."],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &["module"],
+    body_wrappers: &[
+        "variable_declaration",
+        "parenthesized_expression",
+        "assignment_statement",
+    ],
+    identifiers: &["identifier", "name"],
+    callable_wrappers: &["parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for FortranLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {
@@ -135,12 +151,14 @@ impl LanguageSemantics for FortranLanguage {
         _kind: crate::domain::SymKind,
         orig_name: &str,
     ) -> (u16, String) {
+        let kinds = self.syntax_kinds();
+        let count = |n| crate::gate::contract::extract_param_count(n, kinds);
         let params = def_node
             .and_then(|dn| {
                 if dn.kind() == "subroutine" || dn.kind() == "function" {
-                    dn.child(0).map(crate::gate::contract::extract_param_count)
+                    dn.child(0).map(count)
                 } else {
-                    Some(crate::gate::contract::extract_param_count(dn))
+                    Some(count(dn))
                 }
             })
             .unwrap_or(0);

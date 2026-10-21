@@ -1,5 +1,5 @@
 use super::java::{JVM_STD_MEMBERS, JVM_STD_QUALIFIERS};
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 
 pub struct KotlinLanguage;
 pub static KOTLIN_LANG: KotlinLanguage = KotlinLanguage;
@@ -27,9 +27,44 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &[],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &[
+        "class_declaration",
+        "object_declaration",
+        "companion_object",
+    ],
+    member_access: &["navigation_expression", "navigation_suffix"],
+    body_blocks: &["function_body", "class_body", "enum_class_body"],
+    body_wrappers: &[
+        "variable_declaration",
+        "property_declaration",
+        "as_expression",
+        "parenthesized_expression",
+    ],
+    function_defs: &["function_declaration"],
+    non_local_declarations: &["function_declaration", "class_declaration"],
+    identifiers: &["identifier", "simple_identifier"],
+    type_contexts: &["type_parameters", "type_parameter", "type_arguments"],
+    callable_wrappers: &["as_expression", "parenthesized_expression"],
+    strict_param_lists: &["function_value_parameters"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for KotlinLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
+    }
+
+    fn member_receiver<'a>(&self, access: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+        if access.kind() == "navigation_suffix" {
+            access.parent().and_then(|nav| nav.named_child(0))
+        } else {
+            None
+        }
     }
 
     fn tag(&self) -> &'static str {

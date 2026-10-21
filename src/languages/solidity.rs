@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
 
 pub struct SolidityLanguage;
@@ -55,9 +55,32 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &[
+        "struct_declaration",
+        "enum_declaration",
+        "interface_declaration",
+        "contract_declaration",
+        "library_declaration",
+    ],
+    member_access: &["member_expression"],
+    field_access: &["member_expression"],
+    body_blocks: &["function_body"],
+    body_wrappers: &["variable_declaration", "parenthesized_expression"],
+    function_defs: &["function_definition"],
+    non_local_declarations: &["interface_declaration", "enum_declaration"],
+    identifiers: &["identifier"],
+    callable_wrappers: &["parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for SolidityLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

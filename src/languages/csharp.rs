@@ -1,5 +1,6 @@
 use super::{
-    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
+    VisibilityMode,
 };
 use crate::domain::Lang;
 
@@ -99,9 +100,45 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||", "??"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &[
+        "class_declaration",
+        "struct_declaration",
+        "record_declaration",
+        "enum_declaration",
+        "interface_declaration",
+    ],
+    member_access: &["member_access_expression"],
+    body_blocks: &["block", "declaration_list"],
+    body_wrappers: &[
+        "variable_declaration",
+        "variable_declarator",
+        "property_declaration",
+        "as_expression",
+        "parenthesized_expression",
+    ],
+    non_local_declarations: &[
+        "class_declaration",
+        "interface_declaration",
+        "enum_declaration",
+    ],
+    identifiers: &["identifier"],
+    type_contexts: &["type_parameter"],
+    callable_wrappers: &[
+        "variable_declarator",
+        "as_expression",
+        "parenthesized_expression",
+    ],
+    binding_patterns: &["tuple_pattern"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for CSharpLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

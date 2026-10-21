@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct BrightScriptLanguage;
@@ -99,9 +99,24 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["and", "or"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    body_blocks: &["block"],
+    body_wrappers: &[
+        "variable_declarator",
+        "parenthesized_expression",
+        "assignment_statement",
+    ],
+    identifiers: &["identifier"],
+    callable_wrappers: &["variable_declarator", "parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for BrightScriptLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

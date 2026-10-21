@@ -2,7 +2,7 @@ use super::c::{
     C_FAMILY_KEYWORDS, CPP_STD_MEMBERS, CPP_STD_QUALIFIERS, is_c_family_def_allowed,
     resolve_c_family_def_body_and_end, resolve_c_family_include,
 };
-use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use std::collections::HashMap;
 
 pub struct MetalLanguage;
@@ -32,6 +32,9 @@ const KINDS: ComplexityKinds = ComplexityKinds {
 impl LanguageSemantics for MetalLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &super::cpp::SYNTAX
     }
     fn tag(&self) -> &'static str {
         "metal"

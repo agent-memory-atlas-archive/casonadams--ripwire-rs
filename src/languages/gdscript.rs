@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct GDScriptLanguage;
@@ -44,9 +44,25 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||", "and", "or"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &["class_definition"],
+    member_access: &["attribute"],
+    field_access: &["attribute"],
+    body_blocks: &["class_body"],
+    body_wrappers: &["parenthesized_expression"],
+    function_defs: &["function_definition"],
+    identifiers: &["identifier", "name"],
+    callable_wrappers: &["parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for GDScriptLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

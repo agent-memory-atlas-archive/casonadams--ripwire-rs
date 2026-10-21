@@ -1,5 +1,6 @@
 use super::{
-    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
+    VisibilityMode,
 };
 use crate::domain::SymKind;
 
@@ -253,9 +254,20 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||", "and", "or"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    member_access: &["call", "dot"],
+    body_blocks: &["block", "do_block"],
+    identifiers: &["identifier"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for ElixirLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

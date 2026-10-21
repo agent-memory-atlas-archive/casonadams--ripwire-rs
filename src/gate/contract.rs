@@ -1,5 +1,6 @@
 use crate::domain::Lang;
 use crate::ingest::LanguageRegistry;
+use crate::languages::SyntaxKinds;
 use std::path::Path;
 use streaming_iterator::StreamingIterator;
 
@@ -114,7 +115,7 @@ pub fn parse_head_signature_match(
                 name = Some(text.to_string());
             }
         } else if cap_name.starts_with("definition.") {
-            params = extract_param_count(node);
+            params = extract_param_count(node, lang.semantics().syntax_kinds());
             def_node = Some(node);
         }
     }
@@ -167,112 +168,93 @@ pub fn load_head_symbol_contract<P: AsRef<Path>>(
     Ok(None)
 }
 
-fn is_optional_param_decl(kind: &str) -> bool {
-    kind.contains("parameter") || kind == "constructor_param"
-}
-
 fn is_variadic_param_kind(kind: &str) -> bool {
-    kind.contains("rest")
-        || kind.contains("variadic")
-        || kind.contains("splat")
-        || kind == "spread_element"
+    ["rest", "variadic", "splat", "spread"]
+        .iter()
+        .any(|marker| kind.contains(marker))
 }
 
-fn count_single_param(param: tree_sitter::Node<'_>, is_kt: bool) -> u16 {
+fn count_single_param(param: tree_sitter::Node<'_>, strict: bool, kinds: &SyntaxKinds) -> u16 {
     let kind = param.kind();
     if is_variadic_param_kind(kind) {
         return 64;
     }
-    if kind == "optional_formal_parameters" {
-        return (0..param.named_child_count())
-            .filter_map(|i| param.named_child(i))
-            .filter(|p| is_optional_param_decl(p.kind()))
+    if kinds.optional_param_groups.contains(&kind) {
+        let mut cursor = param.walk();
+        return param
+            .named_children(&mut cursor)
+            .filter(|p| p.kind().contains("param"))
             .count() as u16;
     }
-    u16::from(if is_kt {
+    u16::from(if strict {
         kind == "parameter"
     } else {
         !kind.contains("comment")
     })
 }
 
-fn count_param_children(child: tree_sitter::Node<'_>) -> u16 {
-    let is_kt = child.kind() == "function_value_parameters";
-    (0..child.named_child_count())
-        .filter_map(|j| child.named_child(j))
-        .map(|p| count_single_param(p, is_kt))
+fn count_param_children(list: tree_sitter::Node<'_>, kinds: &SyntaxKinds) -> u16 {
+    let strict = kinds.strict_param_lists.contains(&list.kind());
+    let mut cursor = list.walk();
+    list.named_children(&mut cursor)
+        .map(|p| count_single_param(p, strict, kinds))
         .sum()
 }
 
-fn find_callable_descendant(
-    node: tree_sitter::Node<'_>,
+fn find_callable_descendant<'a>(
+    node: tree_sitter::Node<'a>,
     depth: u8,
-) -> Option<tree_sitter::Node<'_>> {
+    kinds: &SyntaxKinds,
+) -> Option<tree_sitter::Node<'a>> {
     if depth == 0 {
         return None;
     }
-    for i in 0..node.named_child_count() {
-        let Some(ch) = node.named_child(i) else {
-            continue;
-        };
-        if matches!(
-            ch.kind(),
-            "arrow_function" | "function_expression" | "function_declarator"
-        ) {
-            return Some(ch);
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor).find_map(|ch| {
+        if kinds.callables.contains(&ch.kind()) {
+            Some(ch)
+        } else if kinds.callable_wrappers.contains(&ch.kind()) {
+            find_callable_descendant(ch, depth - 1, kinds)
+        } else {
+            None
         }
-        if matches!(
-            ch.kind(),
-            "variable_declarator"
-                | "as_expression"
-                | "satisfies_expression"
-                | "parenthesized_expression"
-        ) && let Some(found) = find_callable_descendant(ch, depth - 1)
-        {
-            return Some(found);
-        }
-    }
-    None
+    })
 }
 
 #[must_use]
-pub fn unwrap_signature_node(def_node: tree_sitter::Node<'_>) -> tree_sitter::Node<'_> {
-    if matches!(def_node.kind(), "method_signature" | "declaration") {
-        for i in 0..def_node.named_child_count() {
-            if let Some(ch) = def_node.named_child(i)
-                && ch.kind().contains("signature")
-            {
-                return ch;
-            }
+pub fn unwrap_signature_node<'a>(
+    def_node: tree_sitter::Node<'a>,
+    kinds: &SyntaxKinds,
+) -> tree_sitter::Node<'a> {
+    if kinds.signature_holders.contains(&def_node.kind()) {
+        let mut cursor = def_node.walk();
+        if let Some(signature) = def_node
+            .named_children(&mut cursor)
+            .find(|ch| ch.kind().contains("signature"))
+        {
+            return signature;
         }
     }
-    if let Some(callable) = find_callable_descendant(def_node, 4) {
-        return callable;
-    }
-    def_node
+    find_callable_descendant(def_node, 4, kinds).unwrap_or(def_node)
 }
 
 fn is_value_parameter_list_kind(kind: &str) -> bool {
-    (kind.contains("parameter")
-        && !kind.contains("type_parameter")
-        && kind != "template_parameter_list")
-        || kind == "params"
+    kind.contains("parameter") && !kind.contains("type_parameter") && !kind.starts_with("template_")
 }
 
 #[must_use]
-pub fn extract_param_count(def_node: tree_sitter::Node<'_>) -> u16 {
-    let node = unwrap_signature_node(def_node);
-    for i in 0..node.child_count() {
-        if let Some(child) = node.child(i)
-            && is_value_parameter_list_kind(child.kind())
-        {
-            return count_param_children(child);
-        }
+pub fn extract_param_count(def_node: tree_sitter::Node<'_>, kinds: &SyntaxKinds) -> u16 {
+    let node = unwrap_signature_node(def_node, kinds);
+    let mut cursor = node.walk();
+    if let Some(list) = node
+        .children(&mut cursor)
+        .find(|child| is_value_parameter_list_kind(child.kind()))
+    {
+        return count_param_children(list, kinds);
     }
-    if node.kind() == "arrow_function" && node.child_by_field_name("parameter").is_some() {
-        return 1;
-    }
-    0
+    let single_param =
+        kinds.callables.contains(&node.kind()) && node.child_by_field_name("parameter").is_some();
+    u16::from(single_param)
 }
 
 #[must_use]

@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct PhpLanguage;
@@ -58,9 +58,40 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||", "and", "or"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &[
+        "trait_declaration",
+        "class_declaration",
+        "enum_declaration",
+        "interface_declaration",
+        "namespace_definition",
+    ],
+    member_access: &["member_access_expression"],
+    body_blocks: &["compound_statement", "declaration_list"],
+    body_wrappers: &[
+        "property_declaration",
+        "arrow_function",
+        "parenthesized_expression",
+    ],
+    function_defs: &["function_definition"],
+    non_local_declarations: &[
+        "class_declaration",
+        "interface_declaration",
+        "enum_declaration",
+    ],
+    identifiers: &["variable_name", "name"],
+    callables: &["arrow_function"],
+    callable_wrappers: &["parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for PhpLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

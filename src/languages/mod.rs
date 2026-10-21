@@ -33,8 +33,10 @@ pub(crate) use impl_grammar_method;
 
 mod complexity_kinds;
 mod foreign;
+mod syntax_kinds;
 pub use complexity_kinds::ComplexityKinds;
 pub use foreign::ForeignExport;
+pub use syntax_kinds::SyntaxKinds;
 pub mod bash;
 pub mod brightscript;
 pub mod c;
@@ -119,6 +121,19 @@ pub struct DefCaptureGateContext<'a> {
 pub trait LanguageSemantics: Sync {
     /// Short canonical tag used in XML output (`"rs"`, `"ts"`, etc.).
     fn tag(&self) -> &'static str;
+
+    /// Grammar node kinds the language-neutral extraction, slicing, and contract passes use.
+    fn syntax_kinds(&self) -> &'static SyntaxKinds;
+
+    /// Receiver of a member access whose grammar keeps it outside the access node (sibling selectors).
+    fn member_receiver<'a>(&self, _access: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+        None
+    }
+
+    /// Receiver spellings that name the enclosing type's own instance.
+    fn self_receivers(&self) -> &'static [&'static str] {
+        &["self", "this", "Self"]
+    }
 
     /// Definitions in this file that a binding framework exposes to another language.
     fn foreign_exports(&self, _root: tree_sitter::Node<'_>, _source: &[u8]) -> Vec<ForeignExport> {
@@ -315,7 +330,7 @@ pub trait LanguageSemantics: Sync {
         orig_name: &str,
     ) -> (u16, String) {
         let params = def_node
-            .map(crate::gate::contract::extract_param_count)
+            .map(|n| crate::gate::contract::extract_param_count(n, self.syntax_kinds()))
             .unwrap_or(0);
         (params, orig_name.to_string())
     }
@@ -429,7 +444,7 @@ pub trait LanguageSemantics: Sync {
         match self.visibility_mode() {
             VisibilityMode::ExplicitModifier => has_any_visibility_modifier(def_node, source_bytes),
             VisibilityMode::ByNameConvention => {
-                check_leading_underscore_private(def_node, source_bytes)
+                check_leading_underscore_private(def_node, source_bytes, self.syntax_kinds())
             }
             VisibilityMode::DefaultPublic => true,
         }
@@ -538,6 +553,10 @@ pub static UNKNOWN_LANG: UnknownLanguage = UnknownLanguage;
 impl LanguageSemantics for UnknownLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &ComplexityKinds::NONE
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SyntaxKinds::NONE
     }
 
     fn tag(&self) -> &'static str {
@@ -693,8 +712,9 @@ pub(crate) fn find_enclosing_definition_node(
 pub(crate) fn check_leading_underscore_private(
     def_node: tree_sitter::Node<'_>,
     source_bytes: &[u8],
+    kinds: &SyntaxKinds,
 ) -> bool {
-    let node = crate::gate::contract::unwrap_signature_node(def_node);
+    let node = crate::gate::contract::unwrap_signature_node(def_node, kinds);
     let is_private = node
         .child_by_field_name("name")
         .and_then(|n| n.utf8_text(source_bytes).ok())

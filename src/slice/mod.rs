@@ -6,6 +6,7 @@ pub use flow::*;
 
 use crate::domain::{IngestResult, Interner};
 use crate::ingest::LanguageRegistry;
+use crate::languages::SyntaxKinds;
 use tree_sitter::{Node, Parser};
 
 /// Split target selector such as `symbol:var` or `path::sym:var` into symbol and variable.
@@ -46,12 +47,13 @@ fn collect_span_variables(
     start_byte: usize,
     end_byte: usize,
     source_bytes: &[u8],
+    kinds: &SyntaxKinds,
 ) -> Vec<VariableOcc> {
     let mut nodes = Vec::new();
     collect_nodes_in_span(root, start_byte, end_byte, &mut nodes);
     let mut occs = Vec::new();
     for n in nodes {
-        occs.extend(collect_symbol_variables(n, source_bytes, None));
+        occs.extend(collect_symbol_variables(n, source_bytes, None, kinds));
     }
     occs.sort_by_key(|o| o.start_byte);
     occs.dedup_by_key(|o| o.start_byte);
@@ -63,15 +65,17 @@ fn list_span_locals(
     start_byte: usize,
     end_byte: usize,
     source_bytes: &[u8],
+    kinds: &SyntaxKinds,
 ) -> Vec<(String, u32, OccRole)> {
     if start_byte == 0 && end_byte >= source_bytes.len() {
-        return list_sliceable_locals(root, source_bytes);
+        return list_sliceable_locals(root, source_bytes, kinds);
     }
     collect_unique_def_locals(collect_span_variables(
         root,
         start_byte,
         end_byte,
         source_bytes,
+        kinds,
     ))
 }
 
@@ -226,6 +230,7 @@ fn parse_candidate_variables(
         symbol.sig_start_byte as usize,
         symbol.end_byte as usize,
         source_bytes,
+        symbol.lang.semantics().syntax_kinds(),
     );
     Ok((tree, occs))
 }
@@ -324,6 +329,7 @@ fn execute_slice_with_root(
                 chosen.sig_start_byte as usize,
                 chosen.end_byte as usize,
                 &source_bytes,
+                chosen.lang.semantics().syntax_kinds(),
             );
             Ok(render_locals_xml(
                 root, sym_name, &path_line, chosen, &locals,

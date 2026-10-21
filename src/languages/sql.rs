@@ -1,12 +1,26 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
 
 pub struct SqlLanguage;
 pub static SQL_LANG: SqlLanguage = SqlLanguage;
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    body_blocks: &["function_body", "block"],
+    body_wrappers: &["parenthesized_expression"],
+    function_defs: &["function_declaration"],
+    non_local_declarations: &["function_declaration"],
+    identifiers: &["identifier"],
+    callable_wrappers: &["parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for SqlLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &ComplexityKinds::NONE
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

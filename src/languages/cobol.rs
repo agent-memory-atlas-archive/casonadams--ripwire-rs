@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct CobolLanguage;
@@ -84,6 +84,9 @@ const KINDS: ComplexityKinds = ComplexityKinds {
 impl LanguageSemantics for CobolLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SyntaxKinds::NONE
     }
 
     fn tag(&self) -> &'static str {

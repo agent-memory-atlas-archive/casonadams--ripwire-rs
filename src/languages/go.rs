@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct GoLanguage;
@@ -68,9 +68,30 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||"],
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    member_access: &["selector_expression"],
+    body_blocks: &["block", "field_declaration_list"],
+    body_wrappers: &[
+        "parenthesized_expression",
+        "assignment_statement",
+        "expression_list",
+    ],
+    function_defs: &["function_declaration"],
+    local_bindings: &["range_clause"],
+    non_local_declarations: &["function_declaration"],
+    identifiers: &["identifier"],
+    type_contexts: &["type_arguments", "generic_type"],
+    callable_wrappers: &["parenthesized_expression"],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for GoLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
 
     fn tag(&self) -> &'static str {

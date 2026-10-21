@@ -1,6 +1,6 @@
 use super::{
-    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, is_screaming_snake,
-    resolve_relative_or_exact, strip_import_quotes,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
+    is_screaming_snake, resolve_relative_or_exact, strip_import_quotes,
 };
 use crate::domain::SymKind;
 use std::collections::HashMap;
@@ -454,9 +454,36 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     ..ComplexityKinds::C_STYLE
 };
 
+const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &["struct_specifier"],
+    member_access: &["field_expression"],
+    field_access: &["field_expression"],
+    body_blocks: &[
+        "compound_statement",
+        "declaration_list",
+        "field_declaration_list",
+    ],
+    body_wrappers: &["parenthesized_expression"],
+    function_defs: &["function_definition"],
+    function_declarators: &["function_declarator"],
+    identifiers: &["identifier"],
+    callables: &["function_declarator"],
+    callable_wrappers: &["parenthesized_expression"],
+    signature_holders: &["declaration"],
+    binding_patterns: &[
+        "pointer_declarator",
+        "array_declarator",
+        "parenthesized_declarator",
+    ],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for CLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
     fn tag(&self) -> &'static str {
         "c"

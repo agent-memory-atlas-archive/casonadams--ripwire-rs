@@ -5,6 +5,7 @@ use super::c::{
 };
 use super::{
     ComplexityKinds, DefCaptureGateContext, DialectGroup, ForeignExport, LanguageSemantics,
+    SyntaxKinds,
 };
 use crate::domain::Lang;
 use std::collections::HashMap;
@@ -91,9 +92,44 @@ fn python_module_exports(root: tree_sitter::Node<'_>, source: &[u8]) -> Vec<Fore
     exports
 }
 
+pub(super) const SYNTAX: SyntaxKinds = SyntaxKinds {
+    scope_containers: &[
+        "class_specifier",
+        "struct_specifier",
+        "namespace_definition",
+    ],
+    scoped_paths: &["qualified_identifier"],
+    member_access: &["field_expression"],
+    field_access: &["field_expression"],
+    body_blocks: &[
+        "compound_statement",
+        "declaration_list",
+        "field_declaration_list",
+    ],
+    body_wrappers: &["parenthesized_expression"],
+    function_defs: &["function_definition"],
+    function_declarators: &["function_declarator"],
+    local_bindings: &["for_range_loop"],
+    identifiers: &["identifier"],
+    type_contexts: &["template_argument_list", "template_parameter_list"],
+    callables: &["function_declarator"],
+    callable_wrappers: &["parenthesized_expression"],
+    signature_holders: &["declaration"],
+    binding_patterns: &[
+        "pointer_declarator",
+        "reference_declarator",
+        "array_declarator",
+        "parenthesized_declarator",
+    ],
+    ..SyntaxKinds::NONE
+};
+
 impl LanguageSemantics for CppLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SYNTAX
     }
     fn foreign_exports(&self, root: tree_sitter::Node<'_>, source: &[u8]) -> Vec<ForeignExport> {
         let declares_module = PYTHON_MODULE_MACROS

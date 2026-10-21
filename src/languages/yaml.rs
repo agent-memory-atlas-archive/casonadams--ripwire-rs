@@ -1,4 +1,4 @@
-use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
 use crate::ingest::{FileParseResult, yaml_guard};
 use tree_sitter::{Language, Query};
@@ -19,6 +19,10 @@ fn yaml_mapping_depth(mut curr: Option<tree_sitter::Node<'_>>) -> u32 {
 impl LanguageSemantics for YamlLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &ComplexityKinds::NONE
+    }
+
+    fn syntax_kinds(&self) -> &'static SyntaxKinds {
+        &SyntaxKinds::NONE
     }
 
     fn tag(&self) -> &'static str {

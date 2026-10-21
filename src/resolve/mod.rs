@@ -189,21 +189,16 @@ pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> Res
     let num_symbols = ingest.symbols.len();
 
     if ingest.references.len() < 256 {
-        resolve_reference_chunk_with_context(&ingest.references, &ctx, num_symbols)
-    } else {
-        ingest
-            .references
-            .par_chunks(512)
-            .map(|chunk| resolve_reference_chunk_with_context(chunk, &ctx, num_symbols))
-            .reduce(
-                || ResolutionResult {
-                    edge_accumulators: HashMap::new(),
-                    amb_out: vec![0u32; num_symbols],
-                    unresolved: 0,
-                    external: 0,
-                    declined: 0,
-                },
-                merge_resolutions,
-            )
+        return resolve_reference_chunk_with_context(&ingest.references, &ctx, num_symbols);
     }
+    // Float sums are not associative: merge chunk results in input order, not rayon's split order.
+    let chunks: Vec<ResolutionResult> = ingest
+        .references
+        .par_chunks(512)
+        .map(|chunk| resolve_reference_chunk_with_context(chunk, &ctx, num_symbols))
+        .collect();
+    chunks
+        .into_iter()
+        .reduce(merge_resolutions)
+        .unwrap_or_else(|| resolve_reference_chunk_with_context(&[], &ctx, num_symbols))
 }
