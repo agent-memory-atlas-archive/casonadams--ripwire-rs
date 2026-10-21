@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct BrightScriptLanguage;
@@ -73,7 +73,37 @@ const BRIGHTSCRIPT_STD_QUALIFIERS: &[&str] = &[
     "roXMLElement",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &[],
+    flat: &["else_if_clause"],
+    nesting: &[
+        "single_line_if",
+        "multi_line_if",
+        "for_statement",
+        "while_statement",
+        "catch_clause",
+    ],
+    nest_only: &[],
+    else_kinds: &["else"],
+    else_bodies: &[],
+    jumps: &[
+        "exit_for_statement",
+        "exit_while_statement",
+        "continue_for_statement",
+        "continue_while_statement",
+        "return_statement",
+        "throw_statement",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["logical_expression"],
+    logical_ops: &["and", "or"],
+};
+
 impl LanguageSemantics for BrightScriptLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "brightscript"
     }

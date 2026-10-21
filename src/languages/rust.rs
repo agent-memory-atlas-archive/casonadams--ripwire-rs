@@ -1,6 +1,6 @@
 use super::{
-    DialectGroup, LanguageSemantics, VisibilityMode, normalize_lexical_path, probe_with_suffixes,
-    strip_import_quotes,
+    ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode, normalize_lexical_path,
+    probe_with_suffixes, strip_import_quotes,
 };
 use crate::domain::{Lang, SymKind};
 use std::collections::HashMap;
@@ -146,7 +146,33 @@ const RUST_STD_QUALIFIERS: &[&str] = &[
     "thread",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["match_arm"],
+    flat: &[],
+    nesting: &[
+        "if_expression",
+        "for_expression",
+        "while_expression",
+        "loop_expression",
+    ],
+    nest_only: &["match_expression"],
+    else_kinds: &["else_clause"],
+    else_bodies: &[],
+    jumps: &[
+        "break_expression",
+        "continue_expression",
+        "return_expression",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["binary_expression"],
+    logical_ops: &["&&", "||"],
+};
+
 impl LanguageSemantics for RustLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "rs"
     }

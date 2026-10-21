@@ -1,4 +1,6 @@
-use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+};
 use crate::domain::Lang;
 
 pub struct RubyLanguage;
@@ -72,7 +74,37 @@ const RUBY_STD_QUALIFIERS: &[&str] = &[
     "Math", "URI",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["when"],
+    flat: &["elsif"],
+    nesting: &[
+        "if",
+        "unless",
+        "while",
+        "until",
+        "for",
+        "rescue",
+        "if_modifier",
+        "unless_modifier",
+        "while_modifier",
+        "until_modifier",
+        "rescue_modifier",
+        "conditional",
+    ],
+    nest_only: &["case"],
+    else_kinds: &["else"],
+    else_bodies: &[],
+    jumps: &["break", "next", "return"],
+    logical_nodes: &[],
+    binary_nodes: &["binary"],
+    logical_ops: &["&&", "||", "and", "or"],
+};
+
 impl LanguageSemantics for RubyLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "rb"
     }

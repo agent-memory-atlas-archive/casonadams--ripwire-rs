@@ -1,4 +1,5 @@
 use crate::domain::Lang;
+use crate::languages::ComplexityKinds;
 use serde::{Deserialize, Serialize};
 use tree_sitter::Node;
 /// Nesting threshold for counting humps and deep lines.
@@ -13,105 +14,6 @@ pub struct ComplexityMetrics {
     pub humps: u16,
     pub deep: u16,
     pub ev: u16,
-}
-
-#[must_use]
-pub fn is_cyclomatic_decision(kind: &str) -> bool {
-    matches!(
-        kind,
-        "if_statement"
-            | "if_expression"
-            | "for_statement"
-            | "for_range_loop"
-            | "for_in_statement"
-            | "for_expression"
-            | "while_statement"
-            | "while_expression"
-            | "do_statement"
-            | "loop_expression"
-            | "do_while_statement"
-            | "repeat_statement"
-            | "elseif_statement"
-            | "match_conditional_expression"
-            | "case_statement"
-            | "match_arm"
-            | "expression_case"
-            | "communication_case"
-            | "catch_clause"
-            | "except_clause"
-            | "catch_block"
-            | "conditional_expression"
-            | "ternary_expression"
-            | "boolean_operator"
-            | "when_entry"
-            | "pattern_section"
-            | "switch_section"
-            | "switch_expression_arm"
-            | "guard_statement"
-            | "if"
-            | "elsif"
-            | "unless"
-            | "while"
-            | "until"
-            | "for"
-            | "rescue"
-            | "when"
-    )
-}
-
-#[must_use]
-pub fn is_nesting_control(kind: &str) -> bool {
-    matches!(
-        kind,
-        "if_statement"
-            | "if_expression"
-            | "for_statement"
-            | "for_range_loop"
-            | "for_in_statement"
-            | "for_expression"
-            | "while_statement"
-            | "while_expression"
-            | "do_statement"
-            | "loop_expression"
-            | "do_while_statement"
-            | "repeat_statement"
-            | "switch_statement"
-            | "switch_expression"
-            | "match_expression"
-            | "catch_clause"
-            | "except_clause"
-            | "catch_block"
-            | "when_expression"
-            | "match_statement"
-            | "conditional_expression"
-            | "ternary_expression"
-            | "if"
-            | "unless"
-    )
-}
-
-#[must_use]
-pub fn is_jump_node(kind: &str) -> bool {
-    matches!(
-        kind,
-        "break_statement"
-            | "continue_statement"
-            | "goto_statement"
-            | "return_statement"
-            | "throw_statement"
-            | "break"
-            | "continue"
-            | "return"
-    )
-}
-
-#[must_use]
-pub fn is_bool_operator(kind: &str, text: &str) -> bool {
-    kind == "boolean_operator"
-        || kind == "binary_expression"
-            && (text == "&&" || text == "||" || text == "and" || text == "or")
-        || text == "&&"
-        || text == "||"
 }
 
 struct HumpTracker {
@@ -151,7 +53,8 @@ impl HumpTracker {
     }
 }
 
-struct ComplexityState {
+struct ComplexityState<'a> {
+    source: &'a [u8],
     cx: u32,
     ccx: u32,
     max_nest: u16,
@@ -159,9 +62,10 @@ struct ComplexityState {
     tracker: HumpTracker,
 }
 
-impl ComplexityState {
-    fn new() -> Self {
+impl<'a> ComplexityState<'a> {
+    fn new(source: &'a [u8]) -> Self {
         Self {
+            source,
             cx: 1,
             ccx: 0,
             max_nest: 0,
@@ -171,41 +75,116 @@ impl ComplexityState {
     }
 }
 
+fn kind_of(node: Option<Node<'_>>) -> &'static str {
+    node.map_or("", |n| n.kind())
+}
+
+fn is_else_if(node: Node<'_>, kinds: &ComplexityKinds) -> bool {
+    let after_else = |n: Option<Node<'_>>| kinds.else_kinds.contains(&kind_of(n));
+    let parent = node.parent();
+    after_else(parent)
+        || after_else(node.prev_sibling())
+        || parent
+            .is_some_and(|p| kinds.else_bodies.contains(&p.kind()) && after_else(p.prev_sibling()))
+}
+
+fn opens_else_if(node: Node<'_>, kinds: &ComplexityKinds) -> bool {
+    let mut cursor = node.walk();
+    let in_body = node
+        .named_children(&mut cursor)
+        .any(|c| kinds.nesting.contains(&c.kind()));
+    let next = node.next_sibling();
+    let in_next_body = next.is_some_and(|n| {
+        kinds.else_bodies.contains(&n.kind()) && {
+            let mut cursor = n.walk();
+            n.named_children(&mut cursor)
+                .any(|c| kinds.nesting.contains(&c.kind()))
+        }
+    });
+    in_body || in_next_body || kinds.nesting.contains(&kind_of(next))
+}
+
+fn logical_op<'a>(node: Node<'_>, kinds: &ComplexityKinds, source: &'a [u8]) -> Option<&'a str> {
+    let kind = node.kind();
+    if kinds.logical_nodes.contains(&kind) {
+        return Some(kind);
+    }
+    if !kinds.binary_nodes.contains(&kind) {
+        return None;
+    }
+    let spelled = node
+        .child_by_field_name("operator")
+        .and_then(|op| op.utf8_text(source).ok())
+        .filter(|text| kinds.logical_ops.contains(text));
+    spelled.or_else(|| {
+        let mut cursor = node.walk();
+        node.children(&mut cursor)
+            .map(|c| c.kind())
+            .find(|k| kinds.logical_ops.contains(k))
+    })
+}
+
+fn note_logical(node: Node<'_>, kinds: &ComplexityKinds, state: &mut ComplexityState) {
+    let Some(op) = logical_op(node, kinds, state.source) else {
+        return;
+    };
+    state.cx = state.cx.saturating_add(1);
+    let continues = node
+        .parent()
+        .and_then(|p| logical_op(p, kinds, state.source))
+        .is_some_and(|parent_op| parent_op == op);
+    if !continues {
+        state.ccx = state.ccx.saturating_add(1);
+    }
+}
+
+fn note_else(node: Node<'_>, kinds: &ComplexityKinds, state: &mut ComplexityState) {
+    if !opens_else_if(node, kinds) {
+        state.ccx = state.ccx.saturating_add(1);
+    }
+}
+
 fn process_node_complexity(
     node: Node<'_>,
     nesting: u16,
-    in_else_if: bool,
-    source_bytes: &[u8],
+    kinds: &ComplexityKinds,
     state: &mut ComplexityState,
-) -> (u16, bool) {
+) -> u16 {
     let kind = node.kind();
-    let text = node.utf8_text(source_bytes).unwrap_or("");
-
-    if is_cyclomatic_decision(kind) || is_bool_operator(kind, text) {
+    if kinds.else_kinds.contains(&kind) {
+        note_else(node, kinds, state);
+    }
+    if !node.is_named() {
+        return nesting;
+    }
+    note_logical(node, kinds, state);
+    if kinds.paths.contains(&kind) {
         state.cx = state.cx.saturating_add(1);
     }
-
-    if is_jump_node(kind) && nesting > 0 {
+    if kinds.flat.contains(&kind) {
+        state.cx = state.cx.saturating_add(1);
+        state.ccx = state.ccx.saturating_add(1);
+    }
+    if kinds.jumps.contains(&kind) && nesting > 0 {
         state.jumps_in_nest = state.jumps_in_nest.saturating_add(1);
     }
-
-    let mut next_nesting = nesting;
-    let mut next_in_else_if = false;
-
-    if is_nesting_control(kind) {
-        if in_else_if {
-            state.ccx = state.ccx.saturating_add(1);
-        } else {
-            state.ccx = state.ccx.saturating_add(1 + nesting as u32);
-            next_nesting = nesting.saturating_add(1);
-        }
-        state.tracker.note_nesting(nesting, next_nesting, &node);
-    } else if kind == "else_clause" || kind == "elif_clause" {
-        next_in_else_if = true;
+    let counts_path = kinds.nesting.contains(&kind);
+    if !counts_path && !kinds.nest_only.contains(&kind) {
+        return nesting;
     }
-
+    if counts_path {
+        state.cx = state.cx.saturating_add(1);
+    }
+    let next_nesting = if counts_path && is_else_if(node, kinds) {
+        state.ccx = state.ccx.saturating_add(1);
+        nesting
+    } else {
+        state.ccx = state.ccx.saturating_add(1 + nesting as u32);
+        nesting.saturating_add(1)
+    };
+    state.tracker.note_nesting(nesting, next_nesting, &node);
     state.max_nest = state.max_nest.max(next_nesting);
-    (next_nesting, next_in_else_if)
+    next_nesting
 }
 
 /// Compute complexity metrics from a Tree-Sitter AST node.
@@ -213,19 +192,18 @@ fn process_node_complexity(
 pub fn compute_complexity_from_node(
     root: Node<'_>,
     source_bytes: &[u8],
-    _lang: Lang,
+    lang: Lang,
 ) -> ComplexityMetrics {
-    let mut state = ComplexityState::new();
-    let mut stack = vec![(root, 0u16, false)];
+    let kinds = lang.semantics().complexity_kinds();
+    let mut state = ComplexityState::new(source_bytes);
+    let mut stack = vec![(root, 0u16)];
 
-    while let Some((node, nesting, in_else_if)) = stack.pop() {
-        let (child_nest, child_else_if) =
-            process_node_complexity(node, nesting, in_else_if, source_bytes, &mut state);
-
+    while let Some((node, nesting)) = stack.pop() {
+        let child_nest = process_node_complexity(node, nesting, kinds, &mut state);
         let mut cursor = node.walk();
         let children: Vec<_> = node.children(&mut cursor).collect();
         for child in children.into_iter().rev() {
-            stack.push((child, child_nest, child_else_if));
+            stack.push((child, child_nest));
         }
     }
 

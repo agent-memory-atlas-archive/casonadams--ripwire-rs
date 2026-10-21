@@ -1,5 +1,5 @@
 use super::{
-    DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
     resolve_relative_or_exact, strip_import_quotes,
 };
 use crate::domain::{Lang, SymKind};
@@ -178,7 +178,35 @@ fn is_py_enum_member_target(name_node: Option<tree_sitter::Node<'_>>, src: &[u8]
         .any(|b| is_py_enum_base_node(b, src))
 }
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["case_clause"],
+    flat: &["elif_clause"],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "except_clause",
+        "conditional_expression",
+    ],
+    nest_only: &["match_statement"],
+    else_kinds: &["else_clause"],
+    else_bodies: &[],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "return_statement",
+        "raise_statement",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["boolean_operator"],
+    logical_ops: &["and", "or"],
+};
+
 impl LanguageSemantics for PythonLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "py"
     }

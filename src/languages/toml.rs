@@ -1,10 +1,14 @@
-use super::{DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
 use crate::domain::Lang;
 
 pub struct TomlLanguage;
 pub static TOML_LANG: TomlLanguage = TomlLanguage;
 
 impl LanguageSemantics for TomlLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &ComplexityKinds::NONE
+    }
+
     fn tag(&self) -> &'static str {
         "toml"
     }

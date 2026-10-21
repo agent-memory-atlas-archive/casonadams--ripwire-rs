@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct GDScriptLanguage;
@@ -26,7 +26,29 @@ const GDSCRIPT_STD_MEMBERS: &[&str] = &[
     "emit_signal",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["pattern_section"],
+    flat: &["elif_clause"],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "conditional_expression",
+    ],
+    nest_only: &["match_statement"],
+    else_kinds: &["else_clause"],
+    else_bodies: &[],
+    jumps: &["break_statement", "continue_statement", "return_statement"],
+    logical_nodes: &[],
+    binary_nodes: &["binary_operator"],
+    logical_ops: &["&&", "||", "and", "or"],
+};
+
 impl LanguageSemantics for GDScriptLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "gd"
     }

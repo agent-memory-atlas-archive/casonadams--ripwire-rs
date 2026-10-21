@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct GoLanguage;
@@ -41,7 +41,38 @@ const GO_STD_QUALIFIERS: &[&str] = &[
     "binary", "hex", "base64", "sha256", "tls", "net", "sql",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &[
+        "expression_case",
+        "type_case",
+        "communication_case",
+        "default_case",
+    ],
+    flat: &[],
+    nesting: &["if_statement", "for_statement"],
+    nest_only: &[
+        "expression_switch_statement",
+        "type_switch_statement",
+        "select_statement",
+    ],
+    else_kinds: &["else"],
+    else_bodies: &[],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "goto_statement",
+        "return_statement",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["binary_expression"],
+    logical_ops: &["&&", "||"],
+};
+
 impl LanguageSemantics for GoLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "go"
     }

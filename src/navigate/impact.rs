@@ -1,10 +1,11 @@
 use super::ImpactNode;
-use crate::domain::{CorpusView, IngestResult, Interner, NodeId, RefRole};
+use crate::domain::{CorpusView, IngestResult, Interner, NodeId, RefRole, Reference};
 use crate::resolve::{RefOutcome, ResolutionIndex, ResolutionLookup};
 use std::collections::{BTreeMap, HashSet};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImpactDef<'a> {
+    pub id: NodeId,
     pub kind: &'static str,
     pub scope: Option<&'a str>,
     pub path: &'a str,
@@ -14,6 +15,7 @@ pub struct ImpactDef<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeclinedCall<'a> {
     pub enclosing: &'a str,
+    pub callee: &'a str,
     pub path: &'a str,
     pub line: u32,
     pub cands: usize,
@@ -35,8 +37,9 @@ pub fn impact_defs<'a>(
     let view = (ingest, interner);
     let mut defs: Vec<ImpactDef<'a>> = ids
         .iter()
-        .filter_map(|&id| ingest.sym(id))
-        .map(|s| ImpactDef {
+        .filter_map(|&id| ingest.sym(id).map(|s| (id, s)))
+        .map(|(id, s)| ImpactDef {
+            id,
             kind: s.kind.tag(),
             scope: view.sym_scope(s),
             path: view.file_path(s.file_id),
@@ -62,6 +65,24 @@ pub fn declined_calls<'a>(
         .chain(nodes.iter().map(|n| n.id))
         .filter_map(|id| ingest.sym(id).map(|s| s.name))
         .collect();
+    declined_sites(ingest, interner, |r| names.contains(&r.callee_name))
+}
+
+/// Declined call sites made from inside any of `callers`, in the same file-first order.
+#[must_use]
+pub fn declined_calls_from<'a>(
+    callers: &[NodeId],
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+) -> Vec<DeclinedCall<'a>> {
+    declined_sites(ingest, interner, |r| callers.contains(&r.from_symbol))
+}
+
+fn declined_sites<'a>(
+    ingest: &'a IngestResult,
+    interner: &'a Interner,
+    keep: impl Fn(&Reference) -> bool,
+) -> Vec<DeclinedCall<'a>> {
     let index = ResolutionIndex::build(ingest, interner);
     let lookup = index.context(ingest, interner);
     let view = (ingest, interner);
@@ -69,11 +90,12 @@ pub fn declined_calls<'a>(
         .references
         .iter()
         .filter(|r| matches!(r.role, RefRole::Call | RefRole::Macro))
-        .filter(|r| names.contains(&r.callee_name))
+        .filter(|r| keep(r))
         .filter(|r| lookup.classify_ref(r) == RefOutcome::Declined)
         .filter_map(|r| {
             Some(DeclinedCall {
                 enclosing: view.sym_name(ingest.sym(r.from_symbol)?),
+                callee: interner.resolve(&r.callee_name),
                 path: view.file_path(r.file_id),
                 line: r.line,
                 cands: lookup.by_name().get(&r.callee_name).map_or(0, Vec::len),

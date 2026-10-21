@@ -3,13 +3,37 @@ use super::c::{
     is_c_family_def_allowed, refine_c_header_dialect, resolve_c_family_def_body_and_end,
     resolve_c_family_include,
 };
-use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics};
 use std::collections::HashMap;
 
 pub struct CppLanguage;
 pub static CPP_LANG: CppLanguage = CppLanguage;
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "for_range_loop",
+        "while_statement",
+        "do_statement",
+        "catch_clause",
+        "conditional_expression",
+    ],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "goto_statement",
+        "return_statement",
+        "throw_statement",
+        "co_return_statement",
+    ],
+    ..ComplexityKinds::C_STYLE
+};
+
 impl LanguageSemantics for CppLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
     fn tag(&self) -> &'static str {
         "cpp"
     }

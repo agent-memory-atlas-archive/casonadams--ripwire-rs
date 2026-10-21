@@ -1,5 +1,5 @@
 use super::{
-    DefCaptureGateContext, DialectGroup, LanguageSemantics, is_screaming_snake,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, is_screaming_snake,
     resolve_relative_or_exact, strip_import_quotes,
 };
 use crate::domain::SymKind;
@@ -437,7 +437,27 @@ pub(super) fn resolve_c_family_def_body_and_end<'a>(
     (Some(dn), default_end)
 }
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "do_statement",
+        "conditional_expression",
+    ],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "goto_statement",
+        "return_statement",
+    ],
+    ..ComplexityKinds::C_STYLE
+};
+
 impl LanguageSemantics for CLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
     fn tag(&self) -> &'static str {
         "c"
     }

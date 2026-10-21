@@ -1,8 +1,8 @@
 use super::javascript::{
-    JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_jsx_intrinsic_tag_call,
+    JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_jsx_intrinsic_tag_call,
     parse_tsconfig_paths, resolve_web_import_target,
 };
-use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics};
 use crate::domain::Lang;
 use crate::ingest::{FileParseResult, astro, parse_file_tree};
 use std::collections::HashMap;
@@ -51,6 +51,10 @@ fn parse_astro_file(source_bytes: &[u8], language: &Language, query: &Query) -> 
 }
 
 impl LanguageSemantics for TypeScriptLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &JS_KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "ts"
     }

@@ -31,6 +31,8 @@ macro_rules! impl_grammar_method {
 }
 pub(crate) use impl_grammar_method;
 
+mod complexity_kinds;
+pub use complexity_kinds::ComplexityKinds;
 pub mod bash;
 pub mod brightscript;
 pub mod c;
@@ -134,6 +136,24 @@ pub trait LanguageSemantics: Sync {
     /// Compiled Tree-sitter grammar and tags query for this language.
     fn grammar_and_query(&self) -> Option<(&'static Language, &'static Query)> {
         None
+    }
+
+    /// Grammar node kinds this language contributes to `cx` / `ccx` complexity.
+    fn complexity_kinds(&self) -> &'static ComplexityKinds;
+
+    /// A call qualifier the generic receiver extraction cannot see (e.g. Dart's sibling selector chains).
+    fn call_qualifier(
+        &self,
+        _name_node: tree_sitter::Node<'_>,
+        _source_bytes: &[u8],
+    ) -> Option<String> {
+        None
+    }
+
+    /// True if a type-qualified call whose qualifier names no indexed definition is external, not a
+    /// candidate for same-named members of unrelated types.
+    fn qualifier_must_be_indexed(&self) -> bool {
+        false
     }
 
     /// True if `'` can introduce a lifetime identifier (`'a`) rather than a character literal.
@@ -509,6 +529,10 @@ pub struct UnknownLanguage;
 pub static UNKNOWN_LANG: UnknownLanguage = UnknownLanguage;
 
 impl LanguageSemantics for UnknownLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &ComplexityKinds::NONE
+    }
+
     fn tag(&self) -> &'static str {
         "?"
     }

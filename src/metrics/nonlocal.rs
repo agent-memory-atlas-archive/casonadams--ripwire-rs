@@ -43,7 +43,7 @@ impl StateContext<'_> {
             .collect();
         for reference in self.references.get(&sym_id).into_iter().flatten() {
             if let RefOutcome::Resolved(resolved) = self.lookup.classify_target(reference)
-                && !resolved.is_ambiguous
+                && !resolved.is_ambiguous()
             {
                 targets.extend(
                     resolved

@@ -1,6 +1,6 @@
 use ripwire_rs::{
-    EdgeAcc, Graph, HitsConfig, IngestResult, Interner, Lang, ResolutionResult, SymKind, Symbol,
-    compute_hits,
+    EdgeAcc, EdgeProv, Graph, HitsConfig, IngestResult, Interner, Lang, ResolutionResult, SymKind,
+    Symbol, compute_hits,
 };
 use std::collections::HashMap;
 
@@ -36,7 +36,7 @@ fn test_hits_two_node_chain() {
             EdgeAcc {
                 n_ref: 1,
                 conf_sum: 1.0,
-                is_split: false,
+                prov: EdgeProv::Local,
             },
         )]),
         amb_out: vec![0, 0],

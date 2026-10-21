@@ -1,4 +1,6 @@
-use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+};
 use crate::domain::Lang;
 
 pub struct CSharpLanguage;
@@ -69,7 +71,39 @@ const CSHARP_STD_QUALIFIERS: &[&str] = &[
     "GC",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["switch_section", "switch_expression_arm"],
+    flat: &[],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "foreach_statement",
+        "while_statement",
+        "do_statement",
+        "catch_clause",
+        "conditional_expression",
+    ],
+    nest_only: &["switch_statement", "switch_expression"],
+    else_kinds: &["else"],
+    else_bodies: &[],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "goto_statement",
+        "return_statement",
+        "throw_statement",
+        "throw_expression",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["binary_expression"],
+    logical_ops: &["&&", "||", "??"],
+};
+
 impl LanguageSemantics for CSharpLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "cs"
     }

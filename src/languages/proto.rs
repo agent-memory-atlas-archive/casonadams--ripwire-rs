@@ -1,10 +1,14 @@
-use super::{DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
 use crate::domain::Lang;
 
 pub struct ProtoLanguage;
 pub static PROTO_LANG: ProtoLanguage = ProtoLanguage;
 
 impl LanguageSemantics for ProtoLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &ComplexityKinds::NONE
+    }
+
     fn tag(&self) -> &'static str {
         "proto"
     }

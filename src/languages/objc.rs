@@ -1,5 +1,5 @@
 use super::c::{C_FAMILY_KEYWORDS, CPP_STD_MEMBERS, CPP_STD_QUALIFIERS, resolve_c_family_include};
-use super::{DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
 use std::collections::HashMap;
 
 pub struct ObjCLanguage;
@@ -58,7 +58,22 @@ const OBJC_FOUNDATION_QUALIFIERS: &[&str] = &[
     "NSJSONSerialization",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "do_statement",
+        "catch_clause",
+        "conditional_expression",
+    ],
+    ..ComplexityKinds::C_STYLE
+};
+
 impl LanguageSemantics for ObjCLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
     fn tag(&self) -> &'static str {
         "m"
     }

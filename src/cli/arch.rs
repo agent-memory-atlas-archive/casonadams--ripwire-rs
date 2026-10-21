@@ -483,9 +483,9 @@ fn collect_import_and_call_adj<'a>(
     if !has_import_edges {
         for u in 0..graph.node_count() as NodeId {
             let uf = ingest.symbols[u as usize].file_id as usize;
-            for (v, _, is_split) in graph.callees_with_prov(u) {
-                let vf = ingest.symbols[v as usize].file_id as usize;
-                if !is_split && uf != vf && uf < f_len && vf < f_len {
+            for edge in graph.callee_edges(u) {
+                let vf = ingest.symbols[edge.to as usize].file_id as usize;
+                if !edge.prov.is_split() && uf != vf && uf < f_len && vf < f_len {
                     adj_sets[uf].insert(vf);
                 }
             }

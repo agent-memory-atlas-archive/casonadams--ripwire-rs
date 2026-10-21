@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct CobolLanguage;
@@ -62,7 +62,30 @@ const COBOL_STD_QUALIFIERS: &[&str] = &[
     "native",
 ];
 
+// COBOL statements are flat: `if_header`/`else_header` are sibling statement nodes, not wrappers.
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["when", "when_other"],
+    flat: &["else_if_header"],
+    nesting: &["if_header", "perform_statement_loop", "search_statement"],
+    nest_only: &["evaluate_header"],
+    else_kinds: &["else_header"],
+    else_bodies: &[],
+    jumps: &[
+        "goto_statement",
+        "goback_statement",
+        "exit_statement",
+        "stop_statement",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["expr"],
+    logical_ops: &["AND", "OR"],
+};
+
 impl LanguageSemantics for CobolLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "cobol"
     }

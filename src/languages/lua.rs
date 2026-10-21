@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct LuaLanguage;
@@ -24,7 +24,29 @@ const LUA_STD_QUALIFIERS: &[&str] = &[
     "vim",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &[],
+    flat: &["elseif_statement"],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "repeat_statement",
+    ],
+    nest_only: &[],
+    else_kinds: &["else_statement"],
+    else_bodies: &[],
+    jumps: &["break_statement", "goto_statement", "return_statement"],
+    logical_nodes: &[],
+    binary_nodes: &["binary_expression"],
+    logical_ops: &["and", "or"],
+};
+
 impl LanguageSemantics for LuaLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "lua"
     }

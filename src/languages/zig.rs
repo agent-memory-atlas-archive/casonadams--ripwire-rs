@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
 use crate::domain::Lang;
 
 pub struct ZigLanguage;
@@ -50,7 +50,36 @@ const ZIG_STD_QUALIFIERS: &[&str] = &[
     "AutoHashMap",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["switch_case"],
+    flat: &[],
+    nesting: &[
+        "if_expression",
+        "if_statement",
+        "for_expression",
+        "for_statement",
+        "while_expression",
+        "while_statement",
+        "catch_expression",
+    ],
+    nest_only: &["switch_expression"],
+    else_kinds: &["else_clause"],
+    else_bodies: &[],
+    jumps: &[
+        "break_expression",
+        "continue_expression",
+        "return_expression",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["binary_expression"],
+    logical_ops: &["and", "or", "orelse"],
+};
+
 impl LanguageSemantics for ZigLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "zig"
     }

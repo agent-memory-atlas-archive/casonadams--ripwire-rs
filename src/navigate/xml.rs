@@ -3,12 +3,30 @@ use crate::domain::{IngestResult, Interner};
 use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};
 
+/// Direction of a 1-hop navigation report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavDir {
+    Callers,
+    Callees,
+}
+
+impl NavDir {
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Callers => "callers",
+            Self::Callees => "callees",
+        }
+    }
+}
+
 pub struct NavItemsReport<'a> {
-    pub tag: &'static str,
+    pub dir: NavDir,
     pub root: &'a str,
     pub of: &'a str,
     pub defs: usize,
+    pub def_rows: &'a [ImpactDef<'a>],
     pub items: &'a [SymbolNavInfo],
+    pub declined: &'a [DeclinedCall<'a>],
     pub gauge_attrs: &'a str,
     pub page: crate::serialize::PageRequest,
 }
@@ -17,28 +35,113 @@ impl NavItemsReport<'_> {
     fn window(&self) -> crate::serialize::PageWindow {
         self.page.window(self.items.len(), 40)
     }
+
+    fn grouped(&self) -> bool {
+        self.dir == NavDir::Callers && self.def_rows.len() >= 2
+    }
+
+    fn of_def_attr(&self, item: &SymbolNavInfo) -> String {
+        if !self.grouped() {
+            return String::new();
+        }
+        let ixs: Vec<String> = self
+            .def_rows
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, d)| {
+                let (_, prov) = item.of_defs.iter().find(|(id, _)| *id == d.id)?;
+                Some(format!("{}{}", ix + 1, prov.of_def_suffix()))
+            })
+            .collect();
+        format!(" of_def=\"{}\"", ixs.join(" "))
+    }
+
+    fn of_all_defs_attr(&self) -> String {
+        if !self.grouped() {
+            return String::new();
+        }
+        let ixs: Vec<String> = (1..=self.def_rows.len())
+            .map(|ix| format!("{ix}~d"))
+            .collect();
+        format!(" of_def=\"{}\"", ixs.join(" "))
+    }
+
+    fn declined_attr(&self) -> String {
+        match self.declined.len() {
+            0 => String::new(),
+            n => format!(" declined_calls=\"{n}\""),
+        }
+    }
+}
+
+fn write_def_rows<W: Write>(out: &mut W, defs: &[ImpactDef<'_>]) -> io::Result<()> {
+    if defs.len() < 2 {
+        return Ok(());
+    }
+    for (ix, d) in defs.iter().enumerate() {
+        let sc = d
+            .scope
+            .map(|s| format!(" sc=\"{}\"", s.xml_escaped()))
+            .unwrap_or_default();
+        write!(
+            out,
+            "<def ix=\"{}\" t=\"{}\"{sc} p=\"{}:{}\"/>",
+            ix + 1,
+            d.kind,
+            d.path.xml_escaped(),
+            d.line
+        )?;
+    }
+    Ok(())
+}
+
+fn write_declined_row<W: Write>(
+    out: &mut W,
+    dc: &DeclinedCall<'_>,
+    dir: Option<NavDir>,
+    of_def: &str,
+) -> io::Result<()> {
+    match dir {
+        Some(NavDir::Callees) => write!(
+            out,
+            "<dc n=\"{}\" l=\"{}\" cands=\"{}\" via=\"declined\"/>",
+            dc.callee.xml_escaped(),
+            dc.line,
+            dc.cands
+        ),
+        _ => write!(
+            out,
+            "<dc in=\"{}\" p=\"{}:{}\" cands=\"{}\" via=\"declined\"{of_def}/>",
+            dc.enclosing.xml_escaped(),
+            dc.path.xml_escaped(),
+            dc.line,
+            dc.cands
+        ),
+    }
 }
 
 impl crate::serialize::XmlReport for NavItemsReport<'_> {
     fn schema_tag(&self) -> &'static str {
-        self.tag
+        self.dir.tag()
     }
     fn schema_version(&self) -> &'static str {
-        if self.tag == "callers" {
-            "ripwire-rs.callers/v1"
-        } else {
-            "ripwire-rs.callees/v1"
+        match self.dir {
+            NavDir::Callers => "ripwire-rs.callers/v1",
+            NavDir::Callees => "ripwire-rs.callees/v1",
         }
     }
     fn include_root_attr(&self) -> bool {
         false
     }
     fn legend_comment(&self) -> Option<&'static str> {
-        if self.tag == "callers" {
-            Some("ripwire-rs callers schema=ripwire-rs.callers/v1: 1-hop callers of of=.")
-        } else {
-            Some("ripwire-rs callees schema=ripwire-rs.callees/v1: 1-hop callees of of=.")
-        }
+        Some(match self.dir {
+            NavDir::Callers => {
+                "ripwire-rs callers schema=ripwire-rs.callers/v1: 1-hop callers of of=. of_def=K[~s|~n]: the <def ix=K> the caller edge reaches (~s: one arm of an ambiguous call; ~n: bound by name alone). via=name: the edge bound by name alone. declined_calls=K: call sites naming of= the resolver left unbound, in no count; <dc in= p= cands= via=declined>: one such site (calling def, file:line), NOT an edge; cands=K: in-tree defs it could have meant."
+            }
+            NavDir::Callees => {
+                "ripwire-rs callees schema=ripwire-rs.callees/v1: 1-hop callees of of=. via=name: bound by name alone (same directory or repository-wide). prov=import|final-segment|split: how the edge bound; import = through a module alias the file imports; final-segment = a type qualifier matched by last name only; split = one arm of an ambiguous call. declined_calls=K: call sites inside of= the resolver left unbound, in no count; <dc n= l= cands= via=declined>: one such site (called name, line), NOT an edge; cands=K: in-tree defs it could have meant."
+            }
+        })
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let count = self.items.len();
@@ -50,72 +153,89 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
             .count();
         let hop_untested = count.saturating_sub(hop_tested);
         let of = self.of.xml_escaped();
-        let next = match (win.has_more, self.tag) {
-            (true, tag) => format!(
+        let tag = self.dir.tag();
+        let uses_next = format!(" uses_next=\"--uses={of}\"");
+        let next = match (win.has_more, self.dir) {
+            (true, dir) => format!(
                 " next=\"--{tag}={of} --offset={}\"{}",
                 win.next_offset,
-                if tag == "callers" {
-                    format!(" uses_next=\"--uses={of}\"")
+                if dir == NavDir::Callers {
+                    uses_next.as_str()
                 } else {
-                    String::new()
+                    ""
                 }
             ),
-            (false, "callers") => format!(" next=\"--uses={of}\""),
-            (false, _) => format!(" next=\"--expand={of}\""),
+            (false, NavDir::Callers) => format!(" next=\"--uses={of}\""),
+            (false, NavDir::Callees) => format!(" next=\"--expand={of}\""),
         };
         write!(
             out,
-            " of=\"{of}\" defs=\"{}\" count=\"{count}\" root=\"{}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{} {}{next}",
+            " of=\"{of}\" defs=\"{}\" count=\"{count}\" root=\"{}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{}{} {}{next}",
             self.defs,
             self.root.xml_escaped(),
+            self.declined_attr(),
             win.xml_attrs(),
             self.gauge_attrs
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let win = self.window();
-        let via_attr = if self.tag == "callees" {
-            " via=\"name\""
-        } else {
-            ""
-        };
+        if self.grouped() {
+            write_def_rows(out, self.def_rows)?;
+        }
         for it in &self.items[win.begin..win.end] {
+            let prov = match self.dir {
+                NavDir::Callees => it.prov,
+                NavDir::Callers => it.of_defs.iter().map(|(_, p)| *p).max().unwrap_or(it.prov),
+            };
+            let via_attr = match (self.dir, prov.callee_label()) {
+                (NavDir::Callees, Some(label)) => format!(" prov=\"{label}\""),
+                _ if prov.is_by_name() => " via=\"name\"".to_string(),
+                _ => String::new(),
+            };
             let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
                 " tested=\"1\""
             } else {
                 ""
             };
-            let sites_attr = if self.tag == "callers" && !it.sites.is_empty() {
+            let sites_attr = if self.dir == NavDir::Callers && !it.sites.is_empty() {
                 format!(" sites_at=\"{}\"", it.sites.join(" ").xml_escaped())
             } else {
                 String::new()
             };
             write!(
                 out,
-                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{tested_attr}{sites_attr}{via_attr}/>",
+                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{via_attr}{}{tested_attr}{sites_attr}/>",
                 it.kind,
                 it.name.xml_escaped(),
                 it.path.xml_escaped(),
-                it.line
+                it.line,
+                self.of_def_attr(it)
             )?;
+        }
+        let all_defs = self.of_all_defs_attr();
+        for dc in self.declined {
+            write_declined_row(out, dc, Some(self.dir), &all_defs)?;
         }
         Ok(())
     }
 }
 
 fn render_nav_items<W: Write>(
-    tag: &'static str,
+    dir: NavDir,
     sym_name: &str,
     items: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
     NavItemsReport {
-        tag,
+        dir,
         root: ".",
         of: sym_name,
         defs: 1,
+        def_rows: &[],
         items,
+        declined: &[],
         gauge_attrs: crate::serialize::GraphGauges::ZERO_XML_ATTRS,
         page: crate::serialize::PageRequest::default(),
     }
@@ -128,7 +248,7 @@ pub fn serialize_callers_xml<W: Write>(
     callers: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    render_nav_items("callers", sym_name, callers, out)
+    render_nav_items(NavDir::Callers, sym_name, callers, out)
 }
 
 /// Serialize direct callees to Ripwire-compatible XML.
@@ -137,7 +257,7 @@ pub fn serialize_callees_xml<W: Write>(
     callees: &[SymbolNavInfo],
     out: &mut W,
 ) -> io::Result<()> {
-    render_nav_items("callees", sym_name, callees, out)
+    render_nav_items(NavDir::Callees, sym_name, callees, out)
 }
 
 pub struct ImpactReport<'a> {
@@ -223,27 +343,6 @@ impl ImpactReport<'_> {
         }
         let next = self.follow_up("dc_next", total.max(self.cap(IMPACT_ROWS_CAP)));
         format!(" declined_calls=\"{total}\" dc_shown=\"{shown}\"{next}")
-    }
-
-    fn write_def_rows<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        if self.defs.len() < 2 {
-            return Ok(());
-        }
-        for (ix, d) in self.defs.iter().enumerate() {
-            let sc = d
-                .scope
-                .map(|s| format!(" sc=\"{}\"", s.xml_escaped()))
-                .unwrap_or_default();
-            write!(
-                out,
-                "<def ix=\"{}\" t=\"{}\"{sc} p=\"{}:{}\"/>",
-                ix + 1,
-                d.kind,
-                d.path.xml_escaped(),
-                d.line
-            )?;
-        }
-        Ok(())
     }
 
     fn write_files_block<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -334,7 +433,7 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let win = self.window();
-        self.write_def_rows(out)?;
+        write_def_rows(out, &self.defs)?;
         if win.capped {
             self.write_files_block(out)?;
         }
@@ -347,14 +446,7 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
             )?;
         }
         for dc in &self.declined[..self.shown_declined()] {
-            write!(
-                out,
-                "<dc in=\"{}\" p=\"{}:{}\" cands=\"{}\" via=\"declined\"/>",
-                dc.enclosing.xml_escaped(),
-                dc.path.xml_escaped(),
-                dc.line,
-                dc.cands
-            )?;
+            write_declined_row(out, dc, None, "")?;
         }
         Ok(())
     }

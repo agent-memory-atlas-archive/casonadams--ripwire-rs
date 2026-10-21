@@ -1,5 +1,6 @@
 use ripwire_rs::navigate::{
-    ImpactReport, find_symbols_by_name, navigate_1hop, serialize_callers_xml, transitive_impact,
+    ImpactReport, NavDir, find_symbols_by_name, navigate_1hop, serialize_callers_xml,
+    transitive_impact,
 };
 use ripwire_rs::serialize::{GraphGauges, PageRequest, XmlReport};
 use ripwire_rs::{
@@ -124,16 +125,20 @@ fn test_callers_page_advances_and_points_at_uses() {
             weight: 1.0,
             tested: false,
             sites: Vec::new(),
+            of_defs: Vec::new(),
+            prov: ripwire_rs::resolve::EdgeProv::Local,
         })
         .collect();
     let render = |offset| {
         let mut out = Vec::new();
         NavItemsReport {
-            tag: "callers",
+            dir: NavDir::Callers,
             root: ".",
             of: "target",
             defs: 2,
+            def_rows: &[],
             items: &callers,
+            declined: &[],
             gauge_attrs: GraphGauges::ZERO_XML_ATTRS,
             page: PageRequest {
                 limit: None,

@@ -1,10 +1,14 @@
-use super::{DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
 use crate::domain::Lang;
 
 pub struct JsonLanguage;
 pub static JSON_LANG: JsonLanguage = JsonLanguage;
 
 impl LanguageSemantics for JsonLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &ComplexityKinds::NONE
+    }
+
     fn tag(&self) -> &'static str {
         "json"
     }

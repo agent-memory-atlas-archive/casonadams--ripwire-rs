@@ -1,10 +1,14 @@
-use super::{DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics};
 use crate::domain::Lang;
 
 pub struct SqlLanguage;
 pub static SQL_LANG: SqlLanguage = SqlLanguage;
 
 impl LanguageSemantics for SqlLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &ComplexityKinds::NONE
+    }
+
     fn tag(&self) -> &'static str {
         "sql"
     }

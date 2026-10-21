@@ -61,7 +61,7 @@ pub use rank::{
     HitsConfig, HitsResult, PageRankConfig, PageRankResult, biased_teleport, compute_hits,
     page_rank, uniform_teleport,
 };
-pub use resolve::{EdgeAcc, ResolutionResult, ResolvedRef, resolve_all_references};
+pub use resolve::{EdgeAcc, EdgeProv, ResolutionResult, ResolvedRef, resolve_all_references};
 pub use serialize::{
     ColorBy, CommunityModule, CountingWriter, DEFAULT_PACK_BUDGET_BYTES, RootElementContext,
     SerializeOptions, StreamXmlContext, ToXmlString, TreeFileSymbols, escape_xml_str,

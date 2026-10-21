@@ -1,5 +1,5 @@
 use super::{
-    DefCaptureGateContext, DialectGroup, LanguageSemantics, probe_with_suffixes,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, probe_with_suffixes,
     resolve_relative_or_exact, strip_import_quotes,
 };
 use std::collections::HashMap;
@@ -304,7 +304,37 @@ fn skip_jsonc_comment(chars: &mut CharStream<'_>) {
     }
 }
 
+pub(super) const JS_KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["switch_case"],
+    flat: &[],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "for_in_statement",
+        "while_statement",
+        "do_statement",
+        "catch_clause",
+        "ternary_expression",
+    ],
+    nest_only: &["switch_statement"],
+    else_kinds: &["else_clause"],
+    else_bodies: &[],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "return_statement",
+        "throw_statement",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["binary_expression"],
+    logical_ops: &["&&", "||", "??"],
+};
+
 impl LanguageSemantics for JavaScriptLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &JS_KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "js"
     }

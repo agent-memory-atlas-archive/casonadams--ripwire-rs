@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct FortranLanguage;
@@ -82,7 +82,35 @@ const FORTRAN_STD_QUALIFIERS: &[&str] = &[
     "omp_lib",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["case_statement", "type_statement", "rank_statement"],
+    flat: &["elseif_clause", "elsewhere_clause"],
+    nesting: &[
+        "if_statement",
+        "arithmetic_if_statement",
+        "do_loop",
+        "where_statement",
+        "forall_statement",
+        "conditional_expression",
+    ],
+    nest_only: &[
+        "select_case_statement",
+        "select_type_statement",
+        "select_rank_statement",
+    ],
+    else_kinds: &["else_clause"],
+    else_bodies: &[],
+    jumps: &["keyword_statement", "stop_statement"],
+    logical_nodes: &[],
+    binary_nodes: &["logical_expression"],
+    logical_ops: &[".and.", ".or."],
+};
+
 impl LanguageSemantics for FortranLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "fortran"
     }

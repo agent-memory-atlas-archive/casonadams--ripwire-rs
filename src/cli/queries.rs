@@ -82,6 +82,8 @@ pub struct NavQuery<'a> {
     pub root: &'a str,
     pub sym: &'a str,
     pub mode: NavMode,
+    pub declined: &'a [crate::navigate::DeclinedCall<'a>],
+    pub def_rows: &'a [crate::navigate::ImpactDef<'a>],
     pub page: crate::serialize::PageRequest,
 }
 
@@ -92,18 +94,20 @@ pub fn serialize_1hop_mode<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
-    let (tag, items) = match query.mode {
-        NavMode::Callers => ("callers", &nav.callers),
-        NavMode::Callees => ("callees", &nav.callees),
+    let (dir, items) = match query.mode {
+        NavMode::Callers => (crate::navigate::NavDir::Callers, &nav.callers),
+        NavMode::Callees => (crate::navigate::NavDir::Callees, &nav.callees),
         NavMode::FindSymbol => return crate::navigate::serialize_find_symbol_xml(nav, out),
         _ => return Ok(()),
     };
     crate::navigate::NavItemsReport {
-        tag,
+        dir,
         root: query.root,
         of: query.sym,
         defs,
+        def_rows: query.def_rows,
         items,
+        declined: query.declined,
         gauge_attrs: &nav.gauge_attrs,
         page: query.page,
     }
@@ -137,29 +141,14 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let ids = crate::navigate::find_symbols_by_name(sym, ctx.ingest, ctx.interner);
-    if ids.is_empty() {
-        let flag = mode.cli_flag();
-        if let Some(near) = crate::navigate::find_nearest_symbol_name(sym, ctx.ingest, ctx.interner)
-        {
-            return Err(io::Error::other(format!(
-                "ripwire-rs: {flag} symbol not found: {sym} (did you mean '{near}'?)"
-            )));
-        }
-        return Err(io::Error::other(format!(
-            "ripwire-rs: {flag} symbol not found: {sym}"
-        )));
+    if ids.is_empty() && !matches!(mode, NavMode::Uses) {
+        return Err(symbol_not_found(mode, sym, ctx));
     }
     use crate::domain::CorpusView;
     use crate::serialize::XmlReport;
     let gauge_attrs = ctx.graph.xml_gauge_attrs();
     match mode {
-        NavMode::Uses => crate::navigate::UsesReport {
-            root,
-            gauge_attrs: &gauge_attrs,
-            page: ctx.page,
-            ..crate::navigate::UsesReport::collect(sym, ctx.ingest, ctx.interner)
-        }
-        .render_envelope(out),
+        NavMode::Uses => execute_uses_query(root, sym, ctx, out),
         NavMode::Impact => {
             let impact = crate::navigate::transitive_impact_multi(
                 &ids,
@@ -193,10 +182,22 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
                 ctx.ranks,
                 ctx.interner,
             ) {
+                let declined = match mode {
+                    NavMode::Callers => {
+                        crate::navigate::declined_calls(&ids, &[], ctx.ingest, ctx.interner)
+                    }
+                    NavMode::Callees => {
+                        crate::navigate::declined_calls_from(&ids, ctx.ingest, ctx.interner)
+                    }
+                    _ => Vec::new(),
+                };
+                let def_rows = crate::navigate::impact_defs(&ids, ctx.ingest, ctx.interner);
                 let query = NavQuery {
                     root,
                     sym,
                     mode,
+                    declined: &declined,
+                    def_rows: &def_rows,
                     page: ctx.page,
                 };
                 serialize_1hop_mode(&query, ids.len(), &nav, out)?;
@@ -204,6 +205,36 @@ pub fn execute_nav_symbol_query_in_root<W: Write>(
             Ok(())
         }
     }
+}
+
+fn symbol_not_found(mode: NavMode, sym: &str, ctx: &NavContext<'_>) -> io::Error {
+    let flag = mode.cli_flag();
+    match crate::navigate::find_nearest_symbol_name(sym, ctx.ingest, ctx.interner) {
+        Some(near) => io::Error::other(format!(
+            "ripwire-rs: {flag} symbol not found: {sym} (did you mean '{near}'?)"
+        )),
+        None => io::Error::other(format!("ripwire-rs: {flag} symbol not found: {sym}")),
+    }
+}
+
+fn execute_uses_query<W: Write>(
+    root: &str,
+    sym: &str,
+    ctx: &NavContext<'_>,
+    out: &mut W,
+) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    let report = crate::navigate::UsesReport::collect(sym, ctx.ingest, ctx.interner);
+    if report.defs == 0 && report.sites.is_empty() {
+        return Err(symbol_not_found(NavMode::Uses, sym, ctx));
+    }
+    crate::navigate::UsesReport {
+        root,
+        gauge_attrs: &ctx.graph.xml_gauge_attrs(),
+        page: ctx.page,
+        ..report
+    }
+    .render_envelope(out)
 }
 
 pub fn execute_connect_query<W: Write>(

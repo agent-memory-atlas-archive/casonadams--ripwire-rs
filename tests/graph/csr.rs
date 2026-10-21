@@ -1,6 +1,6 @@
 use ripwire_rs::{
-    CsrMatrix, EdgeAcc, FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference,
-    ResolutionResult, SymKind, Symbol,
+    CsrMatrix, EdgeAcc, EdgeProv, FileInfo, Graph, IngestResult, Interner, Lang, RefRole,
+    Reference, ResolutionResult, SymKind, Symbol,
 };
 
 #[test]
@@ -23,7 +23,7 @@ fn test_graph_simple_chain() {
         EdgeAcc {
             conf_sum: 1.0,
             n_ref: 1,
-            is_split: false,
+            prov: EdgeProv::Local,
         },
     );
     resolution.edge_accumulators.insert(
@@ -31,7 +31,7 @@ fn test_graph_simple_chain() {
         EdgeAcc {
             conf_sum: 1.0,
             n_ref: 1,
-            is_split: false,
+            prov: EdgeProv::Local,
         },
     );
 

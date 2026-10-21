@@ -67,7 +67,7 @@ pub struct SymbolRowContext<'a> {
     pub sym_name: &'a str,
     pub rank: f64,
     pub amb: u32,
-    pub callees: &'a [(NodeId, f32, bool)],
+    pub callees: &'a [crate::graph::CalleeEdge],
     pub include_pr: bool,
     pub metrics: bool,
     pub in_degree: usize,
@@ -202,28 +202,34 @@ pub fn write_symbol_row<W: Write>(
 
 fn write_callees_tags<W: Write>(
     w: &mut W,
-    callees: &[(NodeId, f32, bool)],
+    callees: &[crate::graph::CalleeEdge],
     interner: &Interner,
     symbols: &[Symbol],
 ) -> io::Result<()> {
-    let mut seen_callees = std::collections::HashSet::new();
-    for &(callee_id, _, is_split) in callees {
-        let callee_sym = &symbols[callee_id as usize];
-        let callee_name = interner.resolve(&callee_sym.name);
-        if seen_callees.insert(callee_name) {
-            write_callee_tag(w, callee_name, is_split)?;
+    let mut by_name: Vec<(&str, crate::resolve::EdgeProv)> = Vec::with_capacity(callees.len());
+    for edge in callees {
+        let name = interner.resolve(&symbols[edge.to as usize].name);
+        match by_name.iter_mut().find(|(n, _)| *n == name) {
+            Some((_, prov)) => *prov = (*prov).max(edge.prov),
+            None => by_name.push((name, edge.prov)),
         }
+    }
+    for (name, prov) in by_name {
+        write_callee_tag(w, name, prov)?;
     }
     Ok(())
 }
 
-fn write_callee_tag<W: Write>(w: &mut W, name: &str, is_split: bool) -> io::Result<()> {
-    write!(
-        w,
-        "<c n=\"{}\"{}>",
-        name.xml_escaped(),
-        if is_split { " prov=\"split\"/" } else { "/" }
-    )
+fn write_callee_tag<W: Write>(
+    w: &mut W,
+    name: &str,
+    prov: crate::resolve::EdgeProv,
+) -> io::Result<()> {
+    write!(w, "<c n=\"{}\"", name.xml_escaped())?;
+    if let Some(label) = prov.callee_label() {
+        write!(w, " prov=\"{label}\"")?;
+    }
+    w.write_all(b"/>")
 }
 
 /// Compute symbol rank ordering and bucket symbols into files.
@@ -316,7 +322,7 @@ fn build_symbol_row_context<'a>(
     sym: &'a Symbol,
     sym_id: NodeId,
     ctx: &'a StreamXmlContext<'_>,
-    callees: &'a [(NodeId, f32, bool)],
+    callees: &'a [crate::graph::CalleeEdge],
     include_pr: bool,
     metrics: bool,
 ) -> SymbolRowContext<'a> {
@@ -356,7 +362,7 @@ fn serialize_single_file_bucket(
             break;
         }
         let sym = &ctx.ingest.symbols[sym_id as usize];
-        let callees: Vec<(NodeId, f32, bool)> = ctx.graph.callees_with_prov(sym_id).collect();
+        let callees: Vec<crate::graph::CalleeEdge> = ctx.graph.callee_edges(sym_id).collect();
         let row_ctx = build_symbol_row_context(sym, sym_id, ctx, &callees, include_pr, metrics);
         write_symbol_row(file_buf, &row_ctx, ctx.interner, &ctx.ingest.symbols)?;
         shown += 1;
@@ -431,7 +437,7 @@ fn write_inv_entries<W: Write>(w: &mut W, ctx: &StreamXmlContext<'_>) -> io::Res
             path.xml_escaped(),
             name.xml_escaped()
         )?;
-        let callees: Vec<(NodeId, f32, bool)> = ctx.graph.callees_with_prov(sym.id).collect();
+        let callees: Vec<crate::graph::CalleeEdge> = ctx.graph.callee_edges(sym.id).collect();
         write_callees_tags(w, &callees, ctx.interner, &ctx.ingest.symbols)?;
         w.write_all(b"</entry>")?;
         emitted += 1;

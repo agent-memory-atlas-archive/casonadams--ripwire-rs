@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct PhpLanguage;
@@ -31,7 +31,38 @@ const PHP_STD_MEMBERS: &[&str] = &[
     "json_decode",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["case_statement", "match_conditional_expression"],
+    flat: &["else_if_clause"],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "foreach_statement",
+        "while_statement",
+        "do_statement",
+        "catch_clause",
+        "conditional_expression",
+    ],
+    nest_only: &["switch_statement", "match_expression"],
+    else_kinds: &["else_clause"],
+    else_bodies: &[],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "goto_statement",
+        "return_statement",
+        "throw_expression",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["binary_expression"],
+    logical_ops: &["&&", "||", "and", "or"],
+};
+
 impl LanguageSemantics for PhpLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "php"
     }

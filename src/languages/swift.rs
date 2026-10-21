@@ -1,4 +1,4 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct SwiftLanguage;
@@ -50,7 +50,35 @@ const SWIFT_STD_QUALIFIERS: &[&str] = &[
     "JSONDecoder",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["switch_entry", "guard_statement"],
+    flat: &[],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "repeat_while_statement",
+        "catch_block",
+        "ternary_expression",
+    ],
+    nest_only: &["switch_statement"],
+    else_kinds: &["else"],
+    else_bodies: &[],
+    jumps: &["control_transfer_statement"],
+    logical_nodes: &[
+        "conjunction_expression",
+        "disjunction_expression",
+        "nil_coalescing_expression",
+    ],
+    binary_nodes: &[],
+    logical_ops: &[],
+};
+
 impl LanguageSemantics for SwiftLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "swift"
     }

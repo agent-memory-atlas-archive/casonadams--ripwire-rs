@@ -12,8 +12,9 @@ pub use xml::*;
 
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
+use crate::resolve::EdgeProv;
 use serde::Serialize;
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Detailed navigation information for a symbol.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -28,6 +29,12 @@ pub struct SymbolNavInfo {
     pub tested: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<String>,
+    /// Matched definitions this caller has an edge to, with how each edge bound.
+    #[serde(skip)]
+    pub of_defs: Vec<(NodeId, EdgeProv)>,
+    /// How this callee edge was bound.
+    #[serde(skip)]
+    pub prov: EdgeProv,
 }
 
 /// 1-hop neighborhood of a symbol containing both incoming callers and outgoing callees.
@@ -214,6 +221,8 @@ pub fn get_symbol_nav_info(
         weight,
         tested,
         sites: Vec::new(),
+        of_defs: Vec::new(),
+        prov: EdgeProv::Local,
     })
 }
 
@@ -251,8 +260,8 @@ pub fn navigate_1hop_multi(
     let &first_id = sym_ids.first()?;
     let mut target = get_symbol_nav_info(first_id, ingest, ranks, interner, 1.0)?;
     target.tested |= tested_mask.get(first_id as usize).copied().unwrap_or(false);
-    let mut seen_callers = HashSet::new();
-    let mut callers = Vec::new();
+    let mut caller_slots: HashMap<NodeId, usize> = HashMap::new();
+    let mut callers: Vec<SymbolNavInfo> = Vec::new();
     let mut seen_callees = HashSet::new();
     let mut callees = Vec::new();
     use crate::domain::CorpusView;
@@ -263,23 +272,34 @@ pub fn navigate_1hop_multi(
         .collect();
     for &sym_id in sym_ids {
         for (caller_id, weight) in graph.callers(sym_id) {
-            if seen_callers.insert(caller_id)
-                && let Some(mut info) =
-                    get_symbol_nav_info(caller_id, ingest, ranks, interner, weight)
+            if let Some(&slot) = caller_slots.get(&caller_id) {
+                callers[slot].of_defs.push((
+                    sym_id,
+                    graph.edge_prov(caller_id, sym_id).unwrap_or_default(),
+                ));
+            } else if let Some(mut info) =
+                get_symbol_nav_info(caller_id, ingest, ranks, interner, weight)
             {
                 info.tested |= tested_mask
                     .get(caller_id as usize)
                     .copied()
                     .unwrap_or(false);
                 info.sites = view.caller_site_locations(caller_id, &target_names);
+                info.of_defs.push((
+                    sym_id,
+                    graph.edge_prov(caller_id, sym_id).unwrap_or_default(),
+                ));
+                caller_slots.insert(caller_id, callers.len());
                 callers.push(info);
             }
         }
-        for (callee_id, weight) in graph.callees(sym_id) {
+        for edge in graph.callee_edges(sym_id) {
+            let callee_id = edge.to;
             if seen_callees.insert(callee_id)
                 && let Some(mut info) =
-                    get_symbol_nav_info(callee_id, ingest, ranks, interner, weight)
+                    get_symbol_nav_info(callee_id, ingest, ranks, interner, edge.weight)
             {
+                info.prov = edge.prov;
                 info.tested |= tested_mask
                     .get(callee_id as usize)
                     .copied()

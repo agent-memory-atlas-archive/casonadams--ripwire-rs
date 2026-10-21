@@ -35,7 +35,7 @@ fn estimate_symbol_bytes(sym: &crate::domain::Symbol) -> usize {
 
 fn build_context_ratio_row(
     sym: &crate::domain::Symbol,
-    callees: &[(crate::domain::NodeId, f32, bool)],
+    callees: &[crate::graph::CalleeEdge],
     ingest: &IngestResult,
     interner: &Interner,
 ) -> ContextRatioRow {
@@ -47,8 +47,8 @@ fn build_context_ratio_row(
     let mut total_bytes = estimate_symbol_bytes(sym);
     let mut out_bytes = 0usize;
 
-    for &(callee_id, _, _) in callees {
-        let callee = &ingest[callee_id];
+    for edge in callees {
+        let callee = &ingest[edge.to];
         let c_bytes = estimate_symbol_bytes(callee);
         total_bytes += c_bytes;
         touched_files.insert(callee.file_id);
@@ -98,7 +98,7 @@ pub fn compute_context_ratio(
         }
         units += 1;
         files_set.insert(sym.file_id);
-        let callees: Vec<_> = graph.callees_with_prov(sym.id).collect();
+        let callees: Vec<_> = graph.callee_edges(sym.id).collect();
         if !callees.is_empty() {
             rows.push(build_context_ratio_row(sym, &callees, ingest, interner));
         }

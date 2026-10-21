@@ -327,6 +327,9 @@ fn find_call_qualifier(
     source_bytes: &[u8],
     lang: Lang,
 ) -> Option<String> {
+    if let Some(qualifier) = lang.semantics().call_qualifier(name_node, source_bytes) {
+        return Some(qualifier);
+    }
     let parent = name_node.parent()?;
     if matches!(parent.kind(), "scoped_identifier" | "qualified_identifier")
         && let Some(path_node) = parent

@@ -2,13 +2,37 @@ use super::c::{
     C_FAMILY_KEYWORDS, CPP_STD_MEMBERS, CPP_STD_QUALIFIERS, is_c_family_def_allowed,
     resolve_c_family_def_body_and_end, resolve_c_family_include,
 };
-use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics};
+use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics};
 use std::collections::HashMap;
 
 pub struct MetalLanguage;
 pub static METAL_LANG: MetalLanguage = MetalLanguage;
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "for_range_loop",
+        "while_statement",
+        "do_statement",
+        "catch_clause",
+        "conditional_expression",
+    ],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "goto_statement",
+        "return_statement",
+        "throw_statement",
+        "co_return_statement",
+    ],
+    ..ComplexityKinds::C_STYLE
+};
+
 impl LanguageSemantics for MetalLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
     fn tag(&self) -> &'static str {
         "metal"
     }

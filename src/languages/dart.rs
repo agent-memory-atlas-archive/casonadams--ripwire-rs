@@ -1,4 +1,6 @@
-use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+};
 use crate::domain::{Lang, SymKind};
 use std::collections::HashMap;
 
@@ -139,7 +141,66 @@ fn dart_selector_root(rhs: &str) -> &str {
     if root.is_empty() || !chain { rhs } else { root }
 }
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["switch_statement_case", "switch_expression_case"],
+    flat: &[],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "while_statement",
+        "do_statement",
+        "catch_clause",
+        "conditional_expression",
+    ],
+    nest_only: &["switch_statement"],
+    else_kinds: &["else"],
+    else_bodies: &[],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "return_statement",
+        "rethrow_statement",
+    ],
+    logical_nodes: &["logical_and_expression", "logical_or_expression"],
+    binary_nodes: &[],
+    logical_ops: &[],
+};
+
+/// The type or receiver name preceding the called member in `a.B.c(...)`: Dart parses the chain as
+/// sibling `selector` nodes, so the receiver is the previous sibling of the member's selector.
+fn dart_call_qualifier(name_node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
+    let selector = name_node.parent()?.parent()?;
+    if selector.kind() != "selector" {
+        return None;
+    }
+    let receiver = selector.prev_sibling()?;
+    let ident = match receiver.kind() {
+        "identifier" => receiver,
+        "selector" => receiver.named_child(0)?.named_child(0)?,
+        _ => return None,
+    };
+    let text = ident.utf8_text(source).ok()?;
+    text.starts_with(char::is_uppercase)
+        .then(|| text.to_string())
+}
+
 impl LanguageSemantics for DartLanguage {
+    fn call_qualifier(
+        &self,
+        name_node: tree_sitter::Node<'_>,
+        source_bytes: &[u8],
+    ) -> Option<String> {
+        dart_call_qualifier(name_node, source_bytes)
+    }
+
+    fn qualifier_must_be_indexed(&self) -> bool {
+        true
+    }
+
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "dart"
     }

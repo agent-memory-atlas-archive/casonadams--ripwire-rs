@@ -234,7 +234,7 @@
           <span class="cmd-label">Why &amp; Key Benefits</span>
           <ul style="padding-left: 20px; color: var(--text-secondary); font-size: 0.95rem; margin-top: 6px;">
             <li><strong>Zero Surprise Breakages:</strong> Answers <em>"Can I safely change this?"</em> with exact static call graph reachability instead of text search guesses.</li>
-            <li><strong>Ambiguity Disclosure:</strong> Tags ambiguous call sites with <code>prov="split"</code> when a call cannot be resolved to a single unique definition.</li>
+            <li><strong>Ambiguity Disclosure:</strong> Labels how each call edge bound (<code>prov="import"</code>, <code>prov="final-segment"</code>, <code>prov="split"</code>; caller rows <code>of_def="K~s"</code> / <code>"K~n"</code>) and lists call sites the resolver declined as <code>&lt;dc&gt;</code> rows.</li>
             <li><strong>Deep Disambiguation:</strong> Supports flexible selectors (<code>bare_name</code>, <code>Scope::name</code>, <code>file:name</code>, <code>file::Scope::name</code>).</li>
           </ul>
         </div>

@@ -1,4 +1,6 @@
-use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+};
 
 pub struct JavaLanguage;
 pub static JAVA_LANG: JavaLanguage = JavaLanguage;
@@ -80,7 +82,37 @@ pub(super) const JVM_STD_QUALIFIERS: &[&str] = &[
     "LoggerFactory",
 ];
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["switch_block_statement_group", "switch_rule"],
+    flat: &[],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "enhanced_for_statement",
+        "while_statement",
+        "do_statement",
+        "catch_clause",
+        "ternary_expression",
+    ],
+    nest_only: &["switch_expression"],
+    else_kinds: &["else"],
+    else_bodies: &[],
+    jumps: &[
+        "break_statement",
+        "continue_statement",
+        "return_statement",
+        "throw_statement",
+        "yield_statement",
+    ],
+    logical_nodes: &[],
+    binary_nodes: &["binary_expression"],
+    logical_ops: &["&&", "||"],
+};
+
 impl LanguageSemantics for JavaLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
     fn tag(&self) -> &'static str {
         "java"
     }

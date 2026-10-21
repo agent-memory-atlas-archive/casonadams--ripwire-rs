@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 pub struct EdgeAcc {
     pub conf_sum: f32,
     pub n_ref: u32,
-    pub is_split: bool,
+    pub prov: EdgeProv,
 }
 
 /// Resolved graph edges and symbol ambiguity counts.
@@ -31,14 +31,14 @@ fn record_resolved_ref(
     edge_accumulators: &mut HashMap<(NodeId, NodeId), EdgeAcc>,
     amb_out: &mut [u32],
 ) {
-    if resolved.is_ambiguous {
+    if resolved.is_ambiguous() {
         amb_out[resolved.from as usize] += 1;
     }
     for to in resolved.targets {
         let acc = edge_accumulators.entry((resolved.from, to)).or_default();
         acc.conf_sum += resolved.conf_per_target;
         acc.n_ref += 1;
-        acc.is_split |= resolved.is_ambiguous;
+        acc.prov = acc.prov.max(resolved.prov);
     }
 }
 
@@ -75,7 +75,7 @@ pub fn merge_resolutions(mut a: ResolutionResult, b: ResolutionResult) -> Resolu
         let acc_a = a.edge_accumulators.entry(k).or_default();
         acc_a.conf_sum += acc_b.conf_sum;
         acc_a.n_ref += acc_b.n_ref;
-        acc_a.is_split |= acc_b.is_split;
+        acc_a.prov = acc_a.prov.max(acc_b.prov);
     }
     for (i, val) in b.amb_out.into_iter().enumerate() {
         a.amb_out[i] += val;

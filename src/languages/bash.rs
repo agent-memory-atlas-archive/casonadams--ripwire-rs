@@ -1,10 +1,33 @@
-use super::{DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{ComplexityKinds, DialectGroup, LanguageSemantics, VisibilityMode};
 use crate::domain::Lang;
 
 pub struct BashLanguage;
 pub static BASH_LANG: BashLanguage = BashLanguage;
 
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["case_item"],
+    flat: &["elif_clause"],
+    nesting: &[
+        "if_statement",
+        "for_statement",
+        "c_style_for_statement",
+        "while_statement",
+        "ternary_expression",
+    ],
+    nest_only: &["case_statement"],
+    else_kinds: &["else_clause"],
+    else_bodies: &[],
+    jumps: &[],
+    logical_nodes: &[],
+    binary_nodes: &["list", "binary_expression"],
+    logical_ops: &["&&", "||"],
+};
+
 impl LanguageSemantics for BashLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "sh"
     }

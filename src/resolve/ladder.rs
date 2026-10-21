@@ -1,5 +1,6 @@
 use crate::domain::{FileInfo, Interner, NO_NODE, NodeId, RefRole, Reference, Symbol};
 use lasso::Spur;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -88,13 +89,81 @@ impl<'a> IntoIterator for &'a CandBuffer {
     }
 }
 
+/// How a resolved call edge was bound, weakest evidence first so `max` keeps the strongest.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, Serialize, Deserialize,
+)]
+pub enum EdgeProv {
+    /// One arm of a call split across several definitions.
+    #[default]
+    Split,
+    /// Bound by the name alone: a same-directory or repository-wide match.
+    Name,
+    /// Bound by lexical evidence: the caller's own file or enclosing type defines it.
+    Local,
+    /// A type qualifier matched the definition's scope by its last segment only.
+    FinalSegment,
+    /// The qualifier is a module alias bound by an import of the definition's file.
+    Import,
+}
+
+impl EdgeProv {
+    #[must_use]
+    pub fn is_split(self) -> bool {
+        self == Self::Split
+    }
+
+    /// `prov=` value on a callee row; absent when the name or lexical scope bound it.
+    #[must_use]
+    pub fn callee_label(self) -> Option<&'static str> {
+        match self {
+            Self::Split => Some("split"),
+            Self::FinalSegment => Some("final-segment"),
+            Self::Import => Some("import"),
+            Self::Name | Self::Local => None,
+        }
+    }
+
+    /// True when only the name bound the edge (`via="name"`).
+    #[must_use]
+    pub fn is_by_name(self) -> bool {
+        self == Self::Name
+    }
+
+    /// Suffix on a caller row's `of_def=K`: split arm or bound by name alone.
+    #[must_use]
+    pub fn of_def_suffix(self) -> &'static str {
+        match self {
+            Self::Split => "~s",
+            Self::Name => "~n",
+            Self::Local | Self::FinalSegment | Self::Import => "",
+        }
+    }
+}
+
+/// Which evidence narrowed a reference's candidates before the precedence ladder ran.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Narrowing {
+    None,
+    CallerScope,
+    FinalSegment,
+    Import,
+}
+
 /// Resolved reference outcome with target nodes and per-target confidence.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResolvedRef {
     pub from: NodeId,
     pub targets: Vec<NodeId>,
     pub conf_per_target: f32,
-    pub is_ambiguous: bool,
+    pub prov: EdgeProv,
+}
+
+impl ResolvedRef {
+    #[must_use]
+    pub fn is_ambiguous(&self) -> bool {
+        self.prov.is_split()
+    }
 }
 
 /// Triage classification for a reference during call-graph resolution.
@@ -159,20 +228,39 @@ fn is_unique_global_group(cands: &[NodeId], symbols: &[Symbol]) -> bool {
     })
 }
 
+/// Precedence-ladder rung that chose a reference's targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tier {
+    SameFile,
+    SameDir,
+    Global,
+}
+
+impl Tier {
+    #[must_use]
+    pub fn confidence(self) -> f32 {
+        match self {
+            Self::SameFile => 1.0,
+            Self::SameDir => 0.5,
+            Self::Global => 0.2,
+        }
+    }
+}
+
 pub fn select_precedence_tier(
     cands: &[NodeId],
     caller_file_id: u32,
     caller_dir_id: u32,
     symbols: &[Symbol],
     file_dirs: &[u32],
-) -> Option<(Vec<NodeId>, f32)> {
+) -> Option<(Vec<NodeId>, Tier)> {
     let same_file: Vec<NodeId> = cands
         .iter()
         .copied()
         .filter(|&id| symbols[id as usize].file_id == caller_file_id)
         .collect();
     if !same_file.is_empty() {
-        return Some((same_file, 1.0));
+        return Some((same_file, Tier::SameFile));
     }
 
     let same_dir: Vec<NodeId> = cands
@@ -181,10 +269,10 @@ pub fn select_precedence_tier(
         .filter(|&id| file_dirs.get(symbols[id as usize].file_id as usize) == Some(&caller_dir_id))
         .collect();
     if !same_dir.is_empty() {
-        return (same_dir.len() <= 4).then_some((same_dir, 0.5));
+        return (same_dir.len() <= 4).then_some((same_dir, Tier::SameDir));
     }
 
-    is_unique_global_group(cands, symbols).then(|| (cands.to_vec(), 0.2))
+    is_unique_global_group(cands, symbols).then(|| (cands.to_vec(), Tier::Global))
 }
 
 fn is_method_std_member_blocked<L: ResolutionLookup + ?Sized>(
@@ -308,6 +396,18 @@ pub fn index_module_qualifiers(
     maps
 }
 
+fn edge_prov(target_count: usize, narrowing: Narrowing, tier: Tier) -> EdgeProv {
+    if target_count > 1 {
+        return EdgeProv::Split;
+    }
+    match (narrowing, tier) {
+        (Narrowing::Import, _) => EdgeProv::Import,
+        (Narrowing::FinalSegment, _) => EdgeProv::FinalSegment,
+        (Narrowing::CallerScope, _) | (Narrowing::None, Tier::SameFile) => EdgeProv::Local,
+        (Narrowing::None, Tier::SameDir | Tier::Global) => EdgeProv::Name,
+    }
+}
+
 fn is_non_table_read_write(r: &Reference) -> bool {
     matches!(r.role, RefRole::Read | RefRole::Write)
         && !r.lang.semantics().is_table_read_write_target()
@@ -318,6 +418,9 @@ fn classify_rejected_with_interner(r: &Reference, interner: &Interner) -> RefOut
         .and_then(|q| interner.try_resolve(&q))
         .is_some_and(|qs| r.lang.semantics().is_std_or_builtin_qualifier(qs))
     {
+        return RefOutcome::External;
+    }
+    if r.qualifier.is_some() && r.lang.semantics().qualifier_must_be_indexed() {
         return RefOutcome::External;
     }
     if interner
@@ -384,23 +487,35 @@ pub trait ResolutionLookup {
     /// Candidates a qualified reference can mean: those scoped by the qualifier, else those in the module
     /// file the qualifier is bound to by an import, else all of them unless the qualifier is std/builtin.
     #[must_use]
-    fn narrow_by_qualifier(&self, cands: CandBuffer, r: &Reference, q: Spur) -> Option<CandBuffer> {
+    fn narrow_by_qualifier(
+        &self,
+        cands: CandBuffer,
+        r: &Reference,
+        q: Spur,
+    ) -> Option<(CandBuffer, Narrowing)> {
         let symbols = self.symbols();
         let qualified = filter_matching_scope(&cands, symbols, q);
         if !qualified.is_empty() {
-            return Some(qualified);
+            let caller_scope = symbols.get(r.from_symbol as usize).and_then(|cs| cs.scope);
+            let narrowing = if caller_scope == Some(q) {
+                Narrowing::CallerScope
+            } else {
+                Narrowing::FinalSegment
+            };
+            return Some((qualified, narrowing));
         }
         if let Some(module_file) = self.qualifier_module_file(r.file_id, q) {
             let in_module = filter_in_file(&cands, symbols, module_file);
             if !in_module.is_empty() {
-                return Some(in_module);
+                return Some((in_module, Narrowing::Import));
             }
         }
         let is_std_qual = self
             .interner()
             .and_then(|i| i.try_resolve(&q))
             .is_some_and(|qs| r.lang.semantics().is_std_or_builtin_qualifier(qs));
-        (!is_std_qual).then_some(cands)
+        (!is_std_qual && !r.lang.semantics().qualifier_must_be_indexed())
+            .then_some((cands, Narrowing::None))
     }
 
     #[must_use]
@@ -408,7 +523,7 @@ pub trait ResolutionLookup {
         &self,
         cands: CandBuffer,
         r: &Reference,
-    ) -> Option<CandBuffer> {
+    ) -> Option<(CandBuffer, Narrowing)> {
         let symbols = self.symbols();
         if let Some(q) = r.qualifier {
             return self.narrow_by_qualifier(cands, r, q);
@@ -416,14 +531,18 @@ pub trait ResolutionLookup {
         if let Some(caller_sc) = symbols.get(r.from_symbol as usize).and_then(|cs| cs.scope) {
             let qualified = filter_matching_scope(&cands, symbols, caller_sc);
             if !qualified.is_empty() {
-                return Some(qualified);
+                return Some((qualified, Narrowing::CallerScope));
             }
         }
-        Some(cands)
+        Some((cands, Narrowing::None))
     }
 
     #[must_use]
-    fn filter_ref_candidates(&self, all_cands: &[NodeId], r: &Reference) -> Option<CandBuffer> {
+    fn filter_ref_candidates(
+        &self,
+        all_cands: &[NodeId],
+        r: &Reference,
+    ) -> Option<(CandBuffer, Narrowing)> {
         let symbols = self.symbols();
         let mut cands = CandBuffer::default();
         for &id in all_cands {
@@ -450,14 +569,14 @@ pub trait ResolutionLookup {
     }
 
     #[must_use]
-    fn select_interface_contract_tier(&self, cands: &[NodeId]) -> Option<(Vec<NodeId>, f32)> {
+    fn select_interface_contract_tier(&self, cands: &[NodeId]) -> Option<(Vec<NodeId>, Tier)> {
         let symbols = self.symbols();
         let iface_cands: Vec<NodeId> = cands
             .iter()
             .copied()
             .filter(|&id| self.is_interface_scoped_method(&symbols[id as usize]))
             .collect();
-        is_unique_global_group(&iface_cands, symbols).then_some((iface_cands, 0.2))
+        is_unique_global_group(&iface_cands, symbols).then_some((iface_cands, Tier::Global))
     }
 
     #[must_use]
@@ -484,7 +603,7 @@ pub trait ResolutionLookup {
         let Some(all_cands) = self.by_name().get(&r.callee_name) else {
             return RefOutcome::External;
         };
-        let Some(cands) = self.filter_ref_candidates(all_cands, r) else {
+        let Some((cands, narrowing)) = self.filter_ref_candidates(all_cands, r) else {
             return classify_rejected_candidates(r, self.interner());
         };
         let caller_file_id = r.file_id;
@@ -493,7 +612,7 @@ pub trait ResolutionLookup {
             .get(caller_file_id as usize)
             .copied()
             .unwrap_or(u32::MAX);
-        let Some((tier, conf)) = select_precedence_tier(
+        let Some((tier_targets, tier)) = select_precedence_tier(
             &cands,
             caller_file_id,
             caller_dir_id,
@@ -507,20 +626,20 @@ pub trait ResolutionLookup {
                 RefOutcome::Declined
             };
         };
-        let real_targets: Vec<NodeId> = tier
+        let real_targets: Vec<NodeId> = tier_targets
             .into_iter()
             .filter(|&target| target != r.from_symbol)
             .collect();
         if real_targets.is_empty() {
             return RefOutcome::Ignored;
         }
-        let is_ambiguous = real_targets.len() > 1;
-        let conf_per_target = conf / (real_targets.len() as f32);
+        let prov = edge_prov(real_targets.len(), narrowing, tier);
+        let conf_per_target = tier.confidence() / (real_targets.len() as f32);
         RefOutcome::Resolved(ResolvedRef {
             from: r.from_symbol,
             targets: real_targets,
             conf_per_target,
-            is_ambiguous,
+            prov,
         })
     }
 }

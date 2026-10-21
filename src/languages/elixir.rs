@@ -1,4 +1,6 @@
-use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode};
+use super::{
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, VisibilityMode,
+};
 use crate::domain::SymKind;
 
 pub struct ElixirLanguage;
@@ -237,7 +239,25 @@ fn is_elixir_attr_def_allowed(dn: tree_sitter::Node<'_>, ctx: &DefCaptureGateCon
         .is_some_and(|t| ELIXIR_TYPED_ATTRS.contains(&t))
 }
 
+// `if`/`case`/`cond` are plain `call` nodes in this grammar, so only their clause nodes are visible.
+const KINDS: ComplexityKinds = ComplexityKinds {
+    paths: &["stab_clause"],
+    flat: &["rescue_block", "catch_block"],
+    nesting: &[],
+    nest_only: &[],
+    else_kinds: &["else_block"],
+    else_bodies: &[],
+    jumps: &[],
+    logical_nodes: &[],
+    binary_nodes: &["binary_operator"],
+    logical_ops: &["&&", "||", "and", "or"],
+};
+
 impl LanguageSemantics for ElixirLanguage {
+    fn complexity_kinds(&self) -> &'static ComplexityKinds {
+        &KINDS
+    }
+
     fn tag(&self) -> &'static str {
         "ex"
     }

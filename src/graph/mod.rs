@@ -8,9 +8,17 @@ pub use mermaid::generate_mermaid_diagram;
 
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::rank::{PageRankConfig, PageRankResult, page_rank, uniform_teleport};
-use crate::resolve::{ResolutionResult, resolve_all_references};
+use crate::resolve::{EdgeProv, ResolutionResult, resolve_all_references};
 use csr::build_in_edges_csr;
 use serde::{Deserialize, Serialize};
+
+/// One outgoing call edge with its resolution provenance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CalleeEdge {
+    pub to: NodeId,
+    pub weight: f32,
+    pub prov: EdgeProv,
+}
 
 /// The resolved repository call graph.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -20,7 +28,7 @@ pub struct Graph {
     pub out_offsets: Vec<u32>,
     pub out_targets: Vec<NodeId>,
     pub out_weights: Vec<f32>,
-    pub out_split: Vec<bool>,
+    pub out_prov: Vec<EdgeProv>,
     pub amb_out: Vec<u32>,
     #[serde(default)]
     pub unresolved: usize,
@@ -67,23 +75,24 @@ impl Graph {
     }
 
     pub fn callees(&self, node: NodeId) -> impl Iterator<Item = (NodeId, f32)> + '_ {
-        self.callees_with_prov(node).map(|(id, w, _)| (id, w))
+        self.callee_edges(node).map(|e| (e.to, e.weight))
     }
 
-    pub fn callees_with_prov(
-        &self,
-        node: NodeId,
-    ) -> impl Iterator<Item = (NodeId, f32, bool)> + '_ {
+    pub fn callee_edges(&self, node: NodeId) -> impl Iterator<Item = CalleeEdge> + '_ {
         let n = node as usize;
         let start = self.out_offsets[n] as usize;
         let end = self.out_offsets[n + 1] as usize;
-        (start..end).map(move |i| {
-            (
-                self.out_targets[i],
-                self.out_weights[i],
-                self.out_split.get(i).copied().unwrap_or(false),
-            )
+        (start..end).map(move |i| CalleeEdge {
+            to: self.out_targets[i],
+            weight: self.out_weights[i],
+            prov: self.out_prov.get(i).copied().unwrap_or(EdgeProv::Local),
         })
+    }
+
+    /// Provenance of the `from -> to` edge, if the graph has one.
+    #[must_use]
+    pub fn edge_prov(&self, from: NodeId, to: NodeId) -> Option<EdgeProv> {
+        self.callee_edges(from).find(|e| e.to == to).map(|e| e.prov)
     }
 
     #[must_use]
@@ -184,12 +193,12 @@ impl Graph {
 
     #[must_use]
     pub fn from_resolution(node_count: usize, resolution: ResolutionResult) -> Self {
-        let mut edges: Vec<(NodeId, NodeId, f32, bool)> = resolution
+        let mut edges: Vec<(NodeId, NodeId, f32, EdgeProv)> = resolution
             .edge_accumulators
             .into_iter()
             .map(|((from, to), acc)| {
                 let w = (acc.conf_sum / acc.n_ref as f32) * (acc.n_ref as f32).sqrt();
-                (from, to, w.min(8.0), acc.is_split)
+                (from, to, w.min(8.0), acc.prov)
             })
             .collect();
 
@@ -206,7 +215,7 @@ impl Graph {
             out_offsets: out.offsets,
             out_targets: out.targets,
             out_weights: out.weights,
-            out_split: out.split,
+            out_prov: out.prov,
             amb_out: resolution.amb_out,
             unresolved: resolution.unresolved,
             external: resolution.external,
@@ -300,11 +309,11 @@ struct OutEdges {
     offsets: Vec<u32>,
     targets: Vec<NodeId>,
     weights: Vec<f32>,
-    split: Vec<bool>,
+    prov: Vec<EdgeProv>,
     w_out_deg: Vec<f64>,
 }
 
-fn build_out_edges(node_count: usize, edges: &[(NodeId, NodeId, f32, bool)]) -> OutEdges {
+fn build_out_edges(node_count: usize, edges: &[(NodeId, NodeId, f32, EdgeProv)]) -> OutEdges {
     let mut out_offsets = vec![0u32; node_count + 1];
     for &(from, _, _, _) in edges {
         out_offsets[from as usize + 1] += 1;
@@ -315,16 +324,16 @@ fn build_out_edges(node_count: usize, edges: &[(NodeId, NodeId, f32, bool)]) -> 
 
     let mut out_targets = vec![0u32; edges.len()];
     let mut out_weights = vec![0.0f32; edges.len()];
-    let mut out_split = vec![false; edges.len()];
+    let mut out_prov = vec![EdgeProv::Local; edges.len()];
     let mut w_out_deg = vec![0.0f64; node_count];
     let mut cur = out_offsets[0..node_count].to_vec();
 
-    for &(from, to, w, is_split) in edges {
+    for &(from, to, w, prov) in edges {
         let pos = cur[from as usize] as usize;
         cur[from as usize] += 1;
         out_targets[pos] = to;
         out_weights[pos] = w;
-        out_split[pos] = is_split;
+        out_prov[pos] = prov;
         w_out_deg[from as usize] += w as f64;
     }
 
@@ -332,7 +341,7 @@ fn build_out_edges(node_count: usize, edges: &[(NodeId, NodeId, f32, bool)]) -> 
         offsets: out_offsets,
         targets: out_targets,
         weights: out_weights,
-        split: out_split,
+        prov: out_prov,
         w_out_deg,
     }
 }

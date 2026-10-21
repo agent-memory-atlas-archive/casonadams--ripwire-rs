@@ -25,20 +25,13 @@ pub fn execute_navigate_with<W: Write>(
     if args.impact {
         return execute_nav_symbol_query_in_root(".", sym_name, NavMode::Impact, ctx, out);
     }
-    if (args.callers || args.callees)
-        && let Some(nav) = crate::navigate::navigate_1hop_multi(
-            &ids,
-            ctx.ingest,
-            ctx.graph,
-            ctx.ranks,
-            ctx.interner,
-        )
-    {
-        return if args.callers {
-            crate::navigate::serialize_callers_xml(sym_name, &nav.callers, out)
+    if args.callers || args.callees {
+        let mode = if args.callers {
+            NavMode::Callers
         } else {
-            crate::navigate::serialize_callees_xml(sym_name, &nav.callees, out)
+            NavMode::Callees
         };
+        return execute_nav_symbol_query_in_root(".", sym_name, mode, ctx, out);
     }
     if let Some(nav) =
         crate::navigate::navigate_1hop(ids[0], ctx.ingest, ctx.graph, ctx.ranks, ctx.interner)
