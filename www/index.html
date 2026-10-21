@@ -94,8 +94,8 @@
         </div>
         <div id="panel-dnf" class="install-panel">
           <div class="code-wrap">
-            <code>sudo dnf config-manager --add-repo https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo &amp;&amp; sudo dnf install ripwire-rs</code>
-            <button class="btn-copy" data-copy="sudo dnf config-manager --add-repo https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo &amp;&amp; sudo dnf install ripwire-rs">Copy</button>
+            <code>curl -fsSL https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo | sudo tee /etc/yum.repos.d/casonadams.repo &amp;&amp; sudo dnf install ripwire-rs</code>
+            <button class="btn-copy" data-copy="curl -fsSL https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo | sudo tee /etc/yum.repos.d/casonadams.repo &amp;&amp; sudo dnf install ripwire-rs">Copy</button>
           </div>
         </div>
         <div id="panel-cargo" class="install-panel">

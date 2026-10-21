@@ -27,6 +27,12 @@ echo "deb [trusted=yes] https://casonadams.github.io/homebrew-tap/apt stable mai
 sudo apt update && sudo apt install ripwire-rs
 ```
 
+Upgrade to the latest release:
+
+```bash
+sudo apt update && sudo apt upgrade ripwire-rs
+```
+
 Or download a standalone `.deb` asset directly from [GitHub Releases](https://github.com/casonadams/ripwire-rs/releases/latest):
 
 ```bash
@@ -41,8 +47,14 @@ sudo dpkg -i ripwire-rs_*_amd64.deb
 Add the RPM repository and install `ripwire-rs`:
 
 ```bash
-sudo dnf config-manager --add-repo https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo
+curl -fsSL https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo | sudo tee /etc/yum.repos.d/casonadams.repo
 sudo dnf install ripwire-rs
+```
+
+Upgrade to the latest release:
+
+```bash
+sudo dnf upgrade --refresh ripwire-rs
 ```
 
 ---

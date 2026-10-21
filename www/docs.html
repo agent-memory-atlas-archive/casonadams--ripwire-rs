@@ -125,7 +125,7 @@
 sudo apt update &amp;&amp; sudo apt install ripwire-rs</code></pre>
 
       <h3>DNF / RPM (Fedora, RHEL &amp; CentOS — x86_64 &amp; aarch64)</h3>
-      <pre><code>sudo dnf config-manager --add-repo https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo
+      <pre><code>curl -fsSL https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo | sudo tee /etc/yum.repos.d/casonadams.repo
 sudo dnf install ripwire-rs</code></pre>
 
       <h3>Cargo &amp; cargo-binstall</h3>

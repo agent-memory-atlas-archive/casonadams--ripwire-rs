@@ -208,6 +208,7 @@ jobs:
           /usr/bin/rw
           /usr/share/man/man1/ripwire-rs.1.gz
           /usr/share/man/man1/rw.1.gz
+          EOF
           sed -i 's/^          //' "$rpm_top/SPECS/ripwire-rs.spec"
           rpmbuild -bb --target "$rpm_arch" --define "_topdir $rpm_top" "$rpm_top/SPECS/ripwire-rs.spec"
           rpm_file="ripwire-rs-${version}-1.${rpm_arch}.rpm"

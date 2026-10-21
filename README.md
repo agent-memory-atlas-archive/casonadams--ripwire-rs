@@ -33,7 +33,7 @@ echo "deb [trusted=yes] https://casonadams.github.io/homebrew-tap/apt stable mai
 sudo apt update && sudo apt install ripwire-rs
 
 # Fedora, RHEL & CentOS (DNF / RPM)
-sudo dnf config-manager --add-repo https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo
+curl -fsSL https://casonadams.github.io/homebrew-tap/rpm/casonadams.repo | sudo tee /etc/yum.repos.d/casonadams.repo
 sudo dnf install ripwire-rs
 
 # Rust (prebuilt binary via cargo-binstall, or compile from source)
