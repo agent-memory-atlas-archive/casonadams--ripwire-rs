@@ -151,13 +151,13 @@ class WorkerService {
   }
 }
 "#;
-    let html_code = b"<html><body><div id=\"app\"><span>text</span></div></body></html>";
+    let json_code = b"{\"name\": \"test\"}";
     let ingest = ingest_in_memory_files(
         &[
             ("src/domain/outcomes.dart", Lang::Dart, shapes_code),
             ("src/api/controller.dart", Lang::Dart, ctrl_code),
             ("src/service/worker.dart", Lang::Dart, svc_code),
-            ("src/views/template.html", Lang::Html, html_code),
+            ("src/views/manifest.json", Lang::Json, json_code),
         ],
         &reg,
         &interner,

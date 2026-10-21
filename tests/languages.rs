@@ -5,10 +5,8 @@ mod languages {
     mod cobol;
     mod cpp;
     mod csharp;
-    mod css;
     mod cuda;
     mod dart;
-    mod dockerfile;
     mod elixir;
     mod erlang;
     mod fortran;
@@ -17,7 +15,6 @@ mod languages {
     mod graphql;
     mod harness;
     mod hcl;
-    mod html;
     mod java;
     mod javascript;
     mod json;

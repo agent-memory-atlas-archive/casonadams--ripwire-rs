@@ -37,10 +37,8 @@ pub mod c;
 pub mod cobol;
 pub mod cpp;
 pub mod csharp;
-pub mod css;
 pub mod cuda;
 pub mod dart;
-pub mod dockerfile;
 pub mod elixir;
 pub mod erlang;
 pub mod fortran;
@@ -48,7 +46,6 @@ pub mod gdscript;
 pub mod go;
 pub mod graphql;
 pub mod hcl;
-pub mod html;
 pub mod java;
 pub mod javascript;
 pub mod json;
@@ -529,7 +526,7 @@ impl LanguageSemantics for UnknownLanguage {
     }
 }
 
-pub const ALL_LANGS: [Lang; 39] = [
+pub const ALL_LANGS: [Lang; 36] = [
     Lang::Rust,
     Lang::TypeScript,
     Lang::JavaScript,
@@ -559,19 +556,16 @@ pub const ALL_LANGS: [Lang; 39] = [
     Lang::Hcl,
     Lang::Scala,
     Lang::Erlang,
-    Lang::Html,
-    Lang::Css,
     Lang::Sql,
     Lang::Proto,
     Lang::Graphql,
-    Lang::Dockerfile,
     Lang::ObjC,
     Lang::BrightScript,
     Lang::Fortran,
     Lang::Cobol,
 ];
 
-static SEMANTICS_TABLE: [&dyn LanguageSemantics; 40] = [
+static SEMANTICS_TABLE: [&dyn LanguageSemantics; 37] = [
     &rust::RUST_LANG,
     &typescript::TYPESCRIPT_LANG,
     &javascript::JAVASCRIPT_LANG,
@@ -601,12 +595,9 @@ static SEMANTICS_TABLE: [&dyn LanguageSemantics; 40] = [
     &hcl::HCL_LANG,
     &scala::SCALA_LANG,
     &erlang::ERLANG_LANG,
-    &html::HTML_LANG,
-    &css::CSS_LANG,
     &sql::SQL_LANG,
     &proto::PROTO_LANG,
     &graphql::GRAPHQL_LANG,
-    &dockerfile::DOCKERFILE_LANG,
     &objc::OBJC_LANG,
     &brightscript::BRIGHTSCRIPT_LANG,
     &fortran::FORTRAN_LANG,

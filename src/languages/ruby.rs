@@ -108,7 +108,7 @@ impl LanguageSemantics for RubyLanguage {
     fn std_member_names(&self) -> &'static [&'static str] {
         RUBY_STD_MEMBERS
     }
-    super::impl_grammar_method!(ffi tree_sitter_ruby, include_str!("../queries/ruby/tags.scm"));
+    super::impl_grammar_method!(crate tree_sitter_ruby::LANGUAGE, "../queries/ruby/tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {
         &["rb", "rake", "jbuilder"]

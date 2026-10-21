@@ -4,7 +4,7 @@ High-throughput agent context router and deterministic static analysis engine.
 
 Rust port and rewrite of [redhat-et/ripwire](https://github.com/redhat-et/ripwire), originally created and authored by David Brewster at Red Hat Emerging Technologies.
 
-`ripwire-rs` analyzes source code across 39 languages to construct precise call graphs, calculate symbol impact via PageRank and HITS, mine co-change patterns, slice intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a standalone CLI or as a Model Context Protocol (MCP) server over stdio for AI coding agents.
+`ripwire-rs` analyzes source code across 36 languages to construct precise call graphs, calculate symbol impact via PageRank and HITS, mine co-change patterns, slice intra-procedural dataflow, and enforce pre-commit quality gates. It runs as a standalone CLI or as a Model Context Protocol (MCP) server over stdio for AI coding agents.
 
 
 > **100% Local & Zero Telemetry**: `ripwire-rs` is an offline-by-design, security-first static analysis engine. It contains **zero network calls, zero telemetry, zero analytics, and zero model training**. Your source code never leaves your machine. It purely extracts local AST context, call graphs, and metrics, piping structured XML/JSON to stdout or stdio MCP for whichever agent harness or workflow engine *you* choose to run. Automated secret redaction is enabled by default.
@@ -17,7 +17,7 @@ Built for **maximum intelligence in the smallest token footprint**:
 - **Present-Only Serialization**: Omits zero/unit default attributes (`ccx="0"`, `in="0"`, `churn="1"`) and places pagination window metadata (`shown=`, `total=`, `capped=`, `next=`) once on the root element.
 - **Noise-Free Ranking**: Filters out non-callable noise, test/fixture helpers, language builtins, and prose backticks before ranking; partitions unresolvable calls into `unresolved`, `external`, and `declined`.
 - **Actionable Context in One Turn**: Bundles top implementation bodies, resolved callee signatures (`<calls>`), architectural layer tags (`layer=`), and causal def-use slices (`--slice`) directly into responses.
-- **Sub-50ms Zero-Buffer Pipeline**: Interned `Spur`/`NodeId` tables, contiguous CSR graphs, in-process `gix` history walking, and direct `io::Write` XML/JSON streaming across 39 Tree-Sitter languages (with automatic embedded SQL table lineage).
+- **Sub-50ms Zero-Buffer Pipeline**: Interned `Spur`/`NodeId` tables, contiguous CSR graphs, in-process `gix` history walking, and direct `io::Write` XML/JSON streaming across 36 Tree-Sitter languages (with automatic embedded SQL table lineage).
 - **100% Local & Zero Telemetry**: Offline-by-design. Zero network calls, zero tracking, zero model training, and zero data leakage. Code never leaves your workstation; `ripwire-rs` purely extracts AST context and feeds it to your chosen local or remote agent harness. Secret redaction is enabled by default.
 
 ---

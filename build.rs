@@ -30,20 +30,12 @@ fn main() {
     );
 
     let grammars: &[(&str, &[&str], &[&str])] = &[
-        ("elixir", &["parser.c", "scanner.c"], &[]),
         ("dart", &["parser.c", "scanner.c"], &[]),
         ("kotlin", &["parser.c", "scanner.c"], &[]),
-        ("ruby", &["parser.c", "scanner.c"], &[]),
         ("php", &["parser.c", "scanner.c"], &["common"]),
-        ("lua", &["parser.c", "scanner.c"], &[]),
         ("gdscript", &["parser.c", "scanner.c"], &[]),
-        ("json", &["parser.c"], &[]),
         ("toml", &["parser.c", "scanner.c"], &[]),
-        ("yaml", &["parser.c", "scanner.c", "schema.core.c"], &[]),
         ("markdown", &["parser.c", "scanner.c"], &[]),
-        ("proto", &["parser.c"], &[]),
-        ("graphql", &["parser.c"], &[]),
-        ("dockerfile", &["parser.c", "scanner.c"], &[]),
         ("sql", &["parser.c", "scanner.c"], &[]),
         ("brightscript", &["parser.c"], &[]),
         ("cobol", &["parser.c", "scanner.c"], &[]),

@@ -8,7 +8,7 @@ impl LanguageSemantics for JsonLanguage {
     fn tag(&self) -> &'static str {
         "json"
     }
-    super::impl_grammar_method!(ffi tree_sitter_json, include_str!("../queries/json/tags.scm"));
+    super::impl_grammar_method!(crate tree_sitter_json::LANGUAGE, "../queries/json/tags.scm");
 
     fn display_color(&self) -> &'static str {
         "#292929"

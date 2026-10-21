@@ -14,7 +14,7 @@ thread_local! {
 pub struct LanguageRegistry;
 
 impl LanguageRegistry {
-    /// Initialize registry with all supported 39 languages.
+    /// Initialize registry with all supported 36 languages.
     pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         Ok(Self)
     }

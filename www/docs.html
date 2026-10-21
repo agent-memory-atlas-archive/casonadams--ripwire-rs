@@ -146,7 +146,7 @@ cargo install ripwire-rs</code></pre>
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Parses the repository at <code>PATH</code> (defaults to current directory), builds the workspace call graph across 39 languages, executes Personalized PageRank, and streams ranked symbol definitions with incoming callers as canonical XML (bounded by <code>--top-k</code> symbol count or <code>--max-tokens</code> / <code>--pack-budget</code> streaming limits). Automatically caches compiled call graphs in <code>TMPDIR</code> for sub-second repeat queries (use <code>--no-cache</code> for cold parse).</p>
+            <p class="cmd-desc">Parses the repository at <code>PATH</code> (defaults to current directory), builds the workspace call graph across 36 languages, executes Personalized PageRank, and streams ranked symbol definitions with incoming callers as canonical XML (bounded by <code>--top-k</code> symbol count or <code>--max-tokens</code> / <code>--pack-budget</code> streaming limits). Automatically caches compiled call graphs in <code>TMPDIR</code> for sub-second repeat queries (use <code>--no-cache</code> for cold parse).</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
@@ -489,7 +489,7 @@ cargo install ripwire-rs</code></pre>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
-            <p class="cmd-desc">Zero extra flags required. During standard AST ingestion across all 39 languages, string literals containing SQL DML (<code>SELECT ... FROM</code>, <code>JOIN</code>, <code>INSERT INTO</code>, <code>UPDATE</code>, <code>DELETE FROM</code>) automatically emit <code>RefRole::Read</code> and <code>RefRole::Write</code> references attributed to the enclosing function or method, resolving directly to <code>.sql</code> table definitions in the workspace graph.</p>
+            <p class="cmd-desc">Zero extra flags required. During standard AST ingestion across all 36 languages, string literals containing SQL DML (<code>SELECT ... FROM</code>, <code>JOIN</code>, <code>INSERT INTO</code>, <code>UPDATE</code>, <code>DELETE FROM</code>) automatically emit <code>RefRole::Read</code> and <code>RefRole::Write</code> references attributed to the enclosing function or method, resolving directly to <code>.sql</code> table definitions in the workspace graph.</p>
             <p class="cmd-desc">Python, JavaScript/TypeScript, and Rust also index bare non-local variable reads, excluding bindings, writes, labels, and lexical shadows. Grep's <code>reads</code> and <code>reads_at</code> use these references rather than text estimates; unsupported binding forms remain evidence floors.</p>
           </div>
           <div class="cmd-field">

@@ -67,20 +67,25 @@ tree-sitter-solidity = "1.2"
 tree-sitter-hcl = "1.1"
 tree-sitter-scala = "0.25.1"
 tree-sitter-erlang = "0.21.0"
-tree-sitter-html = "0.23"
-tree-sitter-css = "0.25"
 tree-sitter-objc = "3.0.2"
 tree-sitter-fortran = "0.6.0"
+tree-sitter-ruby = "0.23.1"
+tree-sitter-json = "0.24.8"
+tree-sitter-yaml = "0.7.2"
+tree-sitter-lua = "0.5.0"
+tree-sitter-graphql = "0.3.0"
+tree-sitter-proto = "0.6.0"
+tree-sitter-elixir = "0.3.5"
 
 [build-dependencies]
 cc = "1.7.0"
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = "fat"
 codegen-units = 1
-debug = false
 strip = true
+panic = "abort"
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.{ archive-format }"

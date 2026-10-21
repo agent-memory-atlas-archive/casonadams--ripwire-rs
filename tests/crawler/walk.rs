@@ -14,7 +14,7 @@ fn test_crawl_deterministic_and_denylist() {
         ("src/unknown.xyz", 10, false),
         ("binary.rs", 10, true),
         ("empty.rs", 0, false),
-        ("Dockerfile", 20, false),
+        ("Cargo.toml", 20, false),
     ];
 
     let opts = CrawlerOptions::default();
@@ -26,8 +26,8 @@ fn test_crawl_deterministic_and_denylist() {
     files.sort_by(|a, b| a.rel_path.as_bytes().cmp(b.rel_path.as_bytes()));
 
     assert_eq!(files.len(), 3);
-    assert_eq!(files[0].rel_path, "Dockerfile");
-    assert_eq!(files[0].lang, Lang::Dockerfile);
+    assert_eq!(files[0].rel_path, "Cargo.toml");
+    assert_eq!(files[0].lang, Lang::Toml);
     assert_eq!(files[1].rel_path, "src/a.rs");
     assert_eq!(files[2].rel_path, "src/b.rs");
     assert_eq!(files[1].lang, Lang::Rust);
