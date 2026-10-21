@@ -8,5 +8,6 @@ mod gate {
     mod merge_scout;
     mod pr_context;
     mod quality_delta;
+    mod script_gates;
     mod seams;
 }

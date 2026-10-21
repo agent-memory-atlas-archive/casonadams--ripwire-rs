@@ -22,6 +22,8 @@ pub struct TestGateReport<'a> {
     pub untested_modscope: usize,
     pub run_first: usize,
     pub script_gates_unmodelled: usize,
+    pub script_gates_registered: usize,
+    pub script_gates_mapped: usize,
     pub page: crate::serialize::PageRequest,
     pub gauge_attrs: &'a str,
 }
@@ -42,7 +44,12 @@ fn write_test_gate_row<W: Write>(
         ""
     };
     let partner = if t.is_partner { " partner=\"1\"" } else { "" };
-    let hops = if (!t.is_partner && !t.is_direct_change) || t.hops > 0 {
+    let evidence = if t.script_literal {
+        " evidence=\"script_literal\""
+    } else {
+        ""
+    };
+    let hops = if (!t.is_partner && !t.is_direct_change && !t.script_literal) || t.hops > 0 {
         format!(" hops=\"{}\"", t.hops)
     } else {
         String::new()
@@ -50,7 +57,7 @@ fn write_test_gate_row<W: Write>(
     let run = t.run_attr();
     write!(
         out,
-        "<t p=\"{}\"{changed}{partner}{hops}{run}/>",
+        "<t p=\"{}\"{changed}{partner}{hops}{evidence}{run}/>",
         t.path.xml_escaped()
     )
 }
@@ -89,13 +96,16 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
             .unwrap_or("--situ");
         write!(
             out,
-            " changed=\"{}\" impacted=\"{}\" tests=\"{t_len}\" untested=\"{u_len}\" untested_modscope=\"{}\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{}\" untested_capped=\"{}\" script_gates_unmodelled=\"{}\" ccx_bar=\"15\"{run_first} {}{window_attrs} at=\"{}\" root=\"{}\" next=\"{}\"",
+            " changed=\"{}\" impacted=\"{}\" tests=\"{t_len}\" untested=\"{u_len}\" untested_modscope=\"{}\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{}\" untested_capped=\"{}\" script_gates_unmodelled=\"{}\" script_gates_registered=\"{}\" script_gates_mapped=\"{}\" script_gates_unresolved_dynamic=\"{}\" ccx_bar=\"15\"{run_first} {}{window_attrs} at=\"{}\" root=\"{}\" next=\"{}\"",
             self.changed,
             self.impacted,
             self.untested_modscope,
             win.shown,
             usize::from(win.capped),
             self.script_gates_unmodelled,
+            self.script_gates_registered,
+            self.script_gates_mapped,
+            self.script_gates_registered - self.script_gates_mapped,
             self.gauge_attrs,
             self.at_stamp.xml_escaped(),
             self.root.xml_escaped(),
@@ -139,6 +149,8 @@ pub fn serialize_test_gate_xml<W: Write>(
         untested_modscope: 0,
         run_first: usize::from(!tests.is_empty()),
         script_gates_unmodelled: 0,
+        script_gates_registered: 0,
+        script_gates_mapped: 0,
         page: crate::serialize::PageRequest::default(),
         gauge_attrs: crate::serialize::GraphGauges::ZERO_XML_ATTRS,
     }

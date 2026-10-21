@@ -15,6 +15,8 @@ pub struct AffectedTest {
     pub is_partner: bool,
     /// Shell command that runs this test, when its language's runner is derivable.
     pub run: Option<String>,
+    /// A registered shell gate that names a changed file by exact path.
+    pub script_literal: bool,
 }
 
 impl AffectedTest {
@@ -26,6 +28,7 @@ impl AffectedTest {
             is_direct_change,
             is_partner,
             run: None,
+            script_literal: false,
         }
     }
 

@@ -407,13 +407,13 @@ fn test_embedded_sql_binds_tables_only_and_skips_ctes() {
     let interner = Interner::new();
     let ingest = ingest_in_memory_files(
         &[
-            ("a.py", Lang::Python, b"members = []\ncounts = {}\n"),
+            ("a.py", Lang::Python, b"users = []\ntotals = {}\n"),
             (
                 "b.py",
                 Lang::Python,
-                b"def load():\n    return \"SELECT id FROM members WHERE id = 1\"\ndef tally():\n    return \"WITH counts AS (SELECT 1 AS n) SELECT n FROM counts\"\n",
+                b"def load():\n    return \"SELECT id FROM users WHERE id = 1\"\ndef tally():\n    return \"WITH totals AS (SELECT 1 AS n) SELECT n FROM totals\"\n",
             ),
-            ("schema.sql", Lang::Sql, b"CREATE TABLE members (id INT);\n"),
+            ("schema.sql", Lang::Sql, b"CREATE TABLE users (id INT);\n"),
         ],
         &reg,
         &interner,
@@ -429,9 +429,30 @@ fn test_embedded_sql_binds_tables_only_and_skips_ctes() {
         let nav = navigate_1hop(sym.id, &ingest, &graph, &ranks, &interner).unwrap();
         nav.callers.iter().map(|c| c.name.clone()).collect()
     };
-    assert_eq!(callers_of("members", Lang::Sql), ["load"]);
-    assert!(callers_of("members", Lang::Python).is_empty());
-    assert!(callers_of("counts", Lang::Python).is_empty());
+    assert_eq!(callers_of("users", Lang::Sql), ["load"]);
+    assert!(callers_of("users", Lang::Python).is_empty());
+    assert!(callers_of("totals", Lang::Python).is_empty());
+}
+
+#[test]
+fn test_definition_lines_use_each_language_tags_query() {
+    let cases: &[(&str, &[u8], &[u32])] = &[
+        (
+            "lib/widget.dart",
+            b"int parseValue(String s) {\n  return int.parse(s);\n}\nvoid use() { parseValue('1'); }\n",
+            &[1],
+        ),
+        ("app.py", b"x = parseValue\n\ndef parseValue():\n    pass\n", &[3]),
+        ("notes.md", b"See parseValue.\n# parseValue\n", &[2]),
+        ("blob.bin", b"parseValue", &[]),
+    ];
+    for &(path, src, want) in cases {
+        assert_eq!(
+            ripwire_rs::ingest::definition_lines(path, src, "parseValue"),
+            want,
+            "{path}"
+        );
+    }
 }
 
 #[test]

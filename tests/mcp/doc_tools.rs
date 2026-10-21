@@ -1,9 +1,9 @@
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::mcp::doc_tools::{
-    call_mentions_in_root, call_owners, call_stray_content, call_whereis, classify_code_line,
+    call_mentions_in_root, call_owners, call_stray_content, call_whereis,
     collect_file_wanted_tokens, conditional_uses, enrich_drift_item_history, extract_cmake_option,
     extract_env_identifiers, extract_settings_gate, filter_present_in_code_drift,
-    inspect_branch_stray, scan_doc_text_for_drift, should_scan_branch,
+    inspect_branch_stray, scan_doc_text_for_drift,
 };
 use ripwire_rs::{
     FileInfo, IngestResult, Interner, Lang, SymKind, Symbol, serialize_doc_drift_xml,
@@ -242,20 +242,6 @@ fn test_whereis_and_stray() {
     assert!(whereis_hist.get("history").is_some());
     let stray_res = call_stray_content(".");
     assert!(stray_res.get("head").is_some());
-}
-
-#[test]
-fn test_branch_grep_parsing() {
-    assert_eq!(classify_code_line("fn foo()"), "def");
-    assert_eq!(classify_code_line("pub fn bar()"), "def");
-    assert_eq!(classify_code_line("pub(crate) async fn baz()"), "def");
-    assert_eq!(classify_code_line("export async function qux()"), "def");
-    assert_eq!(classify_code_line("let x = foo();"), "ref");
-    assert!(should_scan_branch("feature-1", true));
-    assert!(!should_scan_branch("HEAD", true));
-    assert!(!should_scan_branch("", true));
-    assert!(!should_scan_branch("main", true));
-    assert!(should_scan_branch("main", false));
 }
 
 #[test]

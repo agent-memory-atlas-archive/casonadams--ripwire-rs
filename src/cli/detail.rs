@@ -154,45 +154,34 @@ pub fn execute_pack_top_n_query<W: Write>(
     crate::serialize::serialize_pack_top_n_xml(root, &bodies_slice, out)
 }
 
-pub fn execute_tree_query<W: Write>(
-    root: &str,
-    ingest: &IngestResult,
+/// One `--tree` row per file with symbols, files ordered by their best-ranked symbol.
+#[must_use]
+pub fn tree_file_symbols<'a>(
+    ingest: &'a IngestResult,
     pr: &PageRankResult,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
+    interner: &'a Interner,
+) -> Vec<crate::serialize::TreeFileSymbols<'a>> {
+    use crate::domain::CorpusView;
     let (file_order, buckets) = crate::serialize::bucket_symbols_by_rank(
         &ingest.symbols,
         ingest.files.len(),
         &pr.ranks,
         None,
     );
-
-    let mut file_symbols = Vec::new();
-    use crate::domain::CorpusView;
     let view = (ingest, interner);
-    for f in file_order {
-        let rel_path = view.file_path(f);
-        let bucket = &buckets[f as usize];
-        let mut top3 = Vec::new();
-        for &sym_id in bucket.iter().take(3) {
-            let sym = &ingest[sym_id];
-            top3.push((sym.kind.tag(), view.sym_name(sym)));
-        }
-        file_symbols.push(crate::serialize::TreeFileSymbols {
-            path: rel_path,
-            total_symbols: bucket.len(),
-            top_symbols: top3,
-        });
-    }
-
-    use crate::serialize::XmlReport;
-    let files_unlisted = ingest.files.len().saturating_sub(file_symbols.len());
-    crate::serialize::query_xml::TreeReport {
-        root,
-        file_symbols: &file_symbols,
-        files_unlisted,
-        pr_iters: pr.iterations,
-    }
-    .render_envelope(out)
+    file_order
+        .into_iter()
+        .map(|f| {
+            let bucket = &buckets[f as usize];
+            crate::serialize::TreeFileSymbols {
+                path: view.file_path(f),
+                total_symbols: bucket.len(),
+                top_symbols: bucket
+                    .iter()
+                    .take(3)
+                    .map(|&id| (ingest[id].kind.tag(), view.sym_name(&ingest[id])))
+                    .collect(),
+            }
+        })
+        .collect()
 }

@@ -24,6 +24,24 @@ pub fn parse_file_content(
     parse_file_tree(source_bytes, language, query, lang)
 }
 
+/// Lines where `name` is defined in `source_bytes`, by the tags query of `rel_path`'s language.
+#[must_use]
+pub fn definition_lines(rel_path: &str, source_bytes: &[u8], name: &str) -> Vec<u32> {
+    let lang = Lang::from_path(std::path::Path::new(rel_path));
+    let lang = lang
+        .semantics()
+        .refine_dialect(lang, rel_path, source_bytes);
+    let Some((language, query)) = LanguageRegistry.get(lang) else {
+        return Vec::new();
+    };
+    parse_file_content(source_bytes, language, query, lang, rel_path)
+        .defs
+        .into_iter()
+        .filter(|d| d.name == name)
+        .map(|d| d.line)
+        .collect()
+}
+
 /// Ingest crawled files in parallel and assemble IngestResult.
 pub fn ingest_crawled_files(
     files: &[CrawledFile],

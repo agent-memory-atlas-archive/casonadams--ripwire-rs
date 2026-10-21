@@ -453,7 +453,7 @@ pub fn resolve_head_sha<P: AsRef<Path>>(root: P) -> Option<String> {
 pub fn compute_git_at_stamp(root: &str) -> Option<String> {
     let full_id = resolve_head_sha(root)?;
     let short_sha = &full_id[..9.min(full_id.len())];
-    let dirty = !crate::cli::safety::get_working_tree_changed_files(root).is_empty();
+    let dirty = super::repo::is_dirty(root);
     Some(if dirty {
         format!("{short_sha}+dirty")
     } else {

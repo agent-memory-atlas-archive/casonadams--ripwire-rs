@@ -30,32 +30,74 @@ fn emit_whereis_history<W: Write>(out: &mut W, hist: &Value, sym: &str) -> io::R
     Ok(())
 }
 
-fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
+fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value, refs: usize) -> io::Result<()> {
     let ref_name = h.str_or("ref", "HEAD").xml_escaped();
-    let tip = h.str_or("tip", "").xml_escaped();
-    let date = h.str_or("date", "").xml_escaped();
+    let mut stamp = String::new();
+    for key in ["tip", "date"] {
+        if let Some(v) = h.opt_str(key).filter(|v| !v.is_empty()) {
+            stamp.push_str(&format!(" {key}=\"{}\"", v.xml_escaped()));
+        }
+    }
     let path = h.str_any(&["path", "file"], "").xml_escaped();
     let line = h.u64_or("line", 0);
     let kind = h.str_or("kind", "def");
+    let refs_attr = if refs > 1 {
+        format!(" refs=\"{refs}\"")
+    } else {
+        String::new()
+    };
     let text = h.str_or("text", "").xml_escaped();
     writeln!(
         out,
-        "  <hit ref=\"{ref_name}\" tip=\"{tip}\" date=\"{date}\" p=\"{path}\" l=\"{line}\" kind=\"{kind}\" t=\"{text}\"/>"
+        "  <hit ref=\"{ref_name}\"{stamp} p=\"{path}\" l=\"{line}\" kind=\"{kind}\"{refs_attr} t=\"{text}\"/>"
     )
 }
 
-fn count_folded_branch_defs(hits: &[Value]) -> usize {
-    let mut seen = std::collections::HashSet::new();
-    let mut folded = 0usize;
-    for h in hits {
-        if h.str_or("ref", "HEAD") != "HEAD" && h.str_or("kind", "ref") == "def" {
-            let key = (h.str_any(&["path", "file"], ""), h.str_or("text", ""));
-            if !seen.insert(key) {
-                folded += 1;
-            }
+/// Rows a `--whereis` listing prints: `(hit, refs holding the same line)`, plus the folded count.
+struct WhereisRows<'a> {
+    listed: Vec<(&'a Value, usize)>,
+    folded: usize,
+    ref_rows: usize,
+}
+
+fn whereis_rows<'a>(hits: &'a [Value], listing: &str) -> WhereisRows<'a> {
+    let is_ref = |h: &Value| h.str_or("kind", "ref") == "ref";
+    let ref_rows = hits.iter().filter(|h| is_ref(h)).count();
+    if listing != "defs" {
+        let listed = hits
+            .iter()
+            .filter(|h| listing == "all" || is_ref(h))
+            .map(|h| (h, 1))
+            .collect();
+        return WhereisRows {
+            listed,
+            folded: 0,
+            ref_rows,
+        };
+    }
+    let mut listed: Vec<(&Value, usize)> = Vec::new();
+    let mut first_by_line: std::collections::HashMap<(&str, &str), usize> =
+        std::collections::HashMap::new();
+    let mut folded = 0;
+    for h in hits.iter().filter(|h| !is_ref(h)) {
+        if h.str_or("ref", "HEAD") == "HEAD" {
+            listed.push((h, 1));
+            continue;
+        }
+        let key = (h.str_any(&["path", "file"], ""), h.str_or("text", ""));
+        if let Some(&i) = first_by_line.get(&key) {
+            listed[i].1 += 1;
+            folded += 1;
+        } else {
+            first_by_line.insert(key, listed.len());
+            listed.push((h, 1));
         }
     }
-    folded
+    WhereisRows {
+        listed,
+        folded,
+        ref_rows,
+    }
 }
 
 /// Serialize `whereis` branch symbol search to Ripwire XML.
@@ -63,53 +105,70 @@ pub struct WhereisReport<'a> {
     pub val: &'a Value,
 }
 
+impl WhereisReport<'_> {
+    fn hits(&self) -> &[Value] {
+        self.val
+            .array_any(&["hits", "locations"])
+            .map_or(&[], Vec::as_slice)
+    }
+
+    fn listing(&self) -> &str {
+        self.val.str_or("listing", "defs")
+    }
+}
+
 impl crate::serialize::XmlReport for WhereisReport<'_> {
     crate::xml_report_meta!("whereis", "ripwire-rs.whereis/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::PaginateSlice;
         let sym = escape_xml_str(self.val.str_or("symbol", ""));
-        let empty = Vec::new();
-        let hits = self.val.array_any(&["hits", "locations"]).unwrap_or(&empty);
-        let count = hits.len();
-        let (pw, _) = hits.paginate(60, None, None);
-        let page_attrs = pw.xml_attrs();
-        let on_head = self.val.u64_or("on_head", 1);
-        let refs_scanned = self.val.u64_or("refs_scanned", 0);
-        let blobs = self.val.u64_or("blobs", 0);
-        let at_val = self
-            .val
-            .opt_str("at")
-            .filter(|s| !s.is_empty())
-            .unwrap_or("HEAD");
-        let head_date = self.val.str_or("head_date", "2026-10-14");
-        let listing = self.val.str_or("listing", "defs");
-        let folded = count_folded_branch_defs(hits);
-        let folded_attr = if folded > 0 {
-            format!(" folded=\"{folded}\"")
+        let hits = self.hits();
+        let rows = whereis_rows(hits, self.listing());
+        let (pw, _) = rows.listed.paginate(60, None, None);
+        let folded_attr = if rows.folded > 0 {
+            format!(" folded=\"{}\"", rows.folded)
         } else {
             String::new()
         };
-        let ref_labels = self.val.str_or("ref_labels", "parsed");
-        let worktree = self.val.str_or("worktree", "read");
+        let head_date = self
+            .val
+            .opt_str("head_date")
+            .filter(|d| !d.is_empty())
+            .map_or_else(String::new, |d| format!(" head_date=\"{d}\""));
         write!(
             out,
-            " sym=\"{sym}\" on-head=\"{on_head}\" refs_scanned=\"{refs_scanned}\" blobs=\"{blobs}\" hits=\"{count}\" head_labels=\"index\"{page_attrs} listing=\"{listing}\"{folded_attr} ref_labels=\"{ref_labels}\" head_date=\"{head_date}\" at=\"{at_val}\" worktree=\"{worktree}\" complete=\"1\""
+            " sym=\"{sym}\" on-head=\"{}\" refs_scanned=\"{}\" blobs=\"{}\" hits=\"{}\" head_labels=\"index\"{} listing=\"{}\"{folded_attr} ref_labels=\"{}\"{head_date} at=\"{}\" worktree=\"{}\" complete=\"1\"",
+            self.val.u64_or("on_head", 1),
+            self.val.u64_or("refs_scanned", 0),
+            self.val.u64_or("blobs", 0),
+            hits.len(),
+            pw.xml_attrs(),
+            self.listing().xml_escaped(),
+            self.val.str_or("ref_labels", "parsed"),
+            self.val
+                .opt_str("at")
+                .filter(|s| !s.is_empty())
+                .unwrap_or("HEAD"),
+            self.val.str_or("worktree", "read"),
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        use crate::serialize::PaginateSlice;
         let sym = escape_xml_str(self.val.str_or("symbol", ""));
         if let Some(hist) = self.val.get("history").and_then(Value::as_object) {
-            let hist_val = Value::Object(hist.clone());
-            emit_whereis_history(out, &hist_val, &sym)?;
+            emit_whereis_history(out, &Value::Object(hist.clone()), &sym)?;
         }
-        if let Some(items) = self.val.array_any(&["hits", "locations"]) {
-            let shown = items.len().min(60);
-            for h in items.iter().take(shown) {
-                emit_whereis_hit(out, h)?;
-            }
-            if items.len() > shown {
-                writeln!(out, "  <more hits=\"{}\"/>", items.len() - shown)?;
-            }
+        let rows = whereis_rows(self.hits(), self.listing());
+        let (_, shown) = rows.listed.paginate(60, None, None);
+        for &(h, refs) in shown {
+            emit_whereis_hit(out, h, refs)?;
+        }
+        if self.listing() == "defs" && rows.ref_rows > 0 {
+            writeln!(
+                out,
+                "  <refs count=\"{}\" next=\"--whereis={sym} --whereis-listing=refs\"/>",
+                rows.ref_rows
+            )?;
         }
         Ok(())
     }
@@ -502,6 +561,7 @@ pub struct TreeReport<'a> {
     pub file_symbols: &'a [TreeFileSymbols<'a>],
     pub files_unlisted: usize,
     pub pr_iters: u32,
+    pub page: crate::serialize::PageRequest,
 }
 
 impl crate::serialize::XmlReport for TreeReport<'_> {
@@ -523,9 +583,8 @@ impl crate::serialize::XmlReport for TreeReport<'_> {
         )
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::PaginateSlice;
         let total_files = self.file_symbols.len() + self.files_unlisted;
-        let (pw, shown_slice) = self.file_symbols.paginate(80, None, None);
+        let (pw, shown_slice) = self.shown();
         let total_shown: usize = shown_slice.iter().map(|f| f.top_symbols.len()).sum();
         let symbols_capped = usize::from(
             shown_slice
@@ -533,8 +592,8 @@ impl crate::serialize::XmlReport for TreeReport<'_> {
                 .any(|f| f.total_symbols > f.top_symbols.len()),
         );
         let page_attrs = pw.xml_attrs();
-        let next_attr = if pw.capped {
-            format!(" next=\"--tree --offset={}\"", pw.shown)
+        let next_attr = if pw.has_more {
+            format!(" next=\"--tree --offset={}\"", pw.next_offset)
         } else {
             String::new()
         };
@@ -547,8 +606,7 @@ impl crate::serialize::XmlReport for TreeReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::PaginateSlice;
-        let (_, shown_slice) = self.file_symbols.paginate(80, None, None);
+        let (_, shown_slice) = self.shown();
         for f in shown_slice {
             write!(
                 out,
@@ -565,20 +623,12 @@ impl crate::serialize::XmlReport for TreeReport<'_> {
     }
 }
 
-pub fn serialize_tree_xml<W: Write>(
-    root: &str,
-    file_symbols: &[TreeFileSymbols<'_>],
-    pr_iters: u32,
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    TreeReport {
-        root,
-        file_symbols,
-        files_unlisted: 0,
-        pr_iters,
+impl TreeReport<'_> {
+    fn shown(&self) -> (crate::serialize::PageWindow, &[TreeFileSymbols<'_>]) {
+        use crate::serialize::PaginateSlice;
+        self.file_symbols
+            .paginate(80, self.page.limit, self.page.offset)
     }
-    .render_envelope(out)
 }
 
 /// Serialize `--pack-top-n` bodies to Ripwire XML.

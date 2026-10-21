@@ -8,7 +8,7 @@ use ripwire_rs::{
     serialize_from_trace_xml, serialize_grep_xml, serialize_lego_xml, serialize_mentions_xml,
     serialize_owners_xml, serialize_pack_top_n_xml, serialize_path_between_xml,
     serialize_recall_text, serialize_safe_delete_xml, serialize_stray_content_xml,
-    serialize_test_gate_xml, serialize_tree_xml, serialize_whereis_xml, serialize_xml_to_string,
+    serialize_test_gate_xml, serialize_whereis_xml, serialize_xml_to_string,
 };
 use serde_json::json;
 
@@ -314,13 +314,34 @@ fn test_query_xml_detail_ladder() {
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.expand/v1\""));
     buf.clear();
 
-    let tree_files = [TreeFileSymbols {
-        path: "src/main.rs",
-        total_symbols: 1,
-        top_symbols: vec![("fn", "run")],
-    }];
-    serialize_tree_xml(".", &tree_files, 16, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.tree/v1\""));
+    let tree_files: Vec<TreeFileSymbols> = ["src/a.rs", "src/b.rs", "src/c.rs"]
+        .into_iter()
+        .map(|path| TreeFileSymbols {
+            path,
+            total_symbols: 1,
+            top_symbols: vec![("fn", "run")],
+        })
+        .collect();
+    use ripwire_rs::serialize::XmlReport;
+    ripwire_rs::serialize::query_xml::TreeReport {
+        root: ".",
+        file_symbols: &tree_files,
+        files_unlisted: 0,
+        pr_iters: 16,
+        page: ripwire_rs::serialize::PageRequest {
+            limit: Some(1),
+            offset: Some(1),
+        },
+    }
+    .render_envelope(&mut buf)
+    .unwrap();
+    let xml = String::from_utf8_lossy(&buf).into_owned();
+    assert!(xml.contains("<file p=\"src/b.rs\""), "{xml}");
+    assert!(
+        !xml.contains("src/a.rs") && !xml.contains("src/c.rs"),
+        "{xml}"
+    );
+    assert!(xml.contains(" next=\"--tree --offset=2\""), "{xml}");
     buf.clear();
 
     serialize_pack_top_n_xml(".", &[("src/main.rs", "fn run() {}")], &mut buf).unwrap();

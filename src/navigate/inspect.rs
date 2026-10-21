@@ -20,7 +20,9 @@ pub fn resolve_symbol_chain_at<'a>(
         .iter()
         .filter(|sym| {
             let p = interner.resolve(&ingest.files[sym.file_id as usize].path);
-            (p == file_spec || p.ends_with(file_spec)) && symbol_spans_line(sym, line_num)
+            sym.kind != crate::domain::SymKind::ModuleScope
+                && (p == file_spec || p.ends_with(file_spec))
+                && symbol_spans_line(sym, line_num)
         })
         .collect();
     chain.sort_by_key(|s| (s.line, std::cmp::Reverse(s.loc)));

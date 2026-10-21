@@ -10,6 +10,7 @@ pub struct LineHit {
     pub path: String,
     pub line: usize,
     pub text: String,
+    pub blob: gix::ObjectId,
 }
 
 /// The commit `git log -S NEEDLE -1` would print.
@@ -46,16 +47,30 @@ pub fn workdir_prefix(repo: &gix::Repository, root: &str) -> Option<String> {
         format!("{rel}/")
     })
 }
+
 /// Paths of tracked files whose working-tree content differs from `HEAD` (`git diff --name-only HEAD`).
 #[must_use]
 pub fn working_tree_changes(root: &str) -> Vec<String> {
+    status_paths(root, gix::status::UntrackedFiles::None)
+}
+
+/// True when tracked files differ from `HEAD` or an untracked, non-ignored file exists (`+dirty`).
+#[must_use]
+pub fn is_dirty(root: &str) -> bool {
+    !status_paths(root, gix::status::UntrackedFiles::Files).is_empty()
+}
+
+fn status_paths(root: &str, untracked: gix::status::UntrackedFiles) -> Vec<String> {
+    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
+        return Vec::new();
+    }
     let Some(repo) = discover(root) else {
         return Vec::new();
     };
-    let Ok(iter) = repo.status(gix::progress::Discard).and_then(|s| {
-        s.untracked_files(gix::status::UntrackedFiles::None)
-            .into_iter(None)
-    }) else {
+    let Ok(iter) = repo
+        .status(gix::progress::Discard)
+        .and_then(|s| s.untracked_files(untracked).into_iter(None))
+    else {
         return Vec::new();
     };
     let mut files: Vec<String> = iter
@@ -104,9 +119,32 @@ pub fn head_ref(repo: &gix::Repository) -> String {
         .map_or_else(|| "HEAD".to_string(), |n| n.shorten().to_string())
 }
 
-/// Lines containing `needle` in the text blobs of `rev`'s tree, path-sorted (`git grep -n -F`).
+/// Per rev, the lines of its text blobs holding `word` as a whole identifier, path-sorted
+/// (`git grep -n -w -F`); a blob shared by several revs is read once.
 #[must_use]
-pub fn grep_rev(repo: &gix::Repository, rev: &str, needle: &str, limit: usize) -> Vec<LineHit> {
+pub fn grep_word_revs(repo: &gix::Repository, revs: &[String], word: &str) -> Vec<Vec<LineHit>> {
+    let mut by_blob: std::collections::HashMap<gix::ObjectId, Vec<(usize, String)>> =
+        std::collections::HashMap::new();
+    let mut per_rev = Vec::with_capacity(revs.len());
+    for rev in revs {
+        let mut hits = Vec::new();
+        for (path, oid) in sorted_blobs(repo, rev) {
+            let lines = by_blob
+                .entry(oid)
+                .or_insert_with(|| word_lines(repo, oid, word));
+            hits.extend(lines.iter().map(|(line, text)| LineHit {
+                path: path.clone(),
+                line: *line,
+                text: text.clone(),
+                blob: oid,
+            }));
+        }
+        per_rev.push(hits);
+    }
+    per_rev
+}
+
+fn sorted_blobs(repo: &gix::Repository, rev: &str) -> Vec<(String, gix::ObjectId)> {
     let Some(tree) = repo
         .rev_parse_single(rev)
         .ok()
@@ -118,38 +156,64 @@ pub fn grep_rev(repo: &gix::Repository, rev: &str, needle: &str, limit: usize) -
     if tree.traverse().breadthfirst(&mut recorder).is_err() {
         return Vec::new();
     }
-    let mut blobs: Vec<_> = recorder
+    let mut blobs: Vec<(String, gix::ObjectId)> = recorder
         .records
         .into_iter()
         .filter(|e| e.mode.is_blob())
+        .map(|e| (e.filepath.to_string(), e.oid))
         .collect();
-    blobs.sort_unstable_by(|a, b| a.filepath.cmp(&b.filepath));
-    let mut hits = Vec::new();
-    for entry in blobs {
-        let Ok(blob) = repo.find_blob(entry.oid) else {
-            continue;
-        };
-        if is_binary(&blob.data) {
-            continue;
-        }
-        for (idx, line) in blob.data.lines().enumerate() {
-            if line.find(needle).is_some() {
-                hits.push(LineHit {
-                    path: entry.filepath.to_string(),
-                    line: idx + 1,
-                    text: line.to_str_lossy().into_owned(),
-                });
-                if hits.len() == limit {
-                    return hits;
-                }
-            }
-        }
+    blobs.sort_unstable();
+    blobs
+}
+
+fn word_lines(repo: &gix::Repository, oid: gix::ObjectId, word: &str) -> Vec<(usize, String)> {
+    let Ok(blob) = repo.find_blob(oid) else {
+        return Vec::new();
+    };
+    if is_binary(&blob.data) || blob.data.find(word).is_none() {
+        return Vec::new();
     }
-    hits
+    blob.data
+        .lines()
+        .enumerate()
+        .filter_map(|(idx, line)| {
+            let text = line.to_str_lossy();
+            has_word(&text, word).then(|| (idx + 1, text.into_owned()))
+        })
+        .collect()
+}
+
+/// True when `word` occurs in `line` bounded by non-identifier characters.
+#[must_use]
+pub fn has_word(line: &str, word: &str) -> bool {
+    let is_ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let bytes = line.as_bytes();
+    !word.is_empty()
+        && line.match_indices(word).any(|(i, _)| {
+            let end = i + word.len();
+            (i == 0 || !is_ident(bytes[i - 1])) && (end == bytes.len() || !is_ident(bytes[end]))
+        })
 }
 
 fn is_binary(data: &[u8]) -> bool {
     data[..data.len().min(BINARY_PROBE_LEN)].contains(&0)
+}
+
+/// Short id and committer date (`YYYY-MM-DD`) of the commit `rev` names.
+#[must_use]
+pub fn commit_stamp(repo: &gix::Repository, rev: &str) -> Option<(String, String)> {
+    let commit = repo
+        .rev_parse_single(rev)
+        .ok()?
+        .object()
+        .ok()?
+        .peel_to_commit()
+        .ok()?;
+    let date = commit
+        .time()
+        .ok()?
+        .format_or_unix(gix::date::time::format::SHORT);
+    Some((short_id(commit.id), date))
 }
 
 /// Newest non-merge commit reachable from `HEAD` that changes how often `needle` occurs in a file.

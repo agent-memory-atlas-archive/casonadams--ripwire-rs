@@ -8,6 +8,7 @@ pub mod merge_scout;
 pub mod pr_context;
 pub mod quality_delta;
 pub mod runners;
+pub mod script_gates;
 pub mod seams;
 pub mod test_gate;
 pub use affected::{AffectedReport, AffectedTest, find_affected_tests, is_test_path};

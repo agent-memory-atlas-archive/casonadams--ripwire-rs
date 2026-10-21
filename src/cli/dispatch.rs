@@ -394,7 +394,19 @@ impl CliVerb for TopDetailArgs {
         } else if let Some(n) = self.pack_top_n {
             execute_pack_top_n_query(ctx.root, n, ctx.ingest, ctx.pr, ctx.interner, out)
         } else if self.tree {
-            execute_tree_query(ctx.root, ctx.ingest, ctx.pr, ctx.interner, out)
+            use crate::serialize::XmlReport;
+            let file_symbols = tree_file_symbols(ctx.ingest, ctx.pr, ctx.interner);
+            crate::serialize::query_xml::TreeReport {
+                root: ctx.root,
+                files_unlisted: ctx.ingest.files.len().saturating_sub(file_symbols.len()),
+                file_symbols: &file_symbols,
+                pr_iters: ctx.pr.iterations,
+                page: crate::serialize::PageRequest {
+                    limit: ctx.cli.modifiers.limit,
+                    offset: ctx.cli.modifiers.offset,
+                },
+            }
+            .render_envelope(out)
         } else if self.biggest_first {
             crate::metrics::readability::execute_biggest_first_query(
                 ctx.root,

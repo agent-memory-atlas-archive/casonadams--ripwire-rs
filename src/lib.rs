@@ -72,8 +72,8 @@ pub use serialize::{
     serialize_from_trace_xml, serialize_grep_xml, serialize_lego_xml, serialize_mentions_xml,
     serialize_owners_xml, serialize_pack_top_n_xml, serialize_path_between_xml,
     serialize_recall_text, serialize_safe_delete_xml, serialize_stray_content_xml,
-    serialize_test_gate_xml, serialize_tree_xml, serialize_whereis_xml, serialize_xml,
-    serialize_xml_to_string, serialize_xml_with_ranks, write_call_graph_html,
+    serialize_test_gate_xml, serialize_whereis_xml, serialize_xml, serialize_xml_to_string,
+    serialize_xml_with_ranks, write_call_graph_html,
 };
 pub use skills::{SkillInstallReport, default_skills_dir, install_skills, resolve_skills_dir};
 pub use slice::{

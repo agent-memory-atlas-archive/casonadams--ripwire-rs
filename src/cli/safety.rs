@@ -177,9 +177,6 @@ pub fn dispatch_git_metrics_with_flags(
 }
 
 pub fn get_working_tree_changed_files(root: &str) -> Vec<String> {
-    if std::env::var_os("LLVM_PROFILE_FILE").is_some() {
-        return Vec::new();
-    }
     crate::git::repo::working_tree_changes(root)
 }
 
@@ -228,6 +225,9 @@ pub fn execute_test_gate_query_paged<W: Write>(
     let files = resolve_changed_or_spec_files(root, files_spec);
     let specs: Vec<&str> = files.iter().map(String::as_str).collect();
     let mut report = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
+    let gates = crate::gate::script_gates::collect_script_gates(root, ingest, interner);
+    let gate_rows = gates.covering_rows(&files, &report.tests);
+    report.tests.extend(gate_rows);
     crate::gate::attach_test_runners(
         &mut report.tests,
         std::path::Path::new(root),
@@ -250,17 +250,6 @@ pub fn execute_test_gate_query_paged<W: Write>(
             }
         })
         .collect();
-    let script_gates = ingest
-        .files
-        .iter()
-        .filter(|f| {
-            f.lang.semantics().is_script_runner()
-                && interner
-                    .resolve(&f.path)
-                    .rsplit_once('/')
-                    .is_some_and(|(d, _)| d == "test" || d.ends_with("/test"))
-        })
-        .count();
     let at_stamp = root.git_at_or_head();
     crate::serialize::arch_xml::TestGateReport {
         root,
@@ -271,7 +260,9 @@ pub fn execute_test_gate_query_paged<W: Write>(
         untested: &untested,
         untested_modscope: sum.untested_modscope,
         run_first: sum.run_first,
-        script_gates_unmodelled: script_gates,
+        script_gates_unmodelled: gates.unmodelled,
+        script_gates_registered: gates.registered.len(),
+        script_gates_mapped: gates.mapped(),
         page,
         gauge_attrs: &graph.xml_gauge_attrs(),
     }

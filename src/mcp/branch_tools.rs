@@ -127,55 +127,20 @@ fn get_line_snippet(path: &str, line: u32, fallback: &str) -> String {
     fallback.to_string()
 }
 
-fn strip_decl_modifiers(mut s: &str) -> &str {
-    const MODIFIERS: &[&str] = &[
-        "pub(crate) ",
-        "pub(super) ",
-        "pub ",
-        "export ",
-        "default ",
-        "async ",
-        "inline ",
-        "constexpr ",
-        "static ",
-        "virtual ",
-        "unsafe ",
-        "const ",
-    ];
-    while let Some(&m) = MODIFIERS.iter().find(|&&m| s.starts_with(m)) {
-        s = s[m.len()..].trim_start();
-    }
-    s
-}
-
-pub fn classify_code_line(code: &str) -> &'static str {
-    const DEF_PREFIXES: &[&str] = &[
-        "fn ",
-        "func ",
-        "function ",
-        "def ",
-        "class ",
-        "struct ",
-        "enum ",
-        "trait ",
-        "interface ",
-        "type ",
-        "#define ",
-    ];
-    let stripped = strip_decl_modifiers(code.trim_start());
-    if DEF_PREFIXES.iter().any(|&p| stripped.starts_with(p)) {
-        "def"
-    } else {
-        "ref"
-    }
-}
-
-fn branch_hit_json(branch: &str, symbol_name: &str, hit: &crate::git::repo::LineHit) -> Value {
+fn branch_hit_json(
+    branch: &str,
+    stamp: &(String, String),
+    symbol_name: &str,
+    hit: &crate::git::repo::LineHit,
+    kind: &str,
+) -> Value {
     let code_text = hit.text.trim();
     json!({
         "ref": branch,
+        "tip": stamp.0,
+        "date": stamp.1,
         "symbol": symbol_name,
-        "kind": classify_code_line(code_text),
+        "kind": kind,
         "file": hit.path,
         "path": hit.path,
         "line": hit.line,
@@ -184,26 +149,39 @@ fn branch_hit_json(branch: &str, symbol_name: &str, hit: &crate::git::repo::Line
     })
 }
 
-pub fn should_scan_branch(branch: &str, on_head: bool) -> bool {
-    !branch.is_empty() && branch != "HEAD" && !(branch == "main" && on_head)
-}
-
-fn scan_local_branch_hits(root: &str, symbol_name: &str, on_head: bool) -> (usize, Vec<Value>) {
+/// Hits for `symbol_name` on every local branch whose tip is not HEAD's commit, labeled `def`
+/// where the blob's own tags parse defines the name on that line.
+fn scan_local_branch_hits(root: &str, symbol_name: &str) -> (usize, Vec<Value>) {
     let Some(repo) = crate::git::repo::discover(root) else {
         return (0, Vec::new());
     };
+    let head = repo.head_id().ok().map(gix::Id::detach);
+    let branches: Vec<String> = crate::git::repo::local_branches(&repo)
+        .into_iter()
+        .filter(|b| repo.rev_parse_single(b.as_str()).ok().map(gix::Id::detach) != head)
+        .collect();
+    let per_branch = crate::git::repo::grep_word_revs(&repo, &branches, symbol_name);
+    let mut def_lines: std::collections::HashMap<gix::ObjectId, Vec<u32>> =
+        std::collections::HashMap::new();
     let mut hits = Vec::new();
-    let mut refs_scanned = 0usize;
-    for branch in crate::git::repo::local_branches(&repo) {
-        if !should_scan_branch(&branch, on_head) {
-            continue;
-        }
-        refs_scanned += 1;
-        for hit in crate::git::repo::grep_rev(&repo, &branch, symbol_name, 60) {
-            hits.push(branch_hit_json(&branch, symbol_name, &hit));
+    for (branch, branch_hits) in branches.iter().zip(per_branch) {
+        let stamp = crate::git::repo::commit_stamp(&repo, branch).unwrap_or_default();
+        for hit in &branch_hits {
+            let defs = def_lines.entry(hit.blob).or_insert_with(|| {
+                repo.find_blob(hit.blob).map_or_else(
+                    |_| Vec::new(),
+                    |b| crate::ingest::definition_lines(&hit.path, &b.data, symbol_name),
+                )
+            });
+            let kind = if defs.contains(&(hit.line as u32)) {
+                "def"
+            } else {
+                "ref"
+            };
+            hits.push(branch_hit_json(branch, &stamp, symbol_name, hit, kind));
         }
     }
-    (refs_scanned, hits)
+    (branches.len(), hits)
 }
 
 fn resolve_hit_file<'a>(ingest: &'a IngestResult, interner: &'a Interner, file_id: u32) -> &'a str {
@@ -301,60 +279,10 @@ pub(super) fn probe_name_history(root: &str, sym_name: &str, head_sha: &str) -> 
     }))
 }
 
-fn is_word_byte(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
-}
-
-fn line_contains_word(line: &str, word: &str) -> bool {
-    if word.is_empty() || line.len() < word.len() {
-        return false;
-    }
-    let bytes = line.as_bytes();
-    let wlen = word.len();
-    let mut offset = 0;
-    while let Some(pos) = line[offset..].find(word) {
-        let idx = offset + pos;
-        let before_ok = idx == 0 || !is_word_byte(bytes[idx - 1]);
-        let after_ok = idx + wlen >= bytes.len() || !is_word_byte(bytes[idx + wlen]);
-        if before_ok && after_ok {
-            return true;
-        }
-        offset = idx + 1;
-    }
-    false
-}
-
-fn head_tip_and_date(root: &str, at_stamp: &str) -> (String, String) {
-    let tip = at_stamp
-        .strip_suffix("+dirty")
-        .unwrap_or(at_stamp)
-        .to_string();
-    if let Ok(repo) = gix::open(std::path::Path::new(root))
-        && let Ok(head) = repo.head_commit()
-        && let Ok(time) = head.time()
-    {
-        let days = time.seconds / 86_400;
-        let z = days + 719_468;
-        let era = (if z >= 0 { z } else { z - 146_096 }) / 146_097;
-        let doe = (z - era * 146_097) as u32;
-        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-        let y = (yoe as i64) + era * 400;
-        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-        let mp = (5 * doy + 2) / 153;
-        let d = doy - (153 * mp + 2) / 5 + 1;
-        let m = if mp < 10 { mp + 3 } else { mp - 9 };
-        let year = if m <= 2 { y + 1 } else { y };
-        return (tip, format!("{year:04}-{m:02}-{d:02}"));
-    }
-    (tip, "1970-01-01".to_string())
-}
-
 fn scan_file_whereis_hits(
     root_path: &std::path::Path,
     rel_path: &str,
     symbol_name: &str,
-    tip: &str,
-    date: &str,
     def_lines: Option<&std::collections::HashSet<u32>>,
 ) -> Vec<Value> {
     let mut file_hits = Vec::new();
@@ -370,7 +298,7 @@ fn scan_file_whereis_hits(
         return file_hits;
     }
     for (idx, raw_line) in content.lines().enumerate() {
-        if !line_contains_word(raw_line, symbol_name) {
+        if !crate::git::repo::has_word(raw_line, symbol_name) {
             continue;
         }
         let line_num = (idx + 1) as u32;
@@ -379,8 +307,6 @@ fn scan_file_whereis_hits(
         let code_text: String = raw_line.trim().chars().take(200).collect();
         file_hits.push(json!({
             "ref": "HEAD",
-            "tip": tip,
-            "date": date,
             "symbol": symbol_name,
             "kind": kind,
             "file": rel_path,
@@ -399,8 +325,6 @@ fn collect_worktree_whereis_hits(
     interner: &Interner,
     root: &str,
     symbol_name: &str,
-    tip: &str,
-    date: &str,
     defs_by_file: &std::collections::HashMap<u32, std::collections::HashSet<u32>>,
 ) -> Vec<Value> {
     let root_path = std::path::Path::new(root);
@@ -409,24 +333,12 @@ fn collect_worktree_whereis_hits(
         .iter()
         .flat_map(|fi| {
             let rel_path = interner.resolve(&fi.path);
-            scan_file_whereis_hits(
-                root_path,
-                rel_path,
-                symbol_name,
-                tip,
-                date,
-                defs_by_file.get(&fi.id),
-            )
+            scan_file_whereis_hits(root_path, rel_path, symbol_name, defs_by_file.get(&fi.id))
         })
         .collect();
     if hits.is_empty() {
         let mut h = collect_head_defs(ingest, interner, root, symbol_name);
-        let mut refs = collect_head_refs(ingest, interner, root, symbol_name);
-        h.append(&mut refs);
-        for item in &mut h {
-            item["tip"] = json!(tip);
-            item["date"] = json!(date);
-        }
+        h.append(&mut collect_head_refs(ingest, interner, root, symbol_name));
         return h;
     }
     hits.sort_by(|a, b| {
@@ -449,7 +361,10 @@ pub fn call_whereis(
     with_history: bool,
 ) -> Value {
     let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let (tip, date) = head_tip_and_date(root, &at_stamp);
+    let head_date = crate::git::repo::discover(root)
+        .and_then(|repo| crate::git::repo::commit_stamp(&repo, "HEAD"))
+        .map(|(_, date)| date)
+        .unwrap_or_default();
     let mut defs_by_file: std::collections::HashMap<u32, std::collections::HashSet<u32>> =
         std::collections::HashMap::new();
     for sym in &ingest.symbols {
@@ -461,19 +376,12 @@ pub fn call_whereis(
         }
     }
 
-    let mut hits = collect_worktree_whereis_hits(
-        ingest,
-        interner,
-        root,
-        symbol_name,
-        &tip,
-        &date,
-        &defs_by_file,
-    );
+    let mut hits =
+        collect_worktree_whereis_hits(ingest, interner, root, symbol_name, &defs_by_file);
 
     let on_head = !hits.is_empty();
     let blobs = ingest.files.len();
-    let (refs_scanned, mut branch_hits) = scan_local_branch_hits(root, symbol_name, on_head);
+    let (refs_scanned, mut branch_hits) = scan_local_branch_hits(root, symbol_name);
     hits.append(&mut branch_hits);
 
     let history_info = if with_history && !on_head {
@@ -493,6 +401,7 @@ pub fn call_whereis(
         "hits": hits.clone(),
         "locations": hits,
         "history": history_info,
+        "head_date": head_date,
         "at": at_stamp
     })
 }
