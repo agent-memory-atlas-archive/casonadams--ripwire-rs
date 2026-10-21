@@ -390,6 +390,14 @@ pub trait LanguageSemantics: Sync {
     fn parameters_shadow_calls(&self) -> bool {
         true
     }
+    /// Project manifests whose module-path aliases apply to this language (e.g. `tsconfig.json`).
+    fn import_alias_manifests(&self) -> &'static [&'static str] {
+        &[]
+    }
+    /// `(pattern, target)` aliases a manifest declares, `target` relative to the manifest's directory.
+    fn parse_import_aliases(&self, _content: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
     /// Resolve an import/include specifier from `importer_path` to a target `file_id` in `file_index`.
     fn resolve_import_target(
         &self,
@@ -698,4 +706,61 @@ pub(crate) fn resolve_relative_or_exact(
         return probe_with_suffixes(&root_cand, file_index, suffixes);
     }
     None
+}
+
+/// The aliases a manifest at `rel_path` declares, when some language reads that manifest.
+#[must_use]
+pub fn import_aliases_in(rel_path: &str, content: &str) -> Vec<crate::domain::ImportAlias> {
+    let name = rel_path.rsplit('/').next().unwrap_or(rel_path);
+    let Some(lang) = ALL_LANGS
+        .iter()
+        .find(|l| l.semantics().import_alias_manifests().contains(&name))
+    else {
+        return Vec::new();
+    };
+    let dir = rel_path.rsplit_once('/').map_or("", |(d, _)| d);
+    lang.semantics()
+        .parse_import_aliases(content)
+        .into_iter()
+        .map(|(pattern, target)| crate::domain::ImportAlias {
+            dir: dir.to_string(),
+            pattern,
+            target: normalize_lexical_path(dir, &target),
+        })
+        .collect()
+}
+
+/// Resolve `raw` imported from `importer_path`: the language's own rules, then the aliases of the
+/// nearest manifest above the importer when the language reads such manifests.
+#[must_use]
+pub fn resolve_import(
+    lang: Lang,
+    importer_path: &str,
+    raw: &str,
+    file_index: &HashMap<&str, u32>,
+    aliases: &[crate::domain::ImportAlias],
+) -> Option<u32> {
+    let semantics = lang.semantics();
+    if let Some(id) = semantics.resolve_import_target(importer_path, raw, file_index) {
+        return Some(id);
+    }
+    if semantics.import_alias_manifests().is_empty() {
+        return None;
+    }
+    let applies = |a: &&crate::domain::ImportAlias| {
+        a.dir.is_empty() || importer_path.starts_with(&format!("{}/", a.dir))
+    };
+    let nearest = aliases.iter().filter(applies).map(|a| a.dir.len()).max()?;
+    let spec = strip_import_quotes(raw);
+    aliases
+        .iter()
+        .filter(|a| a.dir.len() == nearest && applies(a))
+        .filter_map(|a| match a.pattern.split_once('*') {
+            Some((pre, post)) => spec
+                .strip_prefix(pre)
+                .and_then(|rest| rest.strip_suffix(post))
+                .map(|mid| a.target.replacen('*', mid, 1)),
+            None => (spec == a.pattern).then(|| a.target.clone()),
+        })
+        .find_map(|path| semantics.resolve_import_target("", &format!("./{path}"), file_index))
 }

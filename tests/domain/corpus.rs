@@ -211,3 +211,61 @@ fn test_importers_resolve_relative_reexports_and_ignore_call_only_files() {
         vec!["src/lib.rs", "src/navigate/mod.rs"]
     );
 }
+
+#[test]
+fn test_importers_follow_nearest_tsconfig_path_aliases() {
+    let interner = Interner::new();
+    let registry = ripwire_rs::LanguageRegistry::new().unwrap();
+    let ingest = ripwire_rs::ingest_in_memory_files(
+        &[
+            (
+                "tsconfig.json",
+                Lang::Json,
+                b"{\n  \"compilerOptions\": {\n    // shared aliases\n    \"baseUrl\": \".\",\n    \"paths\": { \"~core/*\": [\"./app/*\"] },\n  }\n}\n",
+            ),
+            (
+                "app/lib/tele.ts",
+                Lang::TypeScript,
+                b"export function track(e: string) { return e; }\n",
+            ),
+            (
+                "app/ui/a.ts",
+                Lang::TypeScript,
+                b"import { track } from \"~core/lib/tele\";\nexport function A() { track(\"a\"); }\n",
+            ),
+            (
+                "app/ui/b.ts",
+                Lang::TypeScript,
+                b"import { track } from \"@/lib/tele\";\nexport function B() { track(\"b\"); }\n",
+            ),
+            (
+                "pkg/web/tsconfig.json",
+                Lang::Json,
+                b"{\"compilerOptions\":{\"paths\":{\"@/*\":[\"./src/*\"]}}}\n",
+            ),
+            (
+                "pkg/web/src/x/s.ts",
+                Lang::TypeScript,
+                b"export function sub() {}\n",
+            ),
+            (
+                "pkg/web/src/c.ts",
+                Lang::TypeScript,
+                b"import { sub } from \"@/x/s\";\nexport function C() { sub(); }\n",
+            ),
+        ],
+        &registry,
+        &interner,
+    );
+    let importers_of = |name: &str| {
+        let id = ingest
+            .symbols
+            .iter()
+            .find(|s| interner.resolve(&s.name) == name)
+            .unwrap()
+            .id;
+        (&ingest, &interner).resolve_symbol_importers(&[id])
+    };
+    assert_eq!(importers_of("track"), vec!["app/ui/a.ts"]);
+    assert_eq!(importers_of("sub"), vec!["pkg/web/src/c.ts"]);
+}

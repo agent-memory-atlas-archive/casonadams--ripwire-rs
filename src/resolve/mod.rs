@@ -89,7 +89,7 @@ pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> Res
     let file_dirs = compute_file_dirs(&ingest.files, interner);
     let by_name = index_symbols_by_name(&ingest.symbols);
     let file_scopes = index_file_scope_mentions(ingest.files.len(), &ingest.references);
-    let module_qualifiers = index_module_qualifiers(&ingest.files, &ingest.references, interner);
+    let module_qualifiers = index_module_qualifiers(ingest, interner);
     let num_symbols = ingest.symbols.len();
     let ctx = ResolutionContext {
         symbols: &ingest.symbols,

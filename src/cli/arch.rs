@@ -443,11 +443,13 @@ fn record_import_edges<'a>(
             inc_targets[uf].push(clean);
         }
         let f_path = view.file_path(r.file_id);
-        if let Some(vf) = ingest.files[uf]
-            .lang
-            .semantics()
-            .resolve_import_target(f_path, raw, file_index)
-            && (vf as usize) != uf
+        if let Some(vf) = crate::languages::resolve_import(
+            ingest.files[uf].lang,
+            f_path,
+            raw,
+            file_index,
+            &ingest.import_aliases,
+        ) && (vf as usize) != uf
             && (vf as usize) < f_len
         {
             adj_sets[uf].insert(vf as usize);

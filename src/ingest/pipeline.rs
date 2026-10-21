@@ -98,6 +98,18 @@ pub fn ingest_crawled_files(
     for (file_info, index) in processed {
         append_file(&mut ingest, file_info, index);
     }
+    ingest.import_aliases = files
+        .iter()
+        .filter_map(|f| {
+            let name = f.rel_path.rsplit('/').next()?;
+            crate::languages::ALL_LANGS
+                .iter()
+                .any(|l| l.semantics().import_alias_manifests().contains(&name))
+                .then(|| fs::read_to_string(&f.path).ok())?
+                .map(|content| crate::languages::import_aliases_in(&f.rel_path, &content))
+        })
+        .flatten()
+        .collect();
     ingest
 }
 
@@ -139,6 +151,12 @@ pub fn ingest_in_memory_files(
         append_file(&mut ingest, file_info, index);
     }
 
+    ingest.import_aliases = files
+        .iter()
+        .flat_map(|&(path, _, src)| {
+            crate::languages::import_aliases_in(path, &String::from_utf8_lossy(src))
+        })
+        .collect();
     ingest
 }
 

@@ -413,6 +413,7 @@ fn test_symbol_matches_and_changed() {
         }],
         symbols: vec![sym],
         references: Vec::new(),
+        ..IngestResult::default()
     };
     let changed = symbol_matches_and_changed(&sym, "src/math.rs", &ingest, &interner, &baseline);
     assert!(changed.is_some());

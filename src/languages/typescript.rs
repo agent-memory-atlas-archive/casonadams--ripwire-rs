@@ -1,5 +1,6 @@
 use super::javascript::{
-    JS_STD_MEMBERS, JS_STD_QUALIFIERS, is_jsx_intrinsic_tag_call, resolve_web_import_target,
+    JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_jsx_intrinsic_tag_call,
+    parse_tsconfig_paths, resolve_web_import_target,
 };
 use super::{DefCaptureGateContext, DialectGroup, LanguageSemantics};
 use crate::domain::Lang;
@@ -111,6 +112,14 @@ impl LanguageSemantics for TypeScriptLanguage {
             return None;
         }
         Some(parse_astro_file(source_bytes, language, query))
+    }
+
+    fn import_alias_manifests(&self) -> &'static [&'static str] {
+        TS_CONFIG_MANIFESTS
+    }
+
+    fn parse_import_aliases(&self, content: &str) -> Vec<(String, String)> {
+        parse_tsconfig_paths(content)
     }
 
     fn resolve_import_target(

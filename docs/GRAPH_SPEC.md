@@ -56,7 +56,7 @@ $$\text{Total Call Refs} = \text{Resolved} + \text{External} + \text{Declined} +
    - Bound via the deterministic precedence ladder within the same `DialectGroup`:
      1. Explicit qualifier matching `Symbol::scope`, else the module file an import binds that qualifier to (`LanguageSemantics::import_binding`, e.g. Python `import x as y` for `y.f()`)
      2. Same-file symbol match
-     3. Imported-file symbol match (`resolve_import_target`)
+     3. Imported-file symbol match (`resolve_import_target`, then the `paths` aliases of the nearest manifest a language declares through `LanguageSemantics::import_alias_manifests`, e.g. `tsconfig.json`/`jsconfig.json`)
      4. Same-directory symbol match (bounded by starburst fan-out cap)
      5. Unique global symbol match across compatible dialects
      6. Polymorphic interface/trait contract fallback (`RefRole::Extends` implementors)

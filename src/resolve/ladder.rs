@@ -266,30 +266,39 @@ pub fn index_file_scope_mentions(
 /// Per file, the identifiers its imports bind to an indexed module file (`import x as y` binds `y`).
 #[must_use]
 pub fn index_module_qualifiers(
-    files: &[FileInfo],
-    references: &[Reference],
+    ingest: &crate::domain::IngestResult,
     interner: &Interner,
 ) -> Vec<HashMap<Spur, u32>> {
-    let file_index: HashMap<&str, u32> = files
+    let file_index: HashMap<&str, u32> = ingest
+        .files
         .iter()
         .map(|f| (interner.resolve(&f.path), f.id))
         .collect();
-    let mut maps = vec![HashMap::new(); files.len()];
-    for r in references.iter().filter(|r| r.role == RefRole::Import) {
+    let mut maps = vec![HashMap::new(); ingest.files.len()];
+    for r in ingest
+        .references
+        .iter()
+        .filter(|r| r.role == RefRole::Import)
+    {
         let raw = interner.resolve(&r.callee_name);
-        let semantics = r.lang.semantics();
-        let Some(bound) = semantics
+        let Some(bound) = r
+            .lang
+            .semantics()
             .import_binding(raw)
             .and_then(|(_, bound)| interner.get(bound))
         else {
             continue;
         };
-        let Some(importer) = files.get(r.file_id as usize) else {
+        let Some(importer) = ingest.files.get(r.file_id as usize) else {
             continue;
         };
-        if let Some(target) =
-            semantics.resolve_import_target(interner.resolve(&importer.path), raw, &file_index)
-        {
+        if let Some(target) = crate::languages::resolve_import(
+            r.lang,
+            interner.resolve(&importer.path),
+            raw,
+            &file_index,
+            &ingest.import_aliases,
+        ) {
             maps[r.file_id as usize].insert(bound, target);
         }
     }

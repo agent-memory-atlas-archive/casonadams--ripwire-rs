@@ -473,12 +473,23 @@ pub struct FileInfo {
     pub byte_size: u64,
 }
 
+/// A module-path alias a project manifest declares (e.g. tsconfig `paths`): in files under `dir`, a
+/// specifier matching `pattern` names the root-relative `target`, where `*` takes the matched rest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportAlias {
+    pub dir: String,
+    pub pattern: String,
+    pub target: String,
+}
+
 /// Ingest output: the contract between AST ingestion and graph construction.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct IngestResult {
     pub files: Vec<FileInfo>,
     pub symbols: Vec<Symbol>,
     pub references: Vec<Reference>,
+    #[serde(default)]
+    pub import_aliases: Vec<ImportAlias>,
 }
 
 impl IngestResult {

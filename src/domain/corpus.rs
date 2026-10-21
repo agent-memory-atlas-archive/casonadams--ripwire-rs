@@ -265,9 +265,7 @@ fn is_ref_importing_seed(
     }
     let raw = interner.resolve(&r.callee_name);
     let target_fid = ingest.file(r.file_id).and_then(|f| {
-        f.lang
-            .semantics()
-            .resolve_import_target(src_path, raw, file_index)
+        crate::languages::resolve_import(f.lang, src_path, raw, file_index, &ingest.import_aliases)
     });
     if target_fid.is_some_and(|tf| seed_files.contains(&tf)) {
         return true;
