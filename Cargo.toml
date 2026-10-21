@@ -6,9 +6,10 @@ authors = ["Cason Adams", "David Brewster (ripwire, https://github.com/redhat-et
 description = "High-throughput agent context router and deterministic static analysis engine"
 readme = "README.md"
 license = "Apache-2.0"
+homepage = "https://casonadams.github.io/ripwire-rs/"
 repository = "https://github.com/casonadams/ripwire-rs"
 documentation = "https://docs.rs/ripwire-rs"
-keywords = ["static-analysis", "callgraph", "mcp", "code-intelligence", "pagerank"]
+keywords = ["static-analysis", "code-intelligence", "call-graph", "mcp", "coding-agents"]
 categories = ["development-tools", "command-line-utilities"]
 default-run = "ripwire-rs"
 include = [
@@ -69,6 +70,7 @@ tree-sitter-erlang = "0.21.0"
 tree-sitter-html = "0.23"
 tree-sitter-css = "0.25"
 tree-sitter-objc = "3.0.2"
+tree-sitter-fortran = "0.6.0"
 
 [build-dependencies]
 cc = "1.7.0"
@@ -77,6 +79,8 @@ cc = "1.7.0"
 opt-level = 3
 lto = "thin"
 codegen-units = 1
+debug = false
+strip = true
 
 [package.metadata.binstall]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ version }-{ target }.{ archive-format }"

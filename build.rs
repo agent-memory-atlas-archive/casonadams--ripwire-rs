@@ -46,7 +46,6 @@ fn main() {
         ("dockerfile", &["parser.c", "scanner.c"], &[]),
         ("sql", &["parser.c", "scanner.c"], &[]),
         ("brightscript", &["parser.c"], &[]),
-        ("fortran", &["parser.c", "scanner.c"], &[]),
         ("cobol", &["parser.c", "scanner.c"], &[]),
     ];
 

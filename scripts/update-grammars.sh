@@ -27,7 +27,6 @@ GRAMMARS=(
     "dockerfile|https://github.com/camdencheek/tree-sitter-dockerfile|main|src"
     "sql|https://github.com/DerekStride/tree-sitter-sql|gh-pages|src"
     "brightscript|https://github.com/ajdelcimmuto/tree-sitter-brightscript|main|src"
-    "fortran|https://github.com/stadelmanma/tree-sitter-fortran|master|src"
     "cobol|https://github.com/yutaro-sakamoto/tree-sitter-cobol|main|src"
 )
 
@@ -67,6 +66,9 @@ update_grammar() {
         fi
         if [ "${name}" = "gdscript" ] && [ -f "${dest_dir}/scanner.c" ]; then
             sed -i.bak 's/return (Delimiter){0};/Delimiter d; d.flags = 0; return d;/' "${dest_dir}/scanner.c" && rm -f "${dest_dir}/scanner.c.bak"
+        fi
+        if [ "${name}" = "cobol" ] && [ -f "${dest_dir}/scanner.c" ]; then
+            sed -i.bak 's/char \*keyword_pointer\[number_of_words\];/char *keyword_pointer[16];/g; s/bool continue_check\[number_of_words\];/bool continue_check[16];/g' "${dest_dir}/scanner.c" && rm -f "${dest_dir}/scanner.c.bak"
         fi
     fi
 

@@ -91,10 +91,7 @@ impl LanguageSemantics for FortranLanguage {
         &["f", "for", "f90", "f95", "f03", "f08"]
     }
 
-    super::impl_grammar_method!(
-        ffi tree_sitter_fortran,
-        include_str!("../queries/fortran/tags.scm")
-    );
+    super::impl_grammar_method!(crate tree_sitter_fortran::LANGUAGE, "../queries/fortran/tags.scm");
 
     fn display_color(&self) -> &'static str {
         "#734f96"
