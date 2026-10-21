@@ -238,6 +238,7 @@ ripwire-rs --add-skills
 - **Precision Context Bundles**: Extracts only relevant symbol bodies into CDATA blocks, conserving prompt token budgets.
 - **Batching Economy**: `--batch` executes up to 16 queries in a single turn, eliminating agent tool-call round-trip latency.
 - **Instant Agent Skills**: `--add-skills` automatically provisions 17 standardized agent skills and active manifest into `~/.agents/skills`.
+- **Autonomous Governance**: To make AI coding agents execute these workflows autonomously via pre-commit verification loops, see the [AGENTS.md Integration Guide](AGENTS_GUIDE.md).
 
 ---
 
@@ -267,28 +268,49 @@ make bench-pipeline
 
 #### GitHub Actions Workflow Example (`.github/workflows/ripwire-gate.yml`)
 ```yaml
-name: Ripwire PR Safety Gates
+name: ripwire-rs PR Safety Gates
 on:
   pull_request:
     branches: [main, master]
 
 jobs:
   ripwire-gate:
-    name: Ripwire PR Gate
+    name: Architecture, Quality & Safety Gates
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full git history for diff and quality delta comparison
+          fetch-depth: 0 # Full git history for diff and quality delta comparison
 
-      - name: Install ripwire CLI (ripwire-rs)
+      - name: Install ripwire-rs
         run: cargo install ripwire-rs
 
-      - name: Run Test Reachability Gate
+      # 1. Post Situational Awareness directly to GitHub PR Summary
+      - name: Generate PR Situational Awareness Report
+        run: |
+          echo "### ripwire-rs Situational Awareness" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ripwire-rs . --situ >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      # 2. Architectural Boundary Gate (if rules.txt exists)
+      - name: Enforce Architecture Layering Rules
+        run: |
+          if [ -f rules.txt ]; then
+            ripwire-rs . --arch=rules.txt
+          fi
+
+      # 3. Test Reachability Gate (exits code 4 on untested blast radius)
+      - name: Verify Test Reachability
         run: ripwire-rs . --test-gate
 
-      - name: Run Quality Regression Delta Gate
+      # 4. Quality Delta Regression Gate (exits non-zero on regressions vs base branch)
+      - name: Verify Zero Quality Regressions
         run: ripwire-rs . --quality-delta
+
+      # 5. Run Test Suite
+      - name: Run Tests
+        run: cargo test --all
 ```
 
 ### Benefits
@@ -336,3 +358,4 @@ ripwire-rs . --notes
 - **Zero Redundant Orientation**: `--pack-task --partition=N` carves the task surface along Louvain call-graph communities (with file-level fallback for edgeless data types and median splitting when $K < N$), emitting a `<ctx-partitions>` bundle with a shared core plus $N$ disjoint subagent `<bundle>` slices and Jaccard overlap telemetry (`overlap_mean`, `overlap_max`, `core_overlap`).
 - **Pre-Hoc Collision Prevention**: `--plan-lanes` keys claims on path-qualified `fnv1a64(path\0scope\0name)` identities to separate true symbol `conflicts`, `same_file_risk`, and `contract_touch` (a lane's claim sitting inside another lane's transitive caller blast radius), computing a greedy fewest-conflicts-first `landing_order`.
 - **Epistemic Honesty**: `--help-task` inspects live repository facts (`git`, `dirty`, `trace`, `resolved_symbols`) and abstains when evidence is thin; `--verify` distinguishes `confirmed`, `refuted` (only under complete evidence), and `not-established` (when bounded by the static call-graph or reference floor).
+- **Fleet Governance Contract**: For drop-in configuration of autonomous subagents with deterministic static analysis gates, see the [AGENTS.md Integration Guide](AGENTS_GUIDE.md).

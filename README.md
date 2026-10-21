@@ -103,6 +103,7 @@ binding forms remain evidence floors.
 
 - **[Installation Guide](docs/INSTALL.md)** — Homebrew, APT, DNF/RPM, `cargo-binstall`, and source build instructions.
 - **[Workflow Guide](docs/WORKFLOWS.md)** — In-depth guide to the 7 primary workflows: when, where, and why to use each command.
+- **[AGENTS.md Governance Guide](docs/AGENTS_GUIDE.md)** — Drop-in `AGENTS.md` template, 5-step autonomous verification loop, and CI/CD parity.
 - **[CLI Reference](docs/CLI.md)** — Complete command catalog, top-level flags, streaming budgets, and selector syntax.
 - **[Pre-Commit Safety Gates](docs/GATES.md)** — Verification gates (`--edit-check`, `--affected`, `--quality-delta`, `--test-gate`, `--seams`, `--pr-context`, `--merge-scout`, `--arch`).
 - **[Model Context Protocol (MCP)](docs/MCP.md)** — Reference for all 33 MCP tools and agent configuration.
