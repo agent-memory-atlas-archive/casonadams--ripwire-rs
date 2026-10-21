@@ -399,5 +399,6 @@ binding or alias analysis.
 - `ripwire-rs mcp [PATH]`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
 - `ripwire-rs [PATH] --lsp`: Launch stdio JSON-RPC Language Server Protocol (LSP) server bridge.
 - `ripwire-rs [PATH] [--cache <PATH>] [--no-cache]`: Persistent binary on-disk caching in TMPDIR (or custom path) for sub-second repeat queries.
+- `ripwire-rs [PATH] --scip=<index.scip>`: Overlay a compiler-backed SCIP index: the call sites it resolves bind exactly (`prov="scip"`, map header `precise=K`) and sites it resolves outside the index count as external; other sites keep name resolution. Bypasses the cache.
 - `make bench [REPO=<PATH>]`: Multi-metric performance and resident set size (RSS) benchmark against C++ `ripwire`.
 - `make bench-pipeline`: Native in-memory Cargo micro-benchmarks (`cargo bench --bench bench_pipeline`).

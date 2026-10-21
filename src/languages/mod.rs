@@ -32,7 +32,9 @@ macro_rules! impl_grammar_method {
 pub(crate) use impl_grammar_method;
 
 mod complexity_kinds;
+mod foreign;
 pub use complexity_kinds::ComplexityKinds;
+pub use foreign::ForeignExport;
 pub mod bash;
 pub mod brightscript;
 pub mod c;
@@ -117,6 +119,11 @@ pub struct DefCaptureGateContext<'a> {
 pub trait LanguageSemantics: Sync {
     /// Short canonical tag used in XML output (`"rs"`, `"ts"`, etc.).
     fn tag(&self) -> &'static str;
+
+    /// Definitions in this file that a binding framework exposes to another language.
+    fn foreign_exports(&self, _root: tree_sitter::Node<'_>, _source: &[u8]) -> Vec<ForeignExport> {
+        Vec::new()
+    }
 
     /// File extensions mapped to this language (defaults to `&[self.tag()]` when empty).
     fn extensions(&self) -> &'static [&'static str] {

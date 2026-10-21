@@ -411,6 +411,9 @@ Exclude test files and test directories from analysis.
 .BI \-\-max\-file\-size= BYTES
 Maximum file size in bytes to index (default: 2 MB).
 .TP
+.BI \-\-scip= FILE
+Overlay a compiler\-backed SCIP index: call sites it resolves bind exactly (\fBprov="scip"\fR, map header \fBprecise=K\fR), sites it resolves outside the index count as external, and every other site keeps name resolution. Bypasses the cache.
+.TP
 .B \-\-no\-redact
 Disable secret redaction on emitted code snippets.
 .TP

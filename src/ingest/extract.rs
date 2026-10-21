@@ -41,6 +41,7 @@ pub struct FileParseResult {
     pub byte_size: u64,
     pub defs: Vec<RawDef>,
     pub refs: Vec<RawRef>,
+    pub foreign_exports: Vec<crate::languages::ForeignExport>,
 }
 
 pub enum Capture {
@@ -1050,6 +1051,9 @@ pub fn parse_file_tree(
             byte_size: source_bytes.len() as u64,
             defs,
             refs,
+            foreign_exports: lang
+                .semantics()
+                .foreign_exports(tree.root_node(), source_bytes),
         }
     })
 }

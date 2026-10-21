@@ -1,8 +1,10 @@
-use super::extract::{FileParseResult, RawDef, RawRef, parse_file_tree};
+use super::extract::{FileParseResult, RawDef, parse_file_tree};
 use super::ownership::{assign_module_scope_owner, build_file_references};
 use super::registry::LanguageRegistry;
 use crate::crawler::CrawledFile;
-use crate::domain::{FileInfo, IngestResult, Interner, Lang, NodeId, Reference, Symbol};
+use crate::domain::{
+    FileInfo, ForeignBinding, IngestResult, Interner, Lang, NodeId, Reference, Symbol,
+};
 use rayon::prelude::*;
 use std::fs;
 use tree_sitter::{Language, Query};
@@ -73,23 +75,26 @@ pub fn ingest_crawled_files(
         .map(|(file_id, parsed)| {
             let file = &files[file_id];
             let file_id = file_id as u32;
-            let (eff_lang, line_count, byte_size, defs, refs) = match parsed {
-                Some((l, p)) => (l, p.line_count, p.byte_size, p.defs, p.refs),
-                None => (file.lang, 0, file.byte_size, Vec::new(), Vec::new()),
+            let (eff_lang, parsed) = match parsed {
+                Some((l, p)) => (l, p),
+                None => (
+                    file.lang,
+                    FileParseResult {
+                        byte_size: file.byte_size,
+                        ..FileParseResult::default()
+                    },
+                ),
             };
             let file_info = FileInfo {
                 id: file_id,
                 path: interner.intern(&file.rel_path),
                 lang: eff_lang,
-                line_count,
-                byte_size,
+                line_count: parsed.line_count,
+                byte_size: parsed.byte_size,
             };
             let mut eff_file = file.clone();
             eff_file.lang = eff_lang;
-            (
-                file_info,
-                index_file(defs, refs, &eff_file, file_id, interner),
-            )
+            (file_info, index_file(parsed, &eff_file, file_id, interner))
         })
         .collect();
 
@@ -130,16 +135,16 @@ pub fn ingest_in_memory_files(
             parse_file_content(source_bytes, language, query, eff_lang, rel_path)
         });
 
-        let (line_count, byte_size, defs, refs) = match parsed {
-            Some(p) => (p.line_count, p.byte_size, p.defs, p.refs),
-            None => (0, source_bytes.len() as u64, Vec::new(), Vec::new()),
-        };
+        let parsed = parsed.unwrap_or_else(|| FileParseResult {
+            byte_size: source_bytes.len() as u64,
+            ..FileParseResult::default()
+        });
         let file_info = FileInfo {
             id: file_id,
             path: interner.intern(rel_path),
             lang: eff_lang,
-            line_count,
-            byte_size,
+            line_count: parsed.line_count,
+            byte_size: parsed.byte_size,
         };
         let dummy_crawled = CrawledFile {
             path: std::path::PathBuf::from(rel_path),
@@ -147,7 +152,7 @@ pub fn ingest_in_memory_files(
             lang: eff_lang,
             byte_size: source_bytes.len() as u64,
         };
-        let index = index_file(defs, refs, &dummy_crawled, file_id, interner);
+        let index = index_file(parsed, &dummy_crawled, file_id, interner);
         append_file(&mut ingest, file_info, index);
     }
 
@@ -164,18 +169,18 @@ pub fn ingest_in_memory_files(
 pub struct FileIndex {
     pub symbols: Vec<Symbol>,
     pub references: Vec<Reference>,
+    pub foreign_bindings: Vec<ForeignBinding>,
 }
 
 pub fn index_file(
-    defs: Vec<RawDef>,
-    refs: Vec<RawRef>,
+    parsed: FileParseResult,
     file: &CrawledFile,
     file_id: u32,
     interner: &Interner,
 ) -> FileIndex {
     let mut next_id: NodeId = 0;
-    let mut symbols = build_file_symbols(defs, file, file_id, interner, &mut next_id);
-    let mut references = build_file_references(refs, file, file_id, &symbols, interner);
+    let mut symbols = build_file_symbols(parsed.defs, file, file_id, interner, &mut next_id);
+    let mut references = build_file_references(parsed.refs, file, file_id, &symbols, interner);
     assign_module_scope_owner(
         &mut symbols,
         &mut references,
@@ -184,9 +189,21 @@ pub fn index_file(
         interner,
         &mut next_id,
     );
+    let foreign_bindings = parsed
+        .foreign_exports
+        .into_iter()
+        .map(|e| ForeignBinding {
+            file_id,
+            exported: interner.intern(&e.exported),
+            target: interner.intern(&e.target),
+            target_scope: e.target_scope.map(|s| interner.intern(&s)),
+            caller: e.caller,
+        })
+        .collect();
     FileIndex {
         symbols,
         references,
+        foreign_bindings,
     }
 }
 
@@ -202,6 +219,7 @@ fn append_file(ingest: &mut IngestResult, file_info: FileInfo, mut index: FileIn
     ingest.files.push(file_info);
     ingest.symbols.append(&mut index.symbols);
     ingest.references.append(&mut index.references);
+    ingest.foreign_bindings.append(&mut index.foreign_bindings);
 }
 
 pub fn build_file_symbols(

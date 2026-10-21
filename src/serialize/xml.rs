@@ -648,12 +648,16 @@ fn write_map_legend_header<W: Write>(
     counter.write_all(header_prefix)?;
     write!(
         counter,
-        " files={} symbols={} edges={} shown=\"{}\"",
+        " files={} symbols={} edges={}",
         ctx.ingest.file_count(),
         ctx.ingest.symbol_count(),
         ctx.graph.edge_count(),
-        symbols_shown,
     )?;
+    let precise = ctx.graph.scip_edge_count();
+    if precise > 0 {
+        write!(counter, " precise={precise}")?;
+    }
+    write!(counter, " shown=\"{symbols_shown}\"")?;
     crate::serialize::GraphGaugeProvider::write_summary_counts(ctx.graph, counter)?;
     if !options.include_pr {
         counter.write_all(b" order=stable")?;

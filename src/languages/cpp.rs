@@ -3,7 +3,10 @@ use super::c::{
     is_c_family_def_allowed, refine_c_header_dialect, resolve_c_family_def_body_and_end,
     resolve_c_family_include,
 };
-use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics};
+use super::{
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, ForeignExport, LanguageSemantics,
+};
+use crate::domain::Lang;
 use std::collections::HashMap;
 
 pub struct CppLanguage;
@@ -30,9 +33,77 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     ..ComplexityKinds::C_STYLE
 };
 
+/// Python module macros whose `.def("name", &fn)` calls expose C++ definitions to Python.
+const PYTHON_MODULE_MACROS: &[&[u8]] = &[b"PYBIND11_MODULE", b"BOOST_PYTHON_MODULE"];
+
+fn string_literal_text<'a>(node: tree_sitter::Node<'_>, source: &'a [u8]) -> Option<&'a str> {
+    (node.kind() == "string_literal")
+        .then(|| node.utf8_text(source).ok())??
+        .strip_prefix('"')?
+        .strip_suffix('"')
+}
+
+/// `.def("exported", &target)` / `.def("exported", &Scope::target)` as a Python export.
+fn python_def_export(call: tree_sitter::Node<'_>, source: &[u8]) -> Option<ForeignExport> {
+    let field = call
+        .child_by_field_name("function")?
+        .child_by_field_name("field")?;
+    if field.utf8_text(source).ok()? != "def" {
+        return None;
+    }
+    let args = call.child_by_field_name("arguments")?;
+    let exported = string_literal_text(args.named_child(0)?, source)?;
+    let pointer = args.named_child(1)?;
+    if pointer.kind() != "pointer_expression" {
+        return None;
+    }
+    let target = pointer.child_by_field_name("argument")?;
+    let (target_scope, target_name) = match target.kind() {
+        "identifier" => (None, target),
+        "qualified_identifier" => (
+            target.child_by_field_name("scope"),
+            target.child_by_field_name("name")?,
+        ),
+        _ => return None,
+    };
+    Some(ForeignExport {
+        exported: exported.to_string(),
+        target: target_name.utf8_text(source).ok()?.to_string(),
+        target_scope: target_scope
+            .and_then(|s| s.utf8_text(source).ok())
+            .map(str::to_string),
+        caller: Lang::Python,
+    })
+}
+
+fn python_module_exports(root: tree_sitter::Node<'_>, source: &[u8]) -> Vec<ForeignExport> {
+    let mut exports = Vec::new();
+    let mut cursor = root.walk();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if node.kind() == "call_expression"
+            && let Some(export) = python_def_export(node, source)
+        {
+            exports.push(export);
+        }
+        stack.extend(node.named_children(&mut cursor));
+    }
+    exports
+}
+
 impl LanguageSemantics for CppLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
+    }
+    fn foreign_exports(&self, root: tree_sitter::Node<'_>, source: &[u8]) -> Vec<ForeignExport> {
+        let declares_module = PYTHON_MODULE_MACROS
+            .iter()
+            .any(|m| source.windows(m.len()).any(|w| w == *m));
+        if declares_module {
+            python_module_exports(root, source)
+        } else {
+            Vec::new()
+        }
     }
     fn tag(&self) -> &'static str {
         "cpp"

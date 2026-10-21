@@ -254,5 +254,6 @@ pub fn extract_markdown(
         byte_size: source_bytes.len() as u64,
         defs,
         refs,
+        foreign_exports: Vec::new(),
     }
 }

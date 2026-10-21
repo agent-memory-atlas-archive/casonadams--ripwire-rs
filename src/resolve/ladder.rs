@@ -105,6 +105,10 @@ pub enum EdgeProv {
     FinalSegment,
     /// The qualifier is a module alias bound by an import of the definition's file.
     Import,
+    /// A binding framework exposed the definition to the caller's language (pybind11 `.def`).
+    Binding,
+    /// A compiler-backed SCIP index pinned the call site to this definition.
+    Scip,
 }
 
 impl EdgeProv {
@@ -120,6 +124,8 @@ impl EdgeProv {
             Self::Split => Some("split"),
             Self::FinalSegment => Some("final-segment"),
             Self::Import => Some("import"),
+            Self::Binding => Some("binding"),
+            Self::Scip => Some("scip"),
             Self::Name | Self::Local => None,
         }
     }
@@ -136,7 +142,7 @@ impl EdgeProv {
         match self {
             Self::Split => "~s",
             Self::Name => "~n",
-            Self::Local | Self::FinalSegment | Self::Import => "",
+            Self::Local | Self::FinalSegment | Self::Import | Self::Binding | Self::Scip => "",
         }
     }
 }
@@ -212,7 +218,7 @@ pub fn index_symbols_by_name(symbols: &[Symbol]) -> HashMap<Spur, Vec<NodeId>> {
 /// Tier 1: Same file (conf = 1.0)
 /// Tier 2: Same directory (conf = 0.5)
 /// Tier 3: Unique same-language global (conf = 0.2), else dropped.
-fn is_unique_global_group(cands: &[NodeId], symbols: &[Symbol]) -> bool {
+pub(crate) fn is_unique_global_group(cands: &[NodeId], symbols: &[Symbol]) -> bool {
     let Some(&first) = cands.first() else {
         return false;
     };
@@ -599,7 +605,65 @@ pub trait ResolutionLookup {
         self.classify_target(r)
     }
 
+    /// Targets a binding framework exposes to `caller` code under `name`.
+    fn foreign_targets(&self, _name: Spur, _caller: crate::domain::Lang) -> Option<&[NodeId]> {
+        None
+    }
+
+    /// What a SCIP index says the call site reaches.
+    fn scip_target(&self, _r: &Reference) -> Option<crate::domain::ScipTarget> {
+        None
+    }
+
+    /// A SCIP-pinned site wins outright; a call no same-language definition answers may still
+    /// reach a definition a binding framework exposed to the caller's language under that name.
     fn classify_target(&self, r: &Reference) -> RefOutcome {
+        match self.scip_target(r) {
+            Some(crate::domain::ScipTarget::Def(target)) if target != r.from_symbol => {
+                return RefOutcome::Resolved(ResolvedRef {
+                    from: r.from_symbol,
+                    targets: vec![target],
+                    conf_per_target: 1.0,
+                    prov: EdgeProv::Scip,
+                });
+            }
+            Some(crate::domain::ScipTarget::External) => return RefOutcome::External,
+            _ => {}
+        }
+        let outcome = self.classify_by_name(r);
+        match outcome {
+            RefOutcome::External
+            | RefOutcome::Unresolved
+            | RefOutcome::Declined
+            | RefOutcome::Builtin => self.classify_foreign(r).unwrap_or(outcome),
+            RefOutcome::Ignored | RefOutcome::Resolved(_) => outcome,
+        }
+    }
+
+    fn classify_foreign(&self, r: &Reference) -> Option<RefOutcome> {
+        let targets: Vec<NodeId> = self
+            .foreign_targets(r.callee_name, r.lang)?
+            .iter()
+            .copied()
+            .filter(|&target| target != r.from_symbol)
+            .collect();
+        if targets.is_empty() {
+            return None;
+        }
+        let prov = if targets.len() > 1 {
+            EdgeProv::Split
+        } else {
+            EdgeProv::Binding
+        };
+        Some(RefOutcome::Resolved(ResolvedRef {
+            from: r.from_symbol,
+            conf_per_target: 1.0 / targets.len() as f32,
+            targets,
+            prov,
+        }))
+    }
+
+    fn classify_by_name(&self, r: &Reference) -> RefOutcome {
         let Some(all_cands) = self.by_name().get(&r.callee_name) else {
             return RefOutcome::External;
         };
@@ -652,6 +716,8 @@ pub struct ResolutionContext<'a> {
     pub interner: Option<&'a Interner>,
     pub file_scopes: Option<&'a [std::collections::HashSet<Spur>]>,
     pub module_qualifiers: Option<&'a [HashMap<Spur, u32>]>,
+    pub foreign: Option<&'a HashMap<(Spur, crate::domain::Lang), Vec<NodeId>>>,
+    pub scip: Option<&'a HashMap<(u32, u32, Spur), crate::domain::ScipTarget>>,
 }
 
 impl ResolutionLookup for ResolutionContext<'_> {
@@ -673,6 +739,16 @@ impl ResolutionLookup for ResolutionContext<'_> {
     #[inline]
     fn interner(&self) -> Option<&Interner> {
         self.interner
+    }
+
+    #[inline]
+    fn foreign_targets(&self, name: Spur, caller: crate::domain::Lang) -> Option<&[NodeId]> {
+        self.foreign?.get(&(name, caller)).map(Vec::as_slice)
+    }
+
+    #[inline]
+    fn scip_target(&self, r: &Reference) -> Option<crate::domain::ScipTarget> {
+        self.scip?.get(&(r.file_id, r.line, r.callee_name)).copied()
     }
 
     #[inline]

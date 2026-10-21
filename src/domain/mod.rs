@@ -482,6 +482,31 @@ pub struct ImportAlias {
     pub target: String,
 }
 
+/// A definition a binding framework in file `file_id` exposes to `caller`-language code as `exported`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForeignBinding {
+    pub file_id: u32,
+    pub exported: Spur,
+    pub target: Spur,
+    pub target_scope: Option<Spur>,
+    pub caller: Lang,
+}
+
+/// What a SCIP index says a call site at `file_id:line` naming `callee` reaches.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScipTarget {
+    Def(NodeId),
+    External,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScipSite {
+    pub file_id: u32,
+    pub line: u32,
+    pub callee: Spur,
+    pub target: ScipTarget,
+}
+
 /// Ingest output: the contract between AST ingestion and graph construction.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct IngestResult {
@@ -490,6 +515,10 @@ pub struct IngestResult {
     pub references: Vec<Reference>,
     #[serde(default)]
     pub import_aliases: Vec<ImportAlias>,
+    #[serde(default)]
+    pub foreign_bindings: Vec<ForeignBinding>,
+    #[serde(default)]
+    pub scip_sites: Vec<ScipSite>,
 }
 
 impl IngestResult {

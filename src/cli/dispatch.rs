@@ -104,18 +104,21 @@ pub fn load_repo_analysis_cached(
     no_cache: bool,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
     let opts = crate::crawler::CrawlerOptions::default();
-    load_repo_analysis_with_options(root, cache_path, no_cache, &opts)
+    load_repo_analysis_with_options(root, cache_path, no_cache, &opts, None)
 }
 
+/// Crawl, ingest, and resolve `root`; a SCIP index pins the call sites it covers and bypasses
+/// the cache, whose key does not cover the index.
 pub fn load_repo_analysis_with_options(
     root: &str,
     cache_path: Option<&Path>,
     no_cache: bool,
     opts: &crate::crawler::CrawlerOptions,
+    scip_index: Option<&Path>,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
-    let default_opts = *opts == crate::crawler::CrawlerOptions::default();
+    let cacheable = *opts == crate::crawler::CrawlerOptions::default() && scip_index.is_none();
     if !no_cache
-        && default_opts
+        && cacheable
         && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path)
     {
         return Ok(cached);
@@ -124,10 +127,20 @@ pub fn load_repo_analysis_with_options(
     let registry =
         crate::ingest::LanguageRegistry::new().map_err(|e| io::Error::other(e.to_string()))?;
     let interner = Interner::new();
-    let ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
+    let mut ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
+    if let Some(path) = scip_index {
+        let bytes = std::fs::read(path).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("ripwire-rs: --scip {}: {e}", path.display()),
+            )
+        })?;
+        ingest.scip_sites = crate::resolve::scip_sites(&bytes, &ingest, &interner)
+            .map_err(|e| io::Error::other(format!("ripwire-rs: --scip {}: {e}", path.display())))?;
+    }
     let graph = Graph::build(&ingest, &interner);
     let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
-    if default_opts {
+    if cacheable {
         let _ =
             crate::cache::save_cached_analysis(root, cache_path, (&ingest, &graph, &pr, &interner));
     }
@@ -164,7 +177,13 @@ pub fn load_repo_analysis_for_cli(
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
     let cache_path = cli.modifiers.cache.as_deref().map(Path::new);
     let opts = crawler_options_for_cli(cli);
-    load_repo_analysis_with_options(root, cache_path, cli.modifiers.no_cache, &opts)
+    load_repo_analysis_with_options(
+        root,
+        cache_path,
+        cli.modifiers.no_cache,
+        &opts,
+        cli.scip.as_deref().map(Path::new),
+    )
 }
 
 pub fn compute_effective_budget(

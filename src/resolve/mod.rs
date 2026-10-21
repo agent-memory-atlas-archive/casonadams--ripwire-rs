@@ -1,6 +1,8 @@
 pub mod ladder;
+pub mod scip;
 
 pub use ladder::*;
+pub use scip::scip_sites;
 
 use crate::domain::{IngestResult, Interner, NodeId, Reference};
 use lasso::Spur;
@@ -86,21 +88,36 @@ pub fn merge_resolutions(mut a: ResolutionResult, b: ResolutionResult) -> Resolu
     a
 }
 
+/// Exported name and calling language to the definitions a binding framework exposes.
+pub type ForeignIndex = HashMap<(Spur, crate::domain::Lang), Vec<NodeId>>;
+
+/// Call site `(file_id, line, callee)` to what a SCIP index says it reaches.
+pub type ScipIndex = HashMap<(u32, u32, Spur), crate::domain::ScipTarget>;
+
 pub struct ResolutionIndex {
     file_dirs: Vec<u32>,
     by_name: HashMap<Spur, Vec<NodeId>>,
     file_scopes: Vec<HashSet<Spur>>,
     module_qualifiers: Vec<HashMap<Spur, u32>>,
+    foreign: ForeignIndex,
+    scip: ScipIndex,
 }
 
 impl ResolutionIndex {
     #[must_use]
     pub fn build(ingest: &IngestResult, interner: &Interner) -> Self {
+        let by_name = index_symbols_by_name(&ingest.symbols);
         Self {
             file_dirs: compute_file_dirs(&ingest.files, interner),
-            by_name: index_symbols_by_name(&ingest.symbols),
+            foreign: index_foreign_bindings(ingest, &by_name),
+            by_name,
             file_scopes: index_file_scope_mentions(ingest.files.len(), &ingest.references),
             module_qualifiers: index_module_qualifiers(ingest, interner),
+            scip: ingest
+                .scip_sites
+                .iter()
+                .map(|s| ((s.file_id, s.line, s.callee), s.target))
+                .collect(),
         }
     }
 
@@ -117,8 +134,53 @@ impl ResolutionIndex {
             interner: Some(interner),
             file_scopes: Some(&self.file_scopes),
             module_qualifiers: Some(&self.module_qualifiers),
+            foreign: Some(&self.foreign),
+            scip: Some(&self.scip),
         }
     }
+}
+
+/// Bind each exported name to its target: definitions of the target's name and scope in the
+/// exporting file's dialect, preferring the exporting file, else one unique definition group.
+fn index_foreign_bindings(
+    ingest: &IngestResult,
+    by_name: &HashMap<Spur, Vec<NodeId>>,
+) -> ForeignIndex {
+    let mut index = ForeignIndex::new();
+    for binding in &ingest.foreign_bindings {
+        let Some(file) = ingest.files.get(binding.file_id as usize) else {
+            continue;
+        };
+        let dialect = file.lang.semantics().dialect_group();
+        let cands: Vec<NodeId> = by_name
+            .get(&binding.target)
+            .into_iter()
+            .flatten()
+            .copied()
+            .filter(|&id| {
+                let sym = &ingest.symbols[id as usize];
+                sym.lang.semantics().dialect_group() == dialect
+                    && binding.target_scope.is_none_or(|sc| sym.scope == Some(sc))
+            })
+            .collect();
+        let in_file: Vec<NodeId> = cands
+            .iter()
+            .copied()
+            .filter(|&id| ingest.symbols[id as usize].file_id == binding.file_id)
+            .collect();
+        let targets = if !in_file.is_empty() {
+            in_file
+        } else if is_unique_global_group(&cands, &ingest.symbols) {
+            cands
+        } else {
+            continue;
+        };
+        let entry = index.entry((binding.exported, binding.caller)).or_default();
+        entry.extend(targets);
+        entry.sort_unstable();
+        entry.dedup();
+    }
+    index
 }
 
 pub fn resolve_all_references(ingest: &IngestResult, interner: &Interner) -> ResolutionResult {

@@ -105,6 +105,15 @@ impl Graph {
         self.amb_out.iter().map(|&x| x as usize).sum()
     }
 
+    /// Call edges a SCIP index pinned.
+    #[must_use]
+    pub fn scip_edge_count(&self) -> usize {
+        self.out_prov
+            .iter()
+            .filter(|&&p| p == EdgeProv::Scip)
+            .count()
+    }
+
     #[must_use]
     pub fn total_unresolved(&self) -> usize {
         self.unresolved

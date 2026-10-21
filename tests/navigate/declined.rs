@@ -230,3 +230,64 @@ fn self_receiver_calls_bind_lexically_without_a_label() {
         "{xml}"
     );
 }
+
+const PYBIND: &[u8] = b"#include <pybind11/pybind11.h>
+namespace py = pybind11;
+int add_impl(int a, int b) { return a + b; }
+int add(int a, int b) { return a - b; }
+int plain(int a) { return a; }
+struct Pet { void bark() {} };
+PYBIND11_MODULE(native, m) {
+    m.def(\"add\", &add_impl);
+    m.def(\"plain_fn\", plain);
+    py::class_<Pet>(m, \"Pet\").def(py::init<>()).def(\"speak\", &Pet::bark);
+}
+";
+
+#[test]
+fn python_calls_bind_to_pybind11_exports() {
+    let fixtures: &[(&str, Lang, &[u8])] = &[
+        ("bind.cpp", Lang::Cpp, PYBIND),
+        (
+            "use.py",
+            Lang::Python,
+            b"import native\n\ndef free_call():\n    return native.add(1, 2)\n\ndef method_call(p):\n    return p.speak()\n\ndef unexported():\n    return native.plain_fn(1)\n",
+        ),
+    ];
+    let free = nav_xml(fixtures, "free_call", NavMode::Callees).unwrap();
+    assert!(
+        free.contains("<s t=\"fn\" n=\"add_impl\" p=\"bind.cpp:3\" prov=\"binding\"/>"),
+        "{free}"
+    );
+    assert!(!free.contains("n=\"add\" "), "{free}");
+    let method = nav_xml(fixtures, "method_call", NavMode::Callees).unwrap();
+    assert!(
+        method.contains("n=\"bark\"") && method.contains("prov=\"binding\""),
+        "{method}"
+    );
+    let unexported = nav_xml(fixtures, "unexported", NavMode::Callees).unwrap();
+    assert!(unexported.contains("count=\"0\""), "{unexported}");
+}
+
+#[test]
+fn same_language_definition_wins_over_a_binding_and_no_module_means_no_export() {
+    let fixtures: &[(&str, Lang, &[u8])] = &[
+        ("bind.cpp", Lang::Cpp, PYBIND),
+        (
+            "use.py",
+            Lang::Python,
+            b"def add(a, b):\n    return a\n\ndef local_call():\n    return add(1, 2)\n",
+        ),
+        (
+            "plain.cpp",
+            Lang::Cpp,
+            b"int helper_impl() { return 1; }\nvoid reg(Registry& r) { r.def(\"helper\", &helper_impl); }\n",
+        ),
+        ("use2.py", Lang::Python, b"def other():\n    return lib.helper()\n"),
+    ];
+    let local = nav_xml(fixtures, "local_call", NavMode::Callees).unwrap();
+    assert!(local.contains("n=\"add\" p=\"use.py:1\""), "{local}");
+    assert!(!local.contains("prov=\"binding\""), "{local}");
+    let other = nav_xml(fixtures, "other", NavMode::Callees).unwrap();
+    assert!(other.contains("count=\"0\""), "{other}");
+}
