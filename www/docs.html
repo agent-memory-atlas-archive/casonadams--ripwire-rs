@@ -140,13 +140,13 @@ cargo install ripwire-rs</code></pre>
 
       <div class="cmd-card">
         <div class="cmd-header">
-          <div class="cmd-title"><code>ripwire-rs [PATH] [--top-k &lt;N&gt;] [--max-tokens &lt;N&gt;] [--stable] [--legend &lt;MODE&gt;] [--cache &lt;PATH&gt;] [--no-cache]</code></div>
+          <div class="cmd-title"><code>ripwire-rs [PATH] [--top-k &lt;N&gt;] [--max-tokens &lt;N&gt;] [--stable] [--legend &lt;MODE&gt;] [--cache &lt;PATH&gt;] [--no-cache] [--scip &lt;FILE&gt;]</code></div>
           <span class="cmd-badge">Architecture</span>
         </div>
         <div class="cmd-body">
           <div class="cmd-field">
             <span class="cmd-label">What It Does</span>
-            <p class="cmd-desc">Parses the repository at <code>PATH</code> (defaults to current directory), builds the workspace call graph across 36 languages, executes Personalized PageRank, and streams ranked symbol definitions with incoming callers as canonical XML (bounded by <code>--top-k</code> symbol count or <code>--max-tokens</code> / <code>--pack-budget</code> streaming limits). Automatically caches compiled call graphs in <code>TMPDIR</code> for sub-second repeat queries (use <code>--no-cache</code> for cold parse).</p>
+            <p class="cmd-desc">Parses the repository at <code>PATH</code> (defaults to current directory), builds the workspace call graph across 36 languages, executes Personalized PageRank, and streams ranked symbol definitions with incoming callers as canonical XML (bounded by <code>--top-k</code> symbol count or <code>--max-tokens</code> / <code>--pack-budget</code> streaming limits). Automatically caches compiled call graphs in <code>TMPDIR</code> for sub-second repeat queries (use <code>--no-cache</code> for cold parse). <code>--scip=index.scip</code> overlays a compiler-backed SCIP index: the call sites it resolves bind exactly (<code>prov="scip"</code>, header <code>precise=K</code>) and bypass the cache.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>

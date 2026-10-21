@@ -221,45 +221,6 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
     }
 }
 
-fn render_nav_items<W: Write>(
-    dir: NavDir,
-    sym_name: &str,
-    items: &[SymbolNavInfo],
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    NavItemsReport {
-        dir,
-        root: ".",
-        of: sym_name,
-        defs: 1,
-        def_rows: &[],
-        items,
-        declined: &[],
-        gauge_attrs: crate::serialize::GraphGauges::ZERO_XML_ATTRS,
-        page: crate::serialize::PageRequest::default(),
-    }
-    .render_envelope(out)
-}
-
-/// Serialize direct callers to Ripwire-compatible XML.
-pub fn serialize_callers_xml<W: Write>(
-    sym_name: &str,
-    callers: &[SymbolNavInfo],
-    out: &mut W,
-) -> io::Result<()> {
-    render_nav_items(NavDir::Callers, sym_name, callers, out)
-}
-
-/// Serialize direct callees to Ripwire-compatible XML.
-pub fn serialize_callees_xml<W: Write>(
-    sym_name: &str,
-    callees: &[SymbolNavInfo],
-    out: &mut W,
-) -> io::Result<()> {
-    render_nav_items(NavDir::Callees, sym_name, callees, out)
-}
-
 pub struct ImpactReport<'a> {
     pub root: &'a str,
     pub sym_name: &'a str,

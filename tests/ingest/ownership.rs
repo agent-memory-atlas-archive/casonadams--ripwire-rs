@@ -1,7 +1,7 @@
+use ripwire_rs::cli::{NavMode, execute_nav_symbol_query};
 use ripwire_rs::{
     Graph, IngestResult, Interner, Lang, LanguageRegistry, MODULE_SCOPE_NAME, NO_NODE,
     PageRankConfig, SymKind, find_affected_tests, ingest_in_memory_files, navigate_1hop,
-    serialize_callers_xml,
 };
 
 fn ingest(files: &[(&str, Lang, &[u8])]) -> (IngestResult, Interner) {
@@ -49,7 +49,16 @@ fn top_level_calls_get_a_file_scope_caller() {
         assert_eq!(ingest.symbol_count(), ingest.symbols.len() - 1, "{path}");
 
         let mut xml = Vec::new();
-        serialize_callers_xml("check", &nav.callers, &mut xml).unwrap();
+        execute_nav_symbol_query(
+            "check",
+            NavMode::Callers,
+            &ingest,
+            &graph,
+            &ranks,
+            &interner,
+            &mut xml,
+        )
+        .unwrap();
         let xml = String::from_utf8(xml).unwrap();
         assert!(
             xml.contains(&format!(

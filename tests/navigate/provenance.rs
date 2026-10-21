@@ -15,34 +15,34 @@ fn nav_xml(fixtures: &[(&str, Lang, &[u8])], sym: &str, mode: NavMode) -> std::i
 
 const AMBIGUOUS: &[(&str, Lang, &[u8])] = &[
     (
-        "a/zammad.dart",
+        "a/alpha.dart",
         Lang::Dart,
-        b"class Zammad { void createUser(String n) {} }\n",
+        b"class Alpha { void register(String n) {} }\n",
     ),
     (
-        "b/keycloak.dart",
+        "b/beta.dart",
         Lang::Dart,
-        b"class Keycloak { void createUser(String n) {} }\n",
+        b"class Beta { void register(String n) {} }\n",
     ),
     (
-        "c/provision.dart",
+        "c/setup.dart",
         Lang::Dart,
-        b"void provisionMember(dynamic c, String n) {\n  c.createUser(n);\n}\n",
+        b"void setup(dynamic c, String n) {\n  c.register(n);\n}\n",
     ),
 ];
 
 #[test]
 fn callers_disclose_declined_call_sites() {
-    let xml = nav_xml(AMBIGUOUS, "createUser", NavMode::Callers).unwrap();
+    let xml = nav_xml(AMBIGUOUS, "register", NavMode::Callers).unwrap();
     assert!(xml.contains("declined_calls=\"1\""), "{xml}");
     assert!(
         xml.contains(
-            "<dc in=\"provisionMember\" p=\"c/provision.dart:2\" cands=\"2\" via=\"declined\" of_def=\"1~d 2~d\"/>"
+            "<dc in=\"setup\" p=\"c/setup.dart:2\" cands=\"2\" via=\"declined\" of_def=\"1~d 2~d\"/>"
         ),
         "{xml}"
     );
     assert!(
-        xml.contains("<def ix=\"1\" t=\"method\" sc=\"Zammad\" p=\"a/zammad.dart:1\"/>"),
+        xml.contains("<def ix=\"1\" t=\"method\" sc=\"Alpha\" p=\"a/alpha.dart:1\"/>"),
         "{xml}"
     );
     assert!(xml.contains("<def ix=\"2\""), "{xml}");
@@ -50,10 +50,10 @@ fn callers_disclose_declined_call_sites() {
 
 #[test]
 fn callees_disclose_declined_call_sites() {
-    let xml = nav_xml(AMBIGUOUS, "provisionMember", NavMode::Callees).unwrap();
+    let xml = nav_xml(AMBIGUOUS, "setup", NavMode::Callees).unwrap();
     assert!(xml.contains("declined_calls=\"1\""), "{xml}");
     assert!(
-        xml.contains("<dc n=\"createUser\" l=\"2\" cands=\"2\" via=\"declined\"/>"),
+        xml.contains("<dc n=\"register\" l=\"2\" cands=\"2\" via=\"declined\"/>"),
         "{xml}"
     );
 }
@@ -61,8 +61,8 @@ fn callees_disclose_declined_call_sites() {
 #[test]
 fn uses_of_undefined_symbol_is_external_not_an_error() {
     let fixtures: &[(&str, Lang, &[u8])] =
-        &[("m.dart", Lang::Dart, b"void m() { final x = Member(1); }\n")];
-    let xml = nav_xml(fixtures, "Member", NavMode::Uses).unwrap();
+        &[("m.dart", Lang::Dart, b"void m() { final x = Widget(1); }\n")];
+    let xml = nav_xml(fixtures, "Widget", NavMode::Uses).unwrap();
     assert!(
         xml.contains("defs=\"0\" external=\"1\" count=\"1\""),
         "{xml}"
@@ -74,24 +74,24 @@ fn uses_of_undefined_symbol_is_external_not_an_error() {
 fn callers_tag_each_row_with_the_definition_it_calls() {
     let fixtures: &[(&str, Lang, &[u8])] = &[
         (
-            "a/zammad.dart",
+            "a/alpha.dart",
             Lang::Dart,
-            b"class Zammad { void createUser(String n) {} }\n",
+            b"class Alpha { void register(String n) {} }\n",
         ),
         (
-            "b/keycloak.dart",
+            "b/beta.dart",
             Lang::Dart,
-            b"class Keycloak { void createUser(String n) {} }\n",
+            b"class Beta { void register(String n) {} }\n",
         ),
         (
             "b/use.dart",
             Lang::Dart,
-            b"void viaKeycloak(Keycloak k) {\n  Keycloak.createUser('x');\n}\n",
+            b"void viaBeta(Beta k) {\n  Beta.register('x');\n}\n",
         ),
     ];
-    let xml = nav_xml(fixtures, "createUser", NavMode::Callers).unwrap();
+    let xml = nav_xml(fixtures, "register", NavMode::Callers).unwrap();
     assert!(
-        xml.contains("n=\"viaKeycloak\"") && xml.contains("of_def=\"2\""),
+        xml.contains("n=\"viaBeta\"") && xml.contains("of_def=\"2\""),
         "{xml}"
     );
 }
@@ -112,7 +112,7 @@ fn type_qualified_call_to_unindexed_type_is_external_not_declined() {
         (
             "c/load.dart",
             Lang::Dart,
-            b"void load() {\n  final q = \"SELECT ${common.Member.cols().join(', ')}\";\n}\n",
+            b"void load() {\n  final q = \"SELECT ${pkg.Widget.cols().join(', ')}\";\n}\n",
         ),
     ];
     let xml = nav_xml(fixtures, "load", NavMode::Callees).unwrap();

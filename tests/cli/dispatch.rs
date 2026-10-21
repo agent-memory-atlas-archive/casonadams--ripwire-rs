@@ -713,7 +713,7 @@ fn test_all_new_feature_coverage() {
 
     let _ = ripwire_rs::navigate::resolve_symbol_at("src/lib.rs", 1, &ingest, &interner);
     let _ = ripwire_rs::metrics::execute_biggest_first_query(".", &ingest, &interner, &mut out);
-    assert!(execute_html_export(".", None, "lang").is_ok());
+    assert!(execute_html_export(&Cli::default(), ".", None).is_ok());
     let mut detail_cli = Cli::default();
     detail_cli.detail.naming_consistency = true;
     let _ = run_cli_verb(&detail_cli.detail, &detail_cli, ".");

@@ -1,6 +1,6 @@
+use ripwire_rs::cli::{NavMode, execute_nav_symbol_query};
 use ripwire_rs::navigate::{
-    ImpactReport, NavDir, find_symbols_by_name, navigate_1hop, serialize_callers_xml,
-    transitive_impact,
+    ImpactReport, NavDir, find_symbols_by_name, navigate_1hop, transitive_impact,
 };
 use ripwire_rs::serialize::{GraphGauges, PageRequest, XmlReport};
 use ripwire_rs::{
@@ -69,7 +69,16 @@ fn test_navigate_1hop_and_impact() {
     assert_eq!(nav.callees[0].name, "c");
 
     let mut callers_xml = Vec::new();
-    serialize_callers_xml("b", &nav.callers, &mut callers_xml).unwrap();
+    execute_nav_symbol_query(
+        "b",
+        NavMode::Callers,
+        &ingest,
+        &graph,
+        &ranks,
+        &interner,
+        &mut callers_xml,
+    )
+    .unwrap();
     assert!(
         String::from_utf8(callers_xml)
             .unwrap()

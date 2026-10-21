@@ -57,13 +57,9 @@ pub fn execute_navigate(args: &NavigateArgs) -> io::Result<()> {
     stdout.flush()
 }
 
-pub fn execute_html_export(
-    root: &str,
-    out_file: Option<&str>,
-    color_by_str: &str,
-) -> io::Result<()> {
-    let color_by = color_by_str.parse().unwrap_or_default();
-    let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+pub fn execute_html_export(cli: &Cli, root: &str, out_file: Option<&str>) -> io::Result<()> {
+    let color_by = cli.color_by.parse().unwrap_or_default();
+    let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
     if let Some(path) = out_file {
         let mut file = std::fs::File::create(path)?;
         crate::serialize::html::write_call_graph_html(
@@ -1026,8 +1022,8 @@ pub fn run_cli_args(mut cli: Cli) -> io::Result<()> {
     if cli.clones {
         return crate::clones::execute_clones_command(root, cli.min_tokens);
     }
-    if let Some(html_opt) = cli.html {
-        return execute_html_export(root, html_opt.as_deref(), &cli.color_by);
+    if let Some(html_opt) = &cli.html {
+        return execute_html_export(&cli, root, html_opt.as_deref());
     }
     if let Some(target) = cli.slice.as_deref() {
         return crate::slice::execute_slice_command_with_depth(
