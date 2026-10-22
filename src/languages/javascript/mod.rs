@@ -365,8 +365,8 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
 };
 
 impl LanguageSemantics for JavaScriptLanguage {
-    fn env_reads(&self) -> &'static [crate::languages::kit::flags::EnvRead] {
-        &[crate::languages::kit::flags::EnvRead::Member("process.env")]
+    fn env_reads(&self) -> &'static [crate::languages::common::flags::EnvRead] {
+        &[crate::languages::common::flags::EnvRead::Member("process.env")]
     }
 
     fn complexity_kinds(&self) -> &'static ComplexityKinds {

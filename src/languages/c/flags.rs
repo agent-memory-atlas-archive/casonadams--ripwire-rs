@@ -1,5 +1,5 @@
 //! C-family feature flags: `#ifndef` settings gates, `#if` conditionals and CMake options.
-use crate::languages::kit::flags::{FlagFact, env_facts};
+use crate::languages::common::flags::{FlagFact, env_facts};
 use crate::languages::LanguageSemantics;
 
 /// A C-preprocessor settings gate: `#ifndef NAME` followed by `#define NAME VALUE` (an include guard has no value).
@@ -148,11 +148,11 @@ pub fn facts(lang: &impl LanguageSemantics, lines: &[&str], path: &str) -> Vec<F
 /// The flag hooks every C-family plugin shares.
 macro_rules! c_family_flags {
     () => {
-        fn env_reads(&self) -> &'static [$crate::languages::kit::flags::EnvRead] {
-            &[$crate::languages::kit::flags::EnvRead::Call("getenv")]
+        fn env_reads(&self) -> &'static [$crate::languages::common::flags::EnvRead] {
+            &[$crate::languages::common::flags::EnvRead::Call("getenv")]
         }
 
-        fn flag_facts(&self, lines: &[&str], path: &str) -> Vec<$crate::languages::kit::flags::FlagFact> {
+        fn flag_facts(&self, lines: &[&str], path: &str) -> Vec<$crate::languages::common::flags::FlagFact> {
             $crate::languages::c::flags::facts(self, lines, path)
         }
     };

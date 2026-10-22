@@ -2,7 +2,7 @@ use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::languages::c::flags::{
     conditional_uses, extract_cmake_option, extract_settings_gate,
 };
-use ripwire_rs::languages::kit::flags::FlagFact;
+use ripwire_rs::languages::common::flags::FlagFact;
 use ripwire_rs::query::doc_tools::{
     WhereisFacts, call_owners, collect_file_wanted_tokens, filter_present_in_sources_drift,
     mentions_from_sources, scan_doc_text_for_drift, whereis_from_sources,

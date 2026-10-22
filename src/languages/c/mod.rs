@@ -1,4 +1,5 @@
 pub mod flags;
+pub(crate) mod lint;
 
 use super::{
     ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,

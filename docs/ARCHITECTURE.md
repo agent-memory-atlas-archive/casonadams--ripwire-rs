@@ -89,8 +89,9 @@ optionally `grammar.txt` (a vendored C grammar: `files = parser.c scanner.c`, op
 `include =`, discovered by `build.rs`). Callers only see the `LanguageSemantics` trait, so shared
 code never names a language. To add one, create the directory and add one line to
 `register_languages!` in `src/languages/mod.rs`, which generates the `Lang` enum, the module
-declaration and the semantics table. `src/languages/kit/` holds the shared vocabulary plugins build
-on (syntax and complexity kinds, flag facts, lint groups, keyword fallback) and no language logic.
+declaration and the semantics table. `src/languages/common/` is not a language: it holds the shared
+helpers and vocabulary every plugin builds on (syntax and complexity kinds, flag facts, lint groups,
+keyword fallback) and no language logic.
 
 ## Lineage & Acknowledgments
 

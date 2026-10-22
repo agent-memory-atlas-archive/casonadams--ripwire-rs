@@ -31,10 +31,10 @@ macro_rules! impl_grammar_method {
 }
 pub(crate) use impl_grammar_method;
 
-pub mod kit;
-pub use kit::util::*;
-pub use kit::{ComplexityKinds, ForeignExport, LintGroup, SyntaxKinds, flags, reads, source};
-pub(crate) use kit::{lint, lint_hooks};
+pub mod common;
+pub use common::util::*;
+pub use common::{ComplexityKinds, ForeignExport, LintGroup, SyntaxKinds, flags, reads, source};
+pub(crate) use common::{lint, lint_hooks};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallableBinding {
@@ -274,7 +274,7 @@ pub trait LanguageSemantics: Sync {
     }
 
     /// Environment-read spellings this language uses (`getenv("X")`, `process.env.X`).
-    fn env_reads(&self) -> &'static [kit::flags::EnvRead] {
+    fn env_reads(&self) -> &'static [common::flags::EnvRead] {
         &[]
     }
 
@@ -284,8 +284,8 @@ pub trait LanguageSemantics: Sync {
     }
 
     /// Feature-flag facts in a source file (or one of `flag_manifests`).
-    fn flag_facts(&self, lines: &[&str], _path: &str) -> Vec<kit::flags::FlagFact> {
-        kit::flags::env_facts(
+    fn flag_facts(&self, lines: &[&str], _path: &str) -> Vec<common::flags::FlagFact> {
+        common::flags::env_facts(
             lines,
             self.uses_hash_comments(),
             self.has_lifetime_tick_syntax(),
@@ -560,7 +560,7 @@ pub trait LanguageSemantics: Sync {
 
     /// True if `word` is a keyword of this language (operator, not operand, in readability and clone tokens).
     fn is_keyword(&self, word: &[u8]) -> bool {
-        kit::keywords::common(word)
+        common::keywords::common(word)
     }
 
     /// Path-sensitive grammar shared by source analyses.

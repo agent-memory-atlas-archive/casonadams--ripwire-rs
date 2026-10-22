@@ -3,9 +3,8 @@ pub use super::lint_report::{serialize_lint_sarif, serialize_lint_xml};
 use super::lint_rules::{FileLintContext, Sink, large_function, symbols_in_file};
 use crate::domain::{IngestResult, Interner, Lang};
 use crate::languages::LintGroup;
-use crate::languages::lint::{
-    atoms as lint_atoms, cache as lint_cache, flow as lint_flow, text as lint_text,
-};
+use crate::languages::c::lint::{atoms as lint_atoms, cache as lint_cache};
+use crate::languages::lint::{flow as lint_flow, text as lint_text};
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq, Eq)]

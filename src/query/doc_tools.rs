@@ -1,6 +1,6 @@
 pub use super::branch_tools::*;
 use crate::domain::{IngestResult, Interner};
-use crate::languages::kit::flags::FlagFact;
+use crate::languages::common::flags::FlagFact;
 use crate::query::{FileSources, SourceReader};
 use serde_json::{Value, json};
 use std::collections::HashMap;

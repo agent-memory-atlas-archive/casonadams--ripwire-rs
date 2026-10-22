@@ -1,5 +1,5 @@
-use super::ast::{ancestor, contains_kind, text, visit};
-use super::syntax::decimal_value;
+use crate::languages::common::lint::ast::{ancestor, contains_kind, text, visit};
+use crate::languages::common::lint::syntax::decimal_value;
 use crate::metrics::lint_rules::{FileLintContext, Sink, one_line};
 use std::collections::BTreeSet;
 use tree_sitter::Node;

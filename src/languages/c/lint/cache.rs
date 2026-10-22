@@ -1,5 +1,5 @@
-use super::ast::{ancestor, contains_kind, text, visit};
-use super::syntax::call_positions;
+use crate::languages::common::lint::ast::{ancestor, contains_kind, text, visit};
+use crate::languages::common::lint::syntax::call_positions;
 use crate::metrics::lint_rules::{FileLintContext, Sink, one_line};
 use tree_sitter::Node;
 
