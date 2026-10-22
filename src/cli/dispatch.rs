@@ -445,8 +445,7 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             stdout.finish()
         })());
     }
-    crate::commands::run(cli, root)
-        .or_else(|| run_cli_verb(&cli.arch, cli, root))
+    crate::commands::run(cli, root).or_else(|| run_cli_verb(&cli.arch, cli, root))
 }
 
 pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io::Result<()> {
