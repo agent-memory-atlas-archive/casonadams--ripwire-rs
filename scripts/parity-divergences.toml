@@ -11,7 +11,7 @@
 # defect_budget must equal the number of defect entries: a new defect fails, a fixed one must lower it.
 # An entry with a [divergence.files] table runs against that fixture (written to a temp dir) instead of the tree.
 
-defect_budget = 23
+defect_budget = 22
 
 [[divergence]]
 id = "partner-unindexed-languages"
@@ -396,11 +396,3 @@ case = ""
 kind = "defect"
 why = "The credential-path rule also flags a prose line in a skill doc that quotes ~/.ssh and ~/.aws in backticks; upstream flags only the exfiltration line, and AGENTS.md requires prose backticks to be filtered before reporting."
 evidence = "measured on 2370c85: rw findings=2 (SKILL.md lines 42 and 74), rip findings=1; owner: unassigned"
-
-[[divergence]]
-id = "pr-context-string-literal-symbol"
-command = "--pr-context"
-case = ""
-kind = "defect"
-why = "PR context lists a symbol named \"billing.scala\" with its quotes, which is a string literal captured as a definition, not a callable; upstream's full set has no such row."
-evidence = "measured on 2370c85: paged <s> row n=\"billing.scala\" absent from upstream's full set; owner: unassigned (symbol extraction)"
