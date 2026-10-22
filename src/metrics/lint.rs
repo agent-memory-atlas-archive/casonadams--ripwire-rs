@@ -3,7 +3,9 @@ pub use super::lint_report::{serialize_lint_sarif, serialize_lint_xml};
 use super::lint_rules::{FileLintContext, Sink, large_function, symbols_in_file};
 use crate::domain::{IngestResult, Interner, Lang};
 use crate::languages::LintGroup;
-use crate::languages::c::lint::{atoms as lint_atoms, cache as lint_cache};
+use crate::languages::c::lint::{
+    atoms as lint_atoms, cache as lint_cache, structure as lint_structure,
+};
 use crate::languages::lint::{flow as lint_flow, text as lint_text};
 use std::io::{self, Write};
 
@@ -113,7 +115,7 @@ pub static LINT_RULES: &[LintRule] = &[
         LintGroup::CFamily,
         "v0.1.0",
         "an if-body that is just `;` — bugprone-suspicious-semicolon",
-        lint_flow::suspicious_semicolon
+        lint_structure::suspicious_semicolon
     ),
     rule!(
         "typedef-over-using",
@@ -122,7 +124,7 @@ pub static LINT_RULES: &[LintRule] = &[
         LintGroup::CFamily,
         "v0.1.0",
         "a C-style typedef struct/union where `using` is preferred",
-        lint_text::typedef_over_using
+        lint_structure::typedef_over_using
     ),
     rule!(
         "magic-number",
@@ -140,7 +142,7 @@ pub static LINT_RULES: &[LintRule] = &[
         LintGroup::CFamily,
         "v0.1.0",
         "a catch block with an empty body",
-        lint_flow::empty_catch
+        lint_structure::empty_catch
     ),
     rule!(
         "self-assign",
@@ -167,7 +169,7 @@ pub static LINT_RULES: &[LintRule] = &[
         LintGroup::NativeOnly,
         "v0.1.0",
         "brace nesting depth over 4 inside a function body",
-        lint_flow::deep_nesting
+        lint_structure::deep_nesting
     ),
     rule!(
         "inconsistent-return",
@@ -176,7 +178,7 @@ pub static LINT_RULES: &[LintRule] = &[
         LintGroup::NativeOnly,
         "v0.1.0",
         "a bare `return;` mixed with a value-returning return in the same function",
-        lint_flow::inconsistent_return
+        lint_structure::inconsistent_return
     ),
     rule!(
         "unreachable-code",

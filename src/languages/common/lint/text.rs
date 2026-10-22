@@ -1,4 +1,4 @@
-use super::ast::{contains_kind, text, visit};
+use super::ast::{text, visit};
 use super::syntax::{call_end, call_positions};
 use crate::metrics::lint_rules::{FileLintContext, Sink, one_line};
 
@@ -34,14 +34,6 @@ pub fn redundant_parens(ctx: &FileLintContext<'_>, sink: &mut Sink<'_>) {
                 .parent()
                 .is_some_and(|p| p.kind() == "parenthesized_expression")
         {
-            sink.at(node.start_byte(), one_line(text(ctx, node)));
-        }
-    });
-}
-
-pub fn typedef_over_using(ctx: &FileLintContext<'_>, sink: &mut Sink<'_>) {
-    visit(ctx, |node| {
-        if node.kind() == "type_definition" && !contains_kind(node, "function_declarator") {
             sink.at(node.start_byte(), one_line(text(ctx, node)));
         }
     });
