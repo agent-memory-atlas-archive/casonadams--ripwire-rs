@@ -33,6 +33,7 @@ macro_rules! register_commands {
 register_commands! {
     nav::NAV,
     retrieval::RETRIEVAL,
+    workspace::WORKSPACE,
     detail::DETAIL,
 }
 

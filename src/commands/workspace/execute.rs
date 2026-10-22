@@ -1,4 +1,5 @@
-use super::args::TopWorkspaceArgs;
+use super::WorkspaceArgs;
+use crate::cli::{Paginated, TopModifierArgs};
 use crate::domain::{IngestResult, Interner};
 use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};
@@ -49,7 +50,7 @@ pub fn render_whereis_xml<W: Write>(
 }
 
 fn execute_whereis_doc_search<W: Write>(
-    ws: &TopWorkspaceArgs,
+    ws: &WorkspaceArgs,
     sym: &str,
     ctx: &WorkspaceContext<'_>,
     with_history: bool,
@@ -78,7 +79,7 @@ fn execute_whereis_doc_search<W: Write>(
 fn execute_doc_drift_search<W: Write>(
     ctx: &WorkspaceContext<'_>,
     with_history: bool,
-    page: Option<&dyn super::args::Paginated>,
+    page: Option<&dyn Paginated>,
     out: &mut W,
 ) -> io::Result<()> {
     let mut val = crate::query::doc_tools::doc_drift_with_sources_and_history(
@@ -96,7 +97,7 @@ fn execute_doc_drift_search<W: Write>(
 
 fn execute_flags_doc_search<W: Write>(
     ctx: &WorkspaceContext<'_>,
-    page: Option<&dyn super::args::Paginated>,
+    page: Option<&dyn Paginated>,
     out: &mut W,
 ) -> io::Result<()> {
     let mut val = crate::query::doc_tools::flags_from_sources(
@@ -112,10 +113,10 @@ fn execute_flags_doc_search<W: Write>(
 }
 
 pub fn execute_doc_search_query<W: Write>(
-    ws: &TopWorkspaceArgs,
+    ws: &WorkspaceArgs,
     ctx: &WorkspaceContext<'_>,
     with_history: bool,
-    page: Option<&dyn super::args::Paginated>,
+    page: Option<&dyn Paginated>,
     out: &mut W,
 ) -> io::Result<bool> {
     if let Some(sym) = ws.whereis.as_deref() {
@@ -424,7 +425,7 @@ pub fn render_plan_lint_xml<W: Write>(
 }
 
 pub fn execute_flip_or_plan_query<W: Write>(
-    ws: &TopWorkspaceArgs,
+    ws: &WorkspaceArgs,
     ctx: &WorkspaceContext<'_>,
     out: &mut W,
 ) -> io::Result<bool> {
@@ -450,7 +451,7 @@ pub fn execute_flip_or_plan_query<W: Write>(
 }
 
 pub fn execute_session_tools_query<W: Write>(
-    ws: &TopWorkspaceArgs,
+    ws: &WorkspaceArgs,
     ctx: &WorkspaceContext<'_>,
     out: &mut W,
 ) -> io::Result<bool> {
@@ -534,7 +535,7 @@ pub fn execute_edit_op_with_options<W: Write>(
 }
 
 pub fn execute_workspace_doc_query<W: Write>(
-    ws: &TopWorkspaceArgs,
+    ws: &WorkspaceArgs,
     ctx: &WorkspaceContext<'_>,
     with_history: bool,
     out: &mut W,
@@ -543,16 +544,16 @@ pub fn execute_workspace_doc_query<W: Write>(
         ws,
         ctx,
         with_history,
-        &super::args::TopModifierArgs::default(),
+        &TopModifierArgs::default(),
         out,
     )
 }
 
 pub fn execute_workspace_doc_query_paged<W: Write>(
-    ws: &TopWorkspaceArgs,
+    ws: &WorkspaceArgs,
     ctx: &WorkspaceContext<'_>,
     with_history: bool,
-    page: &dyn super::args::Paginated,
+    page: &dyn Paginated,
     out: &mut W,
 ) -> io::Result<()> {
     if execute_doc_search_query(ws, ctx, with_history, Some(page), out)? {

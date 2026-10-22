@@ -81,9 +81,6 @@ pub struct Cli {
     /// Parsed values of command-plugin flags
     #[arg(skip)]
     pub plugins: PluginArgs,
-    /// Top-level workspace and audit flags
-    #[command(flatten)]
-    pub workspace: TopWorkspaceArgs,
     /// Top-level pre-PR safety flags
     #[command(flatten)]
     pub safety: TopSafetyArgs,
@@ -402,92 +399,6 @@ impl TopModifierArgs {
     }
 }
 
-/// Top-level workspace & audit flags.
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct TopWorkspaceArgs {
-    /// Find which branches or trees define a symbol
-    #[arg(long, value_name = "SYM")]
-    pub whereis: Option<String>,
-    /// Emit verbatim matched lines in --whereis without length truncation
-    #[arg(long = "whereis-full-text")]
-    pub whereis_full_text: bool,
-    /// Select --whereis listing filter (defs|refs|all)
-    #[arg(long = "whereis-listing", value_name = "MODE")]
-    pub whereis_listing: Option<String>,
-    /// Authorship and bus-factor analysis
-    #[arg(long)]
-    pub owners: bool,
-    /// Detect stale doc references
-    #[arg(long = "doc-drift")]
-    pub doc_drift: bool,
-    /// Scan dark feature flags and environment reads
-    #[arg(long)]
-    pub flags: bool,
-    /// Divergent branch content tracking
-    #[arg(long = "stray-content")]
-    pub stray_content: bool,
-    /// Markdown docs referencing symbol in backticks
-    #[arg(long, value_name = "SYM")]
-    pub mentions: Option<String>,
-    /// Environment and dependency health diagnostics
-    #[arg(long)]
-    pub doctor: bool,
-    /// Continuation packet for interrupted agent sessions
-    #[arg(long)]
-    pub handoff: bool,
-    /// View pinned session gotchas and invariants (.ripwire-rs_notes)
-    #[arg(long)]
-    pub notes: bool,
-    /// Pin gotcha note to .ripwire-rs_notes (e.g. --note-add="SYM: text")
-    #[arg(long = "note-add", value_name = "NOTE")]
-    pub note_add: Option<String>,
-    /// Scan blast radius of toggling a feature flag
-    #[arg(long = "flip", value_name = "GATE")]
-    pub flip: Option<String>,
-    /// Gateability check for doc-drift
-    #[arg(long = "gateability")]
-    pub gateability: bool,
-    /// Check ABI byte layout across branches in stray-content
-    #[arg(long = "abi")]
-    pub abi: bool,
-    /// Generate landing plan in stray-content
-    #[arg(long = "plan")]
-    pub plan: bool,
-    /// Lint structure of a PLAN file
-    #[arg(long = "plan-lint", value_name = "FILE")]
-    pub plan_lint: Option<String>,
-    /// List files skipped due to size limits
-    #[arg(long = "skipped")]
-    pub skipped: bool,
-    /// Replace symbol definition body with text
-    #[arg(long = "replace-symbol-body", value_name = "SYM:BODY")]
-    pub replace_symbol_body: Option<String>,
-    /// Insert text immediately before a symbol definition
-    #[arg(long = "insert-before-symbol", value_name = "SYM:TEXT")]
-    pub insert_before_symbol: Option<String>,
-    /// Insert text immediately after a symbol definition
-    #[arg(long = "insert-after-symbol", value_name = "SYM:TEXT")]
-    pub insert_after_symbol: Option<String>,
-}
-
-impl TopWorkspaceArgs {
-    #[must_use]
-    pub fn active_edit_op(&self) -> Option<(&str, crate::query::edit::EditOp)> {
-        self.replace_symbol_body
-            .as_deref()
-            .map(|s| (s, crate::query::edit::EditOp::ReplaceBody))
-            .or_else(|| {
-                self.insert_before_symbol
-                    .as_deref()
-                    .map(|s| (s, crate::query::edit::EditOp::InsertBefore))
-            })
-            .or_else(|| {
-                self.insert_after_symbol
-                    .as_deref()
-                    .map(|s| (s, crate::query::edit::EditOp::InsertAfter))
-            })
-    }
-}
 /// Categorized workflow command groups.
 #[derive(Subcommand, Debug, PartialEq)]
 pub enum Commands {
@@ -793,11 +704,4 @@ impl_verb_group!(
         dead_code, communities, deps, external_surface, mermaid,
         metrics, context_ratio, ensemble, comment_coherence
     ]
-);
-
-impl_verb_group!(
-    TopWorkspaceArgs,
-    opts: [whereis, mentions, note_add, flip, plan_lint],
-    flags: [owners, doc_drift, flags, stray_content, doctor, handoff, notes, skipped],
-    extra: active_edit_op
 );

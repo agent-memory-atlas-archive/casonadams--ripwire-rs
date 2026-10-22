@@ -1,10 +1,10 @@
-use ripwire_rs::cli::{
-    TopWorkspaceArgs, WorkspaceContext, build_handoff_verified_rows, execute_doc_search_query,
+use ripwire_rs::commands::detail::execute_expand_or_outline_query;
+use ripwire_rs::commands::workspace::{
+    WorkspaceArgs, WorkspaceContext, build_handoff_verified_rows, execute_doc_search_query,
     execute_session_tools_query, execute_workspace_doc_query_paged, render_flip_xml,
     render_notes_xml, render_plan_lint_xml, render_skipped_census_xml, render_whereis_xml,
     resolve_edit_spec, resolve_edit_spec_with_reader,
 };
-use ripwire_rs::commands::detail::execute_expand_or_outline_query;
 use ripwire_rs::crawler::{CrawlerOptions, SkippedCensus};
 use ripwire_rs::query::detail::skeletonize_body;
 use ripwire_rs::query::doc_tools::{WhereisFacts, whereis_from_sources_with_facts};
@@ -199,7 +199,7 @@ fn test_execute_doc_search_query_all_branches() {
     assert!(whereis_xml.contains("feature-branch"));
     assert!(whereis_xml.contains("fate sym=\"overview\" v=\"removed\""));
     // Doc drift
-    let ws = TopWorkspaceArgs {
+    let ws = WorkspaceArgs {
         doc_drift: true,
         ..Default::default()
     };
@@ -209,7 +209,7 @@ fn test_execute_doc_search_query_all_branches() {
     assert!(String::from_utf8_lossy(&buf).contains("doc-drift"));
 
     // Flags
-    let ws = TopWorkspaceArgs {
+    let ws = WorkspaceArgs {
         flags: true,
         ..Default::default()
     };
@@ -219,7 +219,7 @@ fn test_execute_doc_search_query_all_branches() {
     assert!(String::from_utf8_lossy(&buf).contains("flags"));
 
     // Mentions
-    let ws = TopWorkspaceArgs {
+    let ws = WorkspaceArgs {
         mentions: Some("overview".to_string()),
         ..Default::default()
     };
@@ -229,7 +229,7 @@ fn test_execute_doc_search_query_all_branches() {
     assert!(String::from_utf8_lossy(&buf).contains("mentions"));
 
     // Unhandled / empty
-    let ws = TopWorkspaceArgs::default();
+    let ws = WorkspaceArgs::default();
     buf.clear();
     let unhandled = execute_doc_search_query(&ws, &ctx, false, None, &mut buf).unwrap();
     assert!(!unhandled);
@@ -296,7 +296,7 @@ fn test_execute_session_tools_and_workspace_doc_query() {
     };
 
     // Notes display via in-memory content injection
-    let mut ws = TopWorkspaceArgs {
+    let mut ws = WorkspaceArgs {
         notes: true,
         ..Default::default()
     };
@@ -306,7 +306,7 @@ fn test_execute_session_tools_and_workspace_doc_query() {
     assert!(String::from_utf8_lossy(&buf).contains("pinned in-memory note"));
 
     // Flip query via in-memory sources
-    ws = TopWorkspaceArgs {
+    ws = WorkspaceArgs {
         flip: Some("nonexistent_gate".to_string()),
         ..Default::default()
     };
@@ -316,7 +316,7 @@ fn test_execute_session_tools_and_workspace_doc_query() {
     assert!(String::from_utf8_lossy(&buf).contains("flip"));
 
     // Plan lint via in-memory content injection
-    ws = TopWorkspaceArgs {
+    ws = WorkspaceArgs {
         plan_lint: Some("PLAN.md".to_string()),
         ..Default::default()
     };
@@ -326,13 +326,13 @@ fn test_execute_session_tools_and_workspace_doc_query() {
     assert!(String::from_utf8_lossy(&buf).contains("headings=\"1\""));
 
     // Empty session query
-    ws = TopWorkspaceArgs::default();
+    ws = WorkspaceArgs::default();
     buf.clear();
     let unhandled_session = execute_session_tools_query(&ws, &ctx, &mut buf).unwrap();
     assert!(!unhandled_session);
 
     // Workspace doc query with doc search flag
-    ws = TopWorkspaceArgs {
+    ws = WorkspaceArgs {
         flags: true,
         ..Default::default()
     };
@@ -342,7 +342,7 @@ fn test_execute_session_tools_and_workspace_doc_query() {
     assert!(String::from_utf8_lossy(&buf).contains("flags"));
 
     // Workspace doc query with default unhandled args
-    ws = TopWorkspaceArgs::default();
+    ws = WorkspaceArgs::default();
     buf.clear();
     execute_workspace_doc_query_paged(&ws, &ctx, false, &page, &mut buf).unwrap();
     assert!(buf.is_empty());

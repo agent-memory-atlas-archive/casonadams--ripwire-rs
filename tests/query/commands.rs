@@ -243,8 +243,8 @@ fn catalogue_document_consumers_use_supplied_source_bytes() {
 
 #[test]
 fn whereis_catalogue_advertises_selectors_and_renderer_exposes_refs() {
-    let descriptor = ripwire_rs::query::commands::COMMANDS
-        .iter()
+    let descriptor = ripwire_rs::query::commands::all_commands()
+        .into_iter()
         .find(|command| command.name == "whereis")
         .unwrap();
     for selector in ["listing", "full_text"] {

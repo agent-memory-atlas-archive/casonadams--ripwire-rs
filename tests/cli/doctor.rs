@@ -1,4 +1,4 @@
-use ripwire_rs::cli::doctor::{
+use ripwire_rs::commands::workspace::doctor::{
     DoctorCheck, DoctorReport, classify_fsmonitor, is_cache_blob_name, probe_cache_artifact,
 };
 

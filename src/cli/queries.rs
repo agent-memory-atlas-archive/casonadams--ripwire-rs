@@ -1,5 +1,4 @@
 pub use super::arch::*;
-pub use super::workspace::*;
 
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;

@@ -273,87 +273,6 @@ pub fn execute_safety_verb<W: Write>(
     Ok(failed.then_some(4))
 }
 
-impl CliVerb for TopWorkspaceArgs {
-    fn execute_verb<W: Write>(
-        &self,
-        ctx: &ExecutionContext<'_>,
-        out: &mut crate::serialize::XmlWriter<'_, W>,
-    ) -> io::Result<()> {
-        if self.owners {
-            return execute_workspace_owners(ctx, out);
-        }
-        if self.stray_content {
-            let val = crate::query::doc_tools::call_stray_content(ctx.root);
-            return crate::serialize::serialize_stray_content_xml(&val, out);
-        }
-        if let Some((spec, op)) = self.active_edit_op() {
-            execute_edit_op_with_options(
-                EditCliOptions {
-                    root: ctx.root,
-                    spec,
-                    op,
-                    payload_override: ctx.cli.safety.edit_payload.as_deref(),
-                    dry_run: ctx.cli.safety.dry_run,
-                },
-                ctx.ingest,
-                ctx.interner,
-                out,
-            )
-        } else {
-            let sources = crate::query::FileSources {
-                root: Path::new(ctx.root),
-            };
-            let notes_content = self.notes.then(|| {
-                std::fs::read_to_string(Path::new(ctx.root).join(".ripwire-rs_notes"))
-                    .unwrap_or_default()
-            });
-            let plan_content = self
-                .plan_lint
-                .as_deref()
-                .and_then(|path| std::fs::read_to_string(path).ok());
-            let workspace = super::workspace::WorkspaceContext {
-                root: ctx.root,
-                ingest: ctx.ingest,
-                interner: ctx.interner,
-                sources: &sources,
-                notes_content: notes_content.as_deref(),
-                plan_content: plan_content.as_deref(),
-            };
-            execute_workspace_doc_query_paged(
-                self,
-                &workspace,
-                crate::commands::retrieval::with_history(ctx.cli),
-                ctx.cli,
-                out,
-            )
-        }
-    }
-}
-
-fn execute_workspace_owners<W: Write>(ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
-    let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 12);
-    let commits = crate::git::history::walk_repository_history_scoped(ctx.root, cutoff).ok();
-    let at_stamp = crate::git::history::compute_git_at_stamp(ctx.root);
-    let known_files: std::collections::HashSet<String> = ctx
-        .ingest
-        .files
-        .iter()
-        .map(|f| ctx.interner.resolve(&f.path).to_string())
-        .collect();
-    let mut val = crate::query::doc_tools::call_owners(
-        commits.as_deref(),
-        None,
-        at_stamp.as_deref(),
-        Some(&known_files),
-    );
-    val["root"] = serde_json::Value::String(ctx.root.to_string());
-    ctx.apply_pagination_to_json(&mut val);
-    if crate::commands::retrieval::detail(ctx.cli).is_some_and(|d| d > 0) {
-        val["detail"] = serde_json::Value::Bool(true);
-    }
-    crate::serialize::serialize_owners_xml(&val, out)
-}
-
 pub fn split_csv_patterns(raw: &str) -> Vec<&str> {
     raw.split(',')
         .map(str::trim)
@@ -571,7 +490,6 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         })());
     }
     crate::commands::run(cli, root)
-        .or_else(|| run_cli_verb(&cli.workspace, cli, root))
         .or_else(|| run_cli_verb(&cli.safety, cli, root))
         .or_else(|| run_cli_verb(&cli.arch, cli, root))
 }

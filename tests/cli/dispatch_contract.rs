@@ -247,3 +247,42 @@ fn detail_group_is_active_only_for_its_primary_flags() {
         assert!(!active(flag), "{flag}");
     }
 }
+
+#[test]
+fn workspace_group_is_active_only_for_its_primary_flags() {
+    let active = |flag: &str| {
+        let cli = ripwire_rs::parse_from(["rw", flag]).unwrap();
+        cli.plugins
+            .decode::<ripwire_rs::commands::workspace::WorkspaceArgs>()
+            .unwrap()
+            .is_group_active()
+    };
+    for flag in [
+        "--whereis=a",
+        "--mentions=a",
+        "--note-add=a",
+        "--flip=a",
+        "--plan-lint=a",
+        "--owners",
+        "--doc-drift",
+        "--flags",
+        "--stray-content",
+        "--doctor",
+        "--handoff",
+        "--notes",
+        "--skipped",
+        "--replace-symbol-body=a:b",
+        "--insert-before-symbol=a:b",
+        "--insert-after-symbol=a:b",
+    ] {
+        assert!(active(flag), "{flag}");
+    }
+    for flag in [
+        "--whereis-full-text",
+        "--whereis-listing=defs",
+        "--gateability",
+        "--abi",
+    ] {
+        assert!(!active(flag), "{flag}");
+    }
+}
