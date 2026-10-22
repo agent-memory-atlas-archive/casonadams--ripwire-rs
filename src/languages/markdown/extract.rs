@@ -1,4 +1,4 @@
-use super::{FileParseResult, RawDef, RawRef};
+use crate::ingest::{FileParseResult, RawDef, RawRef};
 use crate::domain::{RefRole, SymKind};
 use std::cell::RefCell;
 use tree_sitter::{Language, Node, Parser};

@@ -1,4 +1,4 @@
-use ripwire_rs::ingest::markdown::extract_markdown;
+use ripwire_rs::languages::markdown::extract::extract_markdown;
 use ripwire_rs::{Lang, LanguageRegistry};
 
 #[test]

@@ -1,7 +1,8 @@
 use ripwire_rs::git::history::CommitInfo;
-use ripwire_rs::languages::flags::{
-    conditional_uses, extract_cmake_option, extract_env_identifiers, extract_settings_gate,
+use ripwire_rs::languages::c::flags::{
+    conditional_uses, extract_cmake_option, extract_settings_gate,
 };
+use ripwire_rs::languages::kit::flags::FlagFact;
 use ripwire_rs::query::doc_tools::{
     WhereisFacts, call_owners, collect_file_wanted_tokens, filter_present_in_sources_drift,
     mentions_from_sources, scan_doc_text_for_drift, whereis_from_sources,
@@ -83,11 +84,6 @@ fn test_env_identifier_extraction_table() {
             &["AFTERAPOS"],
         ),
         (
-            "a.yml",
-            "cfg = json.loads(os.environ[\"CONFIG_JSON\"])",
-            &["CONFIG_JSON"],
-        ),
-        (
             "a.ts",
             "  * docs (injected via `process.env.DOCS_EMBED`)",
             &[],
@@ -104,11 +100,6 @@ fn test_env_identifier_extraction_table() {
         ("a.js", "const b = process.env['PSQ'];", &["PSQ"]),
         ("a.js", "const b = process.env[`PBT`];", &["PBT"]),
         ("a.js", "const a = process.env[ \"PSPC\" ];", &["PSPC"]),
-        (
-            "a.rs",
-            "fn f<'a>(x: &'a str) { let c = 'c'; getenv(\"RSGET\") }",
-            &["RSGET"],
-        ),
         ("a.rs", "let a = std::env::var(\"FOO\");", &[]),
         ("a.py", "b = os.environ['SQ']", &[]),
         ("a.py", "c = os.getenv('GSQ')", &[]),
@@ -139,7 +130,16 @@ fn test_env_identifier_extraction_table() {
     ];
     for (path, line, want) in cases {
         let lang = ripwire_rs::Lang::from_path(std::path::Path::new(path));
-        assert_eq!(extract_env_identifiers(line, lang), *want, "{path}: {line}");
+        let names: Vec<String> = lang
+            .semantics()
+            .flag_facts(&[line], path)
+            .into_iter()
+            .filter_map(|fact| match fact {
+                FlagFact::Env { name, .. } => Some(name),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(names, *want, "{path}: {line}");
     }
 }
 

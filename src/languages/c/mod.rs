@@ -1,3 +1,5 @@
+pub mod flags;
+
 use super::{
     ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
     is_screaming_snake, resolve_relative_or_exact, strip_import_quotes,
@@ -599,6 +601,8 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
 };
 
 impl LanguageSemantics for CLanguage {
+    crate::languages::c::flags::c_family_flags!();
+
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
     }

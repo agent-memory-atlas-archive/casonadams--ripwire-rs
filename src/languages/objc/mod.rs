@@ -104,6 +104,8 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
 };
 
 impl LanguageSemantics for ObjCLanguage {
+    crate::languages::c::flags::c_family_flags!();
+
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
     }

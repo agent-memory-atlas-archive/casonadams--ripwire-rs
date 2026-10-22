@@ -30,6 +30,8 @@ const KINDS: ComplexityKinds = ComplexityKinds {
 };
 
 impl LanguageSemantics for MetalLanguage {
+    crate::languages::c::flags::c_family_flags!();
+
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
     }

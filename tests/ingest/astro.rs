@@ -1,4 +1,4 @@
-use ripwire_rs::ingest::astro::{AstroFrontmatter, extract_astro_frontmatter};
+use ripwire_rs::languages::typescript::astro::{AstroFrontmatter, extract_astro_frontmatter};
 
 #[test]
 fn test_astro_valid_frontmatter() {

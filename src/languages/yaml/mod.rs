@@ -1,6 +1,8 @@
 use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
-use crate::ingest::{FileParseResult, yaml_guard};
+pub mod guard;
+
+use crate::ingest::FileParseResult;
 use tree_sitter::{Language, Query};
 
 pub struct YamlLanguage;
@@ -77,7 +79,7 @@ impl LanguageSemantics for YamlLanguage {
         _language: &Language,
         _query: &Query,
     ) -> Option<FileParseResult> {
-        if yaml_guard::yaml_nests_too_deep(source_bytes) {
+        if guard::yaml_nests_too_deep(source_bytes) {
             Some(FileParseResult::default())
         } else {
             None

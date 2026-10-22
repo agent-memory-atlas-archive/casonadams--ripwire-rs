@@ -1,3 +1,5 @@
+pub mod embedded;
+
 use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
 
@@ -38,6 +40,17 @@ impl LanguageSemantics for SqlLanguage {
 
     fn supports_slice(&self) -> bool {
         false
+    }
+
+    fn embedded_refs(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &[u8],
+        refs: &mut Vec<crate::ingest::RawRef>,
+    ) {
+        if embedded::has_dml_anchor(source) {
+            embedded::extract_refs(root, source, refs);
+        }
     }
 
     fn supports_embedded_sql(&self) -> bool {

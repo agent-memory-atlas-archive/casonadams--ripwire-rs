@@ -1,4 +1,4 @@
-use ripwire_rs::ingest::yaml_guard::yaml_nests_too_deep;
+use ripwire_rs::languages::yaml::guard::yaml_nests_too_deep;
 
 #[test]
 fn test_yaml_guard_shallow() {

@@ -1,9 +1,6 @@
 pub use super::branch_tools::*;
 use crate::domain::{IngestResult, Interner};
-use crate::languages::flags::{
-    SettingsGate, conditional_uses, extract_cmake_option, extract_env_identifiers,
-    extract_settings_gate,
-};
+use crate::languages::kit::flags::FlagFact;
 use crate::query::{FileSources, SourceReader};
 use serde_json::{Value, json};
 use std::collections::HashMap;
@@ -746,6 +743,13 @@ impl GateEntry {
     }
 }
 
+struct SettingsGate {
+    name: String,
+    default: String,
+    dark: bool,
+    define_line: usize,
+}
+
 #[derive(Default)]
 struct FlagsScanTally {
     by_key: std::collections::BTreeMap<(String, &'static str), GateEntry>,
@@ -800,7 +804,7 @@ impl FlagsScanTally {
                     default_val: gate.default,
                     is_dark: gate.dark,
                     file: path,
-                    line: gate.define_idx + 1,
+                    line: gate.define_line + 1,
                     regions: uses.len(),
                     loc: uses.iter().map(|(_, _, loc)| loc).sum(),
                     reads,
@@ -824,46 +828,46 @@ fn scan_file_flags(
     };
     let lines: Vec<&str> = text.lines().collect();
     let literal = literal_block_lines(&lines, lang);
-    let preprocessor = !lang.semantics().uses_hash_comments();
-    if preprocessor {
-        tally.record_conditional_uses(path, &lines);
-    }
-    for idx in (0..lines.len()).filter(|&i| !literal[i]) {
-        tally.scan_line(&lines, idx, path, lang, preprocessor);
-    }
-}
-
-impl FlagsScanTally {
-    fn record_conditional_uses(&mut self, path: &str, lines: &[&str]) {
-        for u in conditional_uses(lines) {
-            self.conditional.entry(u.name).or_default().push((
-                path.to_string(),
-                u.line_idx + 1,
-                u.loc,
-            ));
-        }
-    }
-
-    fn scan_line(
-        &mut self,
-        lines: &[&str],
-        idx: usize,
-        path: &str,
-        lang: crate::domain::Lang,
-        preprocessor: bool,
-    ) {
-        if let Some(gate) = preprocessor
-            .then(|| extract_settings_gate(lines, idx))
-            .flatten()
-        {
-            self.settings.push((gate, path.to_string()));
-        } else if let Some((opt, def_val, is_dark)) = extract_cmake_option(lines[idx], path) {
-            self.record_site("cmake", opt, path, idx + 1)
-                .configure(def_val, is_dark);
-        } else {
-            for env_var in extract_env_identifiers(lines[idx], lang) {
-                self.record_site("env", env_var, path, idx + 1);
+    for fact in lang.semantics().flag_facts(&lines, path) {
+        match fact {
+            FlagFact::Conditional { name, line, loc } => {
+                tally
+                    .conditional
+                    .entry(name)
+                    .or_default()
+                    .push((path.to_string(), line + 1, loc));
             }
+            FlagFact::Env { line, .. }
+            | FlagFact::Option { line, .. }
+            | FlagFact::Setting { line, .. }
+                if literal[line] => {}
+            FlagFact::Env { name, line } => {
+                tally.record_site("env", name, path, line + 1);
+            }
+            FlagFact::Option {
+                kind,
+                name,
+                default,
+                dark,
+                line,
+            } => tally
+                .record_site(kind, name, path, line + 1)
+                .configure(default, dark),
+            FlagFact::Setting {
+                name,
+                default,
+                dark,
+                define_line,
+                ..
+            } => tally.settings.push((
+                SettingsGate {
+                    name,
+                    default,
+                    dark,
+                    define_line,
+                },
+                path.to_string(),
+            )),
         }
     }
 }
@@ -885,10 +889,11 @@ fn literal_block_lines(lines: &[&str], lang: crate::domain::Lang) -> Vec<bool> {
     literal
 }
 
-fn scan_cmake_flag_files(sources: &(impl SourceReader + ?Sized), tally: &mut FlagsScanTally) {
-    for cmake_rel in ["CMakeLists.txt", "cmake/options.cmake"] {
-        let lang = crate::domain::Lang::from_path(std::path::Path::new(cmake_rel));
-        scan_file_flags(sources, cmake_rel, lang, tally);
+fn scan_flag_manifests(sources: &(impl SourceReader + ?Sized), tally: &mut FlagsScanTally) {
+    for lang in crate::languages::ALL_LANGS {
+        for manifest in lang.semantics().flag_manifests() {
+            scan_file_flags(sources, manifest, lang, tally);
+        }
     }
 }
 
@@ -917,7 +922,7 @@ pub fn flags_from_sources(
             scan_file_flags(sources, path, file.lang, &mut tally);
         }
     }
-    scan_cmake_flag_files(sources, &mut tally);
+    scan_flag_manifests(sources, &mut tally);
     tally.resolve_settings_gates();
 
     let mut flags = Vec::with_capacity(tally.by_key.len());

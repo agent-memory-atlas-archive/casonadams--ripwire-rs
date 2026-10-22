@@ -263,6 +263,35 @@ pub trait LanguageSemantics: Sync {
         true
     }
 
+    /// References this language finds inside other languages' string literals (SQL table access).
+    fn embedded_refs(
+        &self,
+        _root: tree_sitter::Node<'_>,
+        _source: &[u8],
+        _refs: &mut Vec<crate::ingest::RawRef>,
+    ) {
+    }
+
+    /// Environment-read spellings this language uses (`getenv("X")`, `process.env.X`).
+    fn env_reads(&self) -> &'static [kit::flags::EnvRead] {
+        &[]
+    }
+
+    /// Build manifests, outside this language's own sources, that hold its feature flags (CMake files for C++).
+    fn flag_manifests(&self) -> &'static [&'static str] {
+        &[]
+    }
+
+    /// Feature-flag facts in a source file (or one of `flag_manifests`).
+    fn flag_facts(&self, lines: &[&str], _path: &str) -> Vec<kit::flags::FlagFact> {
+        kit::flags::env_facts(
+            lines,
+            self.uses_hash_comments(),
+            self.has_lifetime_tick_syntax(),
+            self.env_reads(),
+        )
+    }
+
     /// True if files of this language are prose documents (excluded from code-identifier sets).
     fn is_prose_document(&self) -> bool {
         false

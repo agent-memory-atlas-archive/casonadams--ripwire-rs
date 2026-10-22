@@ -1,4 +1,4 @@
-use ripwire_rs::languages::flags::extract_cmake_option;
+use ripwire_rs::languages::c::flags::extract_cmake_option;
 use ripwire_rs::query::doc_tools::*;
 use ripwire_rs::query::safety::CochangeOptions;
 use ripwire_rs::query::safety::*;

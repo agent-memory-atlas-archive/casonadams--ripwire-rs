@@ -221,6 +221,10 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
 };
 
 impl LanguageSemantics for PythonLanguage {
+    fn env_reads(&self) -> &'static [crate::languages::kit::flags::EnvRead] {
+        &[crate::languages::kit::flags::EnvRead::Call("getenv"), crate::languages::kit::flags::EnvRead::Call("environ.get"), crate::languages::kit::flags::EnvRead::Index("environ")]
+    }
+
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
     }

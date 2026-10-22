@@ -1,4 +1,44 @@
-//! Source-line syntax for feature-flag harvesting: environment reads, preprocessor gates, CMake options.
+//! Feature-flag vocabulary shared by language plugins: what a plugin reports and how it declares env reads.
+
+/// How a language reads an environment variable with a literal name.
+#[derive(Debug, Clone, Copy)]
+pub enum EnvRead {
+    /// `name("X")`, e.g. `getenv("X")`.
+    Call(&'static str),
+    /// `name["X"]`, e.g. `environ["X"]`.
+    Index(&'static str),
+    /// `name.X` or `name["X"]`, e.g. `process.env.X`.
+    Member(&'static str),
+}
+
+/// A feature-flag fact found in one file; `line` fields are 0-based.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FlagFact {
+    Env {
+        name: String,
+        line: usize,
+    },
+    Option {
+        kind: &'static str,
+        name: String,
+        default: String,
+        dark: bool,
+        line: usize,
+    },
+    Setting {
+        name: String,
+        default: String,
+        dark: bool,
+        line: usize,
+        define_line: usize,
+    },
+    Conditional {
+        name: String,
+        line: usize,
+        loc: usize,
+    },
+}
+
 #[derive(Clone, Copy)]
 struct EnvLineSyntax {
     hash_comments: bool,
@@ -6,13 +46,6 @@ struct EnvLineSyntax {
 }
 
 impl EnvLineSyntax {
-    fn for_lang(lang: crate::domain::Lang) -> Self {
-        Self {
-            hash_comments: lang.semantics().uses_hash_comments(),
-            char_literals: lang.semantics().has_lifetime_tick_syntax(),
-        }
-    }
-
     fn starts_comment(self, bytes: &[u8], i: usize) -> bool {
         if self.hash_comments {
             bytes[i] == b'#' && (i == 0 || bytes[i - 1].is_ascii_whitespace())
@@ -77,16 +110,7 @@ fn quoted_env_name<'a>(rest: &'a str, quotes: &[u8]) -> Option<&'a str> {
     is_env_name(name).then_some(name)
 }
 
-fn env_name_at(rest: &str) -> Option<&str> {
-    for call in ["getenv", "environ.get"] {
-        if let Some(args) = rest.strip_prefix(call) {
-            return quoted_env_name(args.trim_start().strip_prefix('(')?, b"\"");
-        }
-    }
-    if let Some(sub) = rest.strip_prefix("environ[") {
-        return quoted_env_name(sub, b"\"");
-    }
-    let tail = rest.strip_prefix("process.env")?;
+fn member_env_name(tail: &str) -> Option<&str> {
     if let Some(sub) = tail.strip_prefix('[') {
         return quoted_env_name(sub, b"\"'`");
     }
@@ -98,134 +122,51 @@ fn env_name_at(rest: &str) -> Option<&str> {
     is_env_name(name).then_some(name)
 }
 
-/// Environment-variable reads on one source line, in order, deduplicated: `getenv("X")`,
-/// `environ.get("X")`, `environ["X"]`, `process.env.X` and `process.env["X"]`, outside strings and comments.
-pub fn extract_env_identifiers(line: &str, lang: crate::domain::Lang) -> Vec<String> {
-    let mask = EnvLineSyntax::for_lang(lang).code_mask(line);
-    let bytes = line.as_bytes();
-    let mut names: Vec<String> = Vec::new();
-    for (i, &b) in bytes.iter().enumerate() {
-        let at_word_start =
-            i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
-        if !(mask[i] && at_word_start && matches!(b, b'g' | b'e' | b'p')) {
-            continue;
-        }
-        if let Some(name) = env_name_at(&line[i..])
-            && !names.iter().any(|n| n.as_str() == name)
-        {
-            names.push(name.to_string());
-        }
+fn env_name_at<'a>(rest: &'a str, reads: &[EnvRead]) -> Option<&'a str> {
+    reads.iter().find_map(|read| match *read {
+        EnvRead::Call(name) => quoted_env_name(
+            rest.strip_prefix(name)?.trim_start().strip_prefix('(')?,
+            b"\"",
+        ),
+        EnvRead::Index(name) => quoted_env_name(rest.strip_prefix(name)?.strip_prefix('[')?, b"\""),
+        EnvRead::Member(name) => member_env_name(rest.strip_prefix(name)?),
+    })
+}
+
+/// Environment-variable reads in `lines`, in order and deduplicated per line, outside strings and comments.
+pub fn env_facts(
+    lines: &[&str],
+    hash_comments: bool,
+    char_literals: bool,
+    reads: &[EnvRead],
+) -> Vec<FlagFact> {
+    let syntax = EnvLineSyntax {
+        hash_comments,
+        char_literals,
+    };
+    let mut facts = Vec::new();
+    if reads.is_empty() {
+        return facts;
     }
-    names
-}
-
-/// A C-preprocessor settings gate: `#ifndef NAME` followed by `#define NAME VALUE` (an include guard has no value).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SettingsGate {
-    pub name: String,
-    pub default: String,
-    pub dark: bool,
-    pub define_idx: usize,
-}
-
-fn ifndef_name(line: &str) -> Option<&str> {
-    let rest = line.trim().strip_prefix("#ifndef ")?.trim_start();
-    let end = rest
-        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
-        .unwrap_or(rest.len());
-    let name = &rest[..end];
-    (!name.is_empty()).then_some(name)
-}
-
-#[must_use]
-pub fn extract_settings_gate(lines: &[&str], idx: usize) -> Option<SettingsGate> {
-    let name = ifndef_name(lines[idx])?;
-    lines
-        .iter()
-        .enumerate()
-        .skip(idx + 1)
-        .take(3)
-        .find_map(|(define_idx, line)| {
-            let mut parts = line.trim().strip_prefix("#define ")?.split_whitespace();
-            (parts.next()? == name).then_some(())?;
-            let value = parts.next()?;
-            Some(SettingsGate {
-                name: name.to_string(),
-                default: value.to_string(),
-                dark: value == "0" || value.eq_ignore_ascii_case("false"),
-                define_idx,
-            })
-        })
-}
-
-fn measure_preproc_region_loc(lines: &[&str], start_idx: usize) -> usize {
-    let mut depth = 1usize;
-    for (offset, &line) in lines.iter().skip(start_idx + 1).enumerate() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("#if") {
-            depth += 1;
-        } else if trimmed.starts_with("#endif") {
-            depth -= 1;
-            if depth == 0 {
-                return offset;
+    for (line_idx, line) in lines.iter().enumerate() {
+        let mask = syntax.code_mask(line);
+        let bytes = line.as_bytes();
+        let mut seen: Vec<&str> = Vec::new();
+        for i in (0..bytes.len()).filter(|&i| mask[i]) {
+            let at_word_start =
+                i == 0 || !(bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_');
+            if let Some(name) = at_word_start
+                .then(|| env_name_at(&line[i..], reads))
+                .flatten()
+                && !seen.contains(&name)
+            {
+                seen.push(name);
+                facts.push(FlagFact::Env {
+                    name: name.to_string(),
+                    line: line_idx,
+                });
             }
         }
     }
-    0
-}
-
-/// One identifier used in a `#if` / `#ifdef` / `#elif` condition, with the lines its region spans.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConditionalUse {
-    pub name: String,
-    pub line_idx: usize,
-    pub loc: usize,
-}
-
-#[must_use]
-pub fn conditional_uses(lines: &[&str]) -> Vec<ConditionalUse> {
-    let mut uses = Vec::new();
-    for (line_idx, line) in lines.iter().enumerate() {
-        let trimmed = line.trim();
-        let Some(expr) = ["#if ", "#ifdef ", "#elif "]
-            .iter()
-            .find_map(|p| trimmed.strip_prefix(p))
-        else {
-            continue;
-        };
-        let loc = measure_preproc_region_loc(lines, line_idx);
-        uses.extend(
-            expr.split(|c: char| !(c.is_alphanumeric() || c == '_'))
-                .filter(|t| {
-                    t.starts_with(|c: char| c.is_alphabetic() || c == '_') && *t != "defined"
-                })
-                .map(|t| ConditionalUse {
-                    name: t.to_string(),
-                    line_idx,
-                    loc,
-                }),
-        );
-    }
-    uses
-}
-
-pub fn extract_cmake_option(line: &str, path: &str) -> Option<(String, String, bool)> {
-    if !path.ends_with(".cmake") && !path.ends_with("CMakeLists.txt") {
-        return None;
-    }
-    let rest = line.trim().strip_prefix("option(")?;
-    let inner = rest.trim_end_matches(')').trim();
-    let name: String = inner
-        .chars()
-        .take_while(|c| c.is_alphanumeric() || *c == '_')
-        .collect();
-    if name.is_empty() {
-        return None;
-    }
-    let is_on = inner
-        .split_whitespace()
-        .last()
-        .is_some_and(|t| t.eq_ignore_ascii_case("ON"));
-    let def_val = if is_on { "ON" } else { "OFF" };
-    Some((name, def_val.to_string(), !is_on))
+    facts
 }

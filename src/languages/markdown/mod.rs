@@ -1,6 +1,8 @@
 use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
-use crate::ingest::{FileParseResult, markdown};
+pub mod extract;
+
+use crate::ingest::FileParseResult;
 use tree_sitter::{Language, Query};
 
 pub struct MarkdownLanguage;
@@ -55,6 +57,6 @@ impl LanguageSemantics for MarkdownLanguage {
         language: &Language,
         _query: &Query,
     ) -> Option<FileParseResult> {
-        Some(markdown::extract_markdown(source_bytes, rel_path, language))
+        Some(extract::extract_markdown(source_bytes, rel_path, language))
     }
 }

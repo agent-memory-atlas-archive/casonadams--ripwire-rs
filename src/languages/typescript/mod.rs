@@ -4,7 +4,9 @@ use super::javascript::{
 };
 use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
-use crate::ingest::{FileParseResult, astro, parse_file_tree};
+pub mod astro;
+
+use crate::ingest::{FileParseResult, parse_file_tree};
 use std::collections::HashMap;
 use std::sync::LazyLock;
 use tree_sitter::{Language, Query};
@@ -111,6 +113,10 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
 };
 
 impl LanguageSemantics for TypeScriptLanguage {
+    fn env_reads(&self) -> &'static [crate::languages::kit::flags::EnvRead] {
+        &[crate::languages::kit::flags::EnvRead::Member("process.env")]
+    }
+
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &JS_KINDS
     }
