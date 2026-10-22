@@ -11,47 +11,6 @@ pub struct Cli {
     /// Target repository path (default: current directory)
     #[arg(value_name = "PATH")]
     pub path: Option<String>,
-    /// Fowler's Shotgun Surgery co-change mining
-    #[arg(long)]
-    pub cochange: Option<Option<String>>,
-    /// Limit git history traversal to commits after this date or revision
-    #[arg(long)]
-    pub since: Option<String>,
-    /// Show top maintenance hotspots (churn * ccx)
-    #[arg(long)]
-    pub hotspots: bool,
-    /// Verify 1-hop caller compatibility against git HEAD
-    #[arg(long)]
-    pub edit_check: Option<String>,
-    /// Show test files affected by changes
-    #[arg(long)]
-    pub affected: Option<String>,
-    /// Pin quality baseline stamped with git HEAD
-    #[arg(long)]
-    pub quality_baseline: bool,
-    /// Report code quality delta regressions vs baseline
-    #[arg(long)]
-    pub quality_delta: bool,
-    /// Detect AST code duplication and clones (Type-1, Type-2, Type-3)
-    #[arg(long)]
-    pub clones: bool,
-    /// Minimum token length for clone detection
-    #[arg(long, default_value_t = 40)]
-    pub min_tokens: usize,
-    /// ARISE intra-procedural def-use variable slice (SYM[:VAR])
-    #[arg(long)]
-    pub slice: Option<String>,
-    /// Dataflow direction for --slice (fwd, back, both)
-    #[arg(long, default_value = "fwd")]
-    pub slice_flow: String,
-    /// Max hop depth for --slice
-    #[arg(long = "slice-depth", default_value_t = 8)]
-    pub slice_depth: u32,
-    #[arg(long, value_name = "FILE")]
-    pub html: Option<Option<String>>,
-    /// Node coloring mode for --html: lang, community, cx, churn, tested
-    #[arg(long, default_value = "lang")]
-    pub color_by: String,
     /// Ranking signal: pagerank, authority, hub, degree, ccx, stable
     #[arg(long, default_value = "pagerank")]
     pub rank_by: String,
@@ -94,8 +53,8 @@ pub struct Cli {
         value_name = "DIR"
     )]
     pub add_skills: Option<Option<String>>,
-    /// Workflow subcommand group
-    #[command(subcommand)]
+    /// Workflow subcommand group, parsed by the command plugins
+    #[arg(skip)]
     pub command: Option<Commands>,
 }
 
@@ -225,12 +184,6 @@ pub enum Commands {
     Orient(OrientArgs),
     /// Code navigation and call graph traversals (callers, callees, impact)
     Navigate(NavigateArgs),
-    /// Pre-commit verification gates (edit-check, affected, quality-delta)
-    Gate(GateArgs),
-    /// Code complexity, churn, and architectural health metrics
-    Metrics(MetricsArgs),
-    /// ARISE intra-procedural def-use variable slicing
-    Slice(SliceArgs),
     /// Launch stdio JSON-RPC Model Context Protocol server
     Mcp(McpArgs),
     /// Manage and install ripwire-rs agent skills
@@ -264,57 +217,6 @@ pub struct NavigateArgs {
     /// Show transitive blast radius
     #[arg(long)]
     pub impact: bool,
-}
-
-#[derive(Args, Debug, Default, PartialEq)]
-pub struct GateArgs {
-    /// Target repository path
-    #[arg(value_name = "PATH")]
-    pub path: Option<String>,
-    /// Verify 1-hop caller compatibility against git HEAD
-    #[arg(long)]
-    pub edit_check: Option<String>,
-    /// Pin quality baseline stamped with git HEAD
-    #[arg(long)]
-    pub quality_baseline: bool,
-    /// Measure quality delta against baseline
-    #[arg(long)]
-    pub quality_delta: bool,
-    /// Show test files affected by changes
-    #[arg(long)]
-    pub affected: Option<String>,
-    /// Detect AST code duplication and clones (Type-1, Type-2, Type-3)
-    #[arg(long)]
-    pub clones: bool,
-    /// Minimum token length for clone detection
-    #[arg(long, default_value_t = 40)]
-    pub min_tokens: usize,
-}
-
-#[derive(Args, Debug, Default, PartialEq)]
-pub struct MetricsArgs {
-    /// Target repository path
-    #[arg(value_name = "PATH")]
-    pub path: Option<String>,
-    /// Show top maintenance hotspots (churn * ccx)
-    #[arg(long)]
-    pub hotspots: bool,
-    /// Show file co-change coupling (Fowler's Shotgun Surgery)
-    #[arg(long)]
-    pub cochange: Option<Option<String>>,
-    /// Limit git history traversal to commits after this date or revision
-    #[arg(long)]
-    pub since: Option<String>,
-}
-
-#[derive(Args, Debug, Default, PartialEq)]
-pub struct SliceArgs {
-    /// Target variable criterion in symbol (e.g. sym:var)
-    #[arg(value_name = "TARGET")]
-    pub target: Option<String>,
-    /// Dataflow direction (fwd, back, both)
-    #[arg(long, default_value = "fwd")]
-    pub flow: String,
 }
 
 #[derive(Args, Debug, Default, PartialEq)]
@@ -378,11 +280,6 @@ pub trait Budgeted {
     }
 }
 
-/// Capability trait for git history scope modifiers (`--with-history`, `--since`).
-pub trait HistoryScoped {
-    fn since_scope_opt(&self) -> Option<&str>;
-}
-
 /// Capability trait for output dialect selection (`--json`, `--pretty`, `--legend`).
 pub trait OutputDialect {
     fn is_json_out(&self) -> bool;
@@ -436,12 +333,6 @@ impl Budgeted for Cli {
     }
 }
 
-impl HistoryScoped for Cli {
-    fn since_scope_opt(&self) -> Option<&str> {
-        self.since.as_deref()
-    }
-}
-
 impl OutputDialect for Cli {
     fn is_json_out(&self) -> bool {
         self.modifiers.is_json()
@@ -477,6 +368,12 @@ impl PluginArgs {
     #[must_use]
     pub fn decode<A: clap::FromArgMatches>(&self) -> Option<A> {
         A::from_arg_matches(self.0.as_ref()?).ok()
+    }
+
+    /// The subcommand the command line selected, with its own matches.
+    #[must_use]
+    pub fn subcommand(&self) -> Option<(&str, &clap::ArgMatches)> {
+        self.0.as_ref()?.subcommand()
     }
 }
 

@@ -1,5 +1,4 @@
-use clap::Parser;
-use ripwire_rs::cli::{Cli, CliVerb, ExecutionContext, VerbGroup};
+use ripwire_rs::cli::{CliVerb, ExecutionContext, VerbGroup};
 use ripwire_rs::commands::architecture::ArchitectureArgs;
 use ripwire_rs::commands::detail::DetailArgs;
 use ripwire_rs::serialize::XmlWriter;
@@ -90,7 +89,7 @@ fn invalid_slice_requests_fail_before_any_repository_acquisition() {
         ),
         (vec!["rw", "slice"], "slice target is required"),
     ] {
-        let cli = Cli::try_parse_from(args).unwrap();
+        let cli = ripwire_rs::parse_from(args).unwrap();
         let error = ripwire_rs::run_cli_args(cli).unwrap_err();
         assert!(error.to_string().contains(message), "{error}");
     }

@@ -10,8 +10,24 @@ pub trait Command: Sync {
         cmd
     }
 
+    /// Subcommands this command contributes to the CLI.
+    fn subcommands(&self) -> Vec<clap::Command> {
+        Vec::new()
+    }
+
     /// Run the command when its flags are present on the command line; `None` when they are not.
     fn run(&self, _cli: &Cli, _root: &str) -> Option<std::io::Result<()>> {
+        None
+    }
+
+    /// Run subcommand `name` (its own parsed `matches`) when it was selected; `None` otherwise.
+    fn run_subcommand(
+        &self,
+        _cli: &Cli,
+        _name: &str,
+        _matches: &clap::ArgMatches,
+        _root: &str,
+    ) -> Option<std::io::Result<()>> {
         None
     }
 
@@ -37,19 +53,42 @@ register_commands! {
     detail::DETAIL,
     safety::SAFETY,
     architecture::ARCHITECTURE,
+    metrics::METRICS,
+    gate::GATE,
+    clones::CLONES,
+    html::HTML,
+    slice::SLICE,
 }
 
-/// The CLI with every plugin's flags added.
+/// The CLI with every plugin's flags and subcommands added.
 #[must_use]
 pub fn augment(cmd: clap::Command) -> clap::Command {
-    REGISTRY
-        .iter()
-        .fold(cmd, |cmd, command| command.augment(cmd))
+    REGISTRY.iter().fold(cmd, |cmd, command| {
+        command
+            .subcommands()
+            .into_iter()
+            .fold(command.augment(cmd), |cmd, sub| cmd.subcommand(sub))
+    })
 }
 
 /// Run the first plugin whose flags are present.
 pub fn run(cli: &Cli, root: &str) -> Option<std::io::Result<()>> {
     REGISTRY.iter().find_map(|command| command.run(cli, root))
+}
+
+/// Run the plugin subcommand the command line selected, if a plugin owns it.
+pub fn run_subcommand(cli: &Cli, root: &str) -> Option<std::io::Result<()>> {
+    let (name, matches) = cli.plugins.subcommand()?;
+    REGISTRY
+        .iter()
+        .find_map(|command| command.run_subcommand(cli, name, matches, root))
+}
+
+/// Decode a plugin subcommand's own `Args` from the matches clap produced for it.
+pub fn decode_subcommand<A: clap::FromArgMatches>(
+    matches: &clap::ArgMatches,
+) -> std::io::Result<A> {
+    A::from_arg_matches(matches).map_err(std::io::Error::other)
 }
 
 /// Every plugin's MCP tools.

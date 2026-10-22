@@ -1,16 +1,12 @@
 use super::args::*;
 use super::queries::*;
-use crate::commands::safety::{
-    GateDispatchArgs, GitMetricsFlags, SafetyArgs, dispatch_gate_command,
-    dispatch_git_metrics_with_flags,
-};
 use crate::domain::Interner;
 use crate::graph::Graph;
 use crate::query::map::*;
 use crate::query::navigation::{NavContext, NavMode, execute_nav_symbol_query_in_root};
 use crate::rank::PageRankResult;
 use crate::workspace::{load_repo_analysis, load_repo_analysis_with_options};
-use clap::{CommandFactory, FromArgMatches};
+use clap::{CommandFactory, FromArgMatches, Subcommand};
 use std::io::{self, Write};
 use std::path::Path;
 pub fn execute_navigate_with<W: Write>(
@@ -56,28 +52,6 @@ pub fn execute_navigate(cli: &Cli, args: &NavigateArgs, default_root: &str) -> i
     let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
     execute_navigate_with(root, args, &ctx, &mut stdout)?;
     stdout.finish()
-}
-
-pub fn execute_html_export(cli: &Cli, root: &str, out_file: Option<&str>) -> io::Result<()> {
-    let color_by = cli.color_by.parse().unwrap_or_default();
-    let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
-    if let Some(path) = out_file {
-        let mut file = std::fs::File::create(path)?;
-        crate::serialize::html::write_call_graph_html(
-            &mut file, &ingest, &graph, &pr.ranks, &interner, color_by, None,
-        )
-    } else {
-        let mut stdout = io::stdout().lock();
-        crate::serialize::html::write_call_graph_html(
-            &mut stdout,
-            &ingest,
-            &graph,
-            &pr.ranks,
-            &interner,
-            color_by,
-            None,
-        )
-    }
 }
 
 pub fn execute_stream_xml(root: &str) -> io::Result<()> {
@@ -320,46 +294,6 @@ fn execute_orient_subcommand(cli: &Cli, args: &OrientArgs, default_root: &str) -
     stdout.finish()
 }
 
-fn execute_slice_for_cli(
-    cli: &Cli,
-    root: &str,
-    target: Option<&str>,
-    flow: &str,
-    max_depth: u32,
-) -> io::Result<()> {
-    let target = target
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "slice target is required"))?;
-    let flow = flow
-        .parse()
-        .map_err(|e: String| io::Error::new(io::ErrorKind::InvalidInput, e))?;
-    let (ingest, _, _, interner) = load_repo_analysis_for_cli(cli, root, false)?;
-    let registry = crate::ingest::LanguageRegistry::new().map_err(io::Error::other)?;
-    let sources = crate::query::FileSources {
-        root: Path::new(root),
-    };
-    let at = crate::git::history::compute_git_at_stamp(root);
-    let report = crate::slice::query_slice(
-        crate::slice::SliceRequest {
-            root,
-            target,
-            flow,
-            max_depth,
-            at: at.as_deref(),
-        },
-        crate::slice::SliceContext {
-            ingest: &ingest,
-            interner: &interner,
-            registry: &registry,
-        },
-        &sources,
-    )
-    .map_err(io::Error::other)?;
-    let mut stdout_lock = io::stdout().lock();
-    let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
-    stdout.write_all(report.as_bytes())?;
-    stdout.finish()
-}
-
 pub fn dispatch_subcommand(command: &Commands, cli: &Cli, default_root: &str) -> io::Result<()> {
     match command {
         Commands::Mcp(mcp_args) => crate::mcp::run_mcp_stdio_with_scip(
@@ -368,52 +302,10 @@ pub fn dispatch_subcommand(command: &Commands, cli: &Cli, default_root: &str) ->
         ),
         Commands::Navigate(nav_args) => execute_navigate(cli, nav_args, default_root),
         Commands::Orient(orient_args) => execute_orient_subcommand(cli, orient_args, default_root),
-        Commands::Gate(args) => execute_gate_subcommand(args, cli, default_root),
-        Commands::Metrics(args) => execute_metrics_subcommand(args, default_root),
-        Commands::Slice(slice_args) => execute_slice_for_cli(
-            cli,
-            default_root,
-            slice_args.target.as_deref(),
-            &slice_args.flow,
-            cli.slice_depth,
-        ),
         Commands::Skills(skills_args) => execute_skills_install(skills_args.path.as_deref()),
     }
 }
 
-fn execute_gate_subcommand(args: &GateArgs, cli: &Cli, default_root: &str) -> io::Result<()> {
-    let root = args.path.as_deref().unwrap_or(default_root);
-    let safety = crate::commands::safety::args(cli);
-    let inherited = gate_args_for_cli(cli, &safety);
-    let gate = GateDispatchArgs {
-        edit_check: args.edit_check.as_deref().or(inherited.edit_check),
-        affected: args.affected.as_deref().or(inherited.affected),
-        quality_baseline: args.quality_baseline || inherited.quality_baseline,
-        quality_delta: args.quality_delta || inherited.quality_delta,
-        ..inherited
-    };
-    if let Some(result) = dispatch_gate_command(root, gate, cli) {
-        return result;
-    }
-    if args.clones {
-        return crate::clones::execute_clones_command(root, args.min_tokens);
-    }
-    Ok(())
-}
-
-fn execute_metrics_subcommand(args: &MetricsArgs, default_root: &str) -> io::Result<()> {
-    let root = args.path.as_deref().unwrap_or(default_root);
-    dispatch_git_metrics_with_flags(
-        root,
-        GitMetricsFlags {
-            cochange: args.cochange.as_ref().map(|value| value.as_deref()),
-            hotspots: args.hotspots,
-            since: args.since.as_deref(),
-            ..Default::default()
-        },
-    )
-    .unwrap_or(Ok(()))
-}
 pub fn execute_skills_install(target: Option<&str>) -> io::Result<()> {
     let report = crate::skills::install_skills(target)?;
     println!(
@@ -449,43 +341,7 @@ fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     if let Some(res) = dispatch_top_flags(cli, root) {
         return Some(res);
     }
-    let safety = crate::commands::safety::args(cli);
-    if let Some(res) = dispatch_git_metrics_with_flags(
-        root,
-        GitMetricsFlags {
-            cochange: cli.cochange.as_ref().map(|o| o.as_deref()),
-            cochange_groups: safety.cochange_groups,
-            cochange_recur: safety.cochange_recur,
-            hotspots: cli.hotspots,
-            since: cli.since.as_deref(),
-            pretty: cli.is_pretty_out(),
-            json_out: cli.is_json_out(),
-            limit: cli.limit_opt(),
-            offset: cli.offset_opt(),
-        },
-    ) {
-        return Some(res);
-    }
     None
-}
-
-fn gate_args_for_cli<'a>(cli: &'a Cli, safety: &'a SafetyArgs) -> GateDispatchArgs<'a> {
-    GateDispatchArgs {
-        edit_check: cli.edit_check.as_deref(),
-        affected: cli.affected.as_deref(),
-        quality_baseline: cli.quality_baseline,
-        quality_delta: cli.quality_delta || safety.quality_ack.is_some(),
-        scope: safety.scope.as_deref(),
-        quality_ack: safety
-            .quality_ack
-            .as_ref()
-            .map(|o| o.as_deref().unwrap_or("acknowledged")),
-        ack_only: safety.ack_only.as_deref(),
-        show_stale: safety.show_stale,
-        allow_dirty: safety.allow_dirty,
-        limit: cli.limit_opt(),
-        offset: cli.offset_opt(),
-    }
 }
 
 pub fn run_cli_args(cli: Cli) -> io::Result<()> {
@@ -506,22 +362,10 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     if let Some(res) = dispatch_primary_workflows(&cli, root) {
         return res;
     }
-    let safety = crate::commands::safety::args(&cli);
-    if !matches!(cli.command.as_ref(), Some(Commands::Gate(_)))
-        && let Some(res) = dispatch_gate_command(root, gate_args_for_cli(&cli, &safety), &cli)
-    {
+    if let Some(res) = crate::commands::run_subcommand(&cli, root) {
         return res;
     }
 
-    if cli.clones {
-        return crate::clones::execute_clones_command(root, cli.min_tokens);
-    }
-    if let Some(html_opt) = &cli.html {
-        return execute_html_export(&cli, root, html_opt.as_deref());
-    }
-    if let Some(target) = cli.slice.as_deref() {
-        return execute_slice_for_cli(&cli, root, Some(target), &cli.slice_flow, cli.slice_depth);
-    }
     let budget = cli.effective_budget_bytes();
     match &cli.command {
         Some(cmd) => dispatch_subcommand(cmd, &cli, root),
@@ -535,8 +379,13 @@ where
     I: IntoIterator<Item = T>,
     T: Into<std::ffi::OsString> + Clone,
 {
-    let matches = crate::commands::augment(Cli::command()).try_get_matches_from(args)?;
+    let matches = crate::commands::augment(Commands::augment_subcommands(Cli::command()))
+        .try_get_matches_from(args)?;
     let mut cli = Cli::from_arg_matches(&matches)?;
+    cli.command = match matches.subcommand_name() {
+        Some(name) if Commands::has_subcommand(name) => Some(Commands::from_arg_matches(&matches)?),
+        _ => None,
+    };
     cli.plugins = PluginArgs::new(matches);
     Ok(cli)
 }
