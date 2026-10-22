@@ -231,9 +231,9 @@ fn advanced_retrieval_and_pattern_search_execute_over_context_sources() {
     assert_eq!(suspect.attribute("p"), Some("src/flow.rs"));
     assert_eq!(suspect.attribute("l"), Some("2"));
 
-    let pack_xml = run_with(|q, out| pack_task::execute(q, "inspect bridge", out)).unwrap();
+    let pack_xml = run_with(|q, out| pack_task::execute(q, "inspect bridge", 6000, out)).unwrap();
     assert!(pack_xml.contains("bridge"), "{pack_xml}");
-    assert!(pack_xml.contains("<sigs>"), "{pack_xml}");
+    assert!(pack_xml.contains("<sigs"), "{pack_xml}");
 
     let gq_xml =
         run_with(|q, out| graph_query::execute(q, "callees(entry)", PageRequest::default(), out))

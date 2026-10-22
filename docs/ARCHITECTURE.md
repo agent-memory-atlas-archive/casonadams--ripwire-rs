@@ -69,6 +69,13 @@
    - An explicit shared `--limit` overrides the computed cap; `--offset` moves the window.
    - A command needs only `Paged::new(rows, run.page(), cost)`, where `cost` is the row's bytes (`row_bytes` for serialized rows, `text_bytes` for plain text parts).
 
+6. **Budget Contract (shaping, not gating)**:
+   - A token budget is a ceiling the output is shaped to. Nothing is withheld by a hard gate, and no exit status changes with the budget.
+   - `--pack-task`: `est_tokens` is `ceil(bytes / 4)` of the whole document, framing included. Signatures take half the budget, then bodies, then callers and tests, each window measured row by row. A document never exceeds its ceiling unless only the minimal unit (the top-ranked signature) cannot fit; then `over_budget="1"` discloses the overrun.
+   - `--recall`: the ceiling is `5 * max_tokens / 2` bytes, matching its estimate `est_tokens = ceil(bytes * 2 / 5)`. Admission shrinks until the rendered answer, headers and footer included, fits. Only when the best-ranked document's minimal excerpt cannot fit is the answer returned over, with `over_ceiling=1`.
+   - `--for`: the ranked symbols are windowed by the token budget (`--token-budget` / `--max-tokens`, default 4000 tokens on the CLI). `--limit` / `--offset` override the window; `shown`, `total`, `capped`, `has_more`, and `next_offset` are reported, with a `next` route when capped.
+   - `--report`: the default budget is 16 KiB, shared equally by its five lists (modules, bridges, god files, dependency cycles, top symbols). Each list reports `(showing S of T)`; `--limit` / `--offset` window each list, and a capped list prints a `next: --report --limit=N --offset=M` route.
+
 CLI and MCP adapters share transport-neutral `query::*` implementations and
 canonical reports. The root-exported `Workspace` lives in `src/workspace.rs`
 and loads shared SCIP-aware analysis; ranking is held in `Workspace.pr.ranks`.

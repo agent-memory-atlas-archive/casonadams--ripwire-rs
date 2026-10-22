@@ -11,7 +11,10 @@ ripwire-rs .
 # Select ranking signal (pagerank, authority, hub, degree, ccx, stable)
 ripwire-rs . --rank-by=authority
 
-# Set explicit streaming pack budget in bytes or tokens
+# Budget flags are shaping ceilings, not hard gates: output is shaped to fit and never exits non-zero for size.
+# --pack-task and --recall report over_budget / over_ceiling only when the minimal unit alone cannot fit.
+# Ceilings: --pack-task est_tokens = bytes/4; --recall admits 5*max/2 bytes (est = bytes*2/5); --for windows
+# ranked symbols by its token budget (default 4000 tokens); --report defaults to 16 KiB shared across lists.
 ripwire-rs . --pack-budget=32768
 ripwire-rs . --token-budget=8192
 ripwire-rs . --max-tokens=4096
@@ -260,8 +263,10 @@ ripwire-rs . --lint --lint-ignore="magic-number"
 # Calibrate naming rules against git rename history
 ripwire-rs . --naming-consistency --naming-calibration
 
-# Generate executive markdown architecture report
+# Generate executive markdown architecture report (16 KiB by default, shared by five lists;
+# each list shows "(showing S of T)"; page with --limit/--offset, follow a capped list's next route)
 ripwire-rs . --report
+ripwire-rs . --report --limit=12 --offset=12
 
 # Emit full schema legend dictionary
 ripwire-rs . --legend-dict

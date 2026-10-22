@@ -3,7 +3,7 @@ pub use super::legend::*;
 pub use super::workspace_xml::*;
 
 use crate::serialize::escape::{XmlEscapeExt, escape_xml_str};
-use crate::serialize::{JsonValueExt, PageRequest, Paged, row_bytes};
+use crate::serialize::{JsonValueExt, PageRequest, PageWindow, Paged, row_bytes};
 use serde_json::Value;
 use std::io::{self, Write};
 fn write_for_sig_metrics<W: Write>(out: &mut W, it: &Value) -> io::Result<()> {
@@ -55,6 +55,25 @@ fn write_for_sig_row<W: Write>(out: &mut W, idx: usize, it: &Value) -> io::Resul
         it.str_or("sig", raw_name).xml_escaped()
     )
 }
+/// The window the retrieval layer cut the ranked symbols to, with the totals the bundle discloses.
+fn for_window(val: &Value) -> PageWindow {
+    let shown = val["symbols"].as_array().map_or(0, Vec::len);
+    let window = &val["window"];
+    let begin = window.u64_or("begin", 0) as usize;
+    let total = window.u64_or("total", shown as u64) as usize;
+    let end = begin + shown;
+    PageWindow {
+        begin,
+        end,
+        shown,
+        total,
+        capped: shown < total,
+        has_more: end < total,
+        next_offset: end,
+        limit: window.u64_or("limit", 0) as usize,
+        offset: window.u64_or("offset", 0) as usize,
+    }
+}
 
 fn write_for_inner_body<W: Write>(
     out: &mut W,
@@ -63,30 +82,28 @@ fn write_for_inner_body<W: Write>(
     raw_task: &str,
 ) -> io::Result<()> {
     let page = val.page_request();
-    let items: Vec<(usize, &Value)> = val["symbols"]
+    let window = for_window(val);
+    write!(out, "<sigs{}", window.xml_attrs())?;
+    if window.has_more {
+        let size = if window.limit > 0 {
+            format!(" --limit={}", window.limit)
+        } else {
+            String::new()
+        };
+        write!(
+            out,
+            " next=\"--for={task}{size} --offset={}\"",
+            window.next_offset
+        )?;
+    }
+    write!(out, ">")?;
+    for (i, it) in val["symbols"]
         .as_array()
         .map_or(&[][..], Vec::as_slice)
         .iter()
         .enumerate()
-        .collect();
-    let sigs = Paged::new(&items, page, |(idx, it)| {
-        row_bytes(|mut w| write_for_sig_row(&mut w, *idx, it))
-    });
-    if sigs.window.capped {
-        let next = if sigs.window.has_more {
-            format!(
-                " next=\"--for={task} --offset={}\"",
-                sigs.window.next_offset
-            )
-        } else {
-            String::new()
-        };
-        write!(out, "<sigs{}{next}>", sigs.attrs())?;
-    } else {
-        write!(out, "<sigs>")?;
-    }
-    for &(idx, it) in sigs.rows() {
-        write_for_sig_row(out, idx, it)?;
+    {
+        write_for_sig_row(out, window.begin + i, it)?;
     }
     write!(out, "</sigs>")?;
     write_for_lego_section(out, val, raw_task)?;

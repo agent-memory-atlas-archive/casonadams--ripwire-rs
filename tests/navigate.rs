@@ -3,4 +3,5 @@ mod navigate {
     mod neighborhood;
     mod provenance;
     mod query;
+    mod shaping;
 }

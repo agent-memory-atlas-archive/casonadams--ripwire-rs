@@ -40,6 +40,14 @@ const ALLOWLIST: &[(&str, &str)] = &[
         "execute_dead_code_query_paged builds FileSources from root (disk reads)",
     ),
     (
+        "for",
+        "CliPaged: its MCP tool exposes no limit; paging is covered in tests/cli/for_window.rs",
+    ),
+    (
+        "report",
+        "CliPaged markdown report: the XML row checker does not apply; windowing is asserted in tests/metrics/report_paging.rs",
+    ),
+    (
         "doc-drift",
         "CliPaged: its MCP tool exposes no limit; the CLI report reads markdown and history from disk",
     ),

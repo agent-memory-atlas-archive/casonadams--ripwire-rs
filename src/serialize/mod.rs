@@ -73,6 +73,28 @@ impl PageRequest {
         };
         PageWindow::compute(total, cap, self.limit, self.offset)
     }
+
+    /// Like [`Self::window_fit`], but a row is shown only while it fits the budget, so the window may be empty.
+    /// Use where an empty list is the truthful answer for a budget too small for any row.
+    #[must_use]
+    pub fn window_within(self, total: usize, row_bytes: impl Fn(usize) -> usize) -> PageWindow {
+        let begin = self.offset.unwrap_or(0).min(total);
+        let budget = self.budget.unwrap_or(DEFAULT_PACK_BUDGET_BYTES);
+        let mut used = 0usize;
+        let mut fitted = 0usize;
+        for size in (begin..total).map(row_bytes) {
+            used = used.saturating_add(size);
+            if used > budget {
+                break;
+            }
+            fitted += 1;
+        }
+        let cap = match self.limit {
+            Some(limit) if limit > 0 => limit,
+            _ => fitted,
+        };
+        PageWindow::compute(total, cap, self.limit, self.offset)
+    }
 }
 
 /// How many leading rows fit `budget` bytes (at least one when any row exists).

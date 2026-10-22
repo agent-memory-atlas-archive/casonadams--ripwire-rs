@@ -172,13 +172,17 @@ fn test_budget_truncates_headless_doc_front_first() {
     let doc = &out.docs[0];
     let (shown, of) = doc.truncated.unwrap();
     assert_eq!(of, body.len());
-    assert!(shown <= out.budget_bytes && shown % 36 == 0);
+    assert!(shown <= out.share_bytes.unwrap() && shown % 36 == 0);
     assert!(doc.body.ends_with("delta\n…"));
-    assert_eq!(out.share_bytes, Some(out.budget_bytes));
+    assert_eq!(out.budget_bytes, 750);
     assert_eq!(out.truncated(), 1);
     let text = render(&inputs, "zebra", opts);
     assert!(text.contains(&format!("[truncated: {shown} of 1440 bytes]")));
-    assert!(text.contains(" capped=1 truncated=1 over_ceiling=1 max_tokens=300 share_bytes=637 "));
+    assert!(
+        text.contains(" truncated=1 max_tokens=300 share_bytes="),
+        "{text}"
+    );
+    assert!(!text.contains("over_ceiling"), "{text}");
 }
 
 #[test]
@@ -214,7 +218,7 @@ fn test_budget_omits_docs_that_cannot_get_a_slice() {
     assert_eq!(out.omitted_budget, 1);
     let text = render(&inputs, "zebra", opts);
     assert!(text.contains(
-        "(capped: 1 of 2 relevant document files omitted — raise --max-tokens/budget_tokens or narrow the query for 1 more (~318-byte budget))"
+        "(capped: 1 of 2 relevant document files omitted — raise --max-tokens/budget_tokens or narrow the query for 1 more (~375-byte budget))"
     ));
 }
 
@@ -285,4 +289,86 @@ fn test_no_relevant_documents() {
         "ripwire-rs recall — \"xyzzy\" — 0 relevant of 1 document files, best-first — total=0 shown=0 capped=0 max_tokens=8000 est_tokens="
     ));
     assert!(text.ends_with("\n\n(no relevant documents — try different terms)\n"));
+}
+
+fn header_value(text: &str, key: &str) -> u64 {
+    let Some(at) = text.find(key) else {
+        return 0;
+    };
+    let start = at + key.len();
+    text[start..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>()
+        .parse()
+        .unwrap()
+}
+
+fn refresh_docs(count: usize) -> Vec<RecallInput> {
+    (0..count)
+        .map(|i| {
+            let body = "refresh token rotation keeps the session alive\n".repeat(60);
+            md(
+                &format!("docs/note{i}.md"),
+                &format!("# Token refresh {i}\n\n{body}"),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn test_recall_admission_responds_to_the_token_ceiling() {
+    let inputs = refresh_docs(8);
+    let query = "refresh token rotation";
+    let small = render(
+        &inputs,
+        query,
+        RecallOptions {
+            top_k: None,
+            max_tokens: 800,
+        },
+    );
+    let large = render(
+        &inputs,
+        query,
+        RecallOptions {
+            top_k: None,
+            max_tokens: 8000,
+        },
+    );
+    assert!(header_value(&small, "est_tokens=") <= 800, "{small}");
+    assert!(header_value(&large, "est_tokens=") <= 8000, "{large}");
+    assert!(!small.contains("over_ceiling=1"), "{small}");
+    assert!(header_value(&small, "shown=") < header_value(&large, "shown="));
+}
+
+#[test]
+fn test_recall_fragments_fewer_documents_than_it_ranks() {
+    let inputs = refresh_docs(8);
+    let text = render(
+        &inputs,
+        "refresh token rotation",
+        RecallOptions {
+            top_k: None,
+            max_tokens: 2000,
+        },
+    );
+    let shown = header_value(&text, "shown=");
+    let cut = header_value(&text, "truncated=");
+    assert!(shown <= 4, "{text}");
+    assert!(cut <= shown, "{text}");
+}
+
+#[test]
+fn test_recall_discloses_an_impossible_minimum() {
+    let inputs = refresh_docs(2);
+    let text = render(
+        &inputs,
+        "refresh token rotation",
+        RecallOptions {
+            top_k: None,
+            max_tokens: 1,
+        },
+    );
+    assert!(text.contains(" over_ceiling=1 "), "{text}");
 }

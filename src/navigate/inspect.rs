@@ -2,7 +2,7 @@ use super::{find_symbols_by_name, navigate_1hop};
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
 use crate::query::commands::QueryContext;
-use crate::serialize::{PageRequest, Paged, XmlEscapeExt, row_bytes};
+use crate::serialize::{PageRequest, PageWindow, XmlEscapeExt, row_bytes};
 use std::io::{self, Write};
 
 pub fn resolve_symbol_chain_at<'a>(
@@ -99,8 +99,16 @@ struct PackTaskBody {
     body: String,
 }
 
+/// Largest body one pack row may take; a larger body is truncated to fit its row.
 const MAX_PACK_BODY_BYTES: usize = 3600;
-const MAX_PACK_TOTAL_BODY_BYTES: usize = 9600;
+/// A body is admitted only with at least this many bytes left: a shorter excerpt does not help the task.
+const MIN_PACK_BODY_BYTES: usize = 256;
+/// Marker appended to a truncated body; its bytes are part of that body's allowance.
+const PACK_TRUNCATION_MARK: &str = "\n// ... [truncated to fit pack-task budget]";
+/// Shaping passes before a pack falls back to its minimal unit.
+const MAX_PACK_SHAPE_PASSES: usize = 16;
+/// Passes that settle a document's `est_tokens`, which is written inside the document it estimates.
+const MAX_EST_PASSES: usize = 8;
 
 fn write_pack_caller<W: Write>(out: &mut W, c: &super::SymbolNavInfo) -> io::Result<()> {
     write!(
@@ -127,20 +135,6 @@ fn write_pack_test<W: Write>(
     )
 }
 
-fn pack_callers(callers: &[super::SymbolNavInfo]) -> Paged<'_, super::SymbolNavInfo> {
-    Paged::new(callers, PageRequest::default(), |c| {
-        row_bytes(|mut w| write_pack_caller(&mut w, c))
-    })
-}
-
-fn pack_tests(
-    tests: &[crate::gate::affected::AffectedTest],
-) -> Paged<'_, crate::gate::affected::AffectedTest> {
-    Paged::new(tests, PageRequest::default(), |t| {
-        row_bytes(|mut w| write_pack_test(&mut w, t))
-    })
-}
-
 pub fn truncate_body_to_budget(raw: &str, max_bytes: usize) -> String {
     if raw.len() <= max_bytes {
         return raw.to_string();
@@ -152,99 +146,7 @@ pub fn truncate_body_to_budget(raw: &str, max_bytes: usize) -> String {
     if let Some(nl) = raw[..end].rfind('\n') {
         end = nl;
     }
-    format!(
-        "{}\n// ... [truncated to fit pack-task budget]",
-        &raw[..end]
-    )
-}
-
-fn maybe_push_pack_body(
-    it: &serde_json::Value,
-    l: u64,
-    p_esc: String,
-    n_esc: String,
-    bodies: &mut Vec<PackTaskBody>,
-    acc_body_bytes: &mut usize,
-) -> bool {
-    let Some(b) = it
-        .get("body")
-        .or_else(|| it.get("sig"))
-        .and_then(serde_json::Value::as_str)
-    else {
-        return false;
-    };
-    let remaining = MAX_PACK_TOTAL_BODY_BYTES.saturating_sub(*acc_body_bytes);
-    if remaining >= 256 {
-        let capped_body = truncate_body_to_budget(b, MAX_PACK_BODY_BYTES.min(remaining));
-        *acc_body_bytes += capped_body.len();
-        bodies.push(PackTaskBody {
-            kind: it["kind"].as_str().unwrap_or("fn").to_string(),
-            line: l,
-            path_esc: p_esc,
-            name_esc: n_esc,
-            body: capped_body,
-        });
-    }
-    true
-}
-
-fn write_pack_task_sigs_and_collect<'a, W: Write>(
-    syms: &'a [serde_json::Value],
-    ingest: &'a IngestResult,
-    interner: &'a Interner,
-    out: &mut W,
-) -> io::Result<(Vec<PackTaskBody>, Vec<&'a str>, usize)> {
-    let mut bodies = Vec::new();
-    let mut changed_paths = Vec::new();
-    let mut total_body_candidates = 0usize;
-    let mut acc_body_bytes = 0usize;
-    for (idx, it) in syms.iter().enumerate() {
-        let raw_name = it["name"].as_str().unwrap_or("");
-        let raw_path = it["path"].as_str().unwrap_or("");
-        let n_esc = raw_name.xml_escaped().to_string();
-        let p_esc = raw_path.xml_escaped().to_string();
-        let l = it["line"].as_u64().unwrap_or(1);
-        let cx = it["cx"].as_u64().unwrap_or(1);
-        let ccx = it["ccx"].as_u64().unwrap_or(1);
-        let in_deg = it["in"].as_u64().unwrap_or(0);
-        let sig = it["sig"].as_str().unwrap_or(raw_name).xml_escaped();
-        let r = idx + 1;
-        write!(
-            out,
-            "<d l=\"{l}\" n=\"{n_esc}\" p=\"{p_esc}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" r=\"{r}\" next=\"--expand={p_esc}:{n_esc}\">{sig}</d>"
-        )?;
-        if !raw_path.is_empty() {
-            changed_paths.push(raw_path);
-        }
-        if maybe_push_pack_body(it, l, p_esc, n_esc, &mut bodies, &mut acc_body_bytes) {
-            total_body_candidates += 1;
-        }
-    }
-    if syms.is_empty()
-        && let Some(first_sym) = ingest.symbols.first()
-    {
-        let n_raw = &interner[first_sym.name];
-        let n_esc = n_raw.xml_escaped().to_string();
-        let p_raw = ingest.sym_file_path(first_sym, interner);
-        let p_esc = p_raw.xml_escaped().to_string();
-        let l = first_sym.line;
-        write!(
-            out,
-            "<d l=\"{l}\" n=\"{n_esc}\" p=\"{p_esc}\" cx=\"{}\" ccx=\"{}\" in=\"0\" r=\"1\" next=\"--expand={p_esc}:{n_esc}\">{n_esc}</d>",
-            first_sym.cx.max(1),
-            first_sym.ccx
-        )?;
-        changed_paths.push(p_raw);
-        total_body_candidates = 1;
-        bodies.push(PackTaskBody {
-            kind: first_sym.kind.tag().to_string(),
-            line: u64::from(l),
-            path_esc: p_esc,
-            name_esc: n_esc.clone(),
-            body: n_esc,
-        });
-    }
-    Ok((bodies, changed_paths, total_body_candidates))
+    format!("{}{PACK_TRUNCATION_MARK}", &raw[..end])
 }
 
 /// Nodes of the ranked bundle symbols, matched by name, file, and line, so test candidates follow
@@ -283,14 +185,119 @@ struct PackRenderEnv<'a> {
     interner: &'a Interner,
 }
 
-fn collect_pack_surface_and_callers(
+/// What one pack admits under a byte budget: the leading signature rows, the bodies of those symbols, and the
+/// callers and tests windowed to the bytes left over.
+struct PackPlan {
+    sigs: usize,
+    bodies: Vec<PackTaskBody>,
+    bodies_total: usize,
+    callers: Vec<super::SymbolNavInfo>,
+    caller_window: PageWindow,
+    tests: Vec<crate::gate::affected::AffectedTest>,
+    test_window: PageWindow,
+    surface: std::collections::BTreeSet<crate::domain::NodeId>,
+}
+
+impl PackPlan {
+    /// No optional row fits: only the top-ranked signature, the minimal unit, remains.
+    fn is_minimal(&self) -> bool {
+        self.sigs <= 1
+            && self.bodies.is_empty()
+            && self.caller_window.shown == 0
+            && self.test_window.shown == 0
+    }
+}
+
+/// The symbols a pack ranks: the retrieved ones, or the first indexed symbol when retrieval found none.
+fn pack_candidates<'a>(
+    syms: &'a [serde_json::Value],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> std::borrow::Cow<'a, [serde_json::Value]> {
+    let Some(first) = ingest.symbols.first().filter(|_| syms.is_empty()) else {
+        return std::borrow::Cow::Borrowed(syms);
+    };
+    let name = &interner[first.name];
+    std::borrow::Cow::Owned(vec![serde_json::json!({
+        "name": name,
+        "path": ingest.sym_file_path(first, interner),
+        "line": first.line,
+        "kind": first.kind.tag(),
+        "cx": first.cx.max(1),
+        "ccx": first.ccx,
+        "in": 0,
+        "sig": name,
+        "body": name,
+    })])
+}
+
+fn pack_body_text(it: &serde_json::Value) -> Option<&str> {
+    it.get("body")
+        .or_else(|| it.get("sig"))
+        .and_then(serde_json::Value::as_str)
+}
+
+fn write_pack_sig_row<W: Write>(out: &mut W, idx: usize, it: &serde_json::Value) -> io::Result<()> {
+    let raw_name = it["name"].as_str().unwrap_or("");
+    let raw_path = it["path"].as_str().unwrap_or("");
+    let n_esc = raw_name.xml_escaped();
+    let p_esc = raw_path.xml_escaped();
+    let l = it["line"].as_u64().unwrap_or(1);
+    let cx = it["cx"].as_u64().unwrap_or(1);
+    let ccx = it["ccx"].as_u64().unwrap_or(1);
+    let in_deg = it["in"].as_u64().unwrap_or(0);
+    let sig = it["sig"].as_str().unwrap_or(raw_name).xml_escaped();
+    let r = idx + 1;
+    write!(
+        out,
+        "<d l=\"{l}\" n=\"{n_esc}\" p=\"{p_esc}\" cx=\"{cx}\" ccx=\"{ccx}\" in=\"{in_deg}\" r=\"{r}\" next=\"--expand={p_esc}:{n_esc}\">{sig}</d>"
+    )
+}
+
+/// Bodies of the admitted symbols in rank order, each truncated to what its row may take from `remaining`.
+fn admit_pack_bodies(admitted: &[serde_json::Value], remaining: &mut usize) -> Vec<PackTaskBody> {
+    let mut bodies = Vec::new();
+    for it in admitted {
+        let Some(raw) = pack_body_text(it) else {
+            continue;
+        };
+        let kind = it["kind"].as_str().unwrap_or("fn").to_string();
+        let line = it["line"].as_u64().unwrap_or(1);
+        let path_esc = it["path"].as_str().unwrap_or("").xml_escaped().to_string();
+        let name_esc = it["name"].as_str().unwrap_or("").xml_escaped().to_string();
+        let overhead = row_bytes(|w| {
+            write!(
+                w,
+                "<b t=\"{kind}\" l=\"{line}\" p=\"{path_esc}\" n=\"{name_esc}\"><![CDATA[]]></b>"
+            )
+        });
+        let cap = remaining.saturating_sub(overhead).min(MAX_PACK_BODY_BYTES);
+        if cap < MIN_PACK_BODY_BYTES {
+            break;
+        }
+        let body = if raw.len() <= cap {
+            raw.to_string()
+        } else {
+            truncate_body_to_budget(raw, cap - PACK_TRUNCATION_MARK.len())
+        };
+        *remaining = remaining.saturating_sub(overhead + body.len());
+        bodies.push(PackTaskBody {
+            kind,
+            line,
+            path_esc,
+            name_esc,
+            body,
+        });
+    }
+    bodies
+}
+
+/// Callers of the top-ranked admitted symbol, the list the pack windows.
+fn pack_top_callers(
     env: &PackRenderEnv<'_>,
-    syms: &[serde_json::Value],
-) -> (
-    Vec<super::SymbolNavInfo>,
-    std::collections::BTreeSet<crate::domain::NodeId>,
-) {
-    let top_caller_nodes = syms
+    admitted: &[serde_json::Value],
+) -> Vec<super::SymbolNavInfo> {
+    admitted
         .first()
         .and_then(|it| it["name"].as_str())
         .and_then(|n| {
@@ -300,31 +307,61 @@ fn collect_pack_surface_and_callers(
         })
         .and_then(|id| navigate_1hop(id, env.ingest, env.graph, env.ranks, env.interner))
         .map(|nav| nav.callers)
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
+
+/// Nodes named by the admitted symbols and the callers shown, the set the partition overlap measures.
+fn pack_surface(
+    env: &PackRenderEnv<'_>,
+    admitted: &[serde_json::Value],
+    callers: &[super::SymbolNavInfo],
+) -> std::collections::BTreeSet<crate::domain::NodeId> {
     let mut surface = std::collections::BTreeSet::new();
-    for it in syms {
+    for it in admitted {
         if let Some(n) = it["name"].as_str() {
             surface.extend(find_symbols_by_name(n, env.ingest, env.interner));
         }
     }
-    for c in pack_callers(&top_caller_nodes).rows() {
-        surface.insert(c.id);
-    }
-    (top_caller_nodes, surface)
+    surface.extend(callers.iter().map(|c| c.id));
+    surface
 }
 
-fn write_pack_task_ctx<W: Write>(
-    env: &PackRenderEnv<'_>,
-    syms: &[serde_json::Value],
-    budget_tokens: usize,
-    include_legend: bool,
-    out: &mut W,
-) -> io::Result<std::collections::BTreeSet<crate::domain::NodeId>> {
-    let mut sigs_buf = Vec::new();
-    let (bodies, changed_paths, total_bodies) =
-        write_pack_task_sigs_and_collect(syms, env.ingest, env.interner, &mut sigs_buf)?;
-    let (top_caller_nodes, surface) = collect_pack_surface_and_callers(env, syms);
-    let seeds = pack_seed_nodes(syms, env.ingest, env.interner);
+/// Shapes one pack to `budget` bytes: signatures take half, bodies take what the signatures leave, and callers
+/// then tests take the rest, each window measured row by row so a row that does not fit is not shown.
+fn plan_pack(env: &PackRenderEnv<'_>, syms: &[serde_json::Value], budget: usize) -> PackPlan {
+    let sig_costs: Vec<usize> = (0..syms.len())
+        .map(|i| row_bytes(|mut w| write_pack_sig_row(&mut w, i, &syms[i])))
+        .collect();
+    let sigs = PageRequest::default()
+        .with_budget(Some(budget / 2))
+        .window_fit(syms.len(), |i| sig_costs[i]);
+    let admitted = &syms[..sigs.shown];
+    let mut remaining = budget.saturating_sub(sig_costs[..sigs.shown].iter().sum());
+    let bodies = admit_pack_bodies(admitted, &mut remaining);
+    let bodies_total = syms
+        .iter()
+        .filter(|it| pack_body_text(it).is_some())
+        .count();
+    let callers = pack_top_callers(env, admitted);
+    let caller_window = PageRequest::default()
+        .with_budget(Some(remaining / 2))
+        .window_within(callers.len(), |i| {
+            row_bytes(|mut w| write_pack_caller(&mut w, &callers[i]))
+        });
+    let shown_callers = &callers[caller_window.begin..caller_window.end];
+    remaining = remaining.saturating_sub(
+        shown_callers
+            .iter()
+            .map(|c| row_bytes(|mut w| write_pack_caller(&mut w, c)))
+            .sum(),
+    );
+    let surface = pack_surface(env, admitted, shown_callers);
+    let seeds = pack_seed_nodes(admitted, env.ingest, env.interner);
+    let changed_paths: Vec<&str> = admitted
+        .iter()
+        .filter_map(|it| it["path"].as_str())
+        .filter(|p| !p.is_empty())
+        .collect();
     let mut aff = crate::gate::affected::find_affected_tests_for_symbols(
         &seeds,
         &changed_paths,
@@ -338,33 +375,63 @@ fn write_pack_task_ctx<W: Write>(
         env.ingest,
         env.interner,
     );
-    let callers = pack_callers(&top_caller_nodes);
-    let tests = pack_tests(&aff.tests);
-    let bodies_capped = usize::from(bodies.len() < total_bodies);
-    let body_bytes: usize = bodies.iter().map(|b| b.body.len() + 64).sum();
-    let aux_bytes = callers.window.shown * 56 + tests.window.shown * 64 + 320;
-    let est_tokens = ((sigs_buf.len() + body_bytes + aux_bytes) / 4).max(32);
+    let test_window = PageRequest::default()
+        .with_budget(Some(remaining))
+        .window_within(aff.tests.len(), |i| {
+            row_bytes(|mut w| write_pack_test(&mut w, &aff.tests[i]))
+        });
+    PackPlan {
+        sigs: sigs.shown,
+        bodies,
+        bodies_total,
+        callers,
+        caller_window,
+        tests: aff.tests,
+        test_window,
+        surface,
+    }
+}
+
+/// Writes the pack document: the ranked signatures, the admitted bodies, and the windowed callers and tests.
+/// `est_tokens` is the document's own size in estimated tokens; `over_budget` appears only when it exceeds the budget.
+fn write_pack_document<W: Write>(
+    out: &mut W,
+    env: &PackRenderEnv<'_>,
+    syms: &[serde_json::Value],
+    plan: &PackPlan,
+    budget_tokens: usize,
+    est_tokens: usize,
+    include_legend: bool,
+) -> io::Result<()> {
     if include_legend {
         writeln!(
             out,
             "<!-- ripwire-rs pack-task schema=ripwire-rs.pack-task/v1: one-call task bundle for task= under budget_tokens=. -->"
         )?;
     }
+    let over = if est_tokens > budget_tokens {
+        " over_budget=\"1\""
+    } else {
+        ""
+    };
     write!(
         out,
-        "<ctx schema=\"ripwire-rs.pack-task/v1\" task=\"{}\" route=\"{}\" root=\"{}\" est_tokens=\"{est_tokens}\" budget_tokens=\"{budget_tokens}\"><sigs>",
+        "<ctx schema=\"ripwire-rs.pack-task/v1\" task=\"{}\" route=\"{}\" root=\"{}\" est_tokens=\"{est_tokens}\" budget_tokens=\"{budget_tokens}\"{over}><sigs>",
         env.task.xml_escaped(),
         env.route.xml_escaped(),
         env.root
     )?;
-    out.write_all(&sigs_buf)?;
+    for (idx, it) in syms[..plan.sigs].iter().enumerate() {
+        write_pack_sig_row(out, idx, it)?;
+    }
+    let bodies_capped = usize::from(plan.bodies.len() < plan.bodies_total);
     write!(
         out,
         "</sigs><bodies shown=\"{}\" total=\"{}\" capped=\"{bodies_capped}\">",
-        bodies.len(),
-        total_bodies.max(bodies.len())
+        plan.bodies.len(),
+        plan.bodies_total.max(plan.bodies.len())
     )?;
-    for b in &bodies {
+    for b in &plan.bodies {
         write!(
             out,
             "<b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\">",
@@ -376,33 +443,94 @@ fn write_pack_task_ctx<W: Write>(
     write!(
         out,
         "</bodies><callers of_top=\"1\" shown=\"{}\" total=\"{}\" capped=\"{}\">",
-        callers.window.shown,
-        callers.window.total,
-        usize::from(callers.window.capped)
+        plan.caller_window.shown,
+        plan.caller_window.total,
+        usize::from(plan.caller_window.capped)
     )?;
-    for c in callers.rows() {
+    for c in &plan.callers[plan.caller_window.begin..plan.caller_window.end] {
         write_pack_caller(out, c)?;
     }
     write!(
         out,
         "</callers><tests shown=\"{}\" total=\"{}\" capped=\"{}\">",
-        tests.window.shown,
-        tests.window.total,
-        usize::from(tests.window.capped)
+        plan.test_window.shown,
+        plan.test_window.total,
+        usize::from(plan.test_window.capped)
     )?;
-    for t in tests.rows() {
+    for t in &plan.tests[plan.test_window.begin..plan.test_window.end] {
         write_pack_test(out, t)?;
     }
     write!(out, "</tests></ctx>")?;
     if include_legend {
         writeln!(out)?;
     }
-    Ok(surface)
+    Ok(())
+}
+
+/// The pack document with its own `est_tokens` fixed point: the estimate is the size of the text it sits in.
+fn pack_document(
+    env: &PackRenderEnv<'_>,
+    syms: &[serde_json::Value],
+    plan: &PackPlan,
+    budget_tokens: usize,
+    include_legend: bool,
+) -> Vec<u8> {
+    let mut est = 0usize;
+    let mut doc = Vec::new();
+    for _ in 0..MAX_EST_PASSES {
+        doc.clear();
+        let _ = write_pack_document(
+            &mut doc,
+            env,
+            syms,
+            plan,
+            budget_tokens,
+            est,
+            include_legend,
+        );
+        let next = doc.len().div_ceil(crate::serialize::BYTES_PER_TOKEN);
+        if next == est {
+            break;
+        }
+        est = next;
+    }
+    doc
+}
+
+/// Writes one pack shaped to `budget_tokens`: it shrinks the plan until the document fits, or until only the
+/// minimal unit (the top signature) remains, in which case `over_budget=1` discloses the overrun.
+fn write_pack_task_ctx<W: Write>(
+    env: &PackRenderEnv<'_>,
+    syms: &[serde_json::Value],
+    budget_tokens: usize,
+    include_legend: bool,
+    out: &mut W,
+) -> io::Result<std::collections::BTreeSet<crate::domain::NodeId>> {
+    let syms = pack_candidates(syms, env.ingest, env.interner);
+    let limit = budget_tokens.saturating_mul(crate::serialize::BYTES_PER_TOKEN);
+    let mut budget = limit;
+    let mut passes = 0usize;
+    let (doc, plan) = loop {
+        let plan = plan_pack(env, &syms, budget);
+        let doc = pack_document(env, &syms, &plan, budget_tokens, include_legend);
+        passes += 1;
+        if doc.len() <= limit || plan.is_minimal() {
+            break (doc, plan);
+        }
+        budget = if passes < MAX_PACK_SHAPE_PASSES {
+            budget.saturating_sub(doc.len() - limit)
+        } else {
+            0
+        };
+    };
+    out.write_all(&doc)?;
+    Ok(plan.surface)
 }
 
 pub fn execute_pack_task<W: Write>(
     task: &str,
     ctx: &QueryContext<'_>,
+    budget_tokens: usize,
     out: &mut W,
 ) -> io::Result<()> {
     let for_val = crate::query::retrieval::call_for_task_with_options(
@@ -414,7 +542,6 @@ pub fn execute_pack_task<W: Write>(
             root: ctx.root,
             sources: Some(ctx.sources),
             graph: Some(ctx.graph),
-            budget_tokens: Some(10),
             detail: Some(3),
             adaptive: false,
             at: ctx.at,
@@ -432,7 +559,7 @@ pub fn execute_pack_task<W: Write>(
         ranks: &ctx.pr.ranks,
         interner: ctx.interner,
     };
-    let _ = write_pack_task_ctx(&env, syms, 6000, true, out)?;
+    let _ = write_pack_task_ctx(&env, syms, budget_tokens, true, out)?;
     Ok(())
 }
 

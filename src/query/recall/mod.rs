@@ -11,11 +11,10 @@ use serde_json::{Value, json};
 use std::cmp::Ordering;
 
 pub const DEFAULT_MAX_TOKENS: usize = 8000;
-/// Upstream's body ceiling: 2.5 bytes/token less a 15.1% reserve for headers and notes.
-const BODY_BYTES_PER_TOKEN: f64 = 2.1225;
 /// Upstream displays relevance as 0.3 x BM25.
 const RELEVANCE_SCALE: f64 = 0.3;
-const MIN_SLICE_BYTES: usize = 256;
+/// The smallest excerpt worth a document's slot: fewer, fuller excerpts rather than many fragments that end early.
+const MIN_SLICE_BYTES: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecallInput {
@@ -265,10 +264,11 @@ fn water_level(payloads: &[usize], budget: usize) -> usize {
     usize::MAX
 }
 
-/// Admits the best-ranked prefix whose cut docs each keep at least `MIN_SLICE_BYTES`.
+/// Admits the best-ranked prefix whose cut docs each keep at least `MIN_SLICE_BYTES`. When no prefix of two or more
+/// does, the best-ranked document alone is admitted, its allowance shaped to whatever budget remains.
 fn admit(payloads: &[usize], budget: usize) -> (usize, usize) {
     let mut n = payloads.len();
-    while n > 0 {
+    while n > 1 {
         let level = water_level(&payloads[..n], budget);
         let starved = level < MIN_SLICE_BYTES && payloads[..n].iter().any(|&p| p > level);
         if !starved {
@@ -276,21 +276,42 @@ fn admit(payloads: &[usize], budget: usize) -> (usize, usize) {
         }
         n -= 1;
     }
-    (0, 0)
+    match payloads.first() {
+        Some(&top) => (1, water_level(&[top], budget)),
+        None => (0, 0),
+    }
 }
 
+/// Cuts `text` to at most `limit` bytes at a line boundary outside any fenced code block, preferring a paragraph
+/// break that keeps at least half the allowance. Returns the kept text and its line count.
 fn truncate_lines(text: &str, limit: usize) -> (&str, usize) {
+    let mut in_fence = false;
     let mut end = 0usize;
     let mut lines = 0usize;
+    let mut outside_fence = None;
+    let mut paragraph = None;
     for line in text.split_inclusive('\n') {
         if end + line.len() > limit {
             break;
         }
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("```") || trimmed.starts_with("~~~") {
+            in_fence = !in_fence;
+        }
         end += line.len();
         lines += 1;
+        if !in_fence {
+            outside_fence = Some((end, lines));
+            if line.trim().is_empty() {
+                paragraph = Some((end, lines));
+            }
+        }
     }
-    if lines > 0 {
-        return (&text[..end], lines);
+    let kept = paragraph
+        .filter(|&(at, _)| at * 2 >= limit)
+        .or(outside_fence);
+    if let Some((at, n)) = kept {
+        return (&text[..at], n);
     }
     let mut cut = limit.min(text.len());
     while !text.is_char_boundary(cut) {
@@ -372,28 +393,30 @@ fn serve_sections(c: &Candidate<'_>, allowance: usize) -> ServedDoc {
     doc
 }
 
+/// Bytes the `--recall` ceiling admits: `est_tokens` is `ceil(bytes * 2 / 5)`, so `max_tokens` admits `5 * max / 2`.
 #[must_use]
-pub fn body_budget_bytes(max_tokens: usize) -> usize {
-    (max_tokens as f64 * BODY_BYTES_PER_TOKEN).round() as usize
+pub fn total_budget_bytes(max_tokens: usize) -> usize {
+    max_tokens.saturating_mul(5) / 2
 }
 
-/// Ranks documents by BM25 and serves matching heading sections best-first under the token ceiling.
-#[must_use]
-pub fn recall(inputs: &[RecallInput], query: &str, opts: RecallOptions) -> RecallOutcome {
-    let terms = query_terms(query);
-    let ranked = if terms.is_empty() {
-        Vec::new()
-    } else {
-        ranked_candidates(inputs, &terms)
-    };
-    let budget_bytes = body_budget_bytes(opts.max_tokens);
-    let take = opts.top_k.unwrap_or(ranked.len()).min(ranked.len());
-    let candidates = &ranked[..take];
-    let payloads: Vec<usize> = candidates.iter().map(Candidate::payload).collect();
-    let (admitted, level) = admit(&payloads, budget_bytes);
+/// The rendered text's bytes, headers, markers and footer included: what the token estimate counts.
+fn recall_rendered_bytes(query: &str, val: &Value) -> usize {
+    let mut buf = Vec::new();
+    let _ = crate::serialize::serialize_recall_text(query, val, &mut buf);
+    buf.len()
+}
+
+/// Serves the best-ranked prefix of `candidates` whose excerpts fit `body` bytes: the admitted count, the
+/// per-document allowance level when any excerpt was cut, and the served documents.
+fn serve(
+    candidates: &[Candidate<'_>],
+    payloads: &[usize],
+    body: usize,
+) -> (Vec<ServedDoc>, usize, Option<usize>) {
+    let (admitted, level) = admit(payloads, body);
     let docs: Vec<ServedDoc> = candidates[..admitted]
         .iter()
-        .zip(&payloads)
+        .zip(payloads)
         .map(|(c, &p)| {
             let allowance = p.min(level);
             if c.hits.is_empty() {
@@ -404,16 +427,43 @@ pub fn recall(inputs: &[RecallInput], query: &str, opts: RecallOptions) -> Recal
         })
         .collect();
     let share_bytes = docs.iter().any(ServedDoc::is_cut).then_some(level);
-    RecallOutcome {
-        documents: inputs.len(),
-        relevant: ranked.len(),
-        generated_demoted: ranked.iter().filter(|c| c.generated).count(),
-        omitted_top_k: ranked.len() - candidates.len(),
-        omitted_budget: candidates.len() - admitted,
-        top_k: opts.top_k,
-        max_tokens: opts.max_tokens,
-        budget_bytes,
-        share_bytes,
-        docs,
+    (docs, admitted, share_bytes)
+}
+
+/// Ranks documents by BM25 and serves matching heading sections best-first. The rendered answer, headers and
+/// footer included, is shaped to the token ceiling: admission shrinks until it fits. Only when the best-ranked
+/// document's minimal excerpt alone exceeds the ceiling is it returned over, and `over_ceiling=1` says so.
+#[must_use]
+pub fn recall(inputs: &[RecallInput], query: &str, opts: RecallOptions) -> RecallOutcome {
+    let terms = query_terms(query);
+    let ranked = if terms.is_empty() {
+        Vec::new()
+    } else {
+        ranked_candidates(inputs, &terms)
+    };
+    let total = total_budget_bytes(opts.max_tokens);
+    let take = opts.top_k.unwrap_or(ranked.len()).min(ranked.len());
+    let candidates = &ranked[..take];
+    let payloads: Vec<usize> = candidates.iter().map(Candidate::payload).collect();
+    let mut body = total;
+    loop {
+        let (docs, admitted, share_bytes) = serve(candidates, &payloads, body);
+        let outcome = RecallOutcome {
+            documents: inputs.len(),
+            relevant: ranked.len(),
+            generated_demoted: ranked.iter().filter(|c| c.generated).count(),
+            omitted_top_k: ranked.len() - candidates.len(),
+            omitted_budget: candidates.len() - admitted,
+            top_k: opts.top_k,
+            max_tokens: opts.max_tokens,
+            budget_bytes: total,
+            share_bytes,
+            docs,
+        };
+        let rendered = recall_rendered_bytes(query, &outcome.to_json(query));
+        if rendered <= total || body == 0 {
+            return outcome;
+        }
+        body = body.saturating_sub(rendered - total);
     }
 }

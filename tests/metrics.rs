@@ -12,5 +12,6 @@ mod metrics {
     mod paging;
     mod quality_panel;
     mod readability;
+    mod report_paging;
     mod source_mask;
 }

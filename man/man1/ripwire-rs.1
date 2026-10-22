@@ -60,6 +60,7 @@ ripwire-rs, rw \- high-throughput agent context router and deterministic static 
 It indexes codebases across 36 programming languages using multi-threaded parallel Tree-Sitter grammar queries, extracts language-agnostic embedded SQL table lineage from application string literals without extra flags, builds a resolved workspace call graph with multi-tier scoping precedence, executes Personalized PageRank over compressed sparse row (CSR) transpose matrices with dangling node mass redistribution, and streams dense, token-budgeted XML representations to stdout.
 Output formats are minified, self-documenting XML designed to maximize LLM in-context reasoning efficiency while eliminating hallucinated code dependencies and false-negative omissions.
 
+Budget flags are shaping ceilings, not hard gates: output is shaped to fit. \fB\-\-pack\-task\fR reports \fBover_budget=1\fR and \fB\-\-recall\fR reports \fBover_ceiling=1\fR only when the minimal unit alone cannot fit. \fB\-\-recall\fR admits \fI5*N/2\fR bytes for \fB\-\-max\-tokens=N\fR; \fB\-\-for\fR windows its ranked symbols by the token budget (default 4000 tokens), with \fB\-\-limit\fR / \fB\-\-offset\fR overriding the window.
 .SH ORIENTATION & BUDGET OPTIONS
 .TP
 .BI \-\-top\-k= N
@@ -101,7 +102,7 @@ Pack source bodies of the top \fIN\fR highest PageRank symbols.
 Orient file by file, showing each file's top 3 symbols by rank.
 .TP
 .B \-\-report
-Generate executive Markdown architecture report summarizing symbols, connectivity, and quality health.
+Generate executive Markdown architecture report summarizing symbols, connectivity, and quality health. The default is bounded to 16 KiB, shared equally by five lists (modules, bridges, god files, dependency cycles, top symbols); each list states \fI(showing S of T)\fR. Page with \fB\-\-limit\fR and \fB\-\-offset\fR; a capped list prints a \fBnext\fR route.
 
 .SH NAVIGATION & GRAPH OPTIONS
 .TP

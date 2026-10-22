@@ -420,6 +420,9 @@ pub struct ForTaskOptions<'a> {
     pub auto_bodies: bool,
     pub graph: Option<&'a Graph>,
     pub budget_tokens: Option<usize>,
+    /// Window over the ranked symbols: `--limit` rows from `--offset`, shaped by the budget when unset.
+    pub limit: Option<usize>,
+    pub offset: Option<usize>,
     pub detail: Option<usize>,
     pub adaptive: bool,
 }
@@ -798,24 +801,29 @@ pub fn call_for_task_with_options(
     if let [term] = raw_terms.as_slice() {
         promote_exact_anchors(&mut scored, term, interner);
     }
-    let page = crate::serialize::PageRequest {
+    let budget_page = crate::serialize::PageRequest {
         limit: None,
         offset: None,
         budget: opts
             .budget_tokens
             .map(crate::query::map::token_budget_bytes),
     };
-    let mut limit = page
-        .window_fit(scored.len(), |i| {
-            symbol_row_bytes(scored[i].1, ingest, interner)
-        })
-        .shown;
+    let window = crate::serialize::PageRequest {
+        limit: opts.limit,
+        offset: opts.offset,
+        budget: budget_page.budget,
+    }
+    .window_fit(scored.len(), |i| {
+        symbol_row_bytes(scored[i].1, ingest, interner)
+    });
+    let begin = window.begin;
+    let mut end = window.end;
     let mut adaptive_info = None;
-    if opts.adaptive && scored.len() > 5 {
-        let scores: Vec<f64> = scored.iter().map(|s| s.0).collect();
-        let (kept, _cliff, gap) = compute_adaptive_cut(&scores, 5, limit);
+    if opts.adaptive && window.shown > 5 {
+        let scores: Vec<f64> = scored[begin..end].iter().map(|s| s.0).collect();
+        let (kept, _cliff, gap) = compute_adaptive_cut(&scores, 5, scores.len());
         adaptive_info = Some((kept, scored.len(), gap));
-        limit = kept;
+        end = begin + kept;
     }
     use crate::domain::CorpusView;
     let view = (ingest, interner);
@@ -823,25 +831,26 @@ pub fn call_for_task_with_options(
         [term] if !conceptual => Some(*term),
         _ => None,
     };
-    let wants: Vec<bool> = scored[..limit]
+    let wants: Vec<bool> = scored[begin..end]
         .iter()
         .enumerate()
-        .map(|(idx, (_, sym))| body_wanted(idx, view.sym_name(sym), opts, exact_term))
+        .map(|(idx, (_, sym))| body_wanted(begin + idx, view.sym_name(sym), opts, exact_term))
         .collect();
     // Default bodies are admitted into the budget left after the signature rows; explicit requests are not.
-    let shown_bytes: usize = (0..limit)
+    let shown_bytes: usize = (begin..end)
         .map(|i| symbol_row_bytes(scored[i].1, ingest, interner))
         .sum();
     let mut body_room = if opts.detail.is_some() || opts.auto_bodies {
         usize::MAX
     } else {
-        page.budget
+        budget_page
+            .budget
             .unwrap_or(crate::serialize::DEFAULT_PACK_BUDGET_BYTES)
             .saturating_sub(shown_bytes)
     };
     let mut file_cache = std::collections::HashMap::new();
     let tested_bitmap = opts.graph.map(|g| view.compute_test_reachability(g));
-    let symbols_json: Vec<Value> = scored[..limit]
+    let symbols_json: Vec<Value> = scored[begin..end]
         .iter()
         .enumerate()
         .map(|(idx, (score, sym))| {
@@ -876,11 +885,12 @@ pub fn call_for_task_with_options(
     let (route, confidence, margin_pct) =
         compute_for_route_metadata(task, &raw_terms, &scored, interner);
     let coverage = term_coverage_percent(&raw_terms, &scored, coverage_masks, interner);
-    let lego = collect_for_lego(ingest, interner, &scored[..limit]);
-    let compose = collect_for_compose(ingest, interner, &scored[..limit]);
-    let hops = collect_for_hops(ingest, interner, opts.graph, &scored[..limit], page);
-    let tree = collect_for_tree_rows(ingest, interner, &scored, limit);
-    let docs = collect_for_doc_mentions(ingest, interner, &raw_terms, page);
+    let window_rows = &scored[begin..end];
+    let lego = collect_for_lego(ingest, interner, window_rows);
+    let compose = collect_for_compose(ingest, interner, window_rows);
+    let hops = collect_for_hops(ingest, interner, opts.graph, window_rows, budget_page);
+    let tree = collect_for_tree_rows(ingest, interner, &scored, begin, end);
+    let docs = collect_for_doc_mentions(ingest, interner, &raw_terms, budget_page);
     let sig_bytes: usize = symbols_json
         .iter()
         .map(|s| {
@@ -902,6 +912,13 @@ pub fn call_for_task_with_options(
         "est_tokens": est_tokens,
         "symbols": symbols_json,
         "count": symbols_json.len(),
+        "window": {
+            "begin": begin,
+            "end": end,
+            "total": scored.len(),
+            "limit": opts.limit.unwrap_or(0),
+            "offset": opts.offset.unwrap_or(0),
+        },
         "detail": wanted,
         "bundle": bundle,
         "reason": reason,
@@ -912,7 +929,7 @@ pub fn call_for_task_with_options(
         "hops": hops,
         "tree": tree,
         "docs": docs,
-        "budget": page.budget,
+        "budget": budget_page.budget,
         "adaptive": adaptive_info.map(|(k, t, g)| json!({ "kept": k, "total": t, "gap": g }))
     })
 }
@@ -1031,15 +1048,16 @@ fn collect_for_tree_rows(
     ingest: &IngestResult,
     interner: &Interner,
     scored: &[(f64, &crate::domain::Symbol)],
-    sig_limit: usize,
+    begin: usize,
+    end: usize,
 ) -> Vec<Value> {
     use crate::domain::CorpusView;
     let view = (ingest, interner);
     let shown_files: std::collections::HashSet<u32> =
-        scored[..sig_limit].iter().map(|(_, s)| s.file_id).collect();
+        scored[begin..end].iter().map(|(_, s)| s.file_id).collect();
     let mut seen_tree_files = std::collections::HashSet::new();
     let mut rows = Vec::new();
-    for &(_, sym) in scored.iter().skip(sig_limit) {
+    for &(_, sym) in scored.iter().skip(end) {
         if rows.len() >= 12 {
             break;
         }

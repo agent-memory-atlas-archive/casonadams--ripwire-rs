@@ -160,10 +160,10 @@ fn test_graph_query_execution() {
         );
     }
     let mut p_out = Vec::new();
-    execute_pack_task("search", &query_ctx, &mut p_out).unwrap();
+    execute_pack_task("search", &query_ctx, 6000, &mut p_out).unwrap();
     assert!(String::from_utf8(p_out).unwrap().contains("<sigs>"));
     let mut named_out = Vec::new();
-    execute_pack_task("foo", &query_ctx, &mut named_out).unwrap();
+    execute_pack_task("foo", &query_ctx, 6000, &mut named_out).unwrap();
     let named = String::from_utf8(named_out).unwrap();
     assert!(named.contains("route=\"name-exact(foo)\""), "{named}");
     let mut pp_out = Vec::new();

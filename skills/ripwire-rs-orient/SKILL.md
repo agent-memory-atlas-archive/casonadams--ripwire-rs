@@ -113,6 +113,7 @@ the gnarliest function. Plan edits around this list.
 **6. Budget it** if the map is large — `--max-tokens=8000` or `--top-k=50`. Both shape the default map;
 a positive, explicit `--top-k` is inert on plain `--for` (it warns on stderr and emits the full bundle) —
 bound a `--for` call with `--signatures-only`, `--token-budget=N` or `--detail=N` instead.
+Budget flags are shaping ceilings, never hard gates: output is shaped to fit, and `over_budget="1"` (`--pack-task`) or `over_ceiling=1` (`--recall`) appears only when the minimal unit alone cannot fit. `--for` is windowed by its token budget (default 4000 tokens); page it with `--limit` / `--offset` and follow the `next` route when `capped="1"`. `--report` is bounded to 16 KiB and each list states `(showing S of T)`; a capped list prints a `next: --report --limit=N --offset=M` route.
 When the ranked rows leave files out, the map ends with `<inv>`: the program entries (`<entry>`, by each language's entry convention)
 and every unshown file, named or counted per directory (`<ls>`). Read it before concluding a file or entry point is
 not there; `--no-inventory` drops it (the rows are unchanged), and so does `--max-tokens` — `--top-k` keeps it.

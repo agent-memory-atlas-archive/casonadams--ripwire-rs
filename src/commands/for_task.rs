@@ -5,10 +5,13 @@ use super::{Plugin, Run, SharedOption};
 use crate::cli::Cli;
 use crate::query::commands::{QueryContext, render_query_value};
 use crate::query::retrieval::{self, ForTaskOptions};
-use crate::serialize::JsonValueExt;
+use crate::serialize::{JsonValueExt, PageRequest};
 use clap::Args;
 use serde_json::Value;
 use std::io::{self, Write};
+
+/// The `--for` token ceiling when no budget flag is given: a bounded reading order, not an inventory.
+const DEFAULT_FOR_TOKENS: usize = 4000;
 
 #[derive(Args, Debug, Clone, Default, PartialEq)]
 pub struct ForTaskArgs {
@@ -44,12 +47,13 @@ pub struct ForTaskArgs {
 }
 
 impl ForTaskArgs {
-    /// The `for` options for `query`, scoped by `in_scope` and capped by `budget`.
+    /// The `for` options for `query`, scoped by `in_scope`, capped by `budget` and windowed by `page`.
     pub fn options<'a>(
         &'a self,
         query: &QueryContext<'a>,
         in_scope: Option<&'a str>,
         budget: Option<usize>,
+        page: PageRequest,
     ) -> ForTaskOptions<'a> {
         ForTaskOptions {
             root: query.root,
@@ -57,6 +61,8 @@ impl ForTaskArgs {
             graph: Some(query.graph),
             sources: Some(query.sources),
             budget_tokens: budget,
+            limit: page.limit,
+            offset: page.offset,
             in_scope,
             sections: self.sections.as_deref(),
             signatures_only: self.signatures_only,
@@ -79,6 +85,7 @@ pub fn execute<W: Write>(
     args: &ForTaskArgs,
     in_scope: Option<&str>,
     budget: Option<usize>,
+    page: PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     let val = retrieval::call_for_task_with_options(
@@ -86,7 +93,7 @@ pub fn execute<W: Write>(
         query.interner,
         &query.pr.ranks,
         task,
-        args.options(query, in_scope, budget),
+        args.options(query, in_scope, budget, page),
     );
     if let Some(error) = val.get("error").and_then(Value::as_str) {
         return Err(io::Error::other(error.to_owned()));
@@ -102,16 +109,22 @@ pub fn orient_bundle(cli: &Cli, query: &QueryContext<'_>, task: &str) -> Value {
         query.interner,
         &query.pr.ranks,
         task,
-        args.options(query, cli.modifiers.in_scope.as_deref(), token_budget(cli)),
+        args.options(
+            query,
+            cli.modifiers.in_scope.as_deref(),
+            token_budget(cli),
+            PageRequest::default(),
+        ),
     )
 }
 
 fn run(run: &Run<'_>, args: &ForTaskArgs) -> io::Result<()> {
     let task = args.task_for.as_deref().unwrap_or_default();
     let in_scope = run.cli.modifiers.in_scope.as_deref();
-    let budget = token_budget(run.cli);
+    let budget = Some(token_budget(run.cli).unwrap_or(DEFAULT_FOR_TOKENS));
+    let page = run.page();
     report_query(run, |query, out| {
-        execute(query, task, args, in_scope, budget, out)
+        execute(query, task, args, in_scope, budget, page, out)
     })
 }
 
@@ -141,6 +154,8 @@ fn call_for_tool(state: &QueryContext<'_>, args: &Value) -> Result<Value, String
             graph: Some(state.graph),
             sources: Some(state.sources),
             budget_tokens: args.opt_usize("budget_tokens"),
+            limit: None,
+            offset: None,
             detail: args.opt_usize("detail"),
             adaptive: args.bool_or("adaptive", false),
             in_scope: args.opt_str("in_scope"),
@@ -154,7 +169,10 @@ fn call_for_tool(state: &QueryContext<'_>, args: &Value) -> Result<Value, String
 
 pub static FOR_TASK: Plugin<ForTaskArgs> = Plugin {
     name: "for",
-    options: &[SharedOption::Budget("Approximate token ceiling")],
+    options: &[
+        SharedOption::Budget("Approximate token ceiling"),
+        SharedOption::CliPaged,
+    ],
     selected: |args| args.task_for.is_some(),
     run,
     check: Some(check),

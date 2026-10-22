@@ -100,7 +100,7 @@ pub fn collect_community_bridges<'a>(
             (a, b, la, lb, w)
         })
         .collect();
-    bridges.sort_by(|x, y| y.4.cmp(&x.4).then_with(|| x.0.cmp(&y.0)));
+    bridges.sort_by(|x, y| y.4.cmp(&x.4).then_with(|| (x.0, x.1).cmp(&(y.0, y.1))));
     bridges
 }
 
