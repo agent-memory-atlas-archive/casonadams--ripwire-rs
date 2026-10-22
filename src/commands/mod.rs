@@ -8,15 +8,11 @@ pub mod plugin;
 pub use plugin::{Plugin, Run, SharedOption};
 
 pub trait Command: Sync {
-    /// The command's primary flag, without `--`; empty for plugins that are not a single command.
-    fn name(&self) -> &'static str {
-        ""
-    }
+    /// The command's primary flag or subcommand, without `--`; empty for plugins that are not a single command.
+    fn name(&self) -> &'static str;
 
-    /// Shared options (`--limit`, ...) this command honors.
-    fn options(&self) -> &'static [SharedOption] {
-        &[]
-    }
+    /// Shared options (`--limit`, ...) this command honors; empty when it honors none.
+    fn options(&self) -> &'static [SharedOption];
 
     /// Add this command's clap flags (a derive `Args::augment_args`) to the CLI.
     fn augment(&self, cmd: clap::Command) -> clap::Command {

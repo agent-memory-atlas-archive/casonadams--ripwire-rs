@@ -2,7 +2,7 @@
 //! A bare `--refetch` clones a remote URL root fresh instead.
 use super::common::mcp::mcp_tool;
 use super::common::retrieval::report_query;
-use super::{Command, Run};
+use super::{Command, Run, SharedOption};
 use crate::cli::Cli;
 use crate::query::commands::{CommandDescriptor, QueryContext, render_xml};
 use crate::serialize::JsonValueExt;
@@ -41,6 +41,14 @@ pub struct Refetch;
 pub static REFETCH: Refetch = Refetch;
 
 impl Command for Refetch {
+    fn name(&self) -> &'static str {
+        "refetch"
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     fn augment(&self, cmd: ClapCommand) -> ClapCommand {
         RefetchArgs::augment_args(cmd)
     }

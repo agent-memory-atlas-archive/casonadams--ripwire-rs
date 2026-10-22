@@ -142,6 +142,14 @@ pub struct Gate;
 pub static GATE: Gate = Gate;
 
 impl Command for Gate {
+    fn name(&self) -> &'static str {
+        "gate"
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        PAGED
+    }
+
     fn subcommands(&self) -> Vec<ClapCommand> {
         vec![
             GateArgs::augment_args(ClapCommand::new("gate"))

@@ -1,7 +1,7 @@
 //! `metrics` subcommand: co-change coupling and maintenance hotspots for a repository path.
 use super::cochange::{CochangeArgs, CochangeQuery, execute_cochange};
 use super::hotspots::{HotspotsArgs, execute_hotspots};
-use super::{Command, decode_subcommand};
+use super::{Command, SharedOption, decode_subcommand};
 use crate::cli::Cli;
 use crate::serialize::PageRequest;
 use clap::{Args, Command as ClapCommand};
@@ -48,6 +48,14 @@ pub struct Metrics;
 pub static METRICS: Metrics = Metrics;
 
 impl Command for Metrics {
+    fn name(&self) -> &'static str {
+        ""
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     fn subcommands(&self) -> Vec<ClapCommand> {
         vec![
             MetricsArgs::augment_args(ClapCommand::new("metrics"))

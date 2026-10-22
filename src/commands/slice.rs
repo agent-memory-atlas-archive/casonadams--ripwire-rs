@@ -1,6 +1,6 @@
 //! `--slice SYM[:VAR]` and the `slice` subcommand: ARISE intra-procedural def-use variable slice; MCP `slice`.
 use super::common::mcp::mcp_tool;
-use super::{Command, decode_subcommand};
+use super::{Command, SharedOption, decode_subcommand};
 use crate::cli::Cli;
 use crate::commands::context::{OutputDialect, load_repo_analysis_for_cli};
 use crate::ingest::LanguageRegistry;
@@ -115,6 +115,14 @@ pub struct Slice;
 pub static SLICE: Slice = Slice;
 
 impl Command for Slice {
+    fn name(&self) -> &'static str {
+        "slice"
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     fn augment(&self, cmd: ClapCommand) -> ClapCommand {
         SliceFlags::augment_args(cmd)
     }

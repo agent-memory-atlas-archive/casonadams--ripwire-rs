@@ -1,5 +1,5 @@
 //! Agent skill installation: `--add-skills` and the `skills` subcommand.
-use super::{Command, decode_subcommand};
+use super::{Command, SharedOption, decode_subcommand};
 use crate::cli::Cli;
 use clap::{Args, Command as ClapCommand};
 use std::io;
@@ -28,6 +28,14 @@ pub struct Skills;
 pub static SKILLS: Skills = Skills;
 
 impl Command for Skills {
+    fn name(&self) -> &'static str {
+        "skills"
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     fn augment(&self, cmd: ClapCommand) -> ClapCommand {
         SkillsFlags::augment_args(cmd)
     }

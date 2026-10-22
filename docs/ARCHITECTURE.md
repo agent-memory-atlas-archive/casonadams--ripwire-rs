@@ -97,7 +97,10 @@ code never names a language. To add one, create the directory and add one line t
 `register_languages!` in `src/languages/mod.rs`, which generates the `Lang` enum, the module
 declaration and the semantics table. `src/languages/common/` is not a language: it holds the shared
 helpers and vocabulary every plugin builds on (syntax and complexity kinds, flag facts, lint groups,
-keyword fallback) and no language logic.
+keyword fallback) and no language logic. `LanguageSemantics` also states each language's test-partner
+naming (`test_partner_subject`, `supports_test_partners`); the universal rules are the defaults in
+`src/languages/common/util.rs`. `tests/languages/contract.rs` checks tags, extension ownership, grammar
+loading, hook pairs and registration for every language.
 
 ## Command Plugins
 
@@ -112,7 +115,9 @@ code are named in the commit that introduced this rule. The subcommands
 `gate`, `metrics`, and `slice` are their own modules and flatten the owning `Args` structs. The CLI and MCP layers only
 see the `Command` trait, so shared code never names a command. Plugin-specific rules live behind `Command` hooks:
 `validate` (flag combinations), `refreshes_remote_checkout` and `run_default` (the default output, such as the `map`
-plugin). To add one, create the module and add one line to `register_commands!` in `src/commands/mod.rs`, which
+plugin). `name()` and `options()` are required on every `Command`: `name` is the primary flag or subcommand without
+`--`, empty for a plugin that is not a single command, and `options` lists the shared options it honors. Paging is
+checked end to end by `tests/commands/paging.rs`, which runs each paged command in memory at `limit=1`. To add one, create the module and add one line to `register_commands!` in `src/commands/mod.rs`, which
 generates the module declaration and the registry; the line order is CLI dispatch precedence. `src/commands/context.rs`
 is not a command: it holds the shared CLI plumbing every plugin uses (`Paginated`, `OutputDialect`,
 `ExecutionContext`, repo-analysis loading). `src/cli/` keeps only the core options (`Cli`, `TopModifierArgs`) and the

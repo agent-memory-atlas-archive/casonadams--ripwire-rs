@@ -1,6 +1,6 @@
 //! `orient` subcommand: repository orientation, optionally ranked for a task.
 use super::common::retrieval::report_query;
-use super::{Command, Run, decode_subcommand, for_task};
+use super::{Command, Run, SharedOption, decode_subcommand, for_task};
 use crate::cli::Cli;
 use crate::commands::map::dispatch_default_run;
 use clap::{Args, Command as ClapCommand};
@@ -21,6 +21,14 @@ pub struct Orient;
 pub static ORIENT: Orient = Orient;
 
 impl Command for Orient {
+    fn name(&self) -> &'static str {
+        "orient"
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     fn subcommands(&self) -> Vec<ClapCommand> {
         vec![
             OrientArgs::augment_args(ClapCommand::new("orient"))

@@ -1,6 +1,6 @@
 //! Shared by the navigation commands (`callers`, `callees`, `impact`, `uses`, `find_symbol`) and the
 //! `navigate` subcommand.
-use super::{Command, Run, decode_subcommand};
+use super::{Command, Run, SharedOption, decode_subcommand};
 use crate::cli::Cli;
 use crate::commands::context::{OutputDialect, Paginated, load_repo_analysis_for_cli};
 use crate::query::commands::{QueryContext, render_xml};
@@ -50,6 +50,14 @@ pub struct Nav;
 pub static NAV: Nav = Nav;
 
 impl Command for Nav {
+    fn name(&self) -> &'static str {
+        "navigate"
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[SharedOption::Paged]
+    }
+
     fn subcommands(&self) -> Vec<ClapCommand> {
         vec![
             NavigateArgs::augment_args(ClapCommand::new("navigate"))

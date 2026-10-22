@@ -1,6 +1,6 @@
 //! MCP and LSP servers: `--mcp`, `--lsp`, `--listen`, `--mcp-token`, `--mcp-tools` and the `mcp`
 //! subcommand. `--listen`, `--mcp-token` and `--mcp-tools` are parsed only.
-use super::{Command, decode_subcommand};
+use super::{Command, SharedOption, decode_subcommand};
 use crate::cli::Cli;
 use clap::{Args, Command as ClapCommand};
 use std::io;
@@ -38,6 +38,14 @@ pub struct Mcp;
 pub static MCP: Mcp = Mcp;
 
 impl Command for Mcp {
+    fn name(&self) -> &'static str {
+        "mcp"
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     fn augment(&self, cmd: ClapCommand) -> ClapCommand {
         McpFlags::augment_args(cmd)
     }

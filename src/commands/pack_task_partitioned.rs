@@ -3,7 +3,7 @@
 use super::common::retrieval::report_query;
 use super::pack_task::PackTaskArgs;
 use super::partition::PartitionArgs;
-use super::{Command, Run};
+use super::{Command, Run, SharedOption};
 use crate::cli::Cli;
 use std::io;
 
@@ -20,6 +20,14 @@ pub struct PackTaskPartitioned;
 pub static PACK_TASK_PARTITIONED: PackTaskPartitioned = PackTaskPartitioned;
 
 impl Command for PackTaskPartitioned {
+    fn name(&self) -> &'static str {
+        ""
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     fn run(&self, cli: &Cli, root: &str) -> Option<io::Result<()>> {
         let args = cli.plugins.decode::<PartitionedPackArgs>()?;
         let task = args.pack.pack_task?;

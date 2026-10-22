@@ -1,5 +1,5 @@
 //! Batch lookups: `--batch FILE` runs newline-delimited verb:arg lines in one turn.
-use super::Command;
+use super::{Command, SharedOption};
 use super::common::mcp::mcp_tool;
 use crate::cli::Cli;
 use crate::commands::context::{OutputDialect, load_repo_analysis_for_cli};
@@ -23,6 +23,14 @@ pub struct Batch;
 pub static BATCH: Batch = Batch;
 
 impl Command for Batch {
+    fn name(&self) -> &'static str {
+        "batch"
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     fn augment(&self, cmd: ClapCommand) -> ClapCommand {
         BatchFlags::augment_args(cmd)
     }

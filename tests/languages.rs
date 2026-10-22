@@ -3,6 +3,7 @@ mod languages {
     mod brightscript;
     mod c;
     mod cobol;
+    mod contract;
     mod cpp;
     mod csharp;
     mod cuda;

@@ -4,7 +4,7 @@ use super::SharedOption;
 use super::plugin::report_command;
 use crate::query::commands::{QueryContext, render_query_value};
 use crate::query::retrieval;
-use crate::serialize::JsonValueExt;
+use crate::serialize::{JsonValueExt, PageRequest, Paged};
 use std::io::{self, Write};
 
 pub fn execute<W: Write>(query: &QueryContext<'_>, iface: &str, out: &mut W) -> io::Result<()> {
@@ -14,6 +14,19 @@ pub fn execute<W: Write>(query: &QueryContext<'_>, iface: &str, out: &mut W) -> 
     }
     val.attach_gauges(query.graph);
     crate::serialize::serialize_lego_xml(query.root, &val, out)
+}
+
+/// Keep the implementors inside the request's window; the interface records the full count.
+fn window_implementors(val: &mut serde_json::Value, page: PageRequest) {
+    let Some(all) = val["implementors"].as_array() else {
+        return;
+    };
+    let total = all.len();
+    let kept = Paged::new(all, page, |imp| imp.to_string().len())
+        .rows()
+        .to_vec();
+    val["implementors_total"] = serde_json::Value::from(total);
+    val["implementors"] = serde_json::Value::Array(kept);
 }
 
 report_command! {
@@ -31,6 +44,7 @@ report_command! {
         |s, a| {
             let mut val = retrieval::call_lego(s.ingest, s.interner, a.req_str("interface")?);
             val.attach_gauges(s.graph);
+            window_implementors(&mut val, a.page_request());
             render_query_value(val, a, |val, out| {
                 crate::serialize::serialize_lego_xml(s.root, val, out)
             })

@@ -1,6 +1,6 @@
 //! Evaluation harnesses: `--eval` and `--eval-retrieval`. `--eval-mined`, `--eval-skills` and
 //! `--eval-stray` are parsed only.
-use super::Command;
+use super::{Command, SharedOption};
 use crate::cli::Cli;
 use crate::commands::context::load_repo_analysis_for_cli;
 use clap::{Args, Command as ClapCommand};
@@ -30,6 +30,14 @@ pub struct Eval;
 pub static EVAL: Eval = Eval;
 
 impl Command for Eval {
+    fn name(&self) -> &'static str {
+        "eval"
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     fn augment(&self, cmd: ClapCommand) -> ClapCommand {
         EvalFlags::augment_args(cmd)
     }

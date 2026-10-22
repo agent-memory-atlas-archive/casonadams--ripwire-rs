@@ -76,6 +76,10 @@ pub struct Map;
 pub static MAP: Map = Map;
 
 impl Command for Map {
+    fn name(&self) -> &'static str {
+        ""
+    }
+
     fn augment(&self, cmd: ClapCommand) -> ClapCommand {
         MapArgs::augment_args(cmd)
     }

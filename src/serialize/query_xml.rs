@@ -768,10 +768,17 @@ pub fn serialize_lego_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io:
         format!(" methods=\"{}\"", methods.len())
     };
     let lego_attrs = val.xml_opt_gauge_attrs();
+    let total = val["implementors_total"]
+        .as_u64()
+        .map_or(impls.len(), |total| total as usize);
+    let window = if impls.len() < total {
+        format!(" shown=\"{}\" total=\"{total}\" capped=\"1\"", impls.len())
+    } else {
+        String::new()
+    };
     writeln!(
         out,
-        "<ctx schema=\"ripwire-rs.lego/v1\" root=\"{root}\"><lego{lego_attrs}><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{}\">",
-        impls.len()
+        "<ctx schema=\"ripwire-rs.lego/v1\" root=\"{root}\"><lego{lego_attrs}><iface n=\"{iface}\"{p_attr}{m_attr} defs=\"{defs}\" implementors=\"{total}\"{window}>"
     )?;
     for m in methods {
         let mn = m.str_or("name", "").xml_escaped();
