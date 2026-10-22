@@ -1,4 +1,4 @@
-use ripwire_rs::commands::detail::execute_expand_or_outline_query;
+use ripwire_rs::commands::common::ladder::execute_expand_or_outline_compressed;
 use ripwire_rs::commands::workspace::{
     WorkspaceArgs, WorkspaceContext, build_handoff_verified_rows, execute_doc_search_query,
     execute_session_tools_query, execute_workspace_doc_query_paged, render_flip_xml,
@@ -20,12 +20,16 @@ fn test_skeletonize_body() {
     let ingest = IngestResult::new();
     let mut buf = Vec::new();
     assert!(
-        execute_expand_or_outline_query(".", "missing", false, &ingest, &interner, &mut buf)
-            .is_err()
+        execute_expand_or_outline_compressed(
+            ".", "missing", false, false, &ingest, &interner, &mut buf
+        )
+        .is_err()
     );
     assert!(
-        execute_expand_or_outline_query(".", "missing", true, &ingest, &interner, &mut buf)
-            .is_err()
+        execute_expand_or_outline_compressed(
+            ".", "missing", true, false, &ingest, &interner, &mut buf
+        )
+        .is_err()
     );
 }
 

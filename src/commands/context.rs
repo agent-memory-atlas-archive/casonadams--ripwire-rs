@@ -12,6 +12,12 @@ pub trait Paginated {
     fn limit_opt(&self) -> Option<usize>;
     fn offset_opt(&self) -> Option<usize>;
 
+    fn page_request(&self) -> crate::serialize::PageRequest {
+        crate::serialize::PageRequest {
+            limit: self.limit_opt(),
+            offset: self.offset_opt(),
+        }
+    }
     fn page_window(&self, total: usize, default_cap: usize) -> crate::serialize::PageWindow {
         crate::serialize::PageWindow::compute(
             total,

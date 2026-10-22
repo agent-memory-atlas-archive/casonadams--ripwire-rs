@@ -4,9 +4,12 @@
 use super::Command;
 use crate::cli::Cli;
 use crate::commands::context::{OutputDialect, load_repo_analysis_for_cli};
+use crate::query::commands::CommandDescriptor;
 use crate::query::map::{MapDiff, MapRequest, execute_stream_xml_ranked};
 use clap::{Args, Command as ClapCommand};
 use std::io;
+
+mod tools;
 
 /// Flags that shape the default repository map.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
@@ -79,5 +82,9 @@ impl Command for Map {
 
     fn run_default(&self, cli: &Cli, root: &str) -> Option<io::Result<()>> {
         Some(dispatch_default_run(cli, root))
+    }
+
+    fn tools(&self) -> &'static [&'static CommandDescriptor] {
+        tools::TOOLS
     }
 }

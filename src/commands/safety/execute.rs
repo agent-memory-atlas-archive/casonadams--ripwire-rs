@@ -407,12 +407,13 @@ pub fn execute_partition_from_facts<W: Write>(
         )
     } else {
         let mut stdout_buf = Vec::new();
-        crate::commands::architecture::execute_communities_query(
+        crate::commands::communities::execute_communities_query(
             ctx.root,
             None,
             ctx.ingest,
             ctx.graph,
             ctx.interner,
+            crate::serialize::PageRequest::default(),
             &mut stdout_buf,
         )?;
         out.write_all(&stdout_buf)

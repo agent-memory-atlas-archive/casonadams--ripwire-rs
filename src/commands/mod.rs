@@ -4,7 +4,20 @@
 use crate::cli::Cli;
 use crate::query::commands::CommandDescriptor;
 
+pub mod plugin;
+pub use plugin::{Plugin, Run, SharedOption};
+
 pub trait Command: Sync {
+    /// The command's primary flag, without `--`; empty for plugins that are not a single command.
+    fn name(&self) -> &'static str {
+        ""
+    }
+
+    /// Shared options (`--limit`, ...) this command honors.
+    fn options(&self) -> &'static [SharedOption] {
+        &[]
+    }
+
     /// Add this command's clap flags (a derive `Args::augment_args`) to the CLI.
     fn augment(&self, cmd: clap::Command) -> clap::Command {
         cmd
@@ -52,6 +65,7 @@ pub trait Command: Sync {
     }
 }
 
+pub mod common;
 pub mod context;
 /// One line per command plugin; order is CLI dispatch precedence.
 macro_rules! register_commands {
@@ -68,12 +82,43 @@ register_commands! {
     eval::EVAL,
     batch::BATCH,
     nav::NAV,
+    callers::CALLERS,
+    callees::CALLEES,
+    impact::IMPACT,
+    uses::USES,
+    find_symbol::FIND_SYMBOL,
     retrieval::RETRIEVAL,
     workspace::WORKSPACE,
-    detail::DETAIL,
+    expand::EXPAND,
+    outline::OUTLINE,
+    pack_top_n::PACK_TOP_N,
+    tree::TREE,
+    biggest_first::BIGGEST_FIRST,
+    nonlocal_state::NONLOCAL_STATE,
+    lint::LINT,
+    lint_catalog::LINT_CATALOG,
+    naming_locals::NAMING_LOCALS,
+    naming_consistency::NAMING_CONSISTENCY,
+    naming_calibration::NAMING_CALIBRATION,
+    report::REPORT,
+    legend_dict::LEGEND_DICT,
     safety::SAFETY,
     map::MAP,
-    architecture::ARCHITECTURE,
+    mermaid::MERMAID,
+    arch::ARCH,
+    zoom::ZOOM,
+    dead_code::DEAD_CODE,
+    communities::COMMUNITIES,
+    around::AROUND,
+    external_surface::EXTERNAL_SURFACE,
+    deps::DEPS,
+    symbol_metrics::SYMBOL_METRICS,
+    quality_panel::QUALITY_PANEL,
+    layout::LAYOUT,
+    field_affinity::FIELD_AFFINITY,
+    context_ratio::CONTEXT_RATIO,
+    ensemble::ENSEMBLE,
+    comment_coherence::COMMENT_COHERENCE,
     metrics::METRICS,
     gate::GATE,
     clones::CLONES,
@@ -92,9 +137,23 @@ pub fn augment(cmd: clap::Command) -> clap::Command {
     })
 }
 
-/// Run the first plugin whose flags are present.
+/// Run the first plugin whose flags are present; warn when a shared option it does not honor was passed.
 pub fn run(cli: &Cli, root: &str) -> Option<std::io::Result<()>> {
-    REGISTRY.iter().find_map(|command| command.run(cli, root))
+    REGISTRY.iter().find_map(|command| {
+        let result = command.run(cli, root)?;
+        warn_unhonored_options(cli, *command);
+        Some(result)
+    })
+}
+
+fn warn_unhonored_options(cli: &Cli, command: &dyn Command) {
+    let paged = cli.modifiers.limit.is_some() || cli.modifiers.offset.is_some();
+    if paged && !command.name().is_empty() && !command.options().contains(&SharedOption::Paged) {
+        eprintln!(
+            "ripwire-rs: --limit/--offset are not honored by --{}",
+            command.name()
+        );
+    }
 }
 
 /// Run the plugin subcommand the command line selected, if a plugin owns it.

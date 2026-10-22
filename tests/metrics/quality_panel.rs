@@ -1,4 +1,5 @@
 use ripwire_rs::metrics::compute_quality_panel_report;
+use ripwire_rs::serialize::PageRequest;
 use ripwire_rs::{
     FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol, ToXmlString,
 };
@@ -8,7 +9,8 @@ fn test_quality_panel_computation() {
     let ingest = IngestResult::new();
     let interner = Interner::new();
     let graph = Graph::build(&ingest, &interner);
-    let rep = compute_quality_panel_report(&ingest, &graph, &interner, None);
+    let rep =
+        compute_quality_panel_report(&ingest, &graph, &interner, None, PageRequest::default());
     assert_eq!(rep.preset, "default");
     assert_eq!(rep.cut, 2);
 
@@ -63,7 +65,8 @@ fn test_check_symbol_families() {
         RefRole::Write,
     ));
     let graph = Graph::build(&ingest, &interner);
-    let rep = compute_quality_panel_report(&ingest, &graph, &interner, None);
+    let rep =
+        compute_quality_panel_report(&ingest, &graph, &interner, None, PageRequest::default());
     assert_eq!(rep.rows.len(), 1);
     assert!(rep.rows[0].fam >= 3);
     assert!(rep.rows[0].fired.contains("structural"));

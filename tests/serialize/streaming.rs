@@ -401,7 +401,13 @@ fn test_query_xml_architecture_family() {
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.around/v1\""));
     buf.clear();
 
-    serialize_external_surface_xml(".", &[("extern_fn", "rs", 5)], &mut buf).unwrap();
+    serialize_external_surface_xml(
+        ".",
+        &[("extern_fn", "rs", 5)],
+        ripwire_rs::serialize::PageRequest::default(),
+        &mut buf,
+    )
+    .unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.external-surface/v1\""));
     buf.clear();
 
@@ -577,13 +583,33 @@ fn test_page_window_and_xml_report_trait() {
     let ingest = IngestResult::new();
     let interner = Interner::new();
     let graph = Graph::build(&ingest, &interner);
-    let qp = ripwire_rs::metrics::compute_quality_panel_report(&ingest, &graph, &interner, None);
+    let qp = ripwire_rs::metrics::compute_quality_panel_report(
+        &ingest,
+        &graph,
+        &interner,
+        None,
+        ripwire_rs::serialize::PageRequest::default(),
+    );
     assert!(qp.to_xml_string().contains("ripwire-rs.quality-panel/v1"));
-    let cr = ripwire_rs::metrics::compute_context_ratio(&ingest, &graph, &interner);
+    let cr = ripwire_rs::metrics::compute_context_ratio(
+        &ingest,
+        &graph,
+        &interner,
+        ripwire_rs::serialize::PageRequest::default(),
+    );
     assert!(cr.to_xml_string().contains("ripwire-rs.context-ratio/v1"));
-    let ens = ripwire_rs::metrics::compute_ensemble(&ingest, &graph, &interner);
+    let ens = ripwire_rs::metrics::compute_ensemble(
+        &ingest,
+        &graph,
+        &interner,
+        ripwire_rs::serialize::PageRequest::default(),
+    );
     assert!(ens.to_xml_string().contains("ripwire-rs.ensemble/v1"));
-    let cc = ripwire_rs::metrics::compute_comment_coherence(&ingest, &interner);
+    let cc = ripwire_rs::metrics::compute_comment_coherence(
+        &ingest,
+        &interner,
+        ripwire_rs::serialize::PageRequest::default(),
+    );
     assert!(
         cc.to_xml_string()
             .contains("ripwire-rs.comment-coherence/v1")

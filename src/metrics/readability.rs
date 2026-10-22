@@ -140,6 +140,7 @@ pub fn compute_readability(code: &str, lang: Lang) -> ReadabilityMetrics {
 
 pub struct ReadabilityReport<'a> {
     pub functions: Vec<(&'a crate::domain::Symbol, &'a str, &'a str)>,
+    pub page: crate::serialize::PageRequest,
 }
 
 impl crate::serialize::XmlReport for ReadabilityReport<'_> {
@@ -150,19 +151,14 @@ impl crate::serialize::XmlReport for ReadabilityReport<'_> {
         comment: "ripwire-rs readability schema=ripwire-rs.readability/v1: Posnett/Hindle/Devanbu lens, largest Halstead volume first: <fn p= n= lines= toks= ops= vocab= vol= ent= posnett=>."
     );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
-        Some(crate::serialize::PageWindow::compute(
-            self.functions.len(),
-            40,
-            None,
-            None,
-        ))
+        Some(self.page.window(self.functions.len(), 40))
     }
     fn write_extra_attrs<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
         write!(out, " functions=\"{}\"", self.functions.len())
     }
     fn write_body<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
-        let shown = self.functions.len().min(40);
-        for (sym, p, n) in self.functions.iter().take(shown) {
+        let pw = self.page.window(self.functions.len(), 40);
+        for (sym, p, n) in &self.functions[pw.begin..pw.end] {
             let lines = sym.loc.max(1);
             let toks = lines * 8;
             let ops = lines * 5;
@@ -185,6 +181,7 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
     root: &str,
     ingest: &crate::domain::IngestResult,
     interner: &crate::domain::Interner,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> std::io::Result<()> {
     use crate::domain::CorpusView;
@@ -202,5 +199,5 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
         .map(|sym| (sym, view.sym_path(sym), view.sym_name(sym)))
         .collect();
     functions.sort_by(|a, b| b.0.loc.cmp(&a.0.loc).then_with(|| b.0.ccx.cmp(&a.0.ccx)));
-    ReadabilityReport { functions }.write_xml_report(root, out)
+    ReadabilityReport { functions, page }.write_xml_report(root, out)
 }

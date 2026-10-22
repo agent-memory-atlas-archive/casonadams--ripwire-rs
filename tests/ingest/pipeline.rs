@@ -1,4 +1,4 @@
-use ripwire_rs::commands::architecture::{AroundConfig, execute_around_query};
+use ripwire_rs::commands::around::{AroundConfig, execute_around_query};
 use ripwire_rs::commands::safety::execute_safe_delete_query;
 use ripwire_rs::gate::contract::{ContractStatus, SignatureContract, is_symbol_name_public};
 use ripwire_rs::gate::edit_check::check_symbol_contract;

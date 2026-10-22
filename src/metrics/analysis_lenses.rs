@@ -1,6 +1,6 @@
 use crate::domain::{IngestResult, Interner, SymKind};
 use crate::graph::Graph;
-use crate::serialize::XmlEscapeExt;
+use crate::serialize::{PageRequest, XmlEscapeExt};
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +25,7 @@ pub struct ContextRatioReport {
     pub units: usize,
     pub file_units: usize,
     pub rows: Vec<ContextRatioRow>,
+    pub page: PageRequest,
 }
 
 fn estimate_symbol_bytes(sym: &crate::domain::Symbol) -> usize {
@@ -87,6 +88,7 @@ pub fn compute_context_ratio(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
+    page: PageRequest,
 ) -> ContextRatioReport {
     let mut rows = Vec::new();
     let mut files_set = std::collections::HashSet::new();
@@ -115,6 +117,7 @@ pub fn compute_context_ratio(
         units,
         file_units: files_set.len(),
         rows,
+        page,
     }
 }
 
@@ -126,10 +129,10 @@ impl crate::serialize::XmlReport for ContextRatioReport {
         comment: "ripwire-rs context-ratio schema=ripwire-rs.context-ratio/v1: LOCAL-REASONING lens."
     );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
+        let pw = self.page.window(self.rows.len(), 40);
         write!(
             w,
-            " units=\"{}\" file_units=\"{}\" defs_per_name_cap=\"8\" body_bytes_per_token=\"3.80\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" defs_capped=\"1\" counts_floor=\"1\"",
+            " units=\"{}\" file_units=\"{}\" defs_per_name_cap=\"8\" body_bytes_per_token=\"3.80\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\" defs_capped=\"1\" counts_floor=\"1\"",
             self.units,
             self.file_units,
             pw.shown,
@@ -138,12 +141,15 @@ impl crate::serialize::XmlReport for ContextRatioReport {
             usize::from(pw.capped),
             pw.total,
             usize::from(pw.has_more),
-            pw.next_offset
+            pw.next_offset,
+            pw.offset,
+            pw.limit
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let shown = self.rows.len().min(40);
-        for r in self.rows.iter().take(shown) {
+        let pw = self.page.window(self.rows.len(), 40);
+        let page_rows = &self.rows[pw.begin..pw.end];
+        for r in page_rows {
             writeln!(
                 w,
                 "  <s p=\"{}:{}\" n=\"{}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
@@ -162,7 +168,7 @@ impl crate::serialize::XmlReport for ContextRatioReport {
                 r.read_ratio
             )?;
         }
-        for r in self.rows.iter().take(shown) {
+        for r in page_rows {
             writeln!(
                 w,
                 "  <f p=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
@@ -200,6 +206,7 @@ pub struct EnsembleReport {
     pub cscope: usize,
     pub hranked: usize,
     pub rows: Vec<EnsembleRow>,
+    pub page: PageRequest,
 }
 
 fn evaluate_symbol_ensemble(sym: &crate::domain::Symbol, graph: &Graph) -> Vec<&'static str> {
@@ -218,6 +225,7 @@ pub fn compute_ensemble(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
+    page: PageRequest,
 ) -> EnsembleReport {
     let cfiles = ingest
         .files
@@ -268,6 +276,7 @@ pub fn compute_ensemble(
         cscope,
         hranked,
         rows,
+        page,
     }
 }
 
@@ -279,11 +288,11 @@ impl crate::serialize::XmlReport for EnsembleReport {
         comment: "ripwire-rs ensemble schema=ripwire-rs.ensemble/v1: four orthogonal evidence families joined."
     );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
-        let f_shown = self.rows.len().min(20);
+        let pw = self.page.window(self.rows.len(), 40);
+        let f_shown = pw.shown.min(20);
         write!(
             w,
-            " families=\"4\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
+            " families=\"4\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\" at=\"HEAD\"",
             self.eligible,
             self.ranked,
             self.no_family,
@@ -297,13 +306,16 @@ impl crate::serialize::XmlReport for EnsembleReport {
             usize::from(pw.capped),
             pw.total,
             usize::from(pw.has_more),
-            pw.next_offset
+            pw.next_offset,
+            pw.offset,
+            pw.limit
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let shown = self.rows.len().min(40);
-        let f_shown = self.rows.len().min(20);
-        for r in self.rows.iter().take(shown) {
+        let pw = self.page.window(self.rows.len(), 40);
+        let page_rows = &self.rows[pw.begin..pw.end];
+        let f_shown = page_rows.len().min(20);
+        for r in page_rows {
             writeln!(
                 w,
                 "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"3\" fired=\"{}\" unavail=\"confusion\"/>",
@@ -314,7 +326,7 @@ impl crate::serialize::XmlReport for EnsembleReport {
                 r.fired
             )?;
         }
-        for r in self.rows.iter().take(f_shown) {
+        for r in page_rows.iter().take(f_shown) {
             writeln!(
                 w,
                 "  <f p=\"{}\" top=\"{}\" top_l=\"{}\" top_fam=\"{}\" union_fam=\"{}\" union=\"{}\" syms=\"1\"/>",
@@ -349,6 +361,7 @@ pub struct CommentCoherenceReport {
     pub documented: usize,
     pub no_comment: usize,
     pub rows: Vec<CommentCoherenceRow>,
+    pub page: PageRequest,
 }
 
 fn split_identifier_subtokens(ident: &str) -> std::collections::BTreeSet<String> {
@@ -452,25 +465,28 @@ fn measure_comment_coherence_row(
 pub fn compute_comment_coherence(
     ingest: &IngestResult,
     interner: &Interner,
+    page: PageRequest,
 ) -> CommentCoherenceReport {
-    compute_comment_coherence_in_root(".", ingest, interner)
+    compute_comment_coherence_in_root(".", ingest, interner, page)
 }
 
 pub fn compute_comment_coherence_in_root(
     root: &str,
     ingest: &IngestResult,
     interner: &Interner,
+    page: PageRequest,
 ) -> CommentCoherenceReport {
     let sources = crate::query::FileSources {
         root: std::path::Path::new(root),
     };
-    compute_comment_coherence_with_sources(&sources, ingest, interner)
+    compute_comment_coherence_with_sources(&sources, ingest, interner, page)
 }
 
 pub fn compute_comment_coherence_with_sources<S: crate::query::SourceReader + ?Sized>(
     sources: &S,
     ingest: &IngestResult,
     interner: &Interner,
+    page: PageRequest,
 ) -> CommentCoherenceReport {
     let mut rows = Vec::new();
     let mut documented = 0usize;
@@ -511,6 +527,7 @@ pub fn compute_comment_coherence_with_sources<S: crate::query::SourceReader + ?S
         documented,
         no_comment,
         rows,
+        page,
     }
 }
 
@@ -522,12 +539,7 @@ impl crate::serialize::XmlReport for CommentCoherenceReport {
         comment: "ripwire-rs comment-coherence schema=ripwire-rs.comment-coherence/v1: two comment/name content measures per documented function."
     );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
-        Some(crate::serialize::PageWindow::compute(
-            self.rows.len(),
-            40,
-            None,
-            None,
-        ))
+        Some(self.page.window(self.rows.len(), 40))
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         write!(
@@ -537,7 +549,8 @@ impl crate::serialize::XmlReport for CommentCoherenceReport {
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        for r in self.rows.iter().take(40) {
+        let pw = self.page.window(self.rows.len(), 40);
+        for r in &self.rows[pw.begin..pw.end] {
             writeln!(
                 w,
                 "  <fn p=\"{}:{}\" n=\"{}\" c_coeff=\"{:.3}\" words=\"{}\" restate=\"{}\" cic=\"{:.3}\" c_terms=\"{}\" i_terms=\"{}\" shared=\"{}\"/>",
@@ -582,13 +595,23 @@ pub fn classify_identifier_casing(name: &str) -> &'static str {
     }
 }
 
+/// Root and scope for the naming-consistency serializer.
+pub struct NamingScope<'a> {
+    pub root: &'a str,
+    pub include_locals: bool,
+}
+
 pub fn serialize_naming_consistency_xml<W: Write>(
-    root: &str,
-    include_locals: bool,
+    scope: NamingScope<'_>,
     ingest: &IngestResult,
     interner: &Interner,
+    page: PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
+    let NamingScope {
+        root,
+        include_locals,
+    } = scope;
     let mut counts: std::collections::BTreeMap<(&'static str, &'static str), usize> =
         std::collections::BTreeMap::new();
     for sym in &ingest.symbols {
@@ -615,7 +638,9 @@ pub fn serialize_naming_consistency_xml<W: Write>(
         root.xml_escaped(),
         ingest.symbol_count()
     )?;
-    for ((kind, style), count) in counts {
+    let votes: Vec<_> = counts.into_iter().collect();
+    let pw = page.window(votes.len(), votes.len());
+    for ((kind, style), count) in &votes[pw.begin..pw.end] {
         writeln!(
             out,
             "  <vote kind=\"{kind}\" style=\"{style}\" count=\"{count}\"/>"
@@ -628,6 +653,7 @@ pub fn serialize_naming_calibration_xml<W: Write>(
     root: &str,
     ingest: &IngestResult,
     interner: &Interner,
+    page: PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     writeln!(
@@ -642,7 +668,9 @@ pub fn serialize_naming_calibration_xml<W: Write>(
         let style = classify_identifier_casing(interner.resolve(&sym.name));
         *style_totals.entry(style).or_insert(0) += 1;
     }
-    for (style, count) in style_totals {
+    let styles: Vec<_> = style_totals.into_iter().collect();
+    let pw = page.window(styles.len(), styles.len());
+    for (style, count) in &styles[pw.begin..pw.end] {
         writeln!(out, "  <style name=\"{style}\" count=\"{count}\"/>")?;
     }
     writeln!(out, "</naming-calibration>")

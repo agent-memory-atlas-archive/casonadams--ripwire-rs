@@ -1,5 +1,6 @@
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
+use crate::serialize::PageRequest;
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,6 +31,7 @@ pub struct QualityPanelReport {
     pub tested_scope: usize,
     pub deep_untested: usize,
     pub rows: Vec<QualityPanelRow>,
+    pub page: PageRequest,
 }
 pub struct QualityFamilyContext<'a> {
     pub graph: &'a Graph,
@@ -161,6 +163,7 @@ pub fn compute_quality_panel_report(
     graph: &Graph,
     interner: &Interner,
     preset_opt: Option<&str>,
+    page: PageRequest,
 ) -> QualityPanelReport {
     let preset = preset_opt.unwrap_or("default");
     let cut = usize::from(preset != "lenient") + 1;
@@ -239,6 +242,7 @@ pub fn compute_quality_panel_report(
         tested_scope,
         deep_untested,
         rows,
+        page,
     }
 }
 
@@ -250,7 +254,7 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         comment: "ripwire-rs quality-panel schema=ripwire-rs.quality-panel/v1: every quality family in ONE report."
     );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = crate::serialize::PageWindow::compute(self.rows.len(), 40, None, None);
+        let pw = self.page.window(self.rows.len(), 40);
         let ccut = if self.cfiles > 0 { 40 } else { 0 };
         let unavail_attrs = if self.cfiles == 0 {
             " unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\""
@@ -259,7 +263,7 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         };
         write!(
             w,
-            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\"{unavail_attrs} bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"{}\" sscope=\"{}\" cells=\"{}\" tested_scope=\"{}\" deep_untested=\"{}\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"0\" limit=\"0\" at=\"HEAD\"",
+            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\"{unavail_attrs} bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"{}\" sscope=\"{}\" cells=\"{}\" tested_scope=\"{}\" deep_untested=\"{}\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\" at=\"HEAD\"",
             self.preset,
             self.cut,
             self.eligible,
@@ -281,7 +285,9 @@ impl crate::serialize::XmlReport for QualityPanelReport {
             usize::from(pw.capped),
             pw.total,
             usize::from(pw.has_more),
-            pw.next_offset
+            pw.next_offset,
+            pw.offset,
+            pw.limit
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
@@ -290,7 +296,8 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         } else {
             ""
         };
-        for r in self.rows.iter().take(40) {
+        let pw = self.page.window(self.rows.len(), 40);
+        for r in &self.rows[pw.begin..pw.end] {
             use crate::serialize::XmlEscapeExt;
             writeln!(
                 w,

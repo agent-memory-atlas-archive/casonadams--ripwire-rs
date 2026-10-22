@@ -392,6 +392,7 @@ pub fn serialize_dead_code_paged_xml<W: Write>(
 pub struct CommunitiesReport<'a> {
     pub modules: &'a [CommunityModule<'a>],
     pub summary: &'a CommunitySummary<'a>,
+    pub page: crate::serialize::PageRequest,
 }
 
 impl crate::serialize::XmlReport for CommunitiesReport<'_> {
@@ -408,22 +409,28 @@ impl crate::serialize::XmlReport for CommunitiesReport<'_> {
         Some(self.summary.gauges)
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let total_mods = self.modules.len();
-        let shown_mods = total_mods.min(30);
-        let mods_capped = usize::from(shown_mods < total_mods);
+        let pw = self.page.window(self.modules.len(), 30);
         let total_bridges = self.summary.bridges.len();
         let shown_bridges = total_bridges.min(12);
         let bridges_capped = usize::from(shown_bridges < total_bridges);
-        let page_attrs = if mods_capped == 1 {
+        let page_attrs = if pw.capped {
             format!(
-                " total=\"{total_mods}\" has_more=\"1\" next_offset=\"{shown_mods}\" offset=\"0\" limit=\"0\""
+                " total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
+                pw.total,
+                usize::from(pw.has_more),
+                pw.next_offset,
+                pw.offset,
+                pw.limit
             )
         } else {
             String::new()
         };
         write!(
             out,
-            " drill=\"--community=ID\" modules=\"{total_mods}\" shown_modules=\"{shown_mods}\" modules_capped=\"{mods_capped}\" bridges=\"{total_bridges}\" shown_bridges=\"{shown_bridges}\" bridges_capped=\"{bridges_capped}\" isolated=\"{}\" isolated_decl=\"{}\" isolated_header=\"{}\" isolated_source=\"{}\" isolated_doc=\"{}\" connected_singletons=\"{}\" symbols=\"{}\"{page_attrs}",
+            " drill=\"--community=ID\" modules=\"{}\" shown_modules=\"{}\" modules_capped=\"{}\" bridges=\"{total_bridges}\" shown_bridges=\"{shown_bridges}\" bridges_capped=\"{bridges_capped}\" isolated=\"{}\" isolated_decl=\"{}\" isolated_header=\"{}\" isolated_source=\"{}\" isolated_doc=\"{}\" connected_singletons=\"{}\" symbols=\"{}\"{page_attrs}",
+            pw.total,
+            pw.shown,
+            usize::from(pw.capped),
             self.summary.isolated,
             self.summary.isolated_decl,
             self.summary.isolated_header,
@@ -434,9 +441,9 @@ impl crate::serialize::XmlReport for CommunitiesReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let shown_mods = self.modules.len().min(30);
+        let pw = self.page.window(self.modules.len(), 30);
         let shown_bridges = self.summary.bridges.len().min(12);
-        for m in self.modules.iter().take(shown_mods) {
+        for m in &self.modules[pw.begin..pw.end] {
             let top_n = m.members.len().min(5);
             let m_capped = usize::from(top_n < m.size);
             writeln!(
@@ -480,17 +487,29 @@ pub fn serialize_communities_xml<W: Write>(
         pr_iters: 1,
         ..Default::default()
     };
-    serialize_communities_with_summary_xml(root, modules, &default_sum, out)
+    serialize_communities_with_summary_xml(
+        root,
+        modules,
+        &default_sum,
+        crate::serialize::PageRequest::default(),
+        out,
+    )
 }
 
 pub fn serialize_communities_with_summary_xml<W: Write>(
     root: &str,
     modules: &[CommunityModule<'_>],
     summary: &CommunitySummary<'_>,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
-    CommunitiesReport { modules, summary }.write_xml_report(root, out)
+    CommunitiesReport {
+        modules,
+        summary,
+        page,
+    }
+    .write_xml_report(root, out)
 }
 
 pub struct AroundSymbolRow<'a> {
@@ -613,6 +632,7 @@ pub fn serialize_around_xml<W: Write>(
 /// Serialize `--external-surface` to Ripwire XML.
 pub struct ExternalSurfaceReport<'a> {
     pub externals: &'a [(&'a str, &'a str, usize)],
+    pub page: crate::serialize::PageRequest,
 }
 
 impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
@@ -624,12 +644,12 @@ impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
     );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let total = self.externals.len();
-        let pw = crate::serialize::PageWindow::compute(total, 100, None, None);
+        let pw = self.page.window(total, 100);
         let page_attrs = if pw.capped {
             format!(
                 "{} next=\"--external-surface --offset={}\"",
                 pw.xml_attrs(),
-                pw.shown
+                pw.next_offset
             )
         } else {
             pw.xml_attrs()
@@ -640,7 +660,8 @@ impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for (name, lang, refs) in self.externals.iter().take(100) {
+        let pw = self.page.window(self.externals.len(), 100);
+        for (name, lang, refs) in &self.externals[pw.begin..pw.end] {
             writeln!(
                 out,
                 "  <x n=\"{}\" lang=\"{lang}\" refs=\"{refs}\" calls=\"{refs}\"/>",
@@ -654,10 +675,11 @@ impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
 pub fn serialize_external_surface_xml<W: Write>(
     _root: &str,
     externals: &[(&str, &str, usize)],
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
-    ExternalSurfaceReport { externals }.render_envelope(out)
+    ExternalSurfaceReport { externals, page }.render_envelope(out)
 }
 
 #[derive(Debug, Clone)]

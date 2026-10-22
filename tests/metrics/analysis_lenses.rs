@@ -1,8 +1,10 @@
 use ripwire_rs::metrics::{
-    classify_identifier_casing, compute_comment_coherence, compute_comment_coherence_with_sources,
-    compute_context_ratio, compute_ensemble, serialize_executive_report_md,
-    serialize_naming_calibration_xml, serialize_naming_consistency_xml,
+    NamingScope, classify_identifier_casing, compute_comment_coherence,
+    compute_comment_coherence_with_sources, compute_context_ratio, compute_ensemble,
+    serialize_executive_report_md, serialize_naming_calibration_xml,
+    serialize_naming_consistency_xml,
 };
+use ripwire_rs::serialize::PageRequest;
 use ripwire_rs::{FileInfo, Graph, IngestResult, Interner, Lang, SymKind, Symbol};
 
 #[test]
@@ -11,12 +13,12 @@ fn test_context_ratio_and_ensemble() {
     let interner = Interner::new();
     let graph = Graph::build(&ingest, &interner);
 
-    let cr = compute_context_ratio(&ingest, &graph, &interner);
+    let cr = compute_context_ratio(&ingest, &graph, &interner, PageRequest::default());
     assert_eq!(cr.units, 0);
 
-    let ens = compute_ensemble(&ingest, &graph, &interner);
+    let ens = compute_ensemble(&ingest, &graph, &interner, PageRequest::default());
     assert_eq!(ens.eligible, 0);
-    let cc = compute_comment_coherence(&ingest, &interner);
+    let cc = compute_comment_coherence(&ingest, &interner, PageRequest::default());
     assert_eq!(cc.documented, 0);
 }
 
@@ -40,7 +42,7 @@ fn test_evaluate_symbol_ensemble() {
     let mut ingest = IngestResult::new();
     ingest.symbols.push(sym);
     let graph = Graph::build(&ingest, &interner);
-    let ens = compute_ensemble(&ingest, &graph, &interner);
+    let ens = compute_ensemble(&ingest, &graph, &interner, PageRequest::default());
     assert_eq!(ens.rows.len(), 1);
     assert!(ens.rows[0].fired.contains("structural"));
     assert!(ens.rows[0].fired.contains("historical"));
@@ -81,10 +83,21 @@ fn test_naming_and_executive_report() {
     ));
     let graph = Graph::build(&ingest, &interner);
     let mut buf = Vec::new();
-    serialize_naming_consistency_xml(".", false, &ingest, &interner, &mut buf).unwrap();
+    serialize_naming_consistency_xml(
+        NamingScope {
+            root: ".",
+            include_locals: false,
+        },
+        &ingest,
+        &interner,
+        PageRequest::default(),
+        &mut buf,
+    )
+    .unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("snake_case"));
     buf.clear();
-    serialize_naming_calibration_xml(".", &ingest, &interner, &mut buf).unwrap();
+    serialize_naming_calibration_xml(".", &ingest, &interner, PageRequest::default(), &mut buf)
+        .unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("ripwire-rs.naming-calibration/v1"));
     buf.clear();
     serialize_executive_report_md(".", &ingest, &graph, &[1.0], &interner, &mut buf).unwrap();
@@ -194,7 +207,8 @@ fn test_compute_comment_coherence_with_sources() {
         ("src/math.c", c_src),
     ];
 
-    let report = compute_comment_coherence_with_sources(sources, &ingest, &interner);
+    let report =
+        compute_comment_coherence_with_sources(sources, &ingest, &interner, PageRequest::default());
     assert_eq!(report.documented, 3);
     assert_eq!(report.no_comment, 1);
     assert_eq!(report.rows.len(), 3);

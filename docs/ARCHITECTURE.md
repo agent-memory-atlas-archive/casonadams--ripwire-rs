@@ -96,14 +96,18 @@ keyword fallback) and no language logic.
 
 ## Command Plugins
 
-A command group is a directory, `src/commands/<name>/`, that holds everything specific to it: its
-clap flags and subcommand `Args`, its `Command` impl (`augment`, `subcommands`, `run`,
-`run_subcommand`, `tools`) and the handlers it calls. The CLI and MCP layers only see the `Command`
-trait, so shared code never names a command group. Plugin-specific rules live behind `Command` hooks:
+A command is one module, `src/commands/<name>.rs` (or a directory `src/commands/<name>/` when it has helpers),
+that holds everything specific to it: its clap `Args` (its primary flag and only the modifier flags it uses),
+its handler, and its MCP tool descriptors. The module exports one `pub static` `Plugin<Args>` (`name`,
+`options`, `selected`, `run`, `check`, `tools`). `SharedOption::Paged` is declared only by commands whose
+output honors `--limit/--offset`. Group-level helpers shared by several commands live in
+`src/commands/common/<topic>.rs`, which is not registered. The CLI and MCP layers only see the `Command`
+trait, so shared code never names a command. Plugin-specific rules live behind `Command` hooks:
 `validate` (flag combinations), `refreshes_remote_checkout` and `run_default` (the default output, such as
-the `map` plugin). To add one, create the directory and add one line
+the `map` plugin). To add one, create the module and add one line
 to `register_commands!` in `src/commands/mod.rs`, which generates the module declaration and the
-registry; the line order is CLI dispatch precedence. `src/commands/context.rs` is not a command: it
+registry; the line order is CLI dispatch precedence. Command groups that have not been split yet (`workspace`,
+`safety`, `retrieval`) still use `CliVerb`/`VerbGroup`. `src/commands/context.rs` is not a command: it
 holds the shared CLI plumbing every plugin uses (`Paginated`, `OutputDialect`, `ExecutionContext`,
 `CliVerb`, `run_cli_verb`, `VerbGroup`, repo-analysis loading). `src/cli/` keeps only the core
 options (`Cli`, `TopModifierArgs`) and the parse and run entry points.
