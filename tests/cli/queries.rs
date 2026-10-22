@@ -1,10 +1,10 @@
 use ripwire_rs::cli::{
     TopWorkspaceArgs, WorkspaceContext, build_handoff_verified_rows, execute_doc_search_query,
-    execute_expand_or_outline_query, execute_session_tools_query,
-    execute_workspace_doc_query_paged, render_flip_xml, render_notes_xml, render_plan_lint_xml,
-    render_skipped_census_xml, render_whereis_xml, resolve_edit_spec,
-    resolve_edit_spec_with_reader,
+    execute_session_tools_query, execute_workspace_doc_query_paged, render_flip_xml,
+    render_notes_xml, render_plan_lint_xml, render_skipped_census_xml, render_whereis_xml,
+    resolve_edit_spec, resolve_edit_spec_with_reader,
 };
+use ripwire_rs::commands::detail::execute_expand_or_outline_query;
 use ripwire_rs::crawler::{CrawlerOptions, SkippedCensus};
 use ripwire_rs::query::detail::skeletonize_body;
 use ripwire_rs::query::doc_tools::{WhereisFacts, whereis_from_sources_with_facts};

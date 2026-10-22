@@ -1,11 +1,12 @@
 use clap::Parser;
-use ripwire_rs::cli::{Cli, CliVerb, ExecutionContext};
+use ripwire_rs::cli::{Cli, CliVerb, ExecutionContext, VerbGroup};
+use ripwire_rs::commands::detail::DetailArgs;
 use ripwire_rs::serialize::XmlWriter;
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, PageRankConfig, ingest_in_memory_files};
 use std::collections::BTreeSet;
 
 fn render(args: &[&str], detail: bool) -> std::io::Result<String> {
-    let cli = Cli::try_parse_from(std::iter::once("rw").chain(args.iter().copied())).unwrap();
+    let cli = ripwire_rs::parse_from(std::iter::once("rw").chain(args.iter().copied())).unwrap();
     let registry = LanguageRegistry::new().unwrap();
     let interner = Interner::new();
     let ingest = ingest_in_memory_files(
@@ -31,7 +32,10 @@ fn render(args: &[&str], detail: bool) -> std::io::Result<String> {
     {
         let mut writer = XmlWriter::new(&mut output, true);
         if detail {
-            cli.detail.execute_verb(&ctx, &mut writer)?;
+            cli.plugins
+                .decode::<DetailArgs>()
+                .unwrap()
+                .execute_verb(&ctx, &mut writer)?;
         } else {
             cli.arch.execute_verb(&ctx, &mut writer)?;
         }
@@ -207,4 +211,39 @@ fn metrics_reports_reference_direction_not_just_symbol_presence() {
     assert_eq!(helper.attribute("out"), Some("0"));
     assert_eq!(entry.attribute("in"), Some("0"));
     assert_eq!(entry.attribute("out"), Some("1"));
+}
+
+#[test]
+fn detail_group_is_active_only_for_its_primary_flags() {
+    let active = |flag: &str| {
+        let cli = ripwire_rs::parse_from(["rw", flag]).unwrap();
+        cli.plugins
+            .decode::<DetailArgs>()
+            .unwrap()
+            .is_group_active()
+    };
+    for flag in [
+        "--expand=a",
+        "--outline=a",
+        "--pack-top-n=1",
+        "--tree",
+        "--biggest-first",
+        "--nonlocal-state",
+        "--lint",
+        "--lint-catalog",
+        "--naming-locals",
+        "--naming-consistency",
+        "--naming-calibration",
+        "--report",
+        "--legend-dict",
+    ] {
+        assert!(active(flag), "{flag}");
+    }
+    for flag in [
+        "--lint-select=a",
+        "--lint-ignore=a",
+        "--lint-max-per-rule=1",
+    ] {
+        assert!(!active(flag), "{flag}");
+    }
 }

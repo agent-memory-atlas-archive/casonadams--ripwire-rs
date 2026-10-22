@@ -1,5 +1,4 @@
 pub use super::arch::*;
-pub use super::detail::*;
 pub use super::retrieval::*;
 pub use super::task_route::*;
 pub use super::workspace::*;

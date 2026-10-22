@@ -277,65 +277,6 @@ impl CliVerb for TopRetrievalArgs {
     }
 }
 
-impl CliVerb for TopDetailArgs {
-    fn execute_verb<W: Write>(
-        &self,
-        ctx: &ExecutionContext<'_>,
-        out: &mut crate::serialize::XmlWriter<'_, W>,
-    ) -> io::Result<()> {
-        let compress = ctx.cli.modifiers.compress;
-        if let Some(syms) = self.expand.as_deref().or(self.outline.as_deref()) {
-            execute_expand_or_outline_compressed(
-                ctx.root,
-                syms,
-                self.expand.is_none(),
-                compress,
-                ctx.ingest,
-                ctx.interner,
-                out,
-            )
-        } else if let Some(n) = self.pack_top_n {
-            execute_pack_top_n_query(ctx.root, n, ctx.ingest, ctx.pr, ctx.interner, out)
-        } else if self.tree {
-            use crate::serialize::XmlReport;
-            let file_symbols = tree_file_symbols(ctx.ingest, ctx.pr, ctx.interner);
-            crate::serialize::query_xml::TreeReport {
-                root: ctx.root,
-                files_unlisted: ctx.ingest.files.len().saturating_sub(file_symbols.len()),
-                file_symbols: &file_symbols,
-                pr_iters: ctx.pr.iterations,
-                page: crate::serialize::PageRequest {
-                    limit: ctx.cli.modifiers.limit,
-                    offset: ctx.cli.modifiers.offset,
-                },
-            }
-            .render_envelope(out)
-        } else if self.biggest_first {
-            crate::metrics::readability::execute_biggest_first_query(
-                ctx.root,
-                ctx.ingest,
-                ctx.interner,
-                out,
-            )
-        } else if self.nonlocal_state {
-            let funcs =
-                crate::metrics::nonlocal::find_nonlocal_state(ctx.ingest, ctx.graph, ctx.interner);
-            crate::metrics::nonlocal::serialize_nonlocal_state_with_gauge_xml(
-                ctx.root,
-                &funcs,
-                ctx.graph.gauges(),
-                out,
-            )
-        } else {
-            execute_detail_extended(ctx, out)
-        }
-    }
-
-    fn force_plain_markdown(&self) -> bool {
-        self.report
-    }
-}
-
 impl CliVerb for TopSafetyArgs {
     fn execute_verb<W: Write>(
         &self,
@@ -465,78 +406,11 @@ fn execute_workspace_owners<W: Write>(ctx: &ExecutionContext<'_>, out: &mut W) -
     crate::serialize::serialize_owners_xml(&val, out)
 }
 
-fn split_csv_patterns(raw: &str) -> Vec<&str> {
+pub fn split_csv_patterns(raw: &str) -> Vec<&str> {
     raw.split(',')
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .collect()
-}
-
-fn lint_options(detail: &TopDetailArgs) -> crate::metrics::lint::LintOptions {
-    let patterns = |raw: Option<&str>| {
-        raw.into_iter()
-            .flat_map(split_csv_patterns)
-            .map(str::to_owned)
-            .collect()
-    };
-    crate::metrics::lint::LintOptions {
-        select: patterns(
-            detail
-                .lint_select
-                .as_deref()
-                .or(detail.lint_rules.as_deref()),
-        ),
-        ignore: patterns(detail.lint_ignore.as_deref()),
-        budget: detail
-            .lint_max_per_rule
-            .unwrap_or(crate::metrics::lint::DEFAULT_RULE_BUDGET),
-    }
-}
-
-fn execute_detail_extended<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W) -> io::Result<()> {
-    let (cli, root, ingest, graph, pr, interner) = (
-        ctx.cli,
-        ctx.root,
-        ctx.ingest,
-        ctx.graph,
-        ctx.pr,
-        ctx.interner,
-    );
-    let detail = &cli.detail;
-    if detail.lint {
-        let findings = crate::metrics::lint::run_lint_scan_in_root(
-            root,
-            ingest,
-            interner,
-            lint_options(detail),
-        )
-        .map_err(io::Error::other)?;
-        if cli.arch.sarif {
-            crate::metrics::lint::serialize_lint_sarif(&findings, stdout)
-        } else {
-            let page = crate::serialize::PageRequest {
-                limit: cli.limit_opt(),
-                offset: cli.offset_opt(),
-            };
-            crate::metrics::lint::serialize_lint_xml(root, &findings, page, stdout)
-        }
-    } else if detail.lint_catalog {
-        crate::metrics::lint::serialize_lint_catalog(stdout)
-    } else if detail.naming_locals {
-        crate::metrics::serialize_naming_consistency_xml(root, true, ingest, interner, stdout)
-    } else if detail.naming_consistency {
-        crate::metrics::serialize_naming_consistency_xml(root, false, ingest, interner, stdout)
-    } else if detail.naming_calibration {
-        crate::metrics::serialize_naming_calibration_xml(root, ingest, interner, stdout)
-    } else if detail.report {
-        crate::metrics::serialize_executive_report_md(
-            root, ingest, graph, &pr.ranks, interner, stdout,
-        )
-    } else if detail.legend_dict {
-        crate::serialize::serialize_legend_dict_xml(stdout)
-    } else {
-        Ok(())
-    }
 }
 
 fn execute_arch_rules_query<W: Write>(
@@ -751,7 +625,6 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     crate::commands::run(cli, root)
         .or_else(|| run_cli_verb(&cli.retrieval, cli, root))
         .or_else(|| run_cli_verb(&cli.workspace, cli, root))
-        .or_else(|| run_cli_verb(&cli.detail, cli, root))
         .or_else(|| run_cli_verb(&cli.safety, cli, root))
         .or_else(|| run_cli_verb(&cli.arch, cli, root))
 }

@@ -87,9 +87,6 @@ pub struct Cli {
     /// Top-level workspace and audit flags
     #[command(flatten)]
     pub workspace: TopWorkspaceArgs,
-    /// Top-level detail ladder flags
-    #[command(flatten)]
-    pub detail: TopDetailArgs,
     /// Top-level pre-PR safety flags
     #[command(flatten)]
     pub safety: TopSafetyArgs,
@@ -112,61 +109,6 @@ pub struct Cli {
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
-}
-
-/// Top-level detail ladder flags.
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct TopDetailArgs {
-    /// Expand full symbol bodies and callee signatures (SYM,SYM...)
-    #[arg(long, value_name = "SYMS")]
-    pub expand: Option<String>,
-    #[arg(long, value_name = "SYMS")]
-    pub outline: Option<String>,
-    /// Pack bodies of the top N highest-ranked symbols
-    #[arg(long = "pack-top-n", value_name = "N")]
-    pub pack_top_n: Option<usize>,
-    /// Orient file by file showing each file's top symbols
-    #[arg(long)]
-    pub tree: bool,
-    /// Rank functions by readability volume and size, largest first
-    #[arg(long = "biggest-first")]
-    pub biggest_first: bool,
-    /// Reachable nonlocal mutable state read or written per function
-    #[arg(long = "nonlocal-state")]
-    pub nonlocal_state: bool,
-    /// Scan codebase for AST code smells across all symbols
-    #[arg(long = "lint")]
-    pub lint: bool,
-    /// Print built-in AST code smell catalog
-    #[arg(long = "lint-catalog")]
-    pub lint_catalog: bool,
-    /// External YAML ast-grep lint rules directory
-    #[arg(long = "lint-rules", value_name = "DIR")]
-    pub lint_rules: Option<String>,
-    /// Select specific lint rules to run
-    #[arg(long = "lint-select", value_name = "RULES")]
-    pub lint_select: Option<String>,
-    /// Ignore specific lint rules
-    #[arg(long = "lint-ignore", value_name = "RULES")]
-    pub lint_ignore: Option<String>,
-    /// Maximum findings emitted per lint rule
-    #[arg(long = "lint-max-per-rule", value_name = "N")]
-    pub lint_max_per_rule: Option<usize>,
-    /// Check local-variable naming consistency
-    #[arg(long = "naming-locals")]
-    pub naming_locals: bool,
-    /// Naming convention consistency check
-    #[arg(long = "naming-consistency")]
-    pub naming_consistency: bool,
-    /// Calibrate naming lens rules against git rename history
-    #[arg(long = "naming-calibration")]
-    pub naming_calibration: bool,
-    /// Generate executive markdown architecture report
-    #[arg(long = "report")]
-    pub report: bool,
-    /// Emit full schema legend dictionary
-    #[arg(long = "legend-dict")]
-    pub legend_dict: bool,
 }
 
 /// Top-level pre-PR safety and verification flags.
@@ -959,15 +901,6 @@ macro_rules! impl_verb_group {
         }
     };
 }
-
-impl_verb_group!(
-    TopDetailArgs,
-    opts: [expand, outline, pack_top_n],
-    flags: [
-        tree, biggest_first, nonlocal_state, lint, lint_catalog,
-        naming_locals, naming_consistency, naming_calibration, report, legend_dict
-    ]
-);
 
 impl_verb_group!(
     TopSafetyArgs,

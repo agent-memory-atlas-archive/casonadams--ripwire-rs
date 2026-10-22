@@ -32,6 +32,7 @@ macro_rules! register_commands {
 
 register_commands! {
     nav::NAV,
+    detail::DETAIL,
 }
 
 /// The CLI with every plugin's flags added.

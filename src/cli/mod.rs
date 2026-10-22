@@ -1,6 +1,5 @@
 pub mod arch;
 pub mod args;
-pub mod detail;
 pub mod dispatch;
 pub mod doctor;
 pub mod queries;
