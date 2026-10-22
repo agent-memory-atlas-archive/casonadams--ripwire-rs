@@ -463,6 +463,16 @@ pub trait LanguageSemantics: Sync {
         false
     }
 
+    /// True when partner tests (a test named after a changed file) apply to this language's files.
+    fn supports_test_partners(&self) -> bool {
+        true
+    }
+
+    /// The subject a test file stem names by this language's convention; the universal rules by default.
+    fn test_partner_subject<'a>(&self, file_stem: &'a str, in_test_dir: bool) -> Option<&'a str> {
+        common::util::universal_test_partner_subject(file_stem, in_test_dir)
+    }
+
     /// True for shell scripts: test files that run programs as subprocesses the call graph cannot see.
     fn is_script_runner(&self) -> bool {
         false
@@ -637,6 +647,10 @@ impl LanguageSemantics for UnknownLanguage {
     }
 
     fn supports_slice(&self) -> bool {
+        false
+    }
+
+    fn supports_test_partners(&self) -> bool {
         false
     }
 }

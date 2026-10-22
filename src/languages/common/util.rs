@@ -101,6 +101,37 @@ pub(crate) fn strip_camel_test_suffix(file_stem: &str) -> Option<&str> {
         .filter(|s| s.ends_with(|c: char| c.is_ascii_alphanumeric()))
 }
 
+/// Filename suffixes that name a partner test after its subject (`x_test.py`, `x.spec.ts`).
+const PARTNER_SUFFIXES: [&str; 4] = ["_test", "_spec", ".test", ".spec"];
+
+/// True when some directory component of `p`'s parent satisfies `pred`, compared lowercase.
+pub(crate) fn has_dir_component(p: &Path, pred: impl Fn(&str) -> bool) -> bool {
+    p.parent()
+        .into_iter()
+        .flat_map(Path::components)
+        .filter_map(|c| c.as_os_str().to_str())
+        .any(|d| pred(&d.to_ascii_lowercase()))
+}
+
+/// The subject a test file stem names by the universal conventions: `test_x`, `x_test`, `x_spec`,
+/// `x.test`, `x.spec`, and `XTest` when the file sits under a `test/` or `tests/` directory.
+#[must_use]
+pub(crate) fn universal_test_partner_subject(file_stem: &str, in_test_dir: bool) -> Option<&str> {
+    file_stem
+        .strip_prefix("test_")
+        .or_else(|| {
+            PARTNER_SUFFIXES
+                .iter()
+                .find_map(|s| file_stem.strip_suffix(s))
+        })
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            in_test_dir
+                .then(|| strip_camel_test_suffix(file_stem))
+                .flatten()
+        })
+}
+
 #[must_use]
 pub(crate) fn is_screaming_snake(name: &str) -> bool {
     let bytes = name.as_bytes();

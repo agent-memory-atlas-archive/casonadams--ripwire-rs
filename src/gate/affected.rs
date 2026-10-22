@@ -1,5 +1,6 @@
 use crate::domain::{IngestResult, Interner, Lang, NodeId};
 use crate::graph::Graph;
+use crate::languages::has_dir_component;
 use crate::serialize::XmlEscapeExt;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Write};
@@ -99,55 +100,6 @@ impl AffectedTest {
     }
 }
 
-const PARTNER_SUFFIXES: [&str; 4] = ["_test", "_spec", ".test", ".spec"];
-
-/// Languages upstream ripwire indexes. A file in any other language (SQL, Scala, Zig, ...) is
-/// neither a test nor a partner.
-fn partner_language(lang: Lang) -> bool {
-    matches!(
-        lang,
-        Lang::Rust
-            | Lang::TypeScript
-            | Lang::JavaScript
-            | Lang::Python
-            | Lang::Go
-            | Lang::C
-            | Lang::Cpp
-            | Lang::Cuda
-            | Lang::Metal
-            | Lang::ObjC
-            | Lang::Java
-            | Lang::CSharp
-            | Lang::Swift
-            | Lang::Bash
-            | Lang::Ruby
-            | Lang::Php
-            | Lang::Lua
-            | Lang::Elixir
-            | Lang::Dart
-            | Lang::Kotlin
-            | Lang::GDScript
-            | Lang::Json
-            | Lang::Toml
-            | Lang::Yaml
-            | Lang::Markdown
-    )
-}
-
-fn universal_partner_subject(stem: &str) -> Option<&str> {
-    stem.strip_prefix("test_")
-        .or_else(|| PARTNER_SUFFIXES.iter().find_map(|s| stem.strip_suffix(s)))
-        .filter(|s| !s.is_empty())
-}
-
-fn has_dir_component(p: &Path, pred: impl Fn(&str) -> bool) -> bool {
-    p.parent()
-        .into_iter()
-        .flat_map(Path::components)
-        .filter_map(|c| c.as_os_str().to_str())
-        .any(|d| pred(&d.to_ascii_lowercase()))
-}
-
 /// Check if a path corresponds to a test file by directory convention or filename.
 #[must_use]
 pub fn is_test_path<P: AsRef<Path>>(path: P) -> bool {
@@ -157,13 +109,14 @@ pub fn is_test_path<P: AsRef<Path>>(path: P) -> bool {
     }) {
         return true;
     }
-    if !partner_language(Lang::from_path(p)) {
+    let sem = Lang::from_path(p).semantics();
+    if !sem.supports_test_partners() {
         return false;
     }
     p.file_name()
         .and_then(|s| s.to_str())
         .and_then(|n| n.rsplit_once('.'))
-        .is_some_and(|(stem, _)| universal_partner_subject(stem).is_some())
+        .is_some_and(|(stem, _)| sem.test_partner_subject(stem, false).is_some())
 }
 
 /// Check if a path is a test, benchmark, or fixture path for ranking and module naming.
@@ -183,20 +136,18 @@ pub fn is_test_or_bench_path<P: AsRef<Path>>(path: P) -> bool {
     Lang::from_path(p).semantics().is_test_module_stem(stem)
 }
 
-/// The source stem a test file at `path` is named after: `test_x`, `x_test`, `x_spec`, `x.test`, `x.spec`
-/// in any language, or the language's own convention (e.g. `WidgetTest`) inside a test dir.
+/// The source stem a test file at `path` is named after, by its language's test-naming convention
+/// (the universal `test_x`, `x_test`, `x.spec` rules, plus `XTest` inside a `test/` or `tests/` dir).
 #[must_use]
 pub fn partner_subject_stem(path: &str, lang: Lang) -> Option<&str> {
-    if !partner_language(lang) {
+    let sem = lang.semantics();
+    if !sem.supports_test_partners() {
         return None;
     }
     let name = path.rsplit('/').next().unwrap_or(path);
     let (stem, _) = name.rsplit_once('.')?;
-    universal_partner_subject(stem).or_else(|| {
-        has_dir_component(Path::new(path), |d| matches!(d, "test" | "tests"))
-            .then(|| crate::languages::strip_camel_test_suffix(stem))
-            .flatten()
-    })
+    let in_test_dir = has_dir_component(Path::new(path), |d| matches!(d, "test" | "tests"));
+    sem.test_partner_subject(stem, in_test_dir)
 }
 
 fn file_stem_of(path: &str) -> &str {
@@ -245,13 +196,14 @@ fn match_file_seeds(
     ingest: &IngestResult,
     seeds: &mut SeedResolution,
 ) {
-    if !ingest.symbols.iter().any(|s| s.file_id == f.id) {
-        return;
-    }
+    let has_symbols = ingest.symbols.iter().any(|s| s.file_id == f.id);
     if is_test_path(path_str) {
-        push_unique(&mut seeds.seed_test_files, path_str);
+        if has_symbols {
+            push_unique(&mut seeds.seed_test_files, path_str);
+        }
         return;
     }
+    // A changed source file names partner tests even with no symbols; only symbols seed the graph.
     push_unique(&mut seeds.seed_source_files, path_str);
     seeds.seed_nodes.extend(
         ingest

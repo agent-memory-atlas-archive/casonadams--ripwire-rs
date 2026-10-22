@@ -128,7 +128,7 @@ fn test_partner_subject_stem_naming_cases() {
         ("tests/WidgetTest.php", Some("Widget")),
         ("src/WidgetTest.java", None),
         ("tests/WidgetTest.py", Some("Widget")),
-        ("test/WidgetTest.scala", None),
+        ("test/WidgetTest.scala", Some("Widget")),
         ("tests/widget.rs", None),
         ("src/widget_unittest.cc", None),
         ("tests/Widget_Test.php", None),
@@ -317,10 +317,15 @@ fn test_affected_partner_dotted_stem_matches_full_subject() {
 }
 
 #[test]
-fn test_affected_partner_needs_symbols_on_changed_seed_only() {
+fn test_affected_partner_needs_symbols_on_changed_test_only() {
     let paths = ["src/widget.ts", "tests/widget.test.ts"];
+    // A symbol-less changed source still names its partner test.
     let (ingest, interner) = partner_fixture_where(&paths, |p| p != "src/widget.ts");
-    assert!(affected_in(&ingest, &interner, "src/widget.ts").is_empty());
+    assert_eq!(
+        affected_in(&ingest, &interner, "src/widget.ts"),
+        ["tests/widget.test.ts"]
+    );
+    // A symbol-less changed test keeps no row of its own.
     let (ingest, interner) = partner_fixture_where(&paths, |p| p != "tests/widget.test.ts");
     assert_eq!(
         affected_in(&ingest, &interner, "src/widget.ts"),
@@ -330,7 +335,7 @@ fn test_affected_partner_needs_symbols_on_changed_seed_only() {
 }
 
 #[test]
-fn test_affected_partner_language_gate_follows_upstream_index() {
+fn test_affected_partner_indexes_every_language_test_convention() {
     assert_eq!(
         affected_paths(
             &["src/widget.json", "src/test_widget.json"],
@@ -345,13 +350,20 @@ fn test_affected_partner_language_gate_follows_upstream_index() {
         ),
         ["src/test_widget.toml"]
     );
-    assert!(affected_paths(&["db/widget.sql", "db/test_widget.sql"], "db/widget.sql").is_empty());
-    assert!(
+    // Languages upstream does not index still pair tests by convention (a recorded divergence).
+    assert_eq!(
+        affected_paths(&["db/widget.sql", "db/test_widget.sql"], "db/widget.sql"),
+        ["db/test_widget.sql"]
+    );
+    assert_eq!(
         affected_paths(
             &["src/widget.scala", "src/test_widget.scala"],
             "src/widget.scala"
-        )
-        .is_empty()
+        ),
+        ["src/test_widget.scala"]
+    );
+    assert!(
+        affected_paths(&["src/widget.xyz", "src/test_widget.xyz"], "src/widget.xyz").is_empty()
     );
 }
 
