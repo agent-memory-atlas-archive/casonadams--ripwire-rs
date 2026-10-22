@@ -503,7 +503,7 @@ pub fn collect_file_wanted_tokens(
 }
 
 fn scm_query_paths(root: &std::path::Path) -> Vec<String> {
-    let Ok(entries) = fs::read_dir(root.join("src/queries")) else {
+    let Ok(entries) = fs::read_dir(root.join("src/languages")) else {
         return Vec::new();
     };
     entries

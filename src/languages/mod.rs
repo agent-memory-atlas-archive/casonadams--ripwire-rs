@@ -31,44 +31,9 @@ macro_rules! impl_grammar_method {
 }
 pub(crate) use impl_grammar_method;
 
-mod complexity_kinds;
-mod foreign;
-mod syntax_kinds;
-pub use complexity_kinds::ComplexityKinds;
-pub use foreign::ForeignExport;
-pub use syntax_kinds::SyntaxKinds;
-pub mod bash;
-pub mod brightscript;
-pub mod c;
-pub mod cobol;
-pub mod cpp;
-pub mod csharp;
-pub mod cuda;
-pub mod dart;
-pub mod elixir;
-pub mod erlang;
-pub mod flags;
-pub mod fortran;
-pub mod gdscript;
-pub mod go;
-pub mod graphql;
-pub mod hcl;
-pub mod java;
-pub mod javascript;
-pub mod json;
-pub mod kotlin;
-pub(crate) mod lint;
-pub(crate) mod lint_hooks;
-pub mod lua;
-pub mod markdown;
-pub mod metal;
-pub mod objc;
-pub mod php;
-pub mod proto;
-pub mod python;
-pub mod reads;
-pub mod ruby;
-pub mod rust;
+pub mod kit;
+pub use kit::{ComplexityKinds, ForeignExport, SyntaxKinds, flags, reads, source};
+pub(crate) use kit::{lint, lint_hooks};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallableBinding {
@@ -87,17 +52,8 @@ pub struct Implementation {
     pub start_byte: usize,
     pub end_byte: usize,
 }
-pub mod scala;
-pub mod solidity;
-pub mod source;
-pub mod sql;
-pub mod swift;
-pub mod toml;
-pub mod typescript;
-pub mod yaml;
-pub mod zig;
 
-use crate::domain::{Lang, SymKind};
+use crate::domain::SymKind;
 use crate::ingest::FileParseResult;
 use std::collections::HashMap;
 use std::path::Path;
@@ -658,84 +614,66 @@ impl LanguageSemantics for UnknownLanguage {
     }
 }
 
-pub const ALL_LANGS: [Lang; 36] = [
-    Lang::Rust,
-    Lang::TypeScript,
-    Lang::JavaScript,
-    Lang::Python,
-    Lang::Go,
-    Lang::C,
-    Lang::Cpp,
-    Lang::Cuda,
-    Lang::Metal,
-    Lang::Java,
-    Lang::CSharp,
-    Lang::Swift,
-    Lang::Bash,
-    Lang::Ruby,
-    Lang::Php,
-    Lang::Lua,
-    Lang::Elixir,
-    Lang::Dart,
-    Lang::Kotlin,
-    Lang::GDScript,
-    Lang::Json,
-    Lang::Toml,
-    Lang::Yaml,
-    Lang::Markdown,
-    Lang::Zig,
-    Lang::Solidity,
-    Lang::Hcl,
-    Lang::Scala,
-    Lang::Erlang,
-    Lang::Sql,
-    Lang::Proto,
-    Lang::Graphql,
-    Lang::ObjC,
-    Lang::BrightScript,
-    Lang::Fortran,
-    Lang::Cobol,
-];
+/// The language registry: one line per language plugin (`src/languages/<module>/mod.rs`).
+/// Generates the `Lang` enum, its module declarations and the semantics lookup; variant order is serialized.
+macro_rules! register_languages {
+    ($($variant:ident => $module:ident :: $instance:ident,)*) => {
+        $(pub mod $module;)*
 
-static SEMANTICS_TABLE: [&dyn LanguageSemantics; 37] = [
-    &rust::RUST_LANG,
-    &typescript::TYPESCRIPT_LANG,
-    &javascript::JAVASCRIPT_LANG,
-    &python::PYTHON_LANG,
-    &go::GO_LANG,
-    &c::C_LANG,
-    &cpp::CPP_LANG,
-    &cuda::CUDA_LANG,
-    &metal::METAL_LANG,
-    &java::JAVA_LANG,
-    &csharp::CSHARP_LANG,
-    &swift::SWIFT_LANG,
-    &bash::BASH_LANG,
-    &ruby::RUBY_LANG,
-    &php::PHP_LANG,
-    &lua::LUA_LANG,
-    &elixir::ELIXIR_LANG,
-    &dart::DART_LANG,
-    &kotlin::KOTLIN_LANG,
-    &gdscript::GDSCRIPT_LANG,
-    &json::JSON_LANG,
-    &toml::TOML_LANG,
-    &yaml::YAML_LANG,
-    &markdown::MARKDOWN_LANG,
-    &zig::ZIG_LANG,
-    &solidity::SOLIDITY_LANG,
-    &hcl::HCL_LANG,
-    &scala::SCALA_LANG,
-    &erlang::ERLANG_LANG,
-    &sql::SQL_LANG,
-    &proto::PROTO_LANG,
-    &graphql::GRAPHQL_LANG,
-    &objc::OBJC_LANG,
-    &brightscript::BRIGHTSCRIPT_LANG,
-    &fortran::FORTRAN_LANG,
-    &cobol::COBOL_LANG,
-    &UNKNOWN_LANG,
-];
+        #[repr(u8)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+        pub enum Lang {
+            $($variant,)*
+            Unknown,
+        }
+
+        const LANG_COUNT: usize = [$(stringify!($variant)),*].len();
+
+        pub const ALL_LANGS: [Lang; LANG_COUNT] = [$(Lang::$variant),*];
+
+        static SEMANTICS_TABLE: [&dyn LanguageSemantics; LANG_COUNT + 1] =
+            [$(&$module::$instance,)* &UNKNOWN_LANG];
+    };
+}
+
+register_languages! {
+    Rust => rust::RUST_LANG,
+    TypeScript => typescript::TYPESCRIPT_LANG,
+    JavaScript => javascript::JAVASCRIPT_LANG,
+    Python => python::PYTHON_LANG,
+    Go => go::GO_LANG,
+    C => c::C_LANG,
+    Cpp => cpp::CPP_LANG,
+    Cuda => cuda::CUDA_LANG,
+    Metal => metal::METAL_LANG,
+    Java => java::JAVA_LANG,
+    CSharp => csharp::CSHARP_LANG,
+    Swift => swift::SWIFT_LANG,
+    Bash => bash::BASH_LANG,
+    Ruby => ruby::RUBY_LANG,
+    Php => php::PHP_LANG,
+    Lua => lua::LUA_LANG,
+    Elixir => elixir::ELIXIR_LANG,
+    Dart => dart::DART_LANG,
+    Kotlin => kotlin::KOTLIN_LANG,
+    GDScript => gdscript::GDSCRIPT_LANG,
+    Json => json::JSON_LANG,
+    Toml => toml::TOML_LANG,
+    Yaml => yaml::YAML_LANG,
+    Markdown => markdown::MARKDOWN_LANG,
+    Zig => zig::ZIG_LANG,
+    Solidity => solidity::SOLIDITY_LANG,
+    Hcl => hcl::HCL_LANG,
+    Scala => scala::SCALA_LANG,
+    Erlang => erlang::ERLANG_LANG,
+    Sql => sql::SQL_LANG,
+    Proto => proto::PROTO_LANG,
+    Graphql => graphql::GRAPHQL_LANG,
+    ObjC => objc::OBJC_LANG,
+    BrightScript => brightscript::BRIGHTSCRIPT_LANG,
+    Fortran => fortran::FORTRAN_LANG,
+    Cobol => cobol::COBOL_LANG,
+}
 
 impl Lang {
     /// Return the static `LanguageSemantics` implementation for this language.

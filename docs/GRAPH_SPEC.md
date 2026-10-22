@@ -1,6 +1,6 @@
 # Graph Protocol Specification
 
-This document specifies the normative 5-layer data graph contract that `ripwire-rs` enforces across all 36 supported Tree-sitter languages (`enum Lang`). Every language grammar (`src/queries/<lang>/tags.scm`) and semantics implementation (`LanguageSemantics` in `src/languages/`) must satisfy all five layers below.
+This document specifies the normative 5-layer data graph contract that `ripwire-rs` enforces across all 36 supported Tree-sitter languages (`enum Lang`). Every language grammar (`src/languages/<lang>/tags.scm`) and semantics implementation (`LanguageSemantics` in `src/languages/<lang>/mod.rs`) must satisfy all five layers below.
 
 ---
 
@@ -9,7 +9,7 @@ This document specifies the normative 5-layer data graph contract that `ripwire-
 Each extracted definition produces a `Symbol` vertex in `IngestResult::symbols` addressed by a dense 32-bit `NodeId`.
 
 ### 1.1 Capture Vocabulary Invariant
-- `src/queries/<lang>/tags.scm` must use only the closed capture set parsed by `classify_capture` (`src/ingest/extract.rs`):
+- `src/languages/<lang>/tags.scm` must use only the closed capture set parsed by `classify_capture` (`src/ingest/extract.rs`):
   - `@name`: Primary symbol identifier token.
   - `@definition.<kind>`: Symbol definition role (`function`, `cjsexport`, `method`, `protomethod`, `class`, `object`, `specialization`, `struct`, `interface`, `constant`, `enummember`, `type`, `var`, `attribute`, `property`, `macro`, `testmacroblock`, `yamlkey`, `module`, `section`, `field`).
   - `@reference.<role>`: Symbol reference role (`call`, `bare`, `operator`, `read`, `attribute`, `write`, `import`, `extends`, `implementation`, `class`, `macro`, `type`, `value`, `through`).

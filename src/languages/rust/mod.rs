@@ -244,7 +244,7 @@ impl LanguageSemantics for RustLanguage {
         matches!(lower.as_str(), "tests" | "test") || lower.ends_with("_tests")
     }
 
-    super::impl_grammar_method!(crate tree_sitter_rust::LANGUAGE, "../../queries/rust/tags.scm");
+    super::impl_grammar_method!(crate tree_sitter_rust::LANGUAGE, "tags.scm");
 
     fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>) -> bool {
         rust_read_position(node)

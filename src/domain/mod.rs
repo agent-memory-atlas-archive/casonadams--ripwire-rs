@@ -168,47 +168,7 @@ impl std::fmt::Display for RefRole {
     }
 }
 
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Lang {
-    Rust = 0,
-    TypeScript,
-    JavaScript,
-    Python,
-    Go,
-    C,
-    Cpp,
-    Cuda,
-    Metal,
-    Java,
-    CSharp,
-    Swift,
-    Bash,
-    Ruby,
-    Php,
-    Lua,
-    Elixir,
-    Dart,
-    Kotlin,
-    GDScript,
-    Json,
-    Toml,
-    Yaml,
-    Markdown,
-    Zig,
-    Solidity,
-    Hcl,
-    Scala,
-    Erlang,
-    Sql,
-    Proto,
-    Graphql,
-    ObjC,
-    BrightScript,
-    Fortran,
-    Cobol,
-    Unknown,
-}
+pub use crate::languages::Lang;
 
 impl Lang {
     #[inline]

@@ -33,7 +33,7 @@
 
 ## Tree-sitter languages
 
-- **Capture vocabulary**: `src/queries/<lang>/tags.scm` must only use the
+- **Capture vocabulary**: `src/languages/<lang>/tags.scm` must only use the
   standardized `@name`, `@definition.*`, `@reference.*`, and `@import.path`
   captures (never language-prefixed capture tags). Anchor `.` on the primary
   identifier for multi-segment selectors so each method emits a single symbol.
