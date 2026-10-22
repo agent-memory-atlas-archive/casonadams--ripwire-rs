@@ -38,6 +38,8 @@ pub struct RawRef {
     pub receiver: Option<String>,
     pub receiver_type: Option<String>,
     pub callable_field: bool,
+    /// The reference is written as a member access (`x.f()`), not a bare or path name.
+    pub member_call: bool,
 }
 
 /// Parsed facts from a single file.
@@ -670,6 +672,7 @@ fn record_ref_item(
         callable_field: ext
             .name_node
             .is_some_and(|n| lang.semantics().is_callable_field_access(n)),
+        member_call: ext.name_node.is_some_and(is_member_access),
     });
 }
 
@@ -768,6 +771,7 @@ fn scan_macro_body_calls(
                 receiver: None,
                 receiver_type: None,
                 callable_field: false,
+                member_call: false,
             });
         }
     }

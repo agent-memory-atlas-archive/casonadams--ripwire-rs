@@ -393,7 +393,10 @@ Declaration names, assignment targets, keyword/property labels, comments and
 literal text are not reads. Lexical locals and parameters are excluded from
 repository-wide name resolution, including JavaScript block/function bindings
 and Rust's source-ordered `let` shadowing. Callable values remain read sites, not
-call edges; SQL table lineage retains its existing graph semantics.
+call edges; SQL table lineage retains its existing graph semantics. A TypeScript or JavaScript
+`const` bound to a provably scalar initializer (a literal, a template or `+`/`??`/`||` of scalars, or
+`process.env.NAME` with optional `!`/`as`) is an immutable binding, not state. A const object or array
+stays a read site, and its contents remain state through member writes.
 
 Read coverage is deliberately conservative, not universal across grammars:
 unresolved local-variable uses, Python class-body namespace lookup, Rust macro

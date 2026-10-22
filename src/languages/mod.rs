@@ -494,6 +494,17 @@ pub trait LanguageSemantics: Sync {
         false
     }
 
+    /// True for standalone assertion scripts (`x.check.ts`): tests the call graph reaches only through imports.
+    fn is_assertion_script(&self, _path: &str) -> bool {
+        false
+    }
+
+    /// True when a member call `x.f()` cannot reach a non-callable variable named `f` (a property call never
+    /// binds to a same-named module or local binding).
+    fn member_call_targets_callables_only(&self) -> bool {
+        false
+    }
+
     /// Multiplier for this language's symbols in task retrieval; below 1 for declaration-only formats.
     fn retrieval_weight(&self) -> f64 {
         1.0

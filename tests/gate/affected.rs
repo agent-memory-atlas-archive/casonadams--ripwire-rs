@@ -600,3 +600,75 @@ fn test_affected_runnerless_partner_siblings_fold_with_partner_count() {
         "{xml}"
     );
 }
+
+#[test]
+fn test_affected_assertion_scripts_name_their_subject() {
+    assert!(is_test_path(
+        "src/lib/onboarding-flow/cart-pricing.check.ts"
+    ));
+    assert!(is_test_path("src/lib/review-pricing.check.tsx"));
+    assert!(is_test_path("scripts/tax.check.js"));
+    assert!(!is_test_path("src/lib/cart-pricing.ts"));
+    assert!(!is_test_path("src/lib/checks.ts"));
+    assert_eq!(
+        affected_paths(
+            &[
+                "src/lib/cart-pricing.ts",
+                "src/lib/cart-pricing.check.ts",
+                "src/lib/cart-pricing.check.tsx",
+            ],
+            "src/lib/cart-pricing.ts"
+        ),
+        [
+            "src/lib/cart-pricing.check.ts",
+            "src/lib/cart-pricing.check.tsx"
+        ]
+    );
+    assert!(
+        affected_paths(
+            &["src/lib/cart-pricing.ts", "src/lib/tax.check.ts"],
+            "src/lib/cart-pricing.ts"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn test_affected_assertion_script_reaches_subject_without_marking_importers() {
+    let registry = LanguageRegistry::new().unwrap_or_else(|e| panic!("registry: {e:?}"));
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            (
+                "src/lib/onboarding-flow/cart-pricing.ts",
+                Lang::TypeScript,
+                b"export function priceCart(units: number): number {\n  return units * 2;\n}\n"
+                    .as_slice(),
+            ),
+            (
+                "src/lib/onboarding-flow/cart-pricing.check.ts",
+                Lang::TypeScript,
+                b"import { priceCart } from \"./cart-pricing\";\n\nfunction checkTotal(): void {\n  priceCart(1);\n}\n"
+                    .as_slice(),
+            ),
+            (
+                "src/lib/checkout/order.ts",
+                Lang::TypeScript,
+                b"import { priceCart } from \"../onboarding-flow/cart-pricing\";\n\nexport function placeOrder(): number {\n  return priceCart(2);\n}\n"
+                    .as_slice(),
+            ),
+        ],
+        &registry,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let report = find_affected_tests(
+        &["src/lib/onboarding-flow/cart-pricing.ts"],
+        &ingest,
+        &graph,
+        &interner,
+    );
+    let paths: Vec<&str> = report.tests.iter().map(|t| t.path.as_str()).collect();
+    assert_eq!(paths, ["src/lib/onboarding-flow/cart-pricing.check.ts"]);
+    assert!(report.tests[0].is_partner);
+}

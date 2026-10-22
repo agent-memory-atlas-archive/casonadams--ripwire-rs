@@ -416,6 +416,8 @@ pub struct Reference {
     pub arg_count: u16,
     pub arg_count_known: bool,
     pub callable_field: bool,
+    /// The reference is a member access (`x.f()`), so its target is a property, not a bare name.
+    pub member_call: bool,
 }
 
 impl Reference {
@@ -441,6 +443,7 @@ impl Reference {
             arg_count: 0,
             arg_count_known: false,
             callable_field: false,
+            member_call: false,
         }
     }
 

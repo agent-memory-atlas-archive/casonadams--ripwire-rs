@@ -35,6 +35,7 @@ mod languages {
     mod swift;
     mod toml;
     mod typescript;
+    mod typescript_bindings;
     mod typescript_dispatch;
     mod typescript_extraction;
     mod yaml;

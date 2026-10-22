@@ -633,6 +633,14 @@ pub trait ResolutionLookup {
         {
             return true;
         }
+        if r.member_call
+            && r.role == RefRole::Call
+            && sym.kind == crate::domain::SymKind::Var
+            && r.lang.semantics().member_call_targets_callables_only()
+        {
+            // `res.json()` calls a property of an unknown receiver; a same-named variable is no callee.
+            return false;
+        }
         if let Some(interner) = self.interner() {
             let callee_str = interner.try_resolve(&r.callee_name).unwrap_or("");
             let caller_scope = self
