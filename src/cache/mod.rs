@@ -59,6 +59,31 @@ fn hash_dir_entries(path: &Path, hasher: &mut impl Hasher) {
         }
     }
 }
+/// A dirty path with its on-disk stat; `None` when the file no longer exists.
+pub type DirtyEntry = (String, Option<(std::time::SystemTime, u64)>);
+
+/// Key suffix identifying uncommitted working-tree state; empty for a clean tree so clean keys stay stable.
+#[must_use]
+pub fn dirty_key_suffix(entries: &[DirtyEntry]) -> String {
+    if entries.is_empty() {
+        return String::new();
+    }
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    entries.hash(&mut hasher);
+    format!("-d{:x}", hasher.finish())
+}
+
+fn dirty_entries(root: &str) -> Vec<DirtyEntry> {
+    crate::git::repo::dirty_paths(root)
+        .into_iter()
+        .map(|rel| {
+            let stat = fs::metadata(Path::new(root).join(&rel))
+                .ok()
+                .and_then(|meta| Some((meta.modified().ok()?, meta.len())));
+            (rel, stat)
+        })
+        .collect()
+}
 
 pub fn compute_cache_key(root: &str) -> String {
     let bin_stamp = current_binary_stamp();
@@ -66,7 +91,12 @@ pub fn compute_cache_key(root: &str) -> String {
     if let Ok(repo) = gix::open(path)
         && let Ok(head) = repo.head_commit()
     {
-        return format!("{}-{bin_stamp:x}-{}", env!("CARGO_PKG_VERSION"), head.id());
+        let dirty = dirty_key_suffix(&dirty_entries(root));
+        return format!(
+            "{}-{bin_stamp:x}-{}{dirty}",
+            env!("CARGO_PKG_VERSION"),
+            head.id()
+        );
     }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     bin_stamp.hash(&mut hasher);
