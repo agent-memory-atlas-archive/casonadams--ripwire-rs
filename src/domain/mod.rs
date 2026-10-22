@@ -350,7 +350,13 @@ impl Symbol {
             return fallback_name.to_string();
         }
         let raw = String::from_utf8_lossy(&file_bytes[start..end]);
-        let header = truncate_at_declaration_body(&raw);
+        // A signature ending before its end_byte is bounded by the parser (the body starts there), so
+        // braces inside the header are type syntax (`(): { a: string }`), not the body.
+        let header = if self.sig_end_byte < self.end_byte {
+            raw.trim()
+        } else {
+            truncate_at_declaration_body(&raw)
+        };
         let collapsed = header.split_whitespace().collect::<Vec<_>>().join(" ");
         if collapsed.is_empty() {
             fallback_name.to_string()

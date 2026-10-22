@@ -88,3 +88,12 @@ fn same_line_body_is_not_part_of_the_signature() {
         "function single(a: number): Promise<number>"
     );
 }
+
+#[test]
+fn object_literal_return_type_ends_at_the_body() {
+    let source = "export function point(a: number): { x: number; y: number } {\n  return { x: a, y: a };\n}\n";
+    assert_eq!(
+        signature_of(source, "point"),
+        "function point(a: number): { x: number; y: number }"
+    );
+}
