@@ -1,6 +1,5 @@
 use super::args::*;
 use super::queries::*;
-use super::retrieval::execute_retrieval_verb;
 use super::safety::*;
 use crate::domain::Interner;
 use crate::graph::Graph;
@@ -226,57 +225,6 @@ pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::R
         stdout.finish()
     })())
 }
-impl CliVerb for TopRetrievalArgs {
-    fn execute_verb<W: Write>(
-        &self,
-        ctx: &ExecutionContext<'_>,
-        out: &mut crate::serialize::XmlWriter<'_, W>,
-    ) -> io::Result<()> {
-        if let Some(task) = self.pack_task.as_deref()
-            && let Some(part_opt) = ctx.cli.safety.partition
-        {
-            return crate::navigate::execute_pack_task_partitioned(
-                task,
-                ctx.root,
-                part_opt.unwrap_or(2),
-                ctx.ingest,
-                ctx.graph,
-                ctx.interner,
-                out,
-            );
-        }
-        if let Some(task) = self.recall.as_deref() {
-            let inputs = crate::query::search::collect_recall_inputs(Path::new(ctx.root));
-            let val = crate::query::search::call_memory_recall(
-                &inputs,
-                task,
-                ctx.cli.top_k,
-                ctx.cli.token_budget.or(ctx.cli.max_tokens),
-            );
-            return crate::serialize::serialize_recall_text(task, &val, out);
-        }
-        if let Some(expr) = self.graph_query.as_deref() {
-            return crate::navigate::execute_graph_query_expr_paged(
-                expr,
-                ctx.root,
-                ctx.ingest,
-                ctx.graph,
-                ctx.interner,
-                crate::serialize::PageRequest {
-                    limit: ctx.cli.modifiers.limit,
-                    offset: ctx.cli.modifiers.offset,
-                },
-                out,
-            );
-        }
-        execute_retrieval_verb(self, ctx, out)
-    }
-
-    fn emits_plain_text(&self) -> bool {
-        self.recall.is_some()
-    }
-}
-
 impl CliVerb for TopSafetyArgs {
     fn execute_verb<W: Write>(
         &self,
@@ -374,7 +322,7 @@ impl CliVerb for TopWorkspaceArgs {
             execute_workspace_doc_query_paged(
                 self,
                 &workspace,
-                ctx.cli.with_history_flag(),
+                crate::commands::retrieval::with_history(ctx.cli),
                 ctx.cli,
                 out,
             )
@@ -400,7 +348,7 @@ fn execute_workspace_owners<W: Write>(ctx: &ExecutionContext<'_>, out: &mut W) -
     );
     val["root"] = serde_json::Value::String(ctx.root.to_string());
     ctx.apply_pagination_to_json(&mut val);
-    if ctx.cli.detail_opt().is_some_and(|d| d > 0) {
+    if crate::commands::retrieval::detail(ctx.cli).is_some_and(|d| d > 0) {
         val["detail"] = serde_json::Value::Bool(true);
     }
     crate::serialize::serialize_owners_xml(&val, out)
@@ -623,7 +571,6 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         })());
     }
     crate::commands::run(cli, root)
-        .or_else(|| run_cli_verb(&cli.retrieval, cli, root))
         .or_else(|| run_cli_verb(&cli.workspace, cli, root))
         .or_else(|| run_cli_verb(&cli.safety, cli, root))
         .or_else(|| run_cli_verb(&cli.arch, cli, root))
@@ -681,14 +628,7 @@ fn execute_orient_subcommand(cli: &Cli, args: &OrientArgs, default_root: &str) -
         commits: None,
         at: at.as_deref(),
     };
-    let val = crate::query::retrieval::call_for_task_with_options(
-        &ingest,
-        &interner,
-        &pr.ranks,
-        task,
-        cli.retrieval
-            .for_options(&query, cli.token_budget.or(cli.max_tokens)),
-    );
+    let val = crate::commands::retrieval::orient_for_task(cli, &query, task);
     if let Some(error) = val["error"].as_str() {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, error));
     }
@@ -854,20 +794,6 @@ fn validate_arch_modifiers(a: &TopArchitectureArgs) -> io::Result<()> {
     Ok(())
 }
 
-fn validate_retrieval_modifiers(r: &TopRetrievalArgs) -> io::Result<()> {
-    let Some(raw) = r.sections.as_deref() else {
-        return Ok(());
-    };
-    if r.task_for.is_none() {
-        return Err(io::Error::other(
-            "ripwire-rs: --sections= modifies --for=TASK; pass it too",
-        ));
-    }
-    crate::query::retrieval::parse_for_sections(raw)
-        .map(|_| ())
-        .map_err(io::Error::other)
-}
-
 fn gate_args_for_cli(cli: &Cli) -> GateDispatchArgs<'_> {
     GateDispatchArgs {
         edit_check: cli.edit_check.as_deref(),
@@ -888,8 +814,8 @@ fn gate_args_for_cli(cli: &Cli) -> GateDispatchArgs<'_> {
     }
 }
 
-pub fn run_cli_args(mut cli: Cli) -> io::Result<()> {
-    let refresh_clone = cli.retrieval.refetch.take_if(|h| h.is_empty()).is_some();
+pub fn run_cli_args(cli: Cli) -> io::Result<()> {
+    let refresh_clone = crate::commands::retrieval::refresh_clone_requested(&cli);
     let checkout = cli
         .path
         .as_deref()
@@ -897,7 +823,7 @@ pub fn run_cli_args(mut cli: Cli) -> io::Result<()> {
         .map(|url| crate::git::remote::checkout_remote_root(url, refresh_clone))
         .transpose()?;
     validate_arch_modifiers(&cli.arch)?;
-    validate_retrieval_modifiers(&cli.retrieval)?;
+    crate::commands::retrieval::validate_modifiers(&cli)?;
     let root = checkout
         .as_deref()
         .and_then(std::path::Path::to_str)

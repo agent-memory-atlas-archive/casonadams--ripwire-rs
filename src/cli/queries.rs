@@ -1,6 +1,4 @@
 pub use super::arch::*;
-pub use super::retrieval::*;
-pub use super::task_route::*;
 pub use super::workspace::*;
 
 use crate::domain::{IngestResult, Interner};

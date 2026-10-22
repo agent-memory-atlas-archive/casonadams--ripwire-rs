@@ -3,9 +3,7 @@ pub mod args;
 pub mod dispatch;
 pub mod doctor;
 pub mod queries;
-pub mod retrieval;
 pub mod safety;
-pub mod task_route;
 pub mod workspace;
 
 pub use args::*;

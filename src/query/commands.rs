@@ -1,13 +1,12 @@
 use super::SourceReader;
 use super::edit::{self, EditOp};
-use super::{doc_tools, graph as graph_tools};
+use super::doc_tools;
 use crate::ToXmlString;
 use crate::domain::{IngestResult, Interner};
 use crate::git::history::CommitInfo;
 use crate::graph::Graph;
 use crate::ingest::LanguageRegistry;
 use crate::query::map::{MapRequest, execute_stream_xml_ranked};
-use crate::query::retrieval;
 use crate::rank::PageRankResult;
 use crate::serialize::JsonValueExt;
 use serde_json::{Value, json};
@@ -200,54 +199,6 @@ pub fn call_edit_tool(
     ))
 }
 
-pub fn call_for_tool(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
-    let value = retrieval::call_for_task_with_options(
-        state.ingest,
-        state.interner,
-        &state.pr.ranks,
-        args.req_str("task")?,
-        retrieval::ForTaskOptions {
-            root: state.root,
-            at: state.at,
-            graph: Some(state.graph),
-            sources: Some(state.sources),
-            budget_tokens: args.opt_usize("budget_tokens"),
-            detail: args.opt_usize("detail"),
-            adaptive: args.bool_or("adaptive", false),
-            in_scope: args.opt_str("in_scope"),
-            sections: args.opt_str("sections"),
-            signatures_only: args.bool_or("signatures_only", false),
-            auto_bodies: args.bool_or("auto_bodies", false),
-        },
-    );
-    render_query_value(value, args, crate::serialize::serialize_for_xml)
-}
-
-pub fn call_batch(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
-    let queries = args["queries"]
-        .as_array()
-        .ok_or("queries must be an array")?;
-    if queries.len() > BATCH_LIMIT {
-        return Err(format!("batch supports at most {BATCH_LIMIT} queries"));
-    }
-    Ok(Value::Array(
-        queries
-            .iter()
-            .map(|query| {
-                let name = query.get("name").and_then(Value::as_str);
-                let Some(name) = name else {
-                    return json!({"tool": null, "error": "batch item name must be a string"});
-                };
-                if let Some(object) = query.as_object()
-                    && object.keys().any(|key| key != "name" && key != "arguments")
-                {
-                    return json!({"tool": name, "error": "batch item contains unknown fields"});
-                }
-                execute_batch_item(state, name, query.get("arguments").unwrap_or(&json!({})))
-            })
-            .collect(),
-    ))
-}
 /// Transport-neutral command metadata and implementation.
 pub struct CommandDescriptor {
     pub name: &'static str,
@@ -303,13 +254,6 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
         call_explore
     ),
     mcp_tool!(
-        "batch",
-        "ONE-TURN CONTEXT SWEEP: answer up to 16 heterogeneous READ sub-queries in a single call",
-        &[("queries", "array", "Array of tool call objects")],
-        &["queries"],
-        call_batch
-    ),
-    mcp_tool!(
         "cochange",
         "Files that historically change together with this file (Fowler's Shotgun Surgery logical coupling)",
         &[
@@ -326,31 +270,6 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
         ],
         &[],
         call_cochange
-    ),
-    mcp_tool!(
-        "connect",
-        "When a task touches 2..16 named symbols, returns the minimal subgraph relating them",
-        &[("symbols", "string[]", "List of symbol names")],
-        &["symbols"],
-        |s, a| {
-            let symbols: Vec<&str> = a["symbols"]
-                .as_array()
-                .ok_or("symbols must be an array")?
-                .iter()
-                .map(|name| name.as_str().ok_or("symbol names must be strings"))
-                .collect::<Result<_, _>>()?;
-            let request = graph_tools::ConnectRequest {
-                root: s.root,
-                symbols: &symbols,
-                radius: a
-                    .opt_usize("radius")
-                    .unwrap_or(graph_tools::DEFAULT_CONNECT_RADIUS as usize)
-                    as u32,
-            };
-            render_xml(|out| {
-                graph_tools::execute_connect(&request, s.ingest, s.graph, s.interner, out)
-            })
-        }
     ),
     mcp_tool!(
         "doc_drift",
@@ -376,46 +295,11 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
         call_edit_check
     ),
     mcp_tool!(
-        "exemplar",
-        "BEFORE writing a function/method/class/struct, get repo's single best-in-class instance to imitate",
-        &[(
-            "role",
-            "string",
-            "Kind of symbol: fn, method, class, struct, interface"
-        )],
-        &[],
-        |s, a| {
-            let val = retrieval::call_exemplar_in_root(
-                s.sources,
-                s.ingest,
-                s.interner,
-                &s.pr.ranks,
-                a.str_any(&["role", "kind"], "fn"),
-                Some(s.graph),
-            );
-            render_query_value(val, a, |val, out| {
-                crate::serialize::serialize_exemplar_xml(s.root, val, out)
-            })
-        }
-    ),
-    mcp_tool!(
         "explore",
         "ONE-call task orientation: ranked symbols, files, and architecture map",
         &[("top_k", "integer", "Maximum number of symbols to include"),],
         &[],
         call_explore
-    ),
-    mcp_tool!(
-        "fetch_body",
-        "Full (or partial-range) source of a symbol's definition",
-        &[
-            ("symbol", "string", "Symbol name"),
-            ("path", "string", "Optional file path hint"),
-            ("start_line", "integer", "Optional 1-based start line"),
-            ("end_line", "integer", "Optional 1-based end line"),
-        ],
-        &["symbol"],
-        call_body
     ),
     mcp_tool!(
         "flags",
@@ -425,64 +309,6 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
         |s, a| {
             let value = doc_tools::flags_from_sources(s.root, s.sources, s.ingest, s.interner);
             render_query_value(value, a, crate::serialize::serialize_flags_xml)
-        }
-    ),
-    mcp_tool!(
-        "for",
-        "Task-lens ranked signatures-only inventory of building blocks most relevant to a task",
-        &[
-            ("task", "string", "Task description in plain words"),
-            ("budget_tokens", "integer", "Approximate token ceiling"),
-            ("detail", "integer", "Maximum implementation bodies"),
-            ("adaptive", "boolean", "Adapt detail to task confidence"),
-            ("in_scope", "string", "Path filter applied before ranking"),
-            ("sections", "string", "Comma-separated report sections"),
-            ("signatures_only", "boolean", "Omit implementation bodies"),
-            (
-                "auto_bodies",
-                "boolean",
-                "Include high-value implementation bodies"
-            ),
-        ],
-        &["task"],
-        call_for_tool
-    ),
-    mcp_tool!(
-        "from_trace",
-        "Paste a stack trace / compiler error and get it mapped onto indexed symbols innermost-first",
-        &[("trace", "string", "Stack trace text")],
-        &["trace"],
-        |s, a| {
-            let val = graph_tools::call_from_trace(s.ingest, s.interner, a.req_str("trace")?);
-            render_xml(|out| crate::serialize::serialize_from_trace_xml(&val, out))
-        }
-    ),
-    mcp_tool!(
-        "grep",
-        "Literal search; each hit annotated with its enclosing symbol",
-        &[
-            ("pattern", "string", "Literal pattern to search"),
-            ("path", "string", "Optional path filter"),
-            ("in", "string", "Span tier: code (default) or any"),
-        ],
-        &["pattern"],
-        |s, a| {
-            let corpus = s.sources.corpus();
-            let req = retrieval::GrepRequest {
-                corpus_paths: &corpus.rel_paths,
-                pruned_dirs: corpus.pruned_dirs,
-                limit: a.opt_usize("limit"),
-                offset: a.opt_usize("offset").unwrap_or(0),
-                path_filter: a.opt_str("path"),
-                any_tier: super::grep::parse_any_tier(a.opt_str("in"))
-                    .map_err(|error| error.to_string())?,
-                before: a.opt_usize("before").unwrap_or(0),
-                after: a.opt_usize("after").unwrap_or(0),
-                graph: Some(s.graph),
-                ..retrieval::GrepRequest::new(s.root, a.req_str("pattern")?, s.sources)
-            };
-            let val = retrieval::call_grep(s.ingest, s.interner, &req);
-            render_xml(|out| crate::serialize::serialize_grep_xml(&val, out))
         }
     ),
     mcp_tool!(
@@ -498,48 +324,6 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
         EDIT_INS_PARAMS,
         &["symbol", "text"],
         |s, a| call_edit_tool(s, EditOp::InsertBefore, a, false)
-    ),
-    mcp_tool!(
-        "lego",
-        "Interface-to-impls view: method contract plus EVERY implementor",
-        &[("interface", "string", "Interface, trait or base class name")],
-        &["interface"],
-        |s, a| {
-            let mut val = retrieval::call_lego(s.ingest, s.interner, a.req_str("interface")?);
-            val.attach_gauges(s.graph);
-            render_query_value(val, a, |val, out| {
-                crate::serialize::serialize_lego_xml(s.root, val, out)
-            })
-        }
-    ),
-    mcp_tool!(
-        "memory_recall",
-        "Most relevant doc sections for a task, BM25-ranked under a token ceiling",
-        &[
-            ("task", "string", "Task description"),
-            (
-                "top_k",
-                "integer",
-                "Maximum number of documents (default 8)"
-            ),
-            (
-                "budget_tokens",
-                "integer",
-                "Body token ceiling (default 8000)"
-            ),
-        ],
-        &["task"],
-        |s, a| {
-            let inputs = retrieval::collect_recall_inputs(std::path::Path::new(s.root));
-            let task = a.req_str("task")?;
-            let val = retrieval::call_memory_recall(
-                &inputs,
-                task,
-                a.opt_usize("top_k"),
-                a.opt_usize("budget_tokens"),
-            );
-            render_xml(|out| crate::serialize::serialize_recall_text(task, &val, out))
-        }
     ),
     mcp_tool!(
         "mentions",
@@ -574,24 +358,6 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
                 .is_some_and(|detail| detail > 0)
                 .into();
             render_query_value(value, a, crate::serialize::serialize_owners_xml)
-        }
-    ),
-    mcp_tool!(
-        "path_between",
-        "Does A REACH B, and HOW? Shortest directed call path between two symbols",
-        &[
-            ("from", "string", "Source symbol name"),
-            ("to", "string", "Target symbol name"),
-        ],
-        &["from", "to"],
-        |s, a| {
-            let request = graph_tools::PathRequest {
-                from: a.req_str("from")?,
-                to: a.req_str("to")?,
-            };
-            render_xml(|out| {
-                graph_tools::execute_path_between(&request, s.ingest, s.graph, s.interner, out)
-            })
         }
     ),
     mcp_tool!(
@@ -717,27 +483,6 @@ pub fn all_commands() -> Vec<&'static CommandDescriptor> {
     all
 }
 
-pub fn call_body(context: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
-    let request = super::detail::BodyRequest {
-        root: context.root,
-        symbols: args.req_str("symbol")?,
-        path_hint: args.opt_str("path"),
-        start_line: args.opt_usize("start_line"),
-        end_line: args.opt_usize("end_line"),
-        outline: args.bool_or("outline", false),
-        compress: args.bool_or("compress", false),
-    };
-    render_xml(|out| {
-        super::detail::execute_body_query(
-            &request,
-            context.ingest,
-            context.interner,
-            context.sources,
-            out,
-        )
-    })
-}
-
 impl CommandDescriptor {
     pub fn parameters(&self) -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
         self.params
@@ -764,7 +509,6 @@ fn extra_parameters(name: &str) -> &'static [(&'static str, &'static str, &'stat
             ("limit", "integer", "Maximum report items"),
             ("offset", "integer", "Report item offset"),
         ],
-        "connect" => &[("radius", "integer", "Connection search radius")],
         "doc_drift" => &[("with_history", "boolean", "Include repository history")],
         "whereis" => &[
             ("with_history", "boolean", "Include repository history"),
@@ -780,19 +524,9 @@ fn extra_parameters(name: &str) -> &'static [(&'static str, &'static str, &'stat
             ("limit", "integer", "Maximum report items"),
             ("offset", "integer", "Report item offset"),
         ],
-        "edit_check" | "lego" | "exemplar" | "flags" | "stray_content" => &[
+        "edit_check" | "flags" | "stray_content" => &[
             ("limit", "integer", "Maximum report items"),
             ("offset", "integer", "Report item offset"),
-        ],
-        "fetch_body" => &[
-            ("outline", "boolean", "Show definition skeleton"),
-            ("compress", "boolean", "Compress implementation source"),
-        ],
-        "grep" => &[
-            ("limit", "integer", "Maximum matching lines"),
-            ("offset", "integer", "Matching line offset"),
-            ("before", "integer", "Context lines before each match"),
-            ("after", "integer", "Context lines after each match"),
         ],
         "quality_delta" => &[
             ("scope", "string", "Quality delta scope"),
@@ -897,7 +631,7 @@ pub fn execute_batch(
         .collect())
 }
 
-fn execute_batch_item(context: &QueryContext<'_>, name: &str, arguments: &Value) -> Value {
+pub fn execute_batch_item(context: &QueryContext<'_>, name: &str, arguments: &Value) -> Value {
     let result = if batch_read_only(name, arguments) {
         dispatch(context, name, arguments)
     } else {

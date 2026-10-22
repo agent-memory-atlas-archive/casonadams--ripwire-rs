@@ -81,9 +81,6 @@ pub struct Cli {
     /// Parsed values of command-plugin flags
     #[arg(skip)]
     pub plugins: PluginArgs,
-    /// Top-level retrieval and architecture flags
-    #[command(flatten)]
-    pub retrieval: TopRetrievalArgs,
     /// Top-level workspace and audit flags
     #[command(flatten)]
     pub workspace: TopWorkspaceArgs,
@@ -405,120 +402,6 @@ impl TopModifierArgs {
     }
 }
 
-/// Top-level retrieval & architecture flags.
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct TopRetrievalArgs {
-    /// Importance-weighted detail: full bodies for top N symbols, or lift collapsed rows
-    #[arg(long = "detail", num_args = 0..=1, default_missing_value = "1", value_name = "N")]
-    pub detail: Option<usize>,
-    /// Cut returned set at the relevance cliff instead of fixed top-k
-    #[arg(long = "adaptive")]
-    pub adaptive: bool,
-    /// Let --doc-drift and --whereis consult git history for deleted names
-    #[arg(long = "with-history")]
-    pub with_history: bool,
-    /// Skip query-shape router and force plain subtoken+body BM25
-    #[arg(long = "no-route")]
-    pub no_route: bool,
-    /// Disable query-mention anchor score lifting
-    #[arg(long = "no-mention-boost")]
-    pub no_mention_boost: bool,
-    /// Disable doc-mention backtick surfacing
-    #[arg(long = "no-doc-mention")]
-    pub no_doc_mention: bool,
-    /// Restore automatic body walk on the conceptual route
-    #[arg(long = "auto-bodies")]
-    pub auto_bodies: bool,
-    /// Opt in to full lego and compose sections (lego,compose)
-    #[arg(long = "sections", value_name = "SECTIONS")]
-    pub sections: Option<String>,
-    #[arg(long = "pack-signatures")]
-    pub pack_signatures: bool,
-    #[arg(long = "for", visible_alias = "query", value_name = "TASK")]
-    pub task_for: Option<String>,
-    /// Literal trigram text search
-    #[arg(long, value_name = "PAT")]
-    pub grep: Option<String>,
-    /// Span tier a --grep hit must sit in: code (default) or any
-    #[arg(long = "grep-in", value_name = "code|any")]
-    pub grep_in: Option<String>,
-    /// Where --and/--not terms must appear: line (default) or file
-    #[arg(long = "grep-scope", value_name = "line|file")]
-    pub grep_scope: Option<String>,
-    /// Keep only --grep hits where PAT is also present (repeatable)
-    #[arg(long = "and", value_name = "PAT")]
-    pub and_pat: Vec<String>,
-    /// Drop --grep hits where PAT is present (repeatable)
-    #[arg(long = "not", value_name = "PAT")]
-    pub not_pat: Vec<String>,
-    /// Enclosing symbol or directory filter
-    #[arg(long = "in", value_name = "SCOPE")]
-    pub in_scope: Option<String>,
-    /// Emit compact refetch handles on retrieval rows
-    #[arg(long = "handles")]
-    pub handles: bool,
-    /// Expand a compact handle returned by --handles; bare, clone a remote URL root fresh
-    #[arg(long = "refetch", value_name = "HANDLE", num_args = 0..=1, default_missing_value = "")]
-    pub refetch: Option<String>,
-    /// Recommend the best ripwire verb for a natural-language task
-    #[arg(long = "help-task", value_name = "TASK")]
-    pub help_task: Option<String>,
-    /// Minimal connecting subgraph relating symbols (A,B,...)
-    #[arg(long, value_name = "A,B")]
-    pub connect: Option<String>,
-    /// Shortest directed call path between two symbols (A:B or A,B)
-    #[arg(long = "path-between", visible_alias = "path", value_name = "A:B")]
-    pub path_between: Option<String>,
-    /// Retrieve best-in-class existing instance of code to imitate
-    #[arg(long, value_name = "TASK|KIND")]
-    pub exemplar: Option<String>,
-    /// Show one interface and every type implementing it
-    #[arg(long, value_name = "TYPE")]
-    pub lego: Option<String>,
-    /// Search plans, designs, and docs for relevant notes
-    #[arg(long, value_name = "TASK")]
-    pub recall: Option<String>,
-    /// Map a stack trace, sanitizer report or compiler error onto indexed symbols
-    #[arg(long = "from-trace", value_name = "FILE")]
-    pub from_trace: Option<String>,
-    /// Resolve innermost symbol chain enclosing FILE:LINE
-    #[arg(long = "at", value_name = "FILE:LINE")]
-    pub at: Option<String>,
-    /// Formally verify a code relationship claim (e.g. calls(A,B))
-    #[arg(long = "verify", value_name = "CLAIM")]
-    pub verify: Option<String>,
-    /// Package single-call orientation task bundle under token budget
-    #[arg(long = "pack-task", value_name = "TASK")]
-    pub pack_task: Option<String>,
-    /// Evaluate small functional graph query DSL expression
-    #[arg(long = "graph-query", value_name = "EXPR")]
-    pub graph_query: Option<String>,
-    /// AST pattern query expression
-    #[arg(long = "match", value_name = "QUERY")]
-    pub ast_match: Option<String>,
-    /// Code-shaped structural pattern search
-    #[arg(long = "pattern", value_name = "PAT")]
-    pub pattern: Option<String>,
-    /// Regular expression search
-    #[arg(long = "regex", value_name = "PAT")]
-    pub regex: Option<String>,
-    /// Emit only signatures without bodies
-    #[arg(long = "signatures-only")]
-    pub signatures_only: bool,
-    /// Connecting radius for --connect
-    #[arg(long = "connect-radius", value_name = "N")]
-    pub connect_radius: Option<u32>,
-    /// Lines before grep hit
-    #[arg(long = "grep-before", value_name = "N")]
-    pub grep_before: Option<usize>,
-    /// Lines after grep hit
-    #[arg(long = "grep-after", value_name = "N")]
-    pub grep_after: Option<usize>,
-    /// Lines around grep hit
-    #[arg(long = "grep-context", value_name = "N")]
-    pub grep_context: Option<usize>,
-}
-
 /// Top-level workspace & audit flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
 pub struct TopWorkspaceArgs {
@@ -754,7 +637,6 @@ pub trait Budgeted {
     fn token_budget_opt(&self) -> Option<usize>;
     fn max_tokens_opt(&self) -> Option<usize>;
     fn top_k_opt(&self) -> Option<usize>;
-    fn detail_opt(&self) -> Option<usize>;
 
     fn effective_budget_bytes(&self) -> Option<usize> {
         if self.top_k_opt().is_some()
@@ -775,7 +657,6 @@ pub trait Budgeted {
 
 /// Capability trait for git history scope modifiers (`--with-history`, `--since`).
 pub trait HistoryScoped {
-    fn with_history_flag(&self) -> bool;
     fn since_scope_opt(&self) -> Option<&str>;
 }
 
@@ -830,15 +711,9 @@ impl Budgeted for Cli {
     fn top_k_opt(&self) -> Option<usize> {
         self.top_k
     }
-    fn detail_opt(&self) -> Option<usize> {
-        self.retrieval.detail
-    }
 }
 
 impl HistoryScoped for Cli {
-    fn with_history_flag(&self) -> bool {
-        self.retrieval.with_history
-    }
     fn since_scope_opt(&self) -> Option<&str> {
         self.since.as_deref()
     }
@@ -882,7 +757,7 @@ impl PluginArgs {
     }
 }
 
-/// Trait implemented by each CLI argument group (`TopRetrievalArgs`, etc.).
+/// Trait implemented by each CLI argument group.
 pub trait VerbGroup {
     fn is_group_active(&self) -> bool;
 }
@@ -918,15 +793,6 @@ impl_verb_group!(
         dead_code, communities, deps, external_surface, mermaid,
         metrics, context_ratio, ensemble, comment_coherence
     ]
-);
-
-impl_verb_group!(
-    TopRetrievalArgs,
-    opts: [
-        task_for, grep, connect, path_between, exemplar, lego, recall, from_trace,
-        at, verify, pack_task, graph_query, ast_match, pattern, regex, help_task, refetch
-    ],
-    flags: [pack_signatures]
 );
 
 impl_verb_group!(

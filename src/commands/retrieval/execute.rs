@@ -1,9 +1,11 @@
-use super::args::TopRetrievalArgs;
+use super::RetrievalArgs;
+use crate::cli::ExecutionContext;
+use crate::domain::{IngestResult, Interner};
 use crate::query::commands::QueryContext;
 use crate::query::graph::{execute_connect_query_with_radius, execute_path_query};
 use std::io::{self, Write};
 
-impl TopRetrievalArgs {
+impl RetrievalArgs {
     pub fn for_options<'a>(
         &'a self,
         ctx: &QueryContext<'a>,
@@ -26,7 +28,7 @@ impl TopRetrievalArgs {
 }
 
 fn execute_task_or_signatures<W: Write>(
-    ret: &TopRetrievalArgs,
+    ret: &RetrievalArgs,
     ctx: &QueryContext<'_>,
     budget_tokens: Option<usize>,
     out: &mut W,
@@ -66,8 +68,26 @@ fn execute_task_or_signatures<W: Write>(
     Ok(false)
 }
 
+fn write_help_task_xml<W: Write>(
+    task: &str,
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    crate::query::task_route::write_help_task_with_facts(
+        task,
+        root,
+        ingest,
+        interner,
+        gix::open(root).is_ok(),
+        !crate::cli::safety::get_working_tree_changed_files(root).is_empty(),
+        out,
+    )
+}
+
 fn execute_pattern_or_match<W: Write>(
-    ret: &TopRetrievalArgs,
+    ret: &RetrievalArgs,
     ctx: &QueryContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
@@ -85,8 +105,8 @@ fn execute_pattern_or_match<W: Write>(
             .map_err(io::Error::other)?;
         crate::serialize::serialize_grep_xml(&val, out)?;
     } else if let Some(task) = ret.help_task.as_deref() {
-        super::task_route::write_help_task_xml(task, ctx.root, ctx.ingest, ctx.interner, out)?;
-    } else if let Some(handle) = ret.refetch.as_deref() {
+        write_help_task_xml(task, ctx.root, ctx.ingest, ctx.interner, out)?;
+    } else if let Some(handle) = ret.refetch.as_deref().filter(|handle| !handle.is_empty()) {
         let request = crate::query::detail::BodyRequest {
             root: ctx.root,
             symbols: handle,
@@ -108,7 +128,7 @@ fn execute_pattern_or_match<W: Write>(
 }
 
 fn execute_advanced_retrieval<W: Write>(
-    ret: &TopRetrievalArgs,
+    ret: &RetrievalArgs,
     ctx: &QueryContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
@@ -149,11 +169,11 @@ fn execute_advanced_retrieval<W: Write>(
     }
 }
 
-pub fn execute_grep_cli_dispatch<W: Write>(
-    ret: &TopRetrievalArgs,
+pub(super) fn execute_grep_cli_dispatch<W: Write>(
+    ret: &RetrievalArgs,
     verb: &str,
     pat: &str,
-    ctx: &super::dispatch::ExecutionContext<'_>,
+    ctx: &ExecutionContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
     let sources = crate::query::FileSources {
@@ -180,9 +200,9 @@ pub fn execute_grep_cli_dispatch<W: Write>(
     crate::serialize::serialize_grep_xml(&val, out)
 }
 
-pub fn execute_retrieval_verb<W: Write>(
-    ret: &TopRetrievalArgs,
-    ctx: &super::dispatch::ExecutionContext<'_>,
+pub(super) fn execute_retrieval_verb<W: Write>(
+    ret: &RetrievalArgs,
+    ctx: &ExecutionContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
     let target = ret
@@ -219,7 +239,7 @@ pub fn execute_retrieval_verb<W: Write>(
 }
 
 pub fn execute_retrieval_dispatch<W: Write>(
-    ret: &TopRetrievalArgs,
+    ret: &RetrievalArgs,
     ctx: &QueryContext<'_>,
     budget_tokens: Option<usize>,
     out: &mut W,
