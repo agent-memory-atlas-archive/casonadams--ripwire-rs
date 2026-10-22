@@ -18,10 +18,7 @@ report_command! {
     tools: [mcp_tool!(
         "flags",
         "WHAT IS BUILT BUT DARK: harvests ifndef header gates, CMake options, env reads",
-        &[
-            ("limit", "integer", "Maximum report items"),
-            ("offset", "integer", "Report item offset"),
-        ],
+        &[],
         &[],
         |s, a| {
             let value =

@@ -12,11 +12,53 @@ use crate::query::commands::CommandDescriptor;
 use crate::serialize::{PageRequest, XmlWriter};
 use std::io::{self, StdoutLock};
 
-/// A shared CLI option a command honors; a command lists only the ones it really applies.
+/// A shared option a command declares: a CLI flag it honors, or an MCP parameter its tools expose. A command lists
+/// only the ones it really applies. The parameters are appended to each of the command's tools by the registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SharedOption {
-    /// `--limit` / `--offset`, delivered by [`Run::page`].
+    /// `--limit` / `--offset`, delivered by [`Run::page`]; the tools expose `limit` and `offset` worded as reports.
     Paged,
+    /// `--limit` / `--offset` on `--grep` hits, delivered by [`Run::page`]; the tools expose them worded as matches.
+    PagedMatches,
+    /// `--limit` / `--offset` on the CLI only: the report windows, and its tools do not expose the parameters.
+    CliPaged,
+    /// The tools expose `limit` and `offset` worded as reports, but the CLI report does not window (`--limit` stays
+    /// unhonored).
+    McpPaged,
+    /// The tools expose `budget_tokens`, worded as given.
+    Budget(&'static str),
+}
+
+impl SharedOption {
+    #[must_use]
+    pub fn is_paged(self) -> bool {
+        matches!(self, Self::Paged | Self::PagedMatches | Self::CliPaged)
+    }
+
+    fn rows(self) -> Vec<(&'static str, &'static str, &'static str)> {
+        let (limit, offset) = match self {
+            Self::Paged | Self::McpPaged => ("Maximum report items", "Report item offset"),
+            Self::PagedMatches => ("Maximum matching lines", "Matching line offset"),
+            Self::Budget(description) => return vec![("budget_tokens", "integer", description)],
+            Self::CliPaged => return Vec::new(),
+        };
+        vec![("limit", "integer", limit), ("offset", "integer", offset)]
+    }
+}
+
+/// `tool` with the parameters its command's shared options add (`limit`/`offset`, `budget_tokens`) appended in
+/// option order. The registry builds its tool list once from these owned copies.
+#[must_use]
+pub fn with_shared_rows(options: &[SharedOption], tool: &CommandDescriptor) -> CommandDescriptor {
+    let mut params = tool.params.to_vec();
+    params.extend(options.iter().flat_map(|option| option.rows()));
+    CommandDescriptor {
+        name: tool.name,
+        description: tool.description,
+        params: std::borrow::Cow::Owned(params),
+        required: tool.required,
+        handler: tool.handler,
+    }
 }
 
 /// What a command handler runs against: the parsed CLI, the repository root and the command's options.
@@ -37,7 +79,7 @@ impl<'a> Run<'a> {
     #[must_use]
     pub fn page(&self) -> PageRequest {
         let page = self.cli.page_request();
-        if self.options.contains(&SharedOption::Paged) {
+        if self.options.iter().any(|option| option.is_paged()) {
             page
         } else {
             PageRequest::default().with_budget(page.budget)

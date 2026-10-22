@@ -8,7 +8,10 @@ report_command! {
     name: "uses",
     args: UsesArgs,
     static: USES,
-    options: [SharedOption::Paged],
+    options: [
+        SharedOption::Paged,
+        SharedOption::Budget("Output budget in tokens"),
+    ],
     tools: [
         nav_tool!(
             "uses",

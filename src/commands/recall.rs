@@ -1,7 +1,7 @@
 //! `--recall TASK`: the doc sections most relevant to a task, as plain text unless `--json` is set.
 use super::common::mcp::mcp_tool;
 use super::common::retrieval::token_budget;
-use super::{Plugin, Run};
+use super::{Plugin, Run, SharedOption};
 use crate::commands::context::{ExecutionContext, OutputDialect};
 use crate::query::commands::{CommandDescriptor, render_xml};
 use crate::query::{retrieval, search};
@@ -35,7 +35,7 @@ fn run(run: &Run<'_>, args: &RecallArgs) -> io::Result<()> {
 
 pub static RECALL: Plugin<RecallArgs> = Plugin {
     name: "recall",
-    options: &[],
+    options: &[SharedOption::Budget("Body token ceiling (default 8000)")],
     selected: |args| args.recall.is_some(),
     run,
     check: None,
@@ -51,11 +51,6 @@ static TOOLS: &[&CommandDescriptor] = &[mcp_tool!(
             "top_k",
             "integer",
             "Maximum number of documents (default: the token budget decides)"
-        ),
-        (
-            "budget_tokens",
-            "integer",
-            "Body token ceiling (default 8000)"
         ),
     ],
     &["task"],

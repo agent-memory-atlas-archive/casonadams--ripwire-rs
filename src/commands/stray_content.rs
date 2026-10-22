@@ -1,6 +1,6 @@
 //! `--stray-content`: lines authored on divergent branches that HEAD does not have.
 use super::common::mcp::mcp_tool;
-use super::{Plugin, Run};
+use super::{Plugin, Run, SharedOption};
 use crate::query::commands::render_query_value;
 use crate::query::doc_tools;
 use crate::serialize::serialize_stray_content_xml;
@@ -22,7 +22,7 @@ pub struct StrayContentArgs {
 
 pub static STRAY_CONTENT: Plugin<StrayContentArgs> = Plugin {
     name: "stray-content",
-    options: &[],
+    options: &[SharedOption::McpPaged],
     selected: |args| args.stray_content,
     run,
     check: None,
@@ -30,8 +30,6 @@ pub static STRAY_CONTENT: Plugin<StrayContentArgs> = Plugin {
         "stray_content",
         "Lines authored on divergent branches that HEAD does not have",
         &[
-            ("limit", "integer", "Maximum report items"),
-            ("offset", "integer", "Report item offset"),
         ],
         &[],
         |s, a| render_query_value(doc_tools::call_stray_content(s.root), a, serialize_stray_content_xml)

@@ -55,8 +55,6 @@ pub static EDIT_CHECK: Plugin<EditCheckArgs> = Plugin {
         "After an edit: did SYM's contract change, and which callers no longer fit?",
         &[
             ("symbol", "string", "Symbol name to verify"),
-            ("limit", "integer", "Maximum report items"),
-            ("offset", "integer", "Report item offset"),
         ],
         &["symbol"],
         call_edit_check

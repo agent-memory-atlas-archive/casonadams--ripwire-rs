@@ -64,11 +64,13 @@ pub fn resolve_state_commits<'a>(
     )
 }
 
-/// Transport-neutral command metadata and implementation.
+/// Transport-neutral command metadata and implementation. `params` are `(name, type, description)` rows; a tool
+/// built by the registry owns the rows its command's shared options add.
+#[derive(Clone)]
 pub struct CommandDescriptor {
     pub name: &'static str,
     pub description: &'static str,
-    pub params: &'static [(&'static str, &'static str, &'static str)],
+    pub params: std::borrow::Cow<'static, [(&'static str, &'static str, &'static str)]>,
     pub required: &'static [&'static str],
     pub handler: fn(&QueryContext<'_>, &Value) -> Result<Value, String>,
 }

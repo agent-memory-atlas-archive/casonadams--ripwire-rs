@@ -136,8 +136,6 @@ pub static COCHANGE: Plugin<CochangeFlags> = Plugin {
             ),
             ("recur", "integer", "Recursive co-change depth"),
             ("groups", "boolean", "Report co-change groups"),
-            ("limit", "integer", "Maximum report items"),
-            ("offset", "integer", "Report item offset"),
         ],
         &[],
         call_cochange

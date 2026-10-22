@@ -28,7 +28,7 @@ pub struct WhereisArgs {
 
 pub static WHEREIS: Plugin<WhereisArgs> = Plugin {
     name: "whereis",
-    options: &[SharedOption::Paged],
+    options: &[SharedOption::CliPaged],
     selected: |args| args.whereis.is_some(),
     run,
     check: None,

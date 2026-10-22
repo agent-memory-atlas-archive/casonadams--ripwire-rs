@@ -53,7 +53,7 @@ fn call_grep_tool(state: &QueryContext<'_>, args: &Value) -> Result<Value, Strin
 
 pub static GREP: Plugin<GrepArgs> = Plugin {
     name: "grep",
-    options: &[SharedOption::Paged],
+    options: &[SharedOption::PagedMatches],
     selected: |args| args.grep.is_some(),
     run,
     check: None,
@@ -64,8 +64,6 @@ pub static GREP: Plugin<GrepArgs> = Plugin {
             ("pattern", "string", "Literal pattern to search"),
             ("path", "string", "Optional path filter"),
             ("in", "string", "Span tier: code (default) or any"),
-            ("limit", "integer", "Maximum matching lines"),
-            ("offset", "integer", "Matching line offset"),
             ("before", "integer", "Context lines before each match"),
             ("after", "integer", "Context lines after each match"),
         ],

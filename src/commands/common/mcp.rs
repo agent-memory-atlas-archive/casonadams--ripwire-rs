@@ -6,7 +6,7 @@ macro_rules! mcp_tool {
         &$crate::query::commands::CommandDescriptor {
             name: $name,
             description: $desc,
-            params: $params,
+            params: std::borrow::Cow::Borrowed($params),
             required: $req,
             handler: $handler,
         }

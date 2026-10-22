@@ -1,7 +1,7 @@
 //! Default repository map: printed when no other command is selected. Owns `--map-diff`, `--stable`,
 //! `--no-stable`, `--order` and `--no-inventory`.
 
-use super::Command;
+use super::{Command, SharedOption};
 use crate::cli::Cli;
 use crate::commands::context::{OutputDialect, load_repo_analysis_for_cli};
 use crate::query::commands::CommandDescriptor;
@@ -82,6 +82,10 @@ impl Command for Map {
 
     fn run_default(&self, cli: &Cli, root: &str) -> Option<io::Result<()>> {
         Some(dispatch_default_run(cli, root))
+    }
+
+    fn options(&self) -> &'static [SharedOption] {
+        &[SharedOption::Budget("Approximate token ceiling")]
     }
 
     fn tools(&self) -> &'static [&'static CommandDescriptor] {

@@ -22,7 +22,7 @@ pub struct DocDriftArgs {
 
 pub static DOC_DRIFT: Plugin<DocDriftArgs> = Plugin {
     name: "doc-drift",
-    options: &[SharedOption::Paged],
+    options: &[SharedOption::CliPaged],
     selected: |args| args.doc_drift,
     run,
     check: None,

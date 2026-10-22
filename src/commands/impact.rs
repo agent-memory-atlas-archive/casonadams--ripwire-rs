@@ -24,7 +24,10 @@ pub fn depth(cli: &Cli) -> Option<u32> {
 
 pub static IMPACT: Plugin<ImpactArgs> = Plugin {
     name: "impact",
-    options: &[SharedOption::Paged],
+    options: &[
+        SharedOption::Paged,
+        SharedOption::Budget("Output budget in tokens"),
+    ],
     selected: |args| args.impact.is_some(),
     run,
     check: None,

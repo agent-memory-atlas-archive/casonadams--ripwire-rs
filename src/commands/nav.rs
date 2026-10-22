@@ -103,13 +103,10 @@ macro_rules! nav_tool {
         &$crate::query::commands::CommandDescriptor {
             name: $name,
             description: $desc,
-            params: &[
+            params: std::borrow::Cow::Borrowed(&[
                 ("symbol", "string", $symbol_desc),
-                ("limit", "integer", "Maximum report items"),
-                ("offset", "integer", "Report item offset"),
                 ("max_depth", "integer", "Maximum traversal depth"),
-                ("budget_tokens", "integer", "Output budget in tokens"),
-            ],
+            ]),
             required: &["symbol"],
             handler: |state, args| $crate::commands::nav::call_navigation(state, args, $mode),
         }

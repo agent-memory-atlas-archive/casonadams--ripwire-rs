@@ -27,8 +27,6 @@ report_command! {
                 "integer",
                 "Show individual files when greater than zero",
             ),
-            ("limit", "integer", "Maximum report items"),
-            ("offset", "integer", "Report item offset"),
         ],
         &[],
         |s, a| {

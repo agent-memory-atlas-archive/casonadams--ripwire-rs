@@ -8,7 +8,10 @@ report_command! {
     name: "callees",
     args: CalleesArgs,
     static: CALLEES,
-    options: [SharedOption::Paged],
+    options: [
+        SharedOption::Paged,
+        SharedOption::Budget("Output budget in tokens"),
+    ],
     tools: [
         nav_tool!(
             "callees",

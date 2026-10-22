@@ -1,5 +1,6 @@
 //! `--exemplar KIND`: the single best-in-class existing instance of a symbol kind to imitate.
 use super::common::mcp::mcp_tool;
+use super::SharedOption;
 use super::plugin::report_command;
 use crate::query::commands::{QueryContext, render_query_value};
 use crate::query::retrieval;
@@ -25,6 +26,7 @@ report_command! {
     name: "exemplar",
     args: ExemplarArgs,
     static: EXEMPLAR,
+    options: [SharedOption::McpPaged],
     tools: [mcp_tool!(
         "exemplar",
         "BEFORE writing a function/method/class/struct, get repo's single best-in-class instance to imitate",
@@ -34,8 +36,6 @@ report_command! {
                 "string",
                 "Kind of symbol: fn, method, class, struct, interface"
             ),
-            ("limit", "integer", "Maximum report items"),
-            ("offset", "integer", "Report item offset"),
         ],
         &[],
         |s, a| {

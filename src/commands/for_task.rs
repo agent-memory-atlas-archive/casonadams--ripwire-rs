@@ -1,7 +1,7 @@
 //! `--for TASK` (alias `--query`): task-lens ranked building blocks; owns the flags that shape that bundle.
 use super::common::mcp::mcp_tool;
 use super::common::retrieval::{report_query, token_budget};
-use super::{Plugin, Run};
+use super::{Plugin, Run, SharedOption};
 use crate::cli::Cli;
 use crate::query::commands::{QueryContext, render_query_value};
 use crate::query::retrieval::{self, ForTaskOptions};
@@ -154,7 +154,7 @@ fn call_for_tool(state: &QueryContext<'_>, args: &Value) -> Result<Value, String
 
 pub static FOR_TASK: Plugin<ForTaskArgs> = Plugin {
     name: "for",
-    options: &[],
+    options: &[SharedOption::Budget("Approximate token ceiling")],
     selected: |args| args.task_for.is_some(),
     run,
     check: Some(check),
@@ -163,7 +163,6 @@ pub static FOR_TASK: Plugin<ForTaskArgs> = Plugin {
         "Task-lens ranked signatures-only inventory of building blocks most relevant to a task",
         &[
             ("task", "string", "Task description in plain words"),
-            ("budget_tokens", "integer", "Approximate token ceiling"),
             ("detail", "integer", "Maximum implementation bodies"),
             ("adaptive", "boolean", "Adapt detail to task confidence"),
             ("in_scope", "string", "Path filter applied before ranking"),

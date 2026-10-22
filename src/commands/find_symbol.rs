@@ -8,7 +8,10 @@ report_command! {
     name: "find-symbol",
     args: FindSymbolArgs,
     static: FIND_SYMBOL,
-    options: [SharedOption::Paged],
+    options: [
+        SharedOption::Paged,
+        SharedOption::Budget("Output budget in tokens"),
+    ],
     tools: [
         nav_tool!(
             "find_symbol",

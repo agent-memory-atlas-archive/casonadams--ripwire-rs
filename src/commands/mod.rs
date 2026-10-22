@@ -211,14 +211,15 @@ pub fn run(cli: &Cli, root: &str) -> Option<std::io::Result<()>> {
 #[must_use]
 pub fn unhonored_option_warning(cli: &Cli, command: &dyn Command) -> Option<String> {
     let paged = cli.modifiers.limit.is_some() || cli.modifiers.offset.is_some();
-    (paged && !command.name().is_empty() && !command.options().contains(&SharedOption::Paged)).then(
-        || {
-            format!(
-                "ripwire-rs: --limit/--offset are not honored by --{}",
-                command.name()
-            )
-        },
-    )
+    (paged
+        && !command.name().is_empty()
+        && !command.options().iter().any(|option| option.is_paged()))
+    .then(|| {
+        format!(
+            "ripwire-rs: --limit/--offset are not honored by --{}",
+            command.name()
+        )
+    })
 }
 
 /// Run the plugin subcommand the command line selected, if a plugin owns it.
@@ -236,17 +237,23 @@ pub fn decode_subcommand<A: clap::FromArgMatches>(
     A::from_arg_matches(matches).map_err(std::io::Error::other)
 }
 
-/// Every plugin's MCP tools, sorted by name.
+/// Every plugin's MCP tools, sorted by name; each carries the parameters its command's shared options add.
 pub fn tools() -> &'static [&'static CommandDescriptor] {
+    static OWNED: std::sync::LazyLock<Vec<CommandDescriptor>> = std::sync::LazyLock::new(|| {
+        let mut all: Vec<_> = REGISTRY
+            .iter()
+            .flat_map(|command| {
+                command
+                    .tools()
+                    .iter()
+                    .map(move |tool| plugin::with_shared_rows(command.options(), tool))
+            })
+            .collect();
+        all.sort_by_key(|command| command.name);
+        all
+    });
     static TOOLS: std::sync::LazyLock<Vec<&'static CommandDescriptor>> =
-        std::sync::LazyLock::new(|| {
-            let mut all: Vec<_> = REGISTRY
-                .iter()
-                .flat_map(|command| command.tools().iter().copied())
-                .collect();
-            all.sort_by_key(|command| command.name);
-            all
-        });
+        std::sync::LazyLock::new(|| OWNED.iter().collect());
     &TOOLS
 }
 

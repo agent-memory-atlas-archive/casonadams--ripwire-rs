@@ -55,7 +55,7 @@ pub fn all_tool_definitions(tools: &[&CommandDescriptor]) -> Vec<Value> {
             build_tool_schema_json(
                 command.name,
                 command.description,
-                command.params,
+                &command.params,
                 command.required,
             )
         })

@@ -134,8 +134,16 @@ composition roots pass `crate::commands::tools()`. Metric analysis that a plugin
 
 A shared option reaches a command only through `Run`, and a command receives it only if it declares it in
 `options`. To make a command honor `--limit/--offset`, list `SharedOption::Paged` and window its rows with
-`Paged::new(rows, run.page(), cost)`, which derives the cap from the output budget unless `--limit` overrides it. A command that does not declare it prints a stderr notice when the flag is
-passed (`unhonored_option_warning`). `tests/commands/registry.rs` keeps that contract true for every registered command.
+`Paged::new(rows, run.page(), cost)`, which derives the cap from the output budget unless `--limit` overrides it. A
+command that does not declare it prints a stderr notice when the flag is passed (`unhonored_option_warning`).
+`tests/commands/registry.rs` keeps that contract true for every registered command.
+
+The same declaration also gives the command's MCP tools their parameters: the registry (`commands::tools()`) appends
+the rows of each declared option to every tool of the command, so a tool never lists them in its own `params`.
+`Paged` and `McpPaged` add `limit`/`offset` worded as reports, `PagedMatches` adds them worded as grep matches, and
+`Budget(text)` adds `budget_tokens` worded as given. `CliPaged` windows the CLI report only; `McpPaged` exposes the
+parameters for a tool whose report the CLI does not window.
+
 To add another shared option (for example `--since`): add a variant to `SharedOption`, one field on `TopModifierArgs`,
 and one gated accessor on `Run`; commands then opt in with one `options` entry and never read the flag directly.
 

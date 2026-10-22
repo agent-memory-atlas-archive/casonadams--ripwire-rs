@@ -1,5 +1,6 @@
 //! `--lego TYPE`: one interface and every type that implements it.
 use super::common::mcp::mcp_tool;
+use super::SharedOption;
 use super::plugin::report_command;
 use crate::query::commands::{QueryContext, render_query_value};
 use crate::query::retrieval;
@@ -19,13 +20,12 @@ report_command! {
     name: "lego",
     args: LegoArgs,
     static: LEGO,
+    options: [SharedOption::McpPaged],
     tools: [mcp_tool!(
         "lego",
         "Interface-to-impls view: method contract plus EVERY implementor",
         &[
             ("interface", "string", "Interface, trait or base class name"),
-            ("limit", "integer", "Maximum report items"),
-            ("offset", "integer", "Report item offset"),
         ],
         &["interface"],
         |s, a| {

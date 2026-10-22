@@ -8,7 +8,10 @@ report_command! {
     name: "callers",
     args: CallersArgs,
     static: CALLERS,
-    options: [SharedOption::Paged],
+    options: [
+        SharedOption::Paged,
+        SharedOption::Budget("Output budget in tokens"),
+    ],
     tools: [
         nav_tool!(
             "callers",

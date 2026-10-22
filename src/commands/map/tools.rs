@@ -8,7 +8,7 @@ macro_rules! mcp_tool {
         &CommandDescriptor {
             name: $name,
             description: $desc,
-            params: $params,
+            params: std::borrow::Cow::Borrowed($params),
             required: $req,
             handler: $handler,
         }
@@ -47,7 +47,6 @@ pub(super) static TOOLS: &[&CommandDescriptor] = &[
                 "string",
                 "pagerank, authority, hub, degree, ccx, stable"
             ),
-            ("budget_tokens", "integer", "Approximate token ceiling"),
         ],
         &[],
         call_explore
@@ -62,7 +61,6 @@ pub(super) static TOOLS: &[&CommandDescriptor] = &[
                 "string",
                 "pagerank, authority, hub, degree, ccx, stable"
             ),
-            ("budget_tokens", "integer", "Approximate token ceiling"),
         ],
         &[],
         call_explore
@@ -77,7 +75,6 @@ pub(super) static TOOLS: &[&CommandDescriptor] = &[
                 "pagerank, authority, hub, degree, ccx, stable"
             ),
             ("top_k", "integer", "Maximum symbols"),
-            ("budget_tokens", "integer", "Approximate token ceiling"),
         ],
         &["rank_by"],
         call_explore
