@@ -1,14 +1,35 @@
+use ripwire_rs::commands::common::edit::{resolve_edit_spec, resolve_edit_spec_with_reader};
 use ripwire_rs::commands::common::ladder::execute_expand_or_outline_compressed;
-use ripwire_rs::commands::workspace::{
-    WorkspaceArgs, WorkspaceContext, build_handoff_verified_rows, execute_doc_search_query,
-    execute_session_tools_query, execute_workspace_doc_query_paged, render_flip_xml,
-    render_notes_xml, render_plan_lint_xml, render_skipped_census_xml, render_whereis_xml,
-    resolve_edit_spec, resolve_edit_spec_with_reader,
-};
+use ripwire_rs::commands::doc_drift::{DOC_DRIFT, DocDriftArgs};
+use ripwire_rs::commands::flags_report::{FLAGS, FlagsArgs};
+use ripwire_rs::commands::flip::{FLIP, FlipArgs, render_flip_xml};
+use ripwire_rs::commands::handoff::build_handoff_verified_rows;
+use ripwire_rs::commands::mentions::{MENTIONS, MentionsArgs};
+use ripwire_rs::commands::notes::{NOTES, NotesArgs, render_notes_xml};
+use ripwire_rs::commands::plan_lint::{PLAN_LINT, PlanLintArgs, render_plan_lint_xml};
+use ripwire_rs::commands::skipped::render_skipped_census_xml;
+use ripwire_rs::commands::whereis::{WHEREIS, WhereisArgs};
 use ripwire_rs::crawler::{CrawlerOptions, SkippedCensus};
 use ripwire_rs::query::detail::skeletonize_body;
 use ripwire_rs::query::doc_tools::{WhereisFacts, whereis_from_sources_with_facts};
+use ripwire_rs::serialize::{PageRequest, serialize_whereis_xml};
 use ripwire_rs::{IngestResult, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
+
+fn render_whereis_xml<W: std::io::Write>(
+    val: &serde_json::Value,
+    listing: Option<&str>,
+    full_text: bool,
+    out: &mut W,
+) -> std::io::Result<()> {
+    let mut val = val.clone();
+    if let Some(listing) = listing {
+        val["listing"] = listing.into();
+    }
+    if full_text {
+        val["full_text"] = true.into();
+    }
+    serialize_whereis_xml(&val, out)
+}
 
 #[test]
 fn test_skeletonize_body() {
@@ -138,7 +159,15 @@ fn test_render_skipped_census_xml() {
     let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
 
     let mut buf = Vec::new();
-    render_skipped_census_xml("workspace<&", &census, &opts, &ingest, &mut buf).unwrap();
+    render_skipped_census_xml(
+        "workspace<&",
+        &census,
+        &opts,
+        &ingest,
+        PageRequest::default(),
+        &mut buf,
+    )
+    .unwrap();
     let out = std::str::from_utf8(&buf).unwrap();
     let report = roxmltree::Document::parse(out).unwrap();
     assert_eq!(report.root_element().attribute("root"), Some("workspace<&"));
@@ -157,6 +186,27 @@ fn test_render_skipped_census_xml() {
 }
 
 #[test]
+fn test_render_skipped_census_xml_honors_page_window() {
+    let mut census = SkippedCensus::default();
+    for i in 0..3 {
+        census
+            .oversize
+            .push((format!("big{i}.rs"), 5000, "rs".to_string()));
+    }
+    let opts = CrawlerOptions::default();
+    let ingest = IngestResult::new();
+    let page = PageRequest {
+        limit: Some(1),
+        offset: Some(1),
+    };
+    let mut buf = Vec::new();
+    render_skipped_census_xml(".", &census, &opts, &ingest, page, &mut buf).unwrap();
+    let out = std::str::from_utf8(&buf).unwrap();
+    assert_eq!(out.matches("why=\"oversize\"").count(), 1);
+    assert!(out.contains("big1.rs"));
+}
+
+#[test]
 fn test_execute_doc_search_query_all_branches() {
     let reg = LanguageRegistry::new().unwrap();
     let interner = Interner::new();
@@ -164,7 +214,6 @@ fn test_execute_doc_search_query_all_branches() {
     let fixtures: &[(&str, Lang, &[u8])] = &[("src/lib.rs", Lang::Rust, file_bytes)];
     let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
     let sources: &[(&str, &[u8])] = &[("src/lib.rs", file_bytes)];
-    let ctx = WorkspaceContext::new(".", &ingest, &interner, &sources);
 
     // Whereis pure renderer with acquired-facts fixtures (zero I/O)
     let facts = WhereisFacts {
@@ -202,41 +251,22 @@ fn test_execute_doc_search_query_all_branches() {
     assert!(whereis_xml.contains("ripwire-rs.whereis/v1"));
     assert!(whereis_xml.contains("feature-branch"));
     assert!(whereis_xml.contains("fate sym=\"overview\" v=\"removed\""));
-    // Doc drift
-    let ws = WorkspaceArgs {
+    assert!((DOC_DRIFT.selected)(&DocDriftArgs {
         doc_drift: true,
         ..Default::default()
-    };
-    buf.clear();
-    let handled_drift = execute_doc_search_query(&ws, &ctx, false, None, &mut buf).unwrap();
-    assert!(handled_drift);
-    assert!(String::from_utf8_lossy(&buf).contains("doc-drift"));
-
-    // Flags
-    let ws = WorkspaceArgs {
-        flags: true,
-        ..Default::default()
-    };
-    buf.clear();
-    let handled_flags = execute_doc_search_query(&ws, &ctx, false, None, &mut buf).unwrap();
-    assert!(handled_flags);
-    assert!(String::from_utf8_lossy(&buf).contains("flags"));
-
-    // Mentions
-    let ws = WorkspaceArgs {
+    }));
+    assert!((FLAGS.selected)(&FlagsArgs { flags: true }));
+    assert!((MENTIONS.selected)(&MentionsArgs {
         mentions: Some("overview".to_string()),
+    }));
+    assert!((WHEREIS.selected)(&WhereisArgs {
+        whereis: Some("overview".to_string()),
         ..Default::default()
-    };
-    buf.clear();
-    let handled_mentions = execute_doc_search_query(&ws, &ctx, false, None, &mut buf).unwrap();
-    assert!(handled_mentions);
-    assert!(String::from_utf8_lossy(&buf).contains("mentions"));
-
-    // Unhandled / empty
-    let ws = WorkspaceArgs::default();
-    buf.clear();
-    let unhandled = execute_doc_search_query(&ws, &ctx, false, None, &mut buf).unwrap();
-    assert!(!unhandled);
+    }));
+    assert!(!(DOC_DRIFT.selected)(&DocDriftArgs::default()));
+    assert!(!(FLAGS.selected)(&FlagsArgs::default()));
+    assert!(!(MENTIONS.selected)(&MentionsArgs::default()));
+    assert!(!(WHEREIS.selected)(&WhereisArgs::default()));
 }
 
 #[test]
@@ -283,71 +313,28 @@ fn test_render_whereis_xml_branch_and_history_consumer() {
 }
 
 #[test]
-fn test_execute_session_tools_and_workspace_doc_query() {
-    let reg = LanguageRegistry::new().unwrap();
-    let interner = Interner::new();
-    let file_bytes = b"pub fn overview() {}\n";
-    let fixtures: &[(&str, Lang, &[u8])] = &[("src/lib.rs", Lang::Rust, file_bytes)];
-    let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
-    let sources: &[(&str, &[u8])] = &[("src/lib.rs", file_bytes)];
-    let ctx = WorkspaceContext {
-        root: ".",
-        ingest: &ingest,
-        interner: &interner,
-        sources: &sources,
-        notes_content: Some("pinned in-memory note"),
-        plan_content: Some("# Target Plan\n- [ ] step 1\n"),
-    };
-
-    // Notes display via in-memory content injection
-    let mut ws = WorkspaceArgs {
-        notes: true,
-        ..Default::default()
-    };
+fn test_session_plugins_render_in_memory_content() {
     let mut buf = Vec::new();
-    let handled_notes = execute_session_tools_query(&ws, &ctx, &mut buf).unwrap();
-    assert!(handled_notes);
+    render_notes_xml("pinned in-memory note", &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("pinned in-memory note"));
 
-    // Flip query via in-memory sources
-    ws = WorkspaceArgs {
-        flip: Some("nonexistent_gate".to_string()),
-        ..Default::default()
-    };
     buf.clear();
-    let handled_flip = execute_session_tools_query(&ws, &ctx, &mut buf).unwrap();
-    assert!(handled_flip);
-    assert!(String::from_utf8_lossy(&buf).contains("flip"));
-
-    // Plan lint via in-memory content injection
-    ws = WorkspaceArgs {
-        plan_lint: Some("PLAN.md".to_string()),
-        ..Default::default()
-    };
-    buf.clear();
-    let handled_plan = execute_session_tools_query(&ws, &ctx, &mut buf).unwrap();
-    assert!(handled_plan);
+    render_plan_lint_xml("PLAN.md", "# Target Plan\n- [ ] step 1\n", &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("headings=\"1\""));
 
-    // Empty session query
-    ws = WorkspaceArgs::default();
     buf.clear();
-    let unhandled_session = execute_session_tools_query(&ws, &ctx, &mut buf).unwrap();
-    assert!(!unhandled_session);
+    let flags_val = serde_json::json!({ "flags": [] });
+    render_flip_xml("nonexistent_gate", ".", &flags_val, &mut buf).unwrap();
+    assert!(String::from_utf8_lossy(&buf).contains("flip"));
 
-    // Workspace doc query with doc search flag
-    ws = WorkspaceArgs {
-        flags: true,
-        ..Default::default()
-    };
-    buf.clear();
-    let page = ripwire_rs::cli::TopModifierArgs::default();
-    execute_workspace_doc_query_paged(&ws, &ctx, false, &page, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("flags"));
-
-    // Workspace doc query with default unhandled args
-    ws = WorkspaceArgs::default();
-    buf.clear();
-    execute_workspace_doc_query_paged(&ws, &ctx, false, &page, &mut buf).unwrap();
-    assert!(buf.is_empty());
+    assert!((NOTES.selected)(&NotesArgs { notes: true }));
+    assert!((FLIP.selected)(&FlipArgs {
+        flip: Some("nonexistent_gate".to_string()),
+    }));
+    assert!((PLAN_LINT.selected)(&PlanLintArgs {
+        plan_lint: Some("PLAN.md".to_string()),
+    }));
+    assert!(!(NOTES.selected)(&NotesArgs::default()));
+    assert!(!(FLIP.selected)(&FlipArgs::default()));
+    assert!(!(PLAN_LINT.selected)(&PlanLintArgs::default()));
 }

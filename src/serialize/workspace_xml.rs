@@ -120,11 +120,10 @@ impl WhereisReport<'_> {
 impl crate::serialize::XmlReport for WhereisReport<'_> {
     crate::xml_report_meta!("whereis", "ripwire-rs.whereis/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::PaginateSlice;
         let sym = escape_xml_str(self.val.str_or("symbol", ""));
         let hits = self.hits();
         let rows = whereis_rows(hits, self.listing());
-        let (pw, _) = rows.listed.paginate(60, None, None);
+        let (pw, _) = self.val.paginate_items(&rows.listed, 60);
         let folded_attr = if rows.folded > 0 {
             format!(" folded=\"{}\"", rows.folded)
         } else {
@@ -153,13 +152,12 @@ impl crate::serialize::XmlReport for WhereisReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::PaginateSlice;
         let sym = escape_xml_str(self.val.str_or("symbol", ""));
         if let Some(hist) = self.val.get("history").and_then(Value::as_object) {
             emit_whereis_history(out, &Value::Object(hist.clone()), &sym)?;
         }
         let rows = whereis_rows(self.hits(), self.listing());
-        let (_, shown) = rows.listed.paginate(60, None, None);
+        let (_, shown) = self.val.paginate_items(&rows.listed, 60);
         for &(h, refs) in shown {
             emit_whereis_hit(out, h, refs)?;
         }

@@ -106,8 +106,8 @@ trait, so shared code never names a command. Plugin-specific rules live behind `
 `validate` (flag combinations), `refreshes_remote_checkout` and `run_default` (the default output, such as
 the `map` plugin). To add one, create the module and add one line
 to `register_commands!` in `src/commands/mod.rs`, which generates the module declaration and the
-registry; the line order is CLI dispatch precedence. Command groups that have not been split yet (`workspace`,
-`safety`) still use `CliVerb`/`VerbGroup`. `src/commands/context.rs` is not a command: it
+registry; the line order is CLI dispatch precedence. The `safety` command group has not been split yet and
+still uses `CliVerb`/`VerbGroup`. `src/commands/context.rs` is not a command: it
 holds the shared CLI plumbing every plugin uses (`Paginated`, `OutputDialect`, `ExecutionContext`,
 `CliVerb`, `run_cli_verb`, `VerbGroup`, repo-analysis loading). `src/cli/` keeps only the core
 options (`Cli`, `TopModifierArgs`) and the parse and run entry points.

@@ -1,3 +1,5 @@
+use super::{Plugin, Run};
+use clap::Args;
 use crate::ingest::LanguageRegistry;
 use crate::serialize::XmlEscapeExt;
 use std::borrow::Cow;
@@ -382,4 +384,24 @@ fn check_layout() -> DoctorCheck {
         .attr("state", "no-records")
         .flag("checked", false)
         .attr("units", 0)
+}
+
+#[derive(Args, Debug, Clone, Default, PartialEq)]
+pub struct DoctorArgs {
+    /// Environment and dependency health diagnostics
+    #[arg(long)]
+    pub doctor: bool,
+}
+
+pub static DOCTOR: Plugin<DoctorArgs> = Plugin {
+    name: "doctor",
+    options: &[],
+    selected: |args| args.doctor,
+    run,
+    check: None,
+    tools: &[],
+};
+
+fn run(run: &Run<'_>, _: &DoctorArgs) -> io::Result<()> {
+    run.report(|ctx, out| collect_doctor_report(ctx.root).write_xml(out))
 }

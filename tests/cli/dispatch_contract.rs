@@ -343,10 +343,28 @@ fn detail_group_is_active_only_for_its_primary_flags() {
 fn workspace_group_is_active_only_for_its_primary_flags() {
     let active = |flag: &str| {
         let cli = ripwire_rs::parse_from(["rw", flag]).unwrap();
-        cli.plugins
-            .decode::<ripwire_rs::commands::workspace::WorkspaceArgs>()
-            .unwrap()
-            .is_group_active()
+        let p = &cli.plugins;
+        use ripwire_rs::commands as c;
+        [
+            (c::owners::OWNERS.selected)(&p.decode().unwrap()),
+            (c::stray_content::STRAY_CONTENT.selected)(&p.decode().unwrap()),
+            (c::replace_symbol_body::REPLACE_SYMBOL_BODY.selected)(&p.decode().unwrap()),
+            (c::insert_before_symbol::INSERT_BEFORE_SYMBOL.selected)(&p.decode().unwrap()),
+            (c::insert_after_symbol::INSERT_AFTER_SYMBOL.selected)(&p.decode().unwrap()),
+            (c::whereis::WHEREIS.selected)(&p.decode().unwrap()),
+            (c::doc_drift::DOC_DRIFT.selected)(&p.decode().unwrap()),
+            (c::flags_report::FLAGS.selected)(&p.decode().unwrap()),
+            (c::mentions::MENTIONS.selected)(&p.decode().unwrap()),
+            (c::doctor::DOCTOR.selected)(&p.decode().unwrap()),
+            (c::handoff::HANDOFF.selected)(&p.decode().unwrap()),
+            (c::notes::NOTES.selected)(&p.decode().unwrap()),
+            (c::note_add::NOTE_ADD.selected)(&p.decode().unwrap()),
+            (c::flip::FLIP.selected)(&p.decode().unwrap()),
+            (c::plan_lint::PLAN_LINT.selected)(&p.decode().unwrap()),
+            (c::skipped::SKIPPED.selected)(&p.decode().unwrap()),
+        ]
+        .into_iter()
+        .any(|on| on)
     };
     for flag in [
         "--whereis=a",

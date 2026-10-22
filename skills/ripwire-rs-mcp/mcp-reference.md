@@ -72,7 +72,7 @@ signature-through-closing-brace or nothing).
 
 ## Server Behavior Worth Knowing
 
-- **Single `McpToolHandler` registry**: tool schemas and dispatch share the registry in `src/mcp/schema.rs` and `src/mcp/dispatch.rs`.
+- **Single tool registry**: tool schemas and dispatch share the registry in `src/mcp/schema.rs` and `src/mcp/dispatch.rs`.
 - **Canonical read reports**: overlapping tools return the CLI XML/text in `result.content[0].text`, including canonical XML legend metadata rather than JSON summary objects.
 - **Automatic cache invalidation on edit**: `replace_symbol_body`, `insert_before_symbol`, and `insert_after_symbol` perform atomic write-rename operations and keep the workspace consistent.
 - **Graceful JSON-RPC errors**: unknown tools, missing parameters, or unresolvable symbols return structured JSON-RPC `-32602` / `-32603` error objects without terminating the stdio server.

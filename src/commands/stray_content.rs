@@ -1,0 +1,43 @@
+//! `--stray-content`: lines authored on divergent branches that HEAD does not have.
+use super::common::mcp::mcp_tool;
+use super::{Plugin, Run};
+use crate::query::commands::render_query_value;
+use crate::query::doc_tools;
+use crate::serialize::serialize_stray_content_xml;
+use clap::Args;
+use std::io;
+
+#[derive(Args, Debug, Clone, Default, PartialEq)]
+pub struct StrayContentArgs {
+    /// Divergent branch content tracking
+    #[arg(long = "stray-content")]
+    pub stray_content: bool,
+    /// Check ABI byte layout across branches in stray-content
+    #[arg(long = "abi")]
+    pub abi: bool,
+    /// Generate landing plan in stray-content
+    #[arg(long = "plan")]
+    pub plan: bool,
+}
+
+pub static STRAY_CONTENT: Plugin<StrayContentArgs> = Plugin {
+    name: "stray-content",
+    options: &[],
+    selected: |args| args.stray_content,
+    run,
+    check: None,
+    tools: &[mcp_tool!(
+        "stray_content",
+        "Lines authored on divergent branches that HEAD does not have",
+        &[
+            ("limit", "integer", "Maximum report items"),
+            ("offset", "integer", "Report item offset"),
+        ],
+        &[],
+        |s, a| render_query_value(doc_tools::call_stray_content(s.root), a, serialize_stray_content_xml)
+    )],
+};
+
+fn run(run: &Run<'_>, _: &StrayContentArgs) -> io::Result<()> {
+    run.report(|ctx, out| serialize_stray_content_xml(&doc_tools::call_stray_content(ctx.root), out))
+}
