@@ -108,8 +108,8 @@ fn collect_exemplar_calls(
         return Vec::new();
     };
     let view = (ingest, interner);
-    g.callees(sym_id)
-        .filter_map(|(cid, _)| ingest.symbols.get(cid as usize))
+    g.call_flow_edges(sym_id)
+        .filter_map(|e| ingest.symbols.get(e.to as usize))
         .map(|csym| {
             let sig = sources
                 .read(view.sym_path(csym))

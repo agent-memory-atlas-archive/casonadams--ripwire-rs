@@ -1,4 +1,4 @@
-use crate::domain::{IngestResult, Interner, NodeId};
+use crate::domain::{IngestResult, Interner, NodeId, SymKind};
 use crate::graph::Graph;
 
 fn community_anchor_priority<'a, V: crate::domain::CorpusView<'a> + ?Sized>(
@@ -144,8 +144,12 @@ pub fn build_ranked_communities<'a>(
     let comms = graph.communities();
     let mut by_comm: std::collections::HashMap<u32, Vec<NodeId>> = std::collections::HashMap::new();
     for (node, &c) in comms.comm.iter().enumerate() {
-        if target_id.is_none() || target_id == Some(c) {
-            by_comm.entry(c).or_default().push(node as u32);
+        let is_member = target_id.is_none() || target_id == Some(c);
+        let is_code = ingest
+            .sym(node as NodeId)
+            .is_some_and(|s| s.kind != SymKind::ModuleScope);
+        if is_member && is_code {
+            by_comm.entry(c).or_default().push(node as NodeId);
         }
     }
     let mut comm_ids: Vec<u32> = by_comm

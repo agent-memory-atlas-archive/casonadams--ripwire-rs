@@ -291,3 +291,50 @@ fn test_comment_coherence_without_source_bytes_has_no_row() {
     assert_eq!(report.no_comment, 1);
     assert!(report.rows.is_empty());
 }
+
+#[test]
+fn test_comment_coherence_ignores_module_docs_and_bodyless_signatures() {
+    let interner = Interner::new();
+    let mut ingest = IngestResult::new();
+    let src = b"//! module overview words here\n\nfn plain() {}\n\n/// plain helper words\nfn decl();\n\n/// real doc words here\nfn documented() {}\n";
+    let path = interner.intern("src/lib.rs");
+    ingest.files.push(FileInfo {
+        id: 0,
+        path,
+        lang: Lang::Rust,
+        line_count: 9,
+        byte_size: src.len() as u64,
+    });
+    let find = |needle: &[u8]| src.windows(needle.len()).position(|w| w == needle).unwrap() as u32;
+    let plain = interner.intern("plain");
+    let mut sym_plain = Symbol::new(0, plain, plain, SymKind::Function, Lang::Rust, 0, 4);
+    sym_plain.sig_start_byte = find(b"fn plain");
+    sym_plain.sig_end_byte = find(b"fn plain") + 8;
+    sym_plain.end_byte = find(b"fn plain") + 12;
+    let decl = interner.intern("decl");
+    let mut sym_decl = Symbol::new(1, decl, decl, SymKind::Function, Lang::Rust, 0, 6);
+    sym_decl.sig_start_byte = find(b"fn decl");
+    sym_decl.sig_end_byte = find(b"fn decl") + 7;
+    sym_decl.end_byte = sym_decl.sig_end_byte;
+    let documented = interner.intern("documented");
+    let mut sym_doc = Symbol::new(
+        2,
+        documented,
+        documented,
+        SymKind::Function,
+        Lang::Rust,
+        0,
+        8,
+    );
+    sym_doc.sig_start_byte = find(b"fn documented");
+    sym_doc.sig_end_byte = find(b"fn documented") + 13;
+    sym_doc.end_byte = sym_doc.sig_end_byte + 3;
+    ingest.symbols.extend([sym_plain, sym_decl, sym_doc]);
+
+    let sources: &[(&str, &[u8])] = &[("src/lib.rs", src)];
+    let report =
+        compute_comment_coherence_with_sources(sources, &ingest, &interner, PageRequest::default());
+    let names: Vec<&str> = report.rows.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(names, vec!["documented"], "{names:?}");
+    assert_eq!(report.documented, 1);
+}

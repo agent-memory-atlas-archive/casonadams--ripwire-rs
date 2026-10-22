@@ -33,7 +33,7 @@ Verifies whether an edited symbol's signature changed in parameters, arity, or p
 Maps modified files and symbols to transitively reachable test files across the in-process call graph.
 
 ```xml
-<affected schema="ripwire-rs.affected/v1" files="src/service.rs" seeds="1" seed_test_files="0" tests="2" reached="4">
+<affected schema="ripwire-rs.affected/v1" changed="src/service.rs" seeded_by="file" seeds="1" seed_test_files="0" tests="2" reached="4" script_gates_unmodelled="0" order="evidence" partners="1">
   <test p="tests/test_service.rs" partner="1" hops="2" run_unknown="1"/>
   <test p="tests/test_billing.rs" hops="3" run_unknown="1"/>
 </affected>
@@ -177,3 +177,7 @@ Emits canonical `ripwire-rs.situ/v1` XML summarizing a working tree diff: blast 
 ## 11. Parity Ledger (`make parity`)
 
 `scripts/validate-parity.py` compares every command, and the gate runs on explicit changed sets, against upstream ripwire. A child-tag count difference or a structural mismatch is a divergence and must be recorded in `scripts/parity-divergences.toml`, except paged row lists: a root carrying `total`, `has_more`, or `next_offset` follows one generic rule with no entry. That rule requires the same schema, `total`/`count` equal to upstream's, every shown row (keys `p`/`n`) present in upstream's full `--limit` run, rows in our ranking order, and bytes at or below upstream's or richer by density. An entry whose run no longer diverges is stale and fails. Kinds: `smaller` (our bytes <= upstream), `richer` (our facts > upstream and facts-per-byte >= upstream), `fixes-upstream-defect` (evidence names an existing regression test), `defect` (our known defect: printed as a warning and counted; `defect_budget` in the ledger header must equal the count). Fixture entries run in a temp directory outside the tree.
+
+Root attributes: every entry's root attribute keys must equal upstream's (outside the optional set), except `richer` entries, which may also carry ours-only root attributes as disclosure but must never miss an upstream one. A `defect` entry gets the same structural checks as any entry, so a structural mismatch fails the run instead of hiding behind the warning. Checker unit tests: `python3 scripts/test_validate_parity.py`.
+
+Declared omissions: a `smaller` entry may carry `omits = ["row:attr", "element", ...]` to name upstream attributes and elements that ours deliberately does not emit. A `row:attr` token names the upstream child row by its `n=` value (for example `"cache-dir:locks"`). The checker exempts exactly those tokens and nothing else: an omitted attribute counts only when that upstream row would otherwise fail and passes without it, a bare element token must be absent from our output, and every token must be needed. An entry that declares `omits` is checked exactly: any upstream element that ours lacks must be listed, and any listed token that ours does not need fails as stale. Each omitted name must be named in `why` with its reason; `omits` on any other kind fails the ledger load.

@@ -143,12 +143,18 @@ fn state_accesses_remain_visible_without_call_edges() {
 }
 
 const RUST_SOURCE: &str = "use std::cell::Cell;\n\
+use std::sync::atomic::{AtomicU64, Ordering};\n\
+use std::sync::{LazyLock, OnceLock};\n\
 const LIMIT: i32 = 3;\n\
 static PLAIN: i32 = 4;\n\
 static CELL: Cell<i32> = Cell::new(0);\n\
 static mut RAW: i32 = 0;\n\
+static LAZY: LazyLock<Vec<i32>> = LazyLock::new(|| vec![1]);\n\
+static SLOT: OnceLock<i32> = OnceLock::new();\n\
+static HITS: AtomicU64 = AtomicU64::new(0);\n\
 fn read_all() -> i32 {\n\
-    LIMIT + PLAIN + unsafe { RAW } + CELL.get()\n\
+    HITS.fetch_add(1, Ordering::Relaxed);\n\
+    LIMIT + PLAIN + unsafe { RAW } + CELL.get() + LAZY.len() as i32 + *SLOT.get().unwrap()\n\
 }\n";
 
 fn rust_ingest(source: &str) -> (ripwire_rs::IngestResult, ripwire_rs::Interner) {
@@ -186,6 +192,14 @@ fn rust_const_and_static_items_classify_by_mutability() {
         "static of an interior-mutability type is a cell"
     );
     assert!(!immutable("RAW"), "static mut is a cell");
+    assert!(
+        immutable("LAZY"),
+        "a LazyLock is initialised once from a fixed expression and never changes"
+    );
+    assert!(
+        !immutable("SLOT"),
+        "a OnceLock is set at runtime, so it is a cell"
+    );
 }
 
 #[test]
@@ -197,5 +211,5 @@ fn rust_nonlocal_state_counts_only_mutable_statics() {
     let func = funcs.iter().find(|f| f.sym_name == "read_all").unwrap();
     let mut names: Vec<&str> = func.cells.iter().map(|c| c.cell_name.as_str()).collect();
     names.sort_unstable();
-    assert_eq!(names, ["CELL", "RAW"]);
+    assert_eq!(names, ["CELL", "HITS", "RAW", "SLOT"]);
 }

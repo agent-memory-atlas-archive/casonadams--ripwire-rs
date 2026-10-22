@@ -64,3 +64,34 @@ fn test_biggest_first_without_source_reports_no_fabricated_halstead() {
     assert!(xml.contains("ent=\"0.00\""), "{xml}");
     assert!(!xml.contains("ent=\"4.20\""), "{xml}");
 }
+
+#[test]
+fn test_biggest_first_skips_bodyless_signatures() {
+    let interner = Interner::new();
+    let mut ingest = IngestResult::new();
+    let decl = interner.intern("trait_sig");
+    let mut sig = Symbol::new(0, decl, decl, SymKind::Method, Lang::Rust, 0, 10);
+    sig.loc = 10;
+    sig.sig_end_byte = 10;
+    sig.end_byte = 10;
+    let body = interner.intern("real_fn");
+    let mut def = Symbol::new(1, body, body, SymKind::Function, Lang::Rust, 0, 10);
+    def.loc = 10;
+    def.sig_end_byte = 4;
+    def.end_byte = 10;
+    ingest.symbols.push(sig);
+    ingest.symbols.push(def);
+    let mut buf = Vec::new();
+    execute_biggest_first_query(
+        "/nonexistent/ripwire-readability-root",
+        &ingest,
+        &interner,
+        PageRequest::default(),
+        &mut buf,
+    )
+    .unwrap();
+    let xml = String::from_utf8(buf).unwrap();
+    assert!(xml.contains("functions=\"1\""), "{xml}");
+    assert!(xml.contains("n=\"real_fn\""), "{xml}");
+    assert!(!xml.contains("trait_sig"), "{xml}");
+}

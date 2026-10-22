@@ -80,6 +80,31 @@ fn test_clone_type3_gapped_detection() {
 }
 
 #[test]
+fn short_unrelated_chains_do_not_form_a_type3_group() {
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let directory = b"fn compute_directory(path: &str) -> String {\n    Path::new(path)\n        .parent()\n        .and_then(|p| p.to_str())\n        .filter(|s| !s.is_empty())\n        .unwrap_or(\".\")\n        .to_string()\n}\n";
+    let names = b"fn names(xml: &str) -> BTreeSet<String> {\n    roxmltree::Document::parse(xml)\n        .unwrap()\n        .descendants()\n        .filter_map(|node| node.attribute(\"n\"))\n        .map(str::to_owned)\n        .collect()\n}\n";
+    let mut sources = HashMap::new();
+    sources.insert("src/gate/seams.rs".into(), directory.to_vec());
+    sources.insert("tests/cli/dispatch_contract.rs".into(), names.to_vec());
+    let ingest = ingest_in_memory_files(
+        &[
+            ("src/gate/seams.rs", Lang::Rust, directory),
+            ("tests/cli/dispatch_contract.rs", Lang::Rust, names),
+        ],
+        &registry,
+        &interner,
+    );
+    let clones = find_clones(&ingest, &interner, 10, Some(&sources));
+    assert!(
+        clones.iter().all(|g| g.clone_type != CloneType::Type3),
+        "unrelated chains reached the Type-3 floor: {:?}",
+        clones.iter().map(|g| g.similarity).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn clone_report_honors_limit_and_offset() {
     let interner = Interner::new();
     let registry = LanguageRegistry::new().unwrap();

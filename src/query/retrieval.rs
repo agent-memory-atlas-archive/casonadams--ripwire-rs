@@ -359,7 +359,7 @@ fn score_candidate_symbol(
     inputs: &ScoringInputs<'_>,
 ) -> f64 {
     use crate::domain::CorpusView;
-    if !sym.is_code_symbol() {
+    if !sym.is_code_symbol() && !(!inputs.conceptual && is_module_anchor(sym)) {
         return 0.0;
     }
     let view = (ingest, interner);
@@ -641,7 +641,30 @@ fn is_exact_name_query(ingest: &IngestResult, interner: &Interner, raw_terms: &[
     ingest
         .symbols
         .iter()
-        .any(|s| s.is_code_symbol() && view.sym_name(s).eq_ignore_ascii_case(term))
+        .any(|s| is_name_anchor(s) && view.sym_name(s).eq_ignore_ascii_case(term))
+}
+
+/// A declaration an exact-name query can anchor on: a language's module declaration (`mod name;`).
+fn is_module_anchor(sym: &crate::domain::Symbol) -> bool {
+    sym.kind == SymKind::Section && sym.lang.semantics().module_declarations_are_anchors()
+}
+
+fn is_name_anchor(sym: &crate::domain::Symbol) -> bool {
+    sym.is_code_symbol() || is_module_anchor(sym)
+}
+
+/// Stable promotion of the symbols a one-word query names exactly (variables and fields excluded), so the
+/// named declaration leads the ranking; the rest keep their score order.
+fn promote_exact_anchors(
+    scored: &mut [(f64, &crate::domain::Symbol)],
+    term: &str,
+    interner: &Interner,
+) {
+    let is_anchor = |s: &crate::domain::Symbol| {
+        !matches!(s.kind, SymKind::Var | SymKind::Field)
+            && interner.resolve(&s.name).eq_ignore_ascii_case(term)
+    };
+    scored.sort_by_key(|(_, s)| !is_anchor(s));
 }
 
 fn diversify_top_candidates<'a>(
@@ -719,6 +742,9 @@ pub fn call_for_task_with_options(
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     diversify_top_candidates(&mut scored, &raw_terms, ingest, interner);
+    if let [term] = raw_terms.as_slice() {
+        promote_exact_anchors(&mut scored, term, interner);
+    }
     let page = crate::serialize::PageRequest {
         limit: None,
         offset: None,

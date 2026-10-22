@@ -253,7 +253,9 @@ fn test_affected_tests_transitive_reachability() {
 
     assert_eq!(report.reached_symbols, 4);
     let xml = report.to_xml_string();
-    assert!(xml.contains("<affected schema=\"ripwire-rs.affected/v1\" files=\"src/service.rs\""));
+    assert!(xml.contains(
+        "<affected schema=\"ripwire-rs.affected/v1\" changed=\"src/service.rs\" seeded_by=\"file\""
+    ));
     assert!(xml.contains(
         "<test p=\"tests/test_service.rs\" partner=\"1\" hops=\"2\" run_unknown=\"1\"/>"
     ));

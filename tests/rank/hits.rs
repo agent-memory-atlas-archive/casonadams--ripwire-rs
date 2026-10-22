@@ -35,6 +35,7 @@ fn test_hits_two_node_chain() {
             (0, 1),
             EdgeAcc {
                 n_ref: 1,
+                calls: 1,
                 conf_sum: 1.0,
                 prov: EdgeProv::Local,
             },

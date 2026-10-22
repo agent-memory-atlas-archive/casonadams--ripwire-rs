@@ -63,7 +63,11 @@ struct Command { handler: fn() }
 fn action() {}
 fn construct_only() -> Command { Command { handler: action } }
 "#;
-    assert_eq!(targets(source, "construct_only"), []);
+    let reached = targets(source, "construct_only");
+    assert!(
+        reached.iter().all(|(name, _)| name != "action"),
+        "{reached:?}"
+    );
 }
 
 #[test]

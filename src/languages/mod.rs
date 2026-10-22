@@ -121,6 +121,11 @@ pub trait LanguageSemantics: Sync {
     fn is_callable_field_access(&self, _name_node: tree_sitter::Node<'_>) -> bool {
         false
     }
+    /// True if a type mention (`RefRole::Type`, e.g. a Rust struct literal `Name { .. }`) is a graph edge to the
+    /// named type. Off by default: most languages' type mentions are declarations or noise.
+    fn type_mentions_are_edges(&self) -> bool {
+        false
+    }
 
     /// True if this language writes bodyless declarations of entities defined elsewhere
     /// (C prototypes, TypeScript overload signatures).
@@ -306,6 +311,12 @@ pub trait LanguageSemantics: Sync {
 
     /// True if files of this language are prose documents (excluded from code-identifier sets).
     fn is_prose_document(&self) -> bool {
+        false
+    }
+
+    /// True when this language's `Section` symbols are module declarations (`mod name;`) that an exact-name
+    /// query anchors on like a code symbol. Markdown and YAML sections are not anchors.
+    fn module_declarations_are_anchors(&self) -> bool {
         false
     }
 
@@ -595,6 +606,13 @@ pub trait LanguageSemantics: Sync {
     /// calls qualified by that identifier resolve into the module (Python `import x as y` -> `("x", "y")`).
     fn import_binding<'a>(&self, _raw_target: &'a str) -> Option<(&'a str, &'a str)> {
         None
+    }
+    /// The `(target, bound name)` pairs an import statement binds for qualified calls: the target is what
+    /// `resolve_import_target` reads. The default is the single pair `import_binding` names, if any.
+    fn import_module_bindings(&self, raw_target: &str) -> Vec<(String, String)> {
+        self.import_binding(raw_target)
+            .map(|(_, bound)| vec![(raw_target.to_string(), bound.to_string())])
+            .unwrap_or_default()
     }
     /// False where `name(...)` always calls a function even when a parameter shares the name (Ruby).
     fn parameters_shadow_calls(&self) -> bool {

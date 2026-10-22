@@ -382,46 +382,6 @@ mod branch_tests {
         assert_eq!(report["at"], "new:date");
         assert!(call_owners(None, None, None, None).get("error").is_some());
     }
-
-    #[test]
-    fn stray_classification_distinguishes_unmerged_merged_and_unknown_relations() {
-        let (status, row) =
-            branch_stray_from_facts("feature", Some(("base123".into(), 3))).unwrap();
-        assert_eq!(status, "unmerged");
-        assert_eq!(row["stray"], 3);
-        assert_eq!(row["base"], "base123");
-        assert_eq!(
-            branch_stray_from_facts("feature", Some(("base123".into(), 0)))
-                .unwrap()
-                .0,
-            "merged"
-        );
-        assert_eq!(
-            branch_stray_from_facts("feature", None).unwrap().0,
-            "unknown"
-        );
-    }
-
-    #[test]
-    fn gather_branch_stray_aggregates_counts_and_filters_head_and_empty() {
-        let facts = [
-            ("feature-unmerged", Some(("base123".into(), 3))),
-            ("feature-merged", Some(("base123".into(), 0))),
-            ("feature-unknown", None),
-            ("HEAD", Some(("base123".into(), 5))),
-            ("", Some(("base123".into(), 2))),
-            ("main", Some(("base123".into(), 1))),
-        ];
-        let (refs_count, unmerged, merged, unknown, branches) =
-            gather_branch_stray_from_facts("main", facts);
-        assert_eq!(refs_count, 3);
-        assert_eq!(unmerged, 1);
-        assert_eq!(merged, 1);
-        assert_eq!(unknown, 1);
-        assert_eq!(branches.len(), 1);
-        assert_eq!(branches[0]["branch"], "feature-unmerged");
-        assert_eq!(branches[0]["stray"], 3);
-    }
 }
 #[cfg(test)]
 mod route_tests {

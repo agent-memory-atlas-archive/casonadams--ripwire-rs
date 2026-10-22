@@ -183,7 +183,7 @@ ripwire-rs . --communities
 # Extract ego-graph around a symbol (depth 1, fanout 32)
 ripwire-rs . --around="Interner::new" --around-depth=2 --around-fanout=16
 
-# Discover symbols referenced but never defined (stdlib & external dependencies)
+# Discover symbols referenced but never defined (stdlib & external dependencies; markdown links, shell builtins and calls through stored fields are not surface)
 ripwire-rs . --external-surface
 
 # File-to-file dependency graph with instability and afferent coupling

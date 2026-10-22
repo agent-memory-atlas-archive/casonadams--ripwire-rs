@@ -447,7 +447,7 @@ fn extract_preceding_doc_words(bytes: &[u8], sig_start: u32) -> Vec<String> {
         if doc_lines.is_empty() && is_doc_boundary_line(trimmed) {
             continue;
         }
-        if !is_comment_line(trimmed) {
+        if !is_comment_line(trimmed) || trimmed.starts_with("//!") {
             break;
         }
         doc_lines.push(trimmed);
@@ -547,6 +547,7 @@ pub fn compute_comment_coherence_with_sources<S: crate::query::SourceReader + ?S
     let view = (ingest, interner);
     for sym in &ingest.symbols {
         if (sym.kind != SymKind::Function && sym.kind != SymKind::Method)
+            || sym.is_bodyless_declaration()
             || view.is_test_symbol(sym)
         {
             continue;

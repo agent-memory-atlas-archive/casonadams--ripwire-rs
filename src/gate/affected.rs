@@ -1,5 +1,6 @@
 use crate::domain::{IngestResult, Interner, Lang, NodeId, RefRole};
 use crate::graph::Graph;
+use crate::graph::value_reach::ValueReach;
 use crate::languages::has_dir_component;
 use crate::serialize::XmlEscapeExt;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -47,10 +48,14 @@ impl AffectedTest {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AffectedReport {
     pub changed_spec: String,
+    /// The reading that seeded the walk (`file`, `symbol`, `mixed`, `none`).
+    pub seeded_by: &'static str,
     pub seed_count: usize,
     pub seed_test_files: Vec<String>,
     pub total_tests: usize,
     pub reached_symbols: usize,
+    /// Test runners the call graph does not model (`test/*.sh`); set by the caller that knows the root.
+    pub script_gates_unmodelled: usize,
     /// Symbols that transitively call the change, seeds excluded, ascending.
     pub impacted: Vec<NodeId>,
     pub tests: Vec<AffectedTest>,
@@ -62,12 +67,14 @@ impl crate::serialize::XmlReport for AffectedReport {
         let partners = self.tests.iter().filter(|t| t.is_partner).count();
         write!(
             out,
-            " files=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\" partners=\"{partners}\"",
-            self.changed_spec,
+            " changed=\"{}\" seeded_by=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\" script_gates_unmodelled=\"{}\" order=\"evidence\" partners=\"{partners}\"",
+            self.changed_spec.xml_escaped(),
+            self.seeded_by,
             self.seed_count,
             self.seed_test_files.len(),
             self.total_tests,
-            self.reached_symbols
+            self.reached_symbols,
+            self.script_gates_unmodelled
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -99,12 +106,12 @@ fn affected_flags(t: &AffectedTest) -> String {
     } else {
         String::new()
     };
-    let direct = if t.is_direct_change {
-        " direct=\"1\""
+    let seed_kind = if t.is_direct_change {
+        " seed_kind=\"test\""
     } else {
         ""
     };
-    format!("{partner}{hops}{direct}")
+    format!("{partner}{hops}{seed_kind}")
 }
 
 /// Check if a path corresponds to a test file by directory convention or filename.
@@ -231,6 +238,22 @@ struct SeedResolution {
     seed_nodes: Vec<NodeId>,
     seed_test_files: Vec<String>,
     seed_source_files: Vec<String>,
+    /// A changed spec named an indexed file by path.
+    by_file: bool,
+    /// A spec named no file and matched symbols by name.
+    by_symbol: bool,
+}
+
+impl SeedResolution {
+    /// The reading that seeded the walk: `file`, `symbol`, `mixed`, or `none`.
+    fn seeded_by(&self) -> &'static str {
+        match (self.by_file, self.by_symbol) {
+            (true, true) => "mixed",
+            (true, false) => "file",
+            (false, true) => "symbol",
+            (false, false) => "none",
+        }
+    }
 }
 
 fn push_unique(list: &mut Vec<String>, path: &str) {
@@ -282,6 +305,7 @@ fn match_symbol_seeds(
     for s in &ingest.symbols {
         if interner.resolve(&s.name) == spec {
             seeds.seed_nodes.push(s.id);
+            seeds.by_symbol = true;
         }
     }
 }
@@ -297,6 +321,7 @@ fn resolve_spec_seeds(
         let path_str = interner.resolve(&f.path);
         if path_str == spec || path_str.ends_with(spec) {
             matched_file = true;
+            seeds.by_file = true;
             match_file_seeds(f, path_str, ingest, seeds);
         }
     }
@@ -309,6 +334,7 @@ fn resolve_spec_seeds(
 fn traverse_reverse_callers(
     seed_nodes: &[NodeId],
     graph: &Graph,
+    value: &ValueReach,
     ingest: &IngestResult,
     interner: &Interner,
 ) -> (HashSet<NodeId>, HashMap<String, u32>) {
@@ -332,7 +358,11 @@ fn traverse_reverse_callers(
             }
         }
 
-        for (caller, _) in graph.callers(curr) {
+        for caller in graph
+            .callers(curr)
+            .map(|(c, _)| c)
+            .chain(value.readers(curr))
+        {
             if visited.insert(caller) {
                 queue.push_back((caller, hops + 1));
             }
@@ -354,6 +384,8 @@ pub fn find_affected_tests(
         seed_nodes: Vec::new(),
         seed_test_files: Vec::new(),
         seed_source_files: Vec::new(),
+        by_file: false,
+        by_symbol: false,
     };
     for &spec in changed_specs {
         resolve_spec_seeds(spec.trim(), ingest, interner, &mut seeds);
@@ -375,10 +407,13 @@ pub fn find_affected_tests_for_symbols(
         seed_nodes: symbols.to_vec(),
         seed_test_files: Vec::new(),
         seed_source_files: Vec::new(),
+        by_file: false,
+        by_symbol: !symbols.is_empty(),
     };
     for f in &ingest.files {
         let path_str = interner.resolve(&f.path);
         if changed_paths.contains(&path_str) {
+            seeds.by_file = true;
             classify_file_seed(f, path_str, ingest, &mut seeds);
         }
     }
@@ -395,8 +430,9 @@ fn affected_from_seeds(
     seeds.seed_nodes.sort_unstable();
     seeds.seed_nodes.dedup();
 
+    let value = ValueReach::build(ingest);
     let (visited, mut test_hops) =
-        traverse_reverse_callers(&seeds.seed_nodes, graph, ingest, interner);
+        traverse_reverse_callers(&seeds.seed_nodes, graph, &value, ingest, interner);
 
     let mut tests = Vec::new();
     let mut seen_test_paths = HashSet::new();
@@ -447,10 +483,12 @@ fn affected_from_seeds(
 
     AffectedReport {
         changed_spec,
+        seeded_by: seeds.seeded_by(),
         seed_count: seeds.seed_nodes.len(),
         seed_test_files: seeds.seed_test_files,
         total_tests: tests.len(),
         reached_symbols: visited.len(),
+        script_gates_unmodelled: 0,
         impacted,
         tests,
     }

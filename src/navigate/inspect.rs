@@ -275,6 +275,7 @@ fn pack_seed_nodes(
 
 struct PackRenderEnv<'a> {
     task: &'a str,
+    route: &'a str,
     root: &'a str,
     ingest: &'a IngestResult,
     graph: &'a Graph,
@@ -351,8 +352,9 @@ fn write_pack_task_ctx<W: Write>(
     }
     write!(
         out,
-        "<ctx schema=\"ripwire-rs.pack-task/v1\" task=\"{}\" route=\"subtoken+body:broad\" root=\"{}\" est_tokens=\"{est_tokens}\" budget_tokens=\"{budget_tokens}\"><sigs>",
+        "<ctx schema=\"ripwire-rs.pack-task/v1\" task=\"{}\" route=\"{}\" root=\"{}\" est_tokens=\"{est_tokens}\" budget_tokens=\"{budget_tokens}\"><sigs>",
         env.task.xml_escaped(),
+        env.route.xml_escaped(),
         env.root
     )?;
     out.write_all(&sigs_buf)?;
@@ -423,6 +425,7 @@ pub fn execute_pack_task<W: Write>(
     let syms = for_val["symbols"].as_array().unwrap_or(&empty);
     let env = PackRenderEnv {
         task,
+        route: for_val["route"].as_str().unwrap_or_default(),
         root: ctx.root,
         ingest: ctx.ingest,
         graph: ctx.graph,
@@ -495,6 +498,7 @@ pub fn execute_pack_task_partitioned<W: Write>(
     let env = PackRenderEnv {
         task,
         root,
+        route: "subtoken+body:broad",
         ingest,
         graph,
         ranks: &pr.ranks,

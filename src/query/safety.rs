@@ -324,6 +324,9 @@ pub fn affected_from_sources(
         state.graph,
         state.interner,
     );
+    report.script_gates_unmodelled =
+        crate::gate::script_gates::collect_script_gates(state.root, state.ingest, state.interner)
+            .unmodelled;
     crate::gate::runners::attach_test_runners_from_sources(
         &mut report.tests,
         sources,

@@ -17,6 +17,7 @@ LEDGER = ROOT / "scripts" / "parity-divergences.toml"
 KINDS = ("smaller", "richer", "fixes-upstream-defect", "defect")
 LEDGER_FIELDS = ("id", "command", "case", "kind", "why", "evidence")
 EVIDENCE_RE = re.compile(r"(tests/[A-Za-z0-9_/]+\.rs)::([A-Za-z_][A-Za-z0-9_]*)")
+OMIT_TOKEN_RE = re.compile(r"(?:[A-Za-z0-9_-]+:)?[A-Za-z0-9_-]+")
 PAGING_ATTRS = ("total", "has_more", "next_offset", "capped")
 ROW_KEYS = ("p", "n", "path", "name")
 FULL_ROWS_FLAG = "--limit=100000"
@@ -311,7 +312,12 @@ def required_attrs(el):
     return set(el.attrib) - OPTIONAL_ATTRS
 
 
-def compare_xml_children(root_rw, root_rip, ranked):
+def compare_xml_children(root_rw, root_rip, ranked, declared=frozenset(), used=None):
+    """Check each upstream row has a same-tag row carrying its required attrs.
+
+    `declared` holds `row:attr` omissions; an omitted attr is exempt from the check and recorded
+    in `used` only when the row would otherwise fail, so unneeded omissions stay detectable."""
+    used = set() if used is None else used
     for tag in sorted({ch.tag for ch in root_rip} & {ch.tag for ch in root_rw}):
         rip_rows = [ch for ch in root_rip if ch.tag == tag]
         rw_rows = [ch for ch in root_rw if ch.tag == tag]
@@ -324,9 +330,52 @@ def compare_xml_children(root_rw, root_rip, ranked):
         rw_attrs = [set(ch.attrib) for ch in rw_rows]
         for ch_rip in rip_rows:
             need = required_attrs(ch_rip)
-            if not any(need <= have for have in rw_attrs):
-                return f"child <{tag}> has no row with required attrs {sorted(need)}"
+            if any(need <= have for have in rw_attrs):
+                continue
+            row = ch_rip.attrib.get("n", "")
+            named = {attr for attr in need if f"{row}:{attr}" in declared}
+            if not any(need - named <= have for have in rw_attrs):
+                return f"child <{tag}> has no row with required attrs {sorted(need - named)}"
+            used.update(f"{row}:{attr}" for attr in named)
     return None
+
+
+def omission_gaps(root_rw, root_rip, declared, used):
+    """Exact omissions for an entry that declares `omits`: every upstream element that ours lacks
+    and every attribute the row check exempted must be declared, and no declared omission may be
+    unneeded."""
+    attr_tokens = {token for token in declared if ":" in token}
+    tag_tokens = declared - attr_tokens
+    rip_tags = tag_counts(root_rip)
+    missing_tags = {tag for tag in rip_tags if tag not in tag_counts(root_rw)}
+    undeclared = sorted(missing_tags - tag_tokens)
+    if undeclared:
+        return f"upstream elements absent from ours and not declared in omits: {undeclared}"
+    stale = sorted((tag_tokens - missing_tags) | (attr_tokens - used))
+    if stale:
+        return f"omits not needed by this output: {stale}; remove them"
+    return None
+
+
+def omit_declaration_errors(entry):
+    """Structural rules for an `omits` list: smaller entries only, and each omitted name must be
+    named in `why` so the reason is on record."""
+    ident, omits = entry["id"], entry["omits"]
+    if entry["kind"] != "smaller":
+        return [f"ledger entry {ident} declares omits but kind is {entry['kind']}; only smaller entries may"]
+    if not isinstance(omits, list) or not all(isinstance(token, str) and token for token in omits):
+        return [f"ledger entry {ident} omits must be a list of non-empty strings"]
+    errors = []
+    if len(set(omits)) != len(omits):
+        errors.append(f"ledger entry {ident} lists an omission twice")
+    for token in omits:
+        if not OMIT_TOKEN_RE.fullmatch(token):
+            errors.append(f"ledger entry {ident} omission {token!r} must be 'row:attr' or 'element'")
+            continue
+        name = token.rsplit(":", 1)[-1]
+        if not re.search(rf"(?<![A-Za-z0-9_-]){re.escape(name)}(?![A-Za-z0-9_-])", entry["why"]):
+            errors.append(f"ledger entry {ident} omission {token!r} has no reason naming {name!r} in why")
+    return errors
 
 
 def check_declined_window_invariants(root_rw):
@@ -377,7 +426,7 @@ def check_xml_data_invariants(cmd, root_rw, root_rip):
             or check_caller_window_invariants(root_rw)
             or check_computed_metric_invariants(cmd, root_rw))
 
-def check_xml_parity(cmd, out_rw, out_rip):
+def check_xml_parity(cmd, out_rw, out_rip, allow_extra_root=False, omits=None):
     root_rw, err_rw = parse_xml_dom(out_rw)
     if err_rw:
         return f"ripwire-rs {err_rw}"
@@ -395,14 +444,25 @@ def check_xml_parity(cmd, out_rw, out_rip):
         return f"schema mismatch: rw={schema_rw} vs rip={schema_rip}"
     req_rip = set(root_rip.attrib.keys()) - OPTIONAL_ATTRS
     req_rw = set(root_rw.attrib.keys()) - OPTIONAL_ATTRS
-    if req_rw != req_rip:
+    if allow_extra_root:
+        missing_root = sorted(req_rip - req_rw)
+        if missing_root:
+            return f"root attr keys missing upstream attrs {missing_root}"
+    elif req_rw != req_rip:
         missing_root = sorted(req_rip - req_rw)
         extra_root = sorted(req_rw - req_rip)
         return f"root attr keys mismatch: missing={missing_root} extra={extra_root}"
     if "--max-tokens=2000" in cmd and len(out_rw) > max(len(out_rip) * 3, 10000):
         return f"budget overrun: rw={len(out_rw)}B vs rip={len(out_rip)}B"
     inv_err = check_xml_data_invariants(cmd, root_rw, root_rip)
-    return inv_err if inv_err else compare_xml_children(root_rw, root_rip, is_ranked(cmd))
+    if inv_err:
+        return inv_err
+    declared = set(omits or ())
+    used = set()
+    err = compare_xml_children(root_rw, root_rip, is_ranked(cmd), declared, used)
+    if err or omits is None:
+        return err
+    return omission_gaps(root_rw, root_rip, declared, used)
 
 
 def check_plan_lanes_json(out_rw, out_rip):
@@ -466,7 +526,7 @@ def check_xml_timeout(output):
 Outcome = collections.namedtuple("Outcome", "reason rw rip text")
 
 
-def run_one_check(rw_bin, rip_bin, repo, cmd):
+def run_one_check(rw_bin, rip_bin, repo, cmd, allow_extra_root=False, omits=None):
     text = is_text_cmd(cmd)
     if cmd == "-v":
         c_rw, c_rip = [rw_bin, "-v"], [rip_bin, "-v"]
@@ -497,7 +557,7 @@ def run_one_check(rw_bin, rip_bin, repo, cmd):
     if text:
         reason = check_non_xml_parity(cmd, p_rw.stdout, p_rip.stdout)
     else:
-        reason = check_xml_parity(cmd, p_rw.stdout, p_rip.stdout)
+        reason = check_xml_parity(cmd, p_rw.stdout, p_rip.stdout, allow_extra_root, omits)
     return Outcome(reason, p_rw.stdout, p_rip.stdout, text)
 
 
@@ -544,6 +604,8 @@ def load_ledger():
         if missing:
             errors.append(f"ledger entry {ident} missing {missing}")
             continue
+        if "omits" in entry:
+            errors.extend(omit_declaration_errors(entry))
         if entry["kind"] not in KINDS:
             errors.append(f"ledger entry {ident} has unknown kind {entry['kind']!r}")
         if ident in ids:
@@ -715,7 +777,8 @@ def paged_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots):
 def measured_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots, diff):
     if roots is None:
         return stale_message(entry, "cannot be measured: output not comparable"), None
-    if not diff:
+    declared_omits = bool(entry and entry.get("omits"))
+    if not diff and not declared_omits:
         return stale_message(entry, "no longer diverges; remove it"), None
     if is_paged(roots[0]):
         handled, verdict = paged_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots)
@@ -730,6 +793,8 @@ def judge(rw_bin, rip_bin, repo, cmd, outcome, entry):
     roots = divergence_roots(outcome)
     diff = tag_divergence(*roots) if roots else {}
     if entry is not None and entry["kind"] == "defect":
+        if outcome.reason:
+            return outcome.reason, None
         return defect_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots, diff)
     if outcome.reason and (entry is None or not outcome.reason.startswith("exit code mismatch")):
         return outcome.reason, None
@@ -740,7 +805,10 @@ def judge(rw_bin, rip_bin, repo, cmd, outcome, entry):
 
 
 def check_one(rw_bin, rip_bin, where, cmd, desc, entry):
-    reason, warning = judge(rw_bin, rip_bin, where, cmd, run_one_check(rw_bin, rip_bin, where, cmd), entry)
+    kind_allows_extra = entry is not None and entry["kind"] == "richer"
+    omits = entry.get("omits") if entry is not None else None
+    outcome = run_one_check(rw_bin, rip_bin, where, cmd, kind_allows_extra, omits)
+    reason, warning = judge(rw_bin, rip_bin, where, cmd, outcome, entry)
     if warning is not None:
         WARNINGS.append(warning)
         print(f"::warning::{warning} ({cmd or '(default)'})", file=sys.stderr)

@@ -59,8 +59,8 @@ impl StateContext<'_> {
             .into_iter()
             .filter_map(|(id, is_write)| {
                 let target = self.ingest.sym(id)?;
-                let is_cell =
-                    matches!(target.kind, SymKind::Var | SymKind::Field) && !target.immutable;
+                let is_cell = matches!(target.kind, SymKind::Var | SymKind::Field)
+                    && (!target.immutable || is_write);
                 is_cell.then(|| StateCellAccess {
                     cell_name: view.sym_name(target).to_string(),
                     path: view.sym_path(target).to_string(),

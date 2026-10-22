@@ -1,6 +1,8 @@
 use ripwire_rs::commands::doctor::{
-    DoctorCheck, DoctorReport, classify_fsmonitor, is_cache_blob_name, probe_cache_artifact,
+    DoctorCheck, DoctorReport, binary_path_row, classify_fsmonitor, index_artifact,
+    index_cache_row, index_source, is_cache_blob_name, open_error_state, probe_cache_artifact,
 };
+use std::path::{Path, PathBuf};
 
 fn sample_report() -> DoctorReport {
     DoctorReport {
@@ -40,6 +42,15 @@ fn test_doctor_xml_rows_and_counts() {
 }
 
 #[test]
+fn test_index_source_follows_no_cache_then_cache_flag() {
+    let cache = std::path::Path::new("/tmp/explicit.json");
+    assert_eq!(index_source(false, None), "auto");
+    assert_eq!(index_source(false, Some(cache)), "cache-flag");
+    assert_eq!(index_source(true, None), "disabled");
+    assert_eq!(index_source(true, Some(cache)), "disabled");
+}
+
+#[test]
 fn test_doctor_empty_report_passes_vacuously() {
     let report = DoctorReport {
         at: "HEAD".to_string(),
@@ -50,6 +61,86 @@ fn test_doctor_empty_report_passes_vacuously() {
     report.write_xml(&mut out).unwrap();
     let xml = String::from_utf8(out).unwrap();
     assert!(xml.contains("checks=\"0\" passed=\"0\""));
+}
+
+#[test]
+fn test_binary_path_row_found_different_file_prints_version() {
+    let check = binary_path_row(
+        Some(Path::new("/build/ripwire-rs")),
+        Some(Path::new("/usr/local/bin/ripwire-rs")),
+        false,
+        Some("ripwire-rs 0.6.3".to_string()),
+    );
+    let mut out = Vec::new();
+    check.write_xml(&mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(xml.contains("ok=\"1\""));
+    assert!(xml.contains("which=\"/usr/local/bin/ripwire-rs\""));
+    assert!(xml.contains("which_version=\"ripwire-rs 0.6.3\""));
+    assert!(xml.contains("on_path=\"1\" same_file=\"0\""));
+    assert!(!xml.contains("hint="));
+}
+
+#[test]
+fn test_binary_path_row_same_file_omits_version_even_when_supplied() {
+    let check = binary_path_row(
+        Some(Path::new("/bin/ripwire-rs")),
+        Some(Path::new("/bin/ripwire-rs")),
+        true,
+        Some("ripwire-rs 0.6.3".to_string()),
+    );
+    let mut out = Vec::new();
+    check.write_xml(&mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(!xml.contains("which_version="));
+    assert!(xml.contains("same_file=\"1\""));
+}
+
+#[test]
+fn test_binary_path_row_not_found_fails_and_exports_path_hint() {
+    let check = binary_path_row(Some(Path::new("/opt/bin/ripwire-rs")), None, false, None);
+    let mut out = Vec::new();
+    check.write_xml(&mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(xml.contains("ok=\"0\""));
+    assert!(xml.contains("on_path=\"0\""));
+    assert!(xml.contains("hint=\"export PATH=&quot;/opt/bin:$PATH&quot;\""));
+}
+
+#[test]
+fn test_index_artifact_chooses_cache_file_only_when_cache_is_enabled() {
+    let auto = PathBuf::from("/tmp/auto.json");
+    let cache = Path::new("/tmp/explicit.json");
+    assert_eq!(
+        index_artifact(None, false, auto.clone()),
+        ("auto", auto.clone())
+    );
+    assert_eq!(
+        index_artifact(Some(cache), false, auto.clone()),
+        ("cache-flag", cache.to_path_buf())
+    );
+    assert_eq!(
+        index_artifact(Some(cache), true, auto.clone()),
+        ("disabled", auto)
+    );
+}
+
+#[test]
+fn test_open_error_state_distinguishes_absent_from_unreadable() {
+    assert_eq!(open_error_state(std::io::ErrorKind::NotFound), "absent");
+    assert_eq!(
+        open_error_state(std::io::ErrorKind::PermissionDenied),
+        "unreadable"
+    );
+}
+
+#[test]
+fn test_index_cache_row_corrupt_or_unreadable_fails_the_row() {
+    let path = Path::new("/tmp/a.json");
+    assert!(index_cache_row("auto", path, "ok").ok);
+    assert!(index_cache_row("auto", path, "absent").ok);
+    assert!(!index_cache_row("auto", path, "corrupt").ok);
+    assert!(!index_cache_row("auto", path, "unreadable").ok);
 }
 
 #[test]

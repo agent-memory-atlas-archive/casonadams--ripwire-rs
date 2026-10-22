@@ -15,6 +15,7 @@ pub mod recall;
 pub mod retrieval;
 pub mod safety;
 pub mod search;
+pub mod stray_lines;
 pub mod task_route;
 
 pub trait SourceReader: Sync {

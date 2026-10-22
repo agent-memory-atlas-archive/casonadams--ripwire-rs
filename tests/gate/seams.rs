@@ -97,3 +97,58 @@ fn test_find_integration_seams_budget_fits_groups() {
     let window = rep.page_window().expect("seams report is paged");
     assert_eq!((window.shown, window.total, window.has_more), (1, 2, true));
 }
+
+#[test]
+fn test_seam_keeps_path_qualified_call_from_shared_name_caller() {
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            (
+                "src/alpha/run.rs",
+                Lang::Rust,
+                b"pub fn execute() -> u32 {\n    crate::beta::helper()\n}\n",
+            ),
+            (
+                "src/beta/tool.rs",
+                Lang::Rust,
+                b"pub fn helper() -> u32 {\n    1\n}\n",
+            ),
+        ],
+        &reg,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let rep = find_integration_seams(&ingest, &graph, &interner, PageRequest::default());
+    assert_eq!(rep.groups.len(), 1);
+    assert_eq!(rep.groups[0].from_dir, "src/alpha");
+    assert_eq!(rep.groups[0].to_dir, "src/beta");
+    assert_eq!(rep.groups[0].edges.len(), 1);
+    assert_eq!(rep.groups[0].edges[0].caller, "execute");
+    assert_eq!(rep.groups[0].edges[0].callee, "helper");
+}
+
+#[test]
+fn test_seam_ignores_path_qualified_call_within_one_directory() {
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            (
+                "src/alpha/run.rs",
+                Lang::Rust,
+                b"pub fn execute() -> u32 {\n    crate::alpha::local()\n}\n",
+            ),
+            (
+                "src/alpha/local.rs",
+                Lang::Rust,
+                b"pub fn local() -> u32 {\n    1\n}\n",
+            ),
+        ],
+        &reg,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let rep = find_integration_seams(&ingest, &graph, &interner, PageRequest::default());
+    assert!(rep.groups.is_empty());
+}

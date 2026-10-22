@@ -1,6 +1,7 @@
 pub mod community;
 pub mod csr;
 pub mod mermaid;
+pub mod value_reach;
 pub mod zoom;
 
 pub use csr::CsrMatrix;
@@ -78,6 +79,11 @@ impl Graph {
         self.callee_edges(node).map(|e| (e.to, e.weight))
     }
 
+    /// Outgoing edges that carry call flow. Type-only edges (weight 0) stay navigable through `callee_edges`
+    /// but are not calls, so ranked call views use this.
+    pub fn call_flow_edges(&self, node: NodeId) -> impl Iterator<Item = CalleeEdge> + '_ {
+        self.callee_edges(node).filter(|e| e.weight > 0.0)
+    }
     pub fn callee_edges(&self, node: NodeId) -> impl Iterator<Item = CalleeEdge> + '_ {
         let n = node as usize;
         let start = self.out_offsets[n] as usize;
@@ -206,8 +212,13 @@ impl Graph {
             .edge_accumulators
             .into_iter()
             .map(|((from, to), acc)| {
-                let w = (acc.conf_sum / acc.n_ref as f32) * (acc.n_ref as f32).sqrt();
-                (from, to, w.min(8.0), acc.prov)
+                // Type-only edges stay navigable (callers, uses) but carry no call-flow mass.
+                let w = if acc.calls == 0 {
+                    0.0
+                } else {
+                    ((acc.conf_sum / acc.n_ref as f32) * (acc.n_ref as f32).sqrt()).min(8.0)
+                };
+                (from, to, w, acc.prov)
             })
             .collect();
 

@@ -55,7 +55,6 @@ impl SerializeOptions {
     pub fn allows_inventory_tier(&self) -> bool {
         self.emit_legend
             && !self.no_inventory
-            && !self.metrics
             && self.map_diff_at.is_none()
             && self.rank_by.is_none()
             && self.has_full_pack_budget()
@@ -363,7 +362,7 @@ fn serialize_single_file_bucket(
             break;
         }
         let sym = &ctx.ingest.symbols[sym_id as usize];
-        let callees: Vec<crate::graph::CalleeEdge> = ctx.graph.callee_edges(sym_id).collect();
+        let callees: Vec<crate::graph::CalleeEdge> = ctx.graph.call_flow_edges(sym_id).collect();
         let row_ctx = build_symbol_row_context(sym, sym_id, ctx, &callees, include_pr, metrics);
         write_symbol_row(file_buf, &row_ctx, ctx.interner, &ctx.ingest.symbols)?;
         shown += 1;

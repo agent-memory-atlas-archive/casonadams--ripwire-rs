@@ -297,7 +297,7 @@ fn test_affected_partner_changed_test_keeps_row_and_flags_partner() {
     );
     let xml = report.to_xml_string();
     assert!(xml.contains(
-        "<test p=\"src/commands/test_gate.rs\" partner=\"1\" direct=\"1\" run_unknown=\"1\"/>"
+        "<test p=\"src/commands/test_gate.rs\" partner=\"1\" seed_kind=\"test\" run_unknown=\"1\"/>"
     ));
     assert!(xml.contains("<test p=\"src/gate/test_gate.rs\" partner=\"1\" run_unknown=\"1\"/>"));
 }
@@ -671,4 +671,47 @@ fn test_affected_assertion_script_reaches_subject_without_marking_importers() {
     let paths: Vec<&str> = report.tests.iter().map(|t| t.path.as_str()).collect();
     assert_eq!(paths, ["src/lib/onboarding-flow/cart-pricing.check.ts"]);
     assert!(report.tests[0].is_partner);
+}
+
+#[test]
+fn test_affected_root_names_the_reading_that_seeded_the_walk() {
+    let (ingest, interner) =
+        partner_fixture(&["scripts/lint_rules.py", "scripts/test_lint_rules.py"]);
+    let graph = Graph::build(&ingest, &interner);
+    let by_file = find_affected_tests(&["scripts/lint_rules.py"], &ingest, &graph, &interner);
+    assert_eq!(by_file.seeded_by, "file");
+    assert!(
+        by_file
+            .to_xml_string()
+            .contains(" changed=\"scripts/lint_rules.py\" seeded_by=\"file\"")
+    );
+    let unmatched = find_affected_tests(&["no_such_symbol"], &ingest, &graph, &interner);
+    assert_eq!(unmatched.seeded_by, "none");
+    assert!(unmatched.to_xml_string().contains(" seeded_by=\"none\""));
+}
+
+#[test]
+fn test_affected_reaches_a_test_through_a_static_initializer_read() {
+    let registry = LanguageRegistry::new().unwrap_or_else(|e| panic!("registry: {e:?}"));
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            (
+                "src/cmds/mod.rs",
+                Lang::Rust,
+                b"pub fn options() -> u32 {\n    1\n}\n\npub fn tools() -> u32 {\n    static OWNED: std::sync::LazyLock<u32> = std::sync::LazyLock::new(|| options());\n    *OWNED\n}\n",
+            ),
+            (
+                "tests/cmds.rs",
+                Lang::Rust,
+                b"#[test]\nfn lists_tools() {\n    tools();\n}\n",
+            ),
+        ],
+        &registry,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let report = find_affected_tests(&["options"], &ingest, &graph, &interner);
+    let paths: Vec<&str> = report.tests.iter().map(|t| t.path.as_str()).collect();
+    assert_eq!(paths, ["tests/cmds.rs"]);
 }

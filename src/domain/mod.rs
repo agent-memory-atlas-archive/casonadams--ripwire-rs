@@ -318,6 +318,14 @@ impl Symbol {
         self.sig_end_byte < self.end_byte
     }
 
+    /// A declaration with no body (a trait method signature): its signature runs to the symbol's
+    /// end. A zero span is unknown, not a declaration.
+    #[inline]
+    #[must_use]
+    pub const fn is_bodyless_declaration(&self) -> bool {
+        self.end_byte > 0 && self.sig_end_byte >= self.end_byte
+    }
+
     #[inline]
     #[must_use]
     pub const fn end_line(&self) -> u32 {

@@ -126,6 +126,26 @@ fn test_serialize_xml_inventory_and_entries() {
     assert!(xml.contains("<entry p=\"src/main.rs\" n=\"main\"></entry>"));
     assert!(xml.contains("<ls p=\"src\" n=\"1\" f=\"helper.rs\"/>"));
     assert!(xml.contains("<ls p=\"docs\" n=\"1\"/>"));
+    let metrics_opts = SerializeOptions {
+        top_k: Some(1),
+        emit_legend: true,
+        metrics: true,
+        ..Default::default()
+    };
+    let metrics_xml = serialize_xml_to_string(&ingest, &graph, &pr, &interner, &metrics_opts);
+    assert!(metrics_xml.contains("<inv listed=\"1\" unlisted=\"2\">"));
+    assert!(metrics_xml.contains("<entry p=\"src/main.rs\" n=\"main\"></entry>"));
+    let no_inventory_xml = serialize_xml_to_string(
+        &ingest,
+        &graph,
+        &pr,
+        &interner,
+        &SerializeOptions {
+            no_inventory: true,
+            ..metrics_opts
+        },
+    );
+    assert!(!no_inventory_xml.contains("<inv "));
     let small_budget_xml = serialize_xml_to_string(
         &ingest,
         &graph,

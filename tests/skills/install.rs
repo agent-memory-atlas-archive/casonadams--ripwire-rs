@@ -92,6 +92,18 @@ fn test_scan_content_flags_credential_path_reference() {
 }
 
 #[test]
+fn test_scan_content_ignores_credential_paths_quoted_in_prose_backticks() {
+    let mut findings = Vec::new();
+    scan_content_for_exfil(
+        "SKILL.md",
+        "Check `~/.ssh` and `~/.aws` for keys.\nRun cat ~/.ssh/id_rsa now.",
+        &mut findings,
+    );
+    let hits: Vec<(usize, &str)> = findings.iter().map(|f| (f.line, f.rule)).collect();
+    assert_eq!(hits, vec![(2, "EXFILTRATE:ssh-aws-creds")]);
+}
+
+#[test]
 fn test_scan_content_for_injection_and_evasion() {
     let mut findings = Vec::new();
     scan_content_for_exfil(

@@ -23,6 +23,16 @@ const KINDS: ComplexityKinds = ComplexityKinds {
     logical_ops: &["&&", "||"],
 };
 
+/// Shell builtins: invoked by name, never defined in a script, so not an external surface.
+const SHELL_BUILTINS: &[&str] = &[
+    "alias", "bg", "bind", "break", "builtin", "caller", "cd", "command", "compgen", "complete",
+    "continue", "declare", "dirs", "disown", "echo", "enable", "eval", "exec", "exit", "export",
+    "false", "fc", "fg", "getopts", "hash", "help", "history", "jobs", "let", "local", "logout",
+    "mapfile", "popd", "printf", "pushd", "pwd", "read", "readarray", "readonly", "return", "set",
+    "shift", "shopt", "source", "suspend", "test", "times", "trap", "true", "type", "typeset",
+    "ulimit", "umask", "unalias", "unset", "wait",
+];
+
 const SYNTAX: SyntaxKinds = SyntaxKinds {
     body_blocks: &["compound_statement"],
     body_wrappers: &["parenthesized_expression"],
@@ -42,6 +52,10 @@ impl LanguageSemantics for BashLanguage {
 
     fn tag(&self) -> &'static str {
         "sh"
+    }
+
+    fn std_member_names(&self) -> &'static [&'static str] {
+        SHELL_BUILTINS
     }
 
     fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {

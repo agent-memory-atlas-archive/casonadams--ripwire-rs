@@ -167,6 +167,8 @@ pub struct ResolvedRef {
     pub targets: Vec<NodeId>,
     pub conf_per_target: f32,
     pub prov: EdgeProv,
+    /// A type mention (`RefRole::Type`): navigable as a reference, but no call flow for PageRank.
+    pub type_use: bool,
 }
 
 impl ResolvedRef {
@@ -188,6 +190,7 @@ impl ResolvedRef {
                 EdgeProv::Binding
             },
             targets,
+            type_use: false,
         })
     }
 }
@@ -398,25 +401,23 @@ pub fn index_module_qualifiers(
         .filter(|r| r.role == RefRole::Import)
     {
         let raw = interner.resolve(&r.callee_name);
-        let Some(bound) = r
-            .lang
-            .semantics()
-            .import_binding(raw)
-            .and_then(|(_, bound)| interner.get(bound))
-        else {
-            continue;
-        };
         let Some(importer) = ingest.files.get(r.file_id as usize) else {
             continue;
         };
-        if let Some(target) = crate::languages::resolve_import(
-            r.lang,
-            interner.resolve(&importer.path),
-            raw,
-            &file_index,
-            &ingest.import_aliases,
-        ) {
-            maps[r.file_id as usize].insert(bound, target);
+        let importer_path = interner.resolve(&importer.path);
+        for (target, bound) in r.lang.semantics().import_module_bindings(raw) {
+            let Some(bound) = interner.get(&bound) else {
+                continue;
+            };
+            if let Some(file) = crate::languages::resolve_import(
+                r.lang,
+                importer_path,
+                &target,
+                &file_index,
+                &ingest.import_aliases,
+            ) {
+                maps[r.file_id as usize].insert(bound, file);
+            }
         }
     }
     for symbol in ingest.symbols.iter().filter(|symbol| !symbol.has_body()) {
@@ -786,6 +787,7 @@ pub trait ResolutionLookup {
         match r.role {
             RefRole::Call | RefRole::Macro => true,
             RefRole::Read | RefRole::Write => r.lang.semantics().is_table_read_write_target(),
+            RefRole::Type => r.lang.semantics().type_mentions_are_edges(),
             _ => false,
         }
     }
@@ -795,7 +797,13 @@ pub trait ResolutionLookup {
         if !self.is_call_like_ref(r) {
             return RefOutcome::Ignored;
         }
-        self.classify_target(r)
+        match self.classify_target(r) {
+            RefOutcome::Resolved(mut resolved) => {
+                resolved.type_use = r.role == RefRole::Type;
+                RefOutcome::Resolved(resolved)
+            }
+            other => other,
+        }
     }
 
     /// Targets a binding framework exposes to `caller` code under `name`.
@@ -818,6 +826,7 @@ pub trait ResolutionLookup {
                     targets: vec![target],
                     conf_per_target: 1.0,
                     prov: EdgeProv::Scip,
+                    type_use: false,
                 });
             }
             Some(crate::domain::ScipTarget::External) => return RefOutcome::External,
@@ -964,6 +973,7 @@ pub trait ResolutionLookup {
             targets: real_targets,
             conf_per_target,
             prov,
+            type_use: false,
         })
     }
 }

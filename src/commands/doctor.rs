@@ -14,7 +14,7 @@ const SNIFF_BYTES: u64 = 8000;
 const AUTO_CACHE_PREFIX: &str = "ripwire-rs-cache-";
 const AUTO_CACHE_SUFFIX: &str = ".json";
 
-const DOCTOR_LEGEND: &str = "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. checks=/passed=: rows emitted / rows with ok=1. n=: binary-path, grammars, cache-dir, git, tree-sitter, tracked-binaries, index-cache, git-config-trust, layout. self=/which=: this binary / the same name found on PATH; on_path=0 fails the row and hint= carries the export line; same_file=1: both resolve to one file. loaded=/expected=: distinct compiled-in grammars ABI-compatible with the linked tree-sitter / distinct compiled-in grammars; a shortfall fails the row. dir=: the temp directory holding auto-cache blobs (ripwire-rs-cache-*.json); unwritable fails the row. blobs=/bytes=: blob count / total size; blobs_floor=1 when the scan stopped at 4096. many=1: more than 50 blobs, informational. truncated=1: scan cut short (cache-dir: cap or I/O error; tracked-binaries: over 20000 tracked files, binaries= omitted). volatile=: attributes reading live machine state. repo=0|1: root is inside a git repository; git is read in-process, so a git executable is needed only to clone a remote URL root. history=0|1: HEAD resolves to a commit; head= its 9-hex short sha. core_abi=/newest_grammar_abi=: tree-sitter language ABI / the newest compiled-in grammar ABI. languages=N: distinct compiled-in grammars. tracked=N: index entries under root. binaries=N: tracked files whose first 8000 bytes hold a NUL. non_git=1: no repository; the row passes unscanned. cache_version=: index cache format version. lean_path=: the auto-cache artifact for root. lean=: ok, absent, cache-version (other format), corrupt or unreadable; only the last two fail the row. fsmonitor=: core.fsmonitor: unset, builtin, off or hook (a command git runs). neutralised=1: a hook is configured but never runs: ripwire-rs reads git in-process, and its one git invocation (cloning a remote URL root) passes -c core.fsmonitor=false. filter_drivers=N: filter drivers the repository's own config defines. state=/checked=/units=: C++ struct-layout cross-check; ripwire-rs registers no layout records. -->\n";
+const DOCTOR_LEGEND: &str = "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. checks=/passed=: rows emitted / rows with ok=1. n=: binary-path, grammars, cache-dir, git, tree-sitter, tracked-binaries, index-cache, git-config-trust, layout. self=/which=: this binary / the same name found on PATH; which_version=: the PATH copy's version line, printed only when it is not this binary; on_path=0 fails the row and hint= carries the export line; same_file=1: both resolve to one file. loaded=/expected=: distinct compiled-in grammars ABI-compatible with the linked tree-sitter / distinct compiled-in grammars; a shortfall fails the row. dir=: the temp directory holding auto-cache blobs (ripwire-rs-cache-*.json); unwritable fails the row. blobs=/bytes=: blob count / total size; blobs_floor=1 when the scan stopped at 4096. many=1: more than 50 blobs, informational. truncated=1: scan cut short (cache-dir: cap or I/O error; tracked-binaries: over 20000 tracked files, binaries= omitted). volatile=: attributes reading live machine state. repo=0|1: root is inside a git repository; git is read in-process, so a git executable is needed only to clone a remote URL root. history=0|1: HEAD resolves to a commit; head= its 9-hex short sha. core_abi=/newest_grammar_abi=: tree-sitter language ABI / the newest compiled-in grammar ABI. languages=N: distinct compiled-in grammars. tracked=N: index entries under root. binaries=N: tracked files whose first 8000 bytes hold a NUL. non_git=1: no repository; the row passes unscanned. cache_version=: index cache format version. source=auto|cache-flag|disabled: the index artifact this run reads (per-root auto-cache, the --cache file, or none under --no-cache). lean_path=: the index artifact checked: the --cache file or the auto-cache for root. lean=: ok, absent, cache-version (other format), corrupt or unreadable; only the last two fail the row. fsmonitor=: core.fsmonitor: unset, builtin, off or hook (a command git runs). neutralised=1: a hook is configured but never runs: ripwire-rs reads git in-process, and its one git invocation (cloning a remote URL root) passes -c core.fsmonitor=false. filter_drivers=N: filter drivers the repository's own config defines. state=/checked=/units=: C++ struct-layout cross-check; ripwire-rs registers no layout records. -->\n";
 
 /// One `<c>` row of the doctor report: a named check, its verdict, and measured attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,7 +44,7 @@ impl DoctorCheck {
         self.attr(key, u8::from(value))
     }
 
-    fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
+    pub fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         write!(out, "<c n=\"{}\" ok=\"{}\"", self.name, u8::from(self.ok))?;
         for (key, value) in &self.attrs {
             write!(out, " {key}=\"{}\"", value.xml_escaped())?;
@@ -120,9 +120,9 @@ pub fn probe_cache_artifact<R: Read>(reader: R) -> &'static str {
     }
 }
 
-/// Run every doctor check against `root` and the current process environment.
+/// Run every doctor check against `root`, the `--cache` file when given, and the process environment.
 #[must_use]
-pub fn collect_doctor_report(root: &str) -> DoctorReport {
+pub fn collect_doctor_report(root: &str, cache: Option<&Path>, no_cache: bool) -> DoctorReport {
     use crate::serialize::GitStampExt;
     let repo = gix::discover(root).ok();
     let census = grammar_census();
@@ -136,7 +136,7 @@ pub fn collect_doctor_report(root: &str) -> DoctorReport {
             check_git(repo.as_ref()),
             check_tree_sitter(&census),
             check_tracked_binaries(root, repo.as_ref()),
-            check_index_cache(root),
+            check_index_cache(root, cache, no_cache),
             check_git_config_trust(repo.as_ref()),
             check_layout(),
         ],
@@ -165,20 +165,43 @@ fn check_binary_path() -> DoctorCheck {
     );
     let which = find_on_path(&name);
     let same = matches!((&self_path, &which), (Some(a), Some(b)) if same_file(a, b));
+    let version = which.as_deref().filter(|_| !same).and_then(version_line);
+    binary_path_row(self_path.as_deref(), which.as_deref(), same, version)
+}
+
+/// The binary-path row from gathered facts. `version` is the PATH copy's version line and is only
+/// printed when that copy is a different file from this binary.
+#[must_use]
+pub fn binary_path_row(
+    self_path: Option<&Path>,
+    which: Option<&Path>,
+    same: bool,
+    version: Option<String>,
+) -> DoctorCheck {
     let mut check = DoctorCheck::new("binary-path", which.is_some());
-    if let Some(p) = &self_path {
+    if let Some(p) = self_path {
         check = check.attr("self", p.display());
     }
-    if let Some(p) = &which {
+    if let Some(p) = which {
         check = check.attr("which", p.display());
     }
-    check = check
-        .flag("on_path", which.is_some())
-        .flag("same_file", same);
-    match (&which, self_path.as_deref().and_then(Path::parent)) {
+    if let (Some(_), false, Some(v)) = (which, same, version) {
+        check = check.attr("which_version", v);
+    }
+    check = check.flag("on_path", which.is_some()).flag("same_file", same);
+    match (which, self_path.and_then(Path::parent)) {
         (None, Some(dir)) => check.attr("hint", format!("export PATH=\"{}:$PATH\"", dir.display())),
         _ => check,
     }
+}
+
+/// First line of `path --version`; `None` when the binary does not run.
+fn version_line(path: &Path) -> Option<String> {
+    let out = std::process::Command::new(path).arg("--version").output().ok()?;
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .next()
+        .map(|line| line.trim().to_string())
 }
 
 struct GrammarCensus {
@@ -286,6 +309,7 @@ fn check_git(repo: Option<&gix::Repository>) -> DoctorCheck {
         .and_then(|r| r.head_commit().ok())
         .map(|c| c.id().to_string());
     let check = DoctorCheck::new("git", true)
+        .flag("git", find_on_path("git").is_some())
         .flag("repo", repo.is_some())
         .flag("history", head.is_some());
     match head {
@@ -334,15 +358,51 @@ fn check_tracked_binaries(root: &str, repo: Option<&gix::Repository>) -> DoctorC
     check.flag("non_git", false).flag("truncated", truncated)
 }
 
-fn check_index_cache(root: &str) -> DoctorCheck {
-    let path = crate::cache::auto_cache_path(root);
+/// Which index artifact a run reads: `disabled` under --no-cache, else the `--cache` file, else auto.
+#[must_use]
+pub fn index_source(no_cache: bool, cache: Option<&Path>) -> &'static str {
+    match (no_cache, cache) {
+        (true, _) => "disabled",
+        (false, Some(_)) => "cache-flag",
+        (false, None) => "auto",
+    }
+}
+
+fn check_index_cache(root: &str, cache: Option<&Path>, no_cache: bool) -> DoctorCheck {
+    let (source, path) = index_artifact(cache, no_cache, crate::cache::auto_cache_path(root));
     let state = match std::fs::File::open(&path) {
         Ok(file) => probe_cache_artifact(file),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => "absent",
-        Err(_) => "unreadable",
+        Err(e) => open_error_state(e.kind()),
     };
+    index_cache_row(source, &path, state)
+}
+
+/// The artifact a run reads and its source label: the `--cache` file unless `--no-cache`, else the auto-cache.
+#[must_use]
+pub fn index_artifact(cache: Option<&Path>, no_cache: bool, auto: PathBuf) -> (&'static str, PathBuf) {
+    let path = match cache {
+        Some(file) if !no_cache => file.to_path_buf(),
+        _ => auto,
+    };
+    (index_source(no_cache, cache), path)
+}
+
+/// Probe state for an artifact that could not be opened.
+#[must_use]
+pub fn open_error_state(kind: io::ErrorKind) -> &'static str {
+    if kind == io::ErrorKind::NotFound {
+        "absent"
+    } else {
+        "unreadable"
+    }
+}
+
+/// The index-cache row from the chosen artifact and its probed state.
+#[must_use]
+pub fn index_cache_row(source: &'static str, path: &Path, state: &'static str) -> DoctorCheck {
     DoctorCheck::new("index-cache", !matches!(state, "corrupt" | "unreadable"))
         .attr("cache_version", crate::cache::CACHE_VERSION)
+        .attr("source", source)
         .attr("lean_path", path.display())
         .attr("lean", state)
         .attr("volatile", "lean")
@@ -401,5 +461,6 @@ pub fn render<W: Write>(
     _: &DoctorArgs,
     out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
-    collect_doctor_report(ctx.root).write_xml(out)
+    let cache = ctx.cli.modifiers.cache.as_deref().map(Path::new);
+    collect_doctor_report(ctx.root, cache, ctx.cli.modifiers.no_cache).write_xml(out)
 }

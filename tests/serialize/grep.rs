@@ -76,7 +76,8 @@ fn test_large_budget_shows_every_hit() {
         "hits": hits, "enc": {"f": {"callers": 0, "floor": false, "cx": 1}},
     }));
     assert!(xml.contains("hits=\"5\" shown=\"5\" capped=\"0\" hits_capped=\"0\""));
-    assert_eq!(xml.matches("<hit ").count(), 5);
+    assert_eq!(xml.matches("<hit ").count(), 1);
+    assert_eq!(xml.matches("<at ").count(), 4);
     assert!(xml.contains("hits_capped=\"0\""));
     assert!(xml.contains("complete=\"1\""));
 }
@@ -103,6 +104,20 @@ fn test_identical_sites_merge_into_one_hit_with_at_markers() {
     assert!(xml.contains("<hit l=\"5\" in=\"f\" n=\"3\">"));
     assert_eq!(xml.matches("<at l=\"5\" in=\"f\"/>").count(), 2);
     assert!(xml.contains("hits=\"3\""));
+}
+
+#[test]
+fn test_identical_text_runs_merge_across_lines_keeping_each_enclosing() {
+    let same = |line: u64, enclosing: &str| json!({"path": "a.py", "line": line, "text": "row_bytes(x)", "enclosing": enclosing, "enc_id": 1});
+    let xml = render(&json!({
+        "pattern": "p", "verb": "grep", "literal": true,
+        "hits": [same(5, "f"), same(9, "g"), hit("a.py", 12, "h"), same(20, "f")],
+        "enc": {"f": {"callers": 0, "floor": false, "cx": 1}, "g": {"callers": 0, "floor": false, "cx": 1}},
+    }));
+    assert!(xml.contains("<hit l=\"5\" in=\"f\" n=\"2\">"), "{xml}");
+    assert!(xml.contains("<at l=\"9\" in=\"g\"/>"), "{xml}");
+    assert!(xml.contains("<hit l=\"12\" in=\"h\">"), "{xml}");
+    assert!(xml.contains("<hit l=\"20\" in=\"f\">"), "{xml}");
 }
 
 #[test]

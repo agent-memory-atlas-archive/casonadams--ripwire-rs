@@ -221,10 +221,11 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
         .symbols
         .iter()
         .filter(|sym| {
-            matches!(
-                sym.kind,
-                crate::domain::SymKind::Function | crate::domain::SymKind::Method
-            )
+            !sym.is_bodyless_declaration()
+                && matches!(
+                    sym.kind,
+                    crate::domain::SymKind::Function | crate::domain::SymKind::Method
+                )
         })
         .map(|sym| {
             let path = view.sym_path(sym);

@@ -238,6 +238,11 @@ fn group_exact_clones(candidates: &[BodyTokens]) -> Vec<CloneGroup> {
 
 const TYPE3_MAX_BUCKET: usize = 1024;
 const TYPE3_MAX_TOKENS_FOR_LCS: usize = 4096;
+/// Bodies shorter than this need a stricter Type-3 floor: fluent chains and loops of a few calls share
+/// enough normalized tokens by chance to reach 0.80 between unrelated functions.
+const TYPE3_SHORT_BODY_TOKENS: usize = 60;
+const TYPE3_FLOOR: f64 = 0.80;
+const TYPE3_SHORT_BODY_FLOOR: f64 = 0.85;
 const TYPE3_MAX_PAIRS: usize = 200_000;
 
 fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGroup> {
@@ -251,7 +256,12 @@ fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGrou
     let lcs = compute_lcs_len(a_ids, b_ids);
     let similarity = (2.0 * lcs as f64) / (a_ids.len() + b_ids.len()) as f64;
 
-    if (0.80..1.0).contains(&similarity) {
+    let floor = if len_a.min(len_b) < TYPE3_SHORT_BODY_TOKENS {
+        TYPE3_SHORT_BODY_FLOOR
+    } else {
+        TYPE3_FLOOR
+    };
+    if (floor..1.0).contains(&similarity) {
         let avg_tokens = (len_a + len_b) / 2;
         Some(CloneGroup {
             members: vec![ca.id, cb.id],

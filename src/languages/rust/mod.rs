@@ -314,6 +314,10 @@ impl LanguageSemantics for RustLanguage {
         &["src/lib.rs", "src/main.rs"]
     }
 
+    fn type_mentions_are_edges(&self) -> bool {
+        true
+    }
+
     fn is_callable_field_access(&self, name_node: tree_sitter::Node<'_>) -> bool {
         let kinds: Vec<&str> = std::iter::successors(name_node.parent(), |n| n.parent())
             .take(3)
@@ -348,6 +352,12 @@ impl LanguageSemantics for RustLanguage {
 
     fn symbol_implied_import(&self, kind: SymKind, name: &str) -> Option<String> {
         (kind == SymKind::Section).then(|| format!("self::{name}"))
+    }
+    fn import_module_bindings(&self, raw_target: &str) -> Vec<(String, String)> {
+        use_tree_bindings(strip_import_quotes(raw_target))
+    }
+    fn module_declarations_are_anchors(&self) -> bool {
+        true
     }
     fn resolve_import_target(
         &self,
@@ -392,8 +402,6 @@ const RUST_INTERIOR_MUTABLE_TYPES: &[&str] = &[
     "UnsafeCell",
     "OnceCell",
     "OnceLock",
-    "LazyCell",
-    "LazyLock",
     "Mutex",
     "RwLock",
     "Once",
@@ -535,6 +543,116 @@ fn resolve_rust_use_target(
         }
     }
     resolve_rust_workspace_crate_target(clean, file_index)
+        .or_else(|| resolve_rust_unique_suffix(&segs, file_index))
+}
+
+/// A path led by a crate name the index cannot map (`pkg::commands::x`) resolves to the one indexed file
+/// whose path ends in its module segments after that name. Two candidates, or a std path, resolve to nothing.
+fn resolve_rust_unique_suffix(segs: &[&str], file_index: &HashMap<&str, u32>) -> Option<u32> {
+    let [head, tail @ ..] = segs else {
+        return None;
+    };
+    if matches!(*head, "std" | "core" | "alloc") || tail.is_empty() {
+        return None;
+    }
+    for take in [tail.len(), tail.len() - 1] {
+        if take == 0 {
+            continue;
+        }
+        let module = tail[..take].join("/");
+        let suffixes = [format!("{module}.rs"), format!("{module}/mod.rs")];
+        let mut hits = file_index
+            .iter()
+            .filter(|(path, _)| suffixes.iter().any(|s| path_ends_with_segment(path, s)))
+            .map(|(_, id)| *id);
+        if let Some(first) = hits.next() {
+            return hits.next().is_none().then_some(first);
+        }
+    }
+    None
+}
+
+fn path_ends_with_segment(path: &str, suffix: &str) -> bool {
+    path == suffix || path.ends_with(&format!("/{suffix}"))
+}
+
+/// The `(module path, bound name)` pairs a `use` argument binds: `a::{b, c::d as e, self}` binds `a::b` as
+/// `b`, `a::c::d` as `e` and `a` as `a`. Glob imports bind nothing.
+fn use_tree_bindings(raw: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    expand_use_tree(raw, "", &mut out);
+    out
+}
+
+fn expand_use_tree(tree: &str, prefix: &str, out: &mut Vec<(String, String)>) {
+    let tree = tree.trim();
+    if let Some(open) = tree.find('{') {
+        let head = tree[..open].trim().trim_end_matches("::");
+        let rest = &tree[open + 1..];
+        let inner = rest.trim_end().strip_suffix('}').unwrap_or(rest);
+        let base = if head == "self" {
+            prefix.to_string()
+        } else {
+            join_use_path(prefix, head)
+        };
+        for item in split_top_level_commas(inner) {
+            expand_use_tree(item, &base, out);
+        }
+        return;
+    }
+    let (path, alias) = match tree.split_once(" as ") {
+        Some((path, alias)) => (path.trim(), Some(alias.trim())),
+        None => (tree, None),
+    };
+    if path.is_empty() || path == "*" {
+        return;
+    }
+    let full = if path == "self" {
+        prefix.to_string()
+    } else {
+        join_use_path(prefix, path)
+    };
+    let last = full.rsplit("::").next().unwrap_or_default();
+    let bound = alias.unwrap_or(last);
+    if !full.is_empty() && !bound.is_empty() && bound != "_" {
+        out.push((full.clone(), bound.to_string()));
+    }
+}
+
+fn join_use_path(prefix: &str, path: &str) -> String {
+    let path = match path.strip_prefix("self::") {
+        Some(rest) if !prefix.is_empty() => rest,
+        _ => path,
+    };
+    match (prefix.is_empty(), path.is_empty()) {
+        (_, true) => prefix.to_string(),
+        (true, false) => path.to_string(),
+        (false, false) => format!("{prefix}::{path}"),
+    }
+}
+
+/// Splits a use-group body at its top-level commas (commas inside nested braces stay with their item).
+fn split_top_level_commas(list: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0;
+    for (i, c) in list.char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&list[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&list[start..]);
+    parts
+        .into_iter()
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+        .collect()
 }
 
 fn rust_scope(kind: &str) -> bool {
@@ -1342,6 +1460,15 @@ fn is_self_binding(node: tree_sitter::Node<'_>) -> bool {
         || (node.kind() == "self" && node.parent().is_some_and(|p| p.kind() == "parameter"))
 }
 
+/// The name of a `const` or `static` item. The item is the definition that reads of the name reach, not a
+/// local binding that shadows them, so reads inside its scope stay references to the item.
+fn is_item_name(node: tree_sitter::Node<'_>) -> bool {
+    node.parent().is_some_and(|parent| {
+        matches!(parent.kind(), "const_item" | "static_item")
+            && super::reads::in_field(parent, node, "name")
+    })
+}
+
 fn collect_rust_read_bindings<'a>(
     root: tree_sitter::Node<'_>,
     source: &'a [u8],
@@ -1354,6 +1481,7 @@ fn collect_rust_read_bindings<'a>(
                 bindings.insert("self", func.byte_range(), self_binding_type(&cx, node));
             }
         } else if let Some(range) = rust_binding_range(node)
+            && !is_item_name(node)
             && let Ok(name) = node.utf8_text(source)
         {
             bindings.insert(name, range, binding_type(&cx, node));

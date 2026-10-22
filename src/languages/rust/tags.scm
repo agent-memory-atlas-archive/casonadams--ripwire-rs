@@ -126,6 +126,10 @@
     trait: (generic_type
         type: (scoped_type_identifier
             name: (type_identifier) @name))) @reference.implementation
+; Struct literal `Name { field: v }` constructs the type: a type mention, so the type gets an in-edge from
+; the constructing function (`--callers`, PageRank). Only the struct's own name is captured.
+(struct_expression
+    name: (type_identifier) @name) @reference.type
 (use_declaration
     argument: (_) @import.path)
 

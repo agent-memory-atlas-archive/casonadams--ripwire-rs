@@ -320,7 +320,8 @@ pub fn scan_content_for_exfil(path_str: &str, content: &str, findings: &mut Vec<
     for (idx, line) in content.lines().enumerate() {
         let l = line.trim();
         record_exfil_line(path_str, idx + 1, l, findings);
-        record_credential_line(path_str, idx + 1, l, findings);
+        let prose = strip_balanced_delim(l, '`');
+        record_credential_line(path_str, idx + 1, &prose, findings);
     }
     scan_skill_markdown(path_str, content, findings);
 }

@@ -23,6 +23,7 @@ fn test_graph_simple_chain() {
         EdgeAcc {
             conf_sum: 1.0,
             n_ref: 1,
+            calls: 1,
             prov: EdgeProv::Local,
         },
     );
@@ -31,6 +32,7 @@ fn test_graph_simple_chain() {
         EdgeAcc {
             conf_sum: 1.0,
             n_ref: 1,
+            calls: 1,
             prov: EdgeProv::Local,
         },
     );

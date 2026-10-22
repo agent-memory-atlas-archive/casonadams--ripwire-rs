@@ -28,6 +28,7 @@ pub fn render<W: Write>(
             Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES)
         },
         metrics: true,
+        emit_legend: true,
         ..Default::default()
     };
     crate::serialize::serialize_xml(ctx.ingest, ctx.graph, ctx.pr, ctx.interner, out, &opts)

@@ -75,6 +75,92 @@ fn external_surface_counts_calls_but_excludes_definitions_builtins_and_value_use
 }
 
 #[test]
+fn external_surface_ignores_doc_links_shell_builtins_and_callable_fields() {
+    let (ingest, _, interner) = corpus(&[
+        (
+            "docs/guide.md",
+            Lang::Markdown,
+            b"See [agents](AGENTS_GUIDE.md) and [setup](docs/INSTALL.md).\n",
+        ),
+        ("scripts/run.sh", Lang::Bash, b"cd /tmp\necho ok\ntrap done EXIT\n"),
+        (
+            "src/lib.rs",
+            Lang::Rust,
+            b"struct Hooks { measure: fn() }\nfn run(hooks: &Hooks) {\n    (hooks.measure)();\n    vendor_send();\n}\n",
+        ),
+    ]);
+    let mut out = Vec::new();
+    execute_external_surface_query(
+        "memory",
+        &ingest,
+        &interner,
+        ripwire_rs::serialize::PageRequest::default(),
+        &mut out,
+    )
+    .unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    let names: Vec<&str> = xml
+        .split_once("<external-surface ")
+        .unwrap()
+        .1
+        .split("<x ")
+        .skip(1)
+        .map(|row| attr(row.split_once('>').unwrap().0, "n"))
+        .collect();
+    assert_eq!(names, ["vendor_send"], "{xml}");
+}
+
+#[test]
+fn community_members_exclude_module_scope_owners() {
+    let (ingest, graph, interner) = corpus(&[(
+        "pkg/app.py",
+        Lang::Python,
+        b"def entry():\n    helper()\n\ndef helper():\n    pass\n\nentry()\n",
+    )]);
+    let (_, _, modules) = ripwire_rs::metrics::architecture::build_ranked_communities(
+        None, &ingest, &graph, &interner,
+    );
+    let members: Vec<&str> = modules
+        .iter()
+        .flat_map(|module| module.members.iter().map(|member| member.1))
+        .collect();
+    assert!(members.contains(&"helper"), "{members:?}");
+    assert!(!members.contains(&"<file-scope>"), "{members:?}");
+}
+
+#[test]
+fn rust_struct_literal_is_an_edge_to_the_constructed_type() {
+    let (ingest, graph, interner) = corpus(&[(
+        "src/lib.rs",
+        Lang::Rust,
+        b"struct Hook { run: u8 }\nstruct Unused;\nfn build() -> Hook {\n    Hook { run: 1 }\n}\nfn plain() {}\n",
+    )]);
+    let id_of = |name: &str| {
+        ingest
+            .symbols
+            .iter()
+            .find(|s| interner.resolve(&s.name) == name)
+            .unwrap_or_else(|| panic!("no symbol {name}"))
+            .id
+    };
+    assert!(
+        graph.in_degree(id_of("Hook")) > 0,
+        "literal Hook {{ .. }} must reach the type"
+    );
+    assert_eq!(
+        graph.in_degree(id_of("Unused")),
+        0,
+        "a type never constructed has no edge"
+    );
+    assert_eq!(graph.in_degree(id_of("plain")), 0);
+    let build = id_of("build");
+    assert!(graph.callee_edges(build).any(|e| e.to == id_of("Hook")));
+    assert!(
+        graph.call_flow_edges(build).all(|e| e.to != id_of("Hook")),
+        "type use is not call flow"
+    );
+}
+#[test]
 fn community_anchor_prefers_production_code_then_substantial_callable() {
     let (ingest, _, interner) = corpus(&[
         (

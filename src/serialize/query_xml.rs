@@ -337,14 +337,16 @@ fn write_grep_hit<W: Write>(out: &mut W, run: &[&Value]) -> io::Result<()> {
     write_grep_context(out, "b", h["before"].as_array())?;
     crate::serialize::write_cdata(out, h.str_or("text", ""))?;
     write_grep_context(out, "a", h["after"].as_array())?;
-    for _ in &run[1..] {
-        write!(out, "<at l=\"{line}\"{enc}/>")?;
+    for repeat in &run[1..] {
+        let repeat_line = repeat.u64_or("line", 1);
+        write!(out, "<at l=\"{repeat_line}\"{}/>", grep_enc_attr(repeat))?;
     }
     out.write_all(b"</hit>")
 }
 
-fn same_site(a: &Value, b: &Value) -> bool {
-    a.str_any(&["file", "path"], "") == b.str_any(&["file", "path"], "") && a["line"] == b["line"]
+fn same_run_text(a: &Value, b: &Value) -> bool {
+    a.str_any(&["file", "path"], "") == b.str_any(&["file", "path"], "")
+        && a.str_or("text", "") == b.str_or("text", "")
 }
 
 fn write_grep_rows<W: Write>(out: &mut W, rows: &[Value], merge: bool) -> io::Result<()> {
@@ -354,7 +356,10 @@ fn write_grep_rows<W: Write>(out: &mut W, rows: &[Value], merge: bool) -> io::Re
         write!(out, "<f p=\"{}\">", path.xml_escaped())?;
         while i < rows.len() && rows[i].str_any(&["file", "path"], "") == path {
             let mut run = vec![&rows[i]];
-            while merge && i + run.len() < rows.len() && same_site(&rows[i], &rows[i + run.len()]) {
+            while merge
+                && i + run.len() < rows.len()
+                && same_run_text(&rows[i], &rows[i + run.len()])
+            {
                 run.push(&rows[i + run.len()]);
             }
             i += run.len();

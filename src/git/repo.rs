@@ -414,18 +414,32 @@ fn branch_merge_base(
     Some((base, tip))
 }
 
-fn ahead_count(repo: &gix::Repository, base: gix::ObjectId, tip: gix::ObjectId) -> Option<usize> {
-    repo.rev_walk([tip])
-        .with_hidden([base])
-        .all()
-        .ok()
-        .map(|walk| walk.filter(Result::is_ok).count())
+/// Merge base of `HEAD` and `branch`, or `None` when they share no history.
+#[must_use]
+pub fn merge_base_id(repo: &gix::Repository, branch: &str) -> Option<gix::ObjectId> {
+    branch_merge_base(repo, branch).map(|(base, _)| base)
 }
 
-/// Merge base of `HEAD` and `branch` plus the number of commits only `branch` has (`base..branch`).
+/// Object id that `rev` resolves to, or `None` when it does not resolve.
 #[must_use]
-pub fn unmerged_commits(repo: &gix::Repository, branch: &str) -> Option<(String, usize)> {
-    let (base, tip) = branch_merge_base(repo, branch)?;
-    let ahead = ahead_count(repo, base, tip)?;
-    Some((short_id(base), ahead))
+pub fn rev_id(repo: &gix::Repository, rev: &str) -> Option<gix::ObjectId> {
+    repo.rev_parse_single(rev).ok().map(gix::Id::detach)
+}
+
+/// Blob oids of `rev`'s tree keyed by path; empty when `rev` does not resolve.
+#[must_use]
+pub fn path_blobs(
+    repo: &gix::Repository,
+    rev: &str,
+) -> std::collections::BTreeMap<String, gix::ObjectId> {
+    sorted_blobs(repo, rev, "").into_iter().collect()
+}
+
+/// Text of a blob for line comparison; empty when the blob is binary or unreadable.
+#[must_use]
+pub fn blob_text(repo: &gix::Repository, oid: gix::ObjectId) -> String {
+    match repo.find_blob(oid) {
+        Ok(blob) if !is_binary(&blob.data) => String::from_utf8_lossy(&blob.data).into_owned(),
+        _ => String::new(),
+    }
 }

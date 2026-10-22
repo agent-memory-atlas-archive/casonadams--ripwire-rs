@@ -495,21 +495,52 @@ impl crate::serialize::XmlReport for StrayContentReport<'_> {
         Ok(())
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        if let Some(branches) = self.val["branches"].as_array() {
-            for b in branches {
-                let name = b.str_any(&["name", "branch"], "").xml_escaped();
-                let base = b.str_or("base", "").xml_escaped();
-                let verdict = b.str_or("verdict", "unmerged").xml_escaped();
-                let stray = b.u64_any(&["stray", "unmerged_commits"], 0);
+        let Some(branches) = self.val["branches"].as_array() else {
+            return Ok(());
+        };
+        for b in branches {
+            let name = b.str_any(&["name", "branch"], "").xml_escaped();
+            let tip = b.str_or("tip", "").xml_escaped();
+            let date = b.str_or("date", "").xml_escaped();
+            let base = b.str_or("base", "").xml_escaped();
+            let verdict = b.str_or("verdict", "unmerged").xml_escaped();
+            let stray = b.u64_or("stray", 0);
+            let superseded = b.u64_or("superseded", 0);
+            let files = b["files"].as_array().map_or(&[][..], Vec::as_slice);
+            writeln!(
+                out,
+                "  <ref name=\"{name}\" tip=\"{tip}\" date=\"{date}\" base=\"{base}\" ok=\"1\" v=\"{verdict}\" stray=\"{stray}\" files=\"{}\" superseded=\"{superseded}\">",
+                files.len()
+            )?;
+            for f in files.iter().take(STRAY_FILE_ROWS) {
                 writeln!(
                     out,
-                    "  <ref name=\"{name}\" ok=\"1\" v=\"{verdict}\" base=\"{base}\" stray=\"{stray}\"/>"
+                    "    <file p=\"{}\" v=\"{}\" stray=\"{}\" authored=\"{}\" del=\"{}\" redone=\"{}\" sim=\"{:.2}\" head-touched=\"{}\"/>",
+                    f.str_or("p", "").xml_escaped(),
+                    f.str_or("verdict", "unmerged").xml_escaped(),
+                    f.u64_or("stray", 0),
+                    f.u64_or("authored", 0),
+                    f.u64_or("del", 0),
+                    f.u64_or("redone", 0),
+                    f["sim"].as_f64().unwrap_or(0.0),
+                    u8::from(f["head_touched"].as_bool() == Some(true)),
                 )?;
             }
+            if files.len() > STRAY_FILE_ROWS {
+                writeln!(
+                    out,
+                    "    <more files=\"{}\"/>",
+                    files.len() - STRAY_FILE_ROWS
+                )?;
+            }
+            writeln!(out, "  </ref>")?;
         }
         Ok(())
     }
 }
+
+/// File rows listed per ref in `--stray-content`; the rest are counted by `<more>`.
+const STRAY_FILE_ROWS: usize = 12;
 
 pub fn serialize_stray_content_xml<W: Write>(val: &Value, out: &mut W) -> io::Result<()> {
     use crate::serialize::XmlReport;

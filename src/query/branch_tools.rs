@@ -1,7 +1,8 @@
 use crate::domain::{IngestResult, Interner};
+use crate::query::stray_lines::{branch_verdict, classify_file};
 use crate::query::{FileSources, SourceReader};
 use serde_json::{Value, json};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 /// Execute `owners` tool: git commit author ownership per file.
 fn record_commit_authors(
@@ -514,83 +515,156 @@ fn whereis_report(
     })
 }
 
-pub fn inspect_branch_stray(
+/// Per-branch stray report: merge-base relation, verdict, and per-file evidence sorted by stray.
+fn branch_stray_report(
     repo: &gix::Repository,
     branch: &str,
-    head_ref: &str,
-) -> Option<(String, Value)> {
-    if branch.is_empty() || branch == "HEAD" || branch == head_ref {
-        return None;
-    }
-    branch_stray_from_facts(branch, crate::git::repo::unmerged_commits(repo, branch))
-}
-
-pub fn branch_stray_from_facts(
-    branch: &str,
-    relation: Option<(String, usize)>,
-) -> Option<(String, Value)> {
-    let Some((short_base, unmerged)) = relation else {
-        return Some(("unknown".to_string(), json!({})));
-    };
-    if unmerged > 0 {
-        Some((
-            "unmerged".to_string(),
-            json!({
-                "name": branch,
-                "branch": branch,
-                "ok": true,
-                "verdict": "unmerged",
-                "base": short_base,
-                "stray": unmerged
-            }),
-        ))
-    } else {
-        Some(("merged".to_string(), json!({})))
-    }
-}
-
-pub fn gather_branch_stray_from_facts<'a, I>(
-    head_ref: &str,
-    branches: I,
-) -> (usize, usize, usize, usize, Vec<Value>)
-where
-    I: IntoIterator<Item = (&'a str, Option<(String, usize)>)>,
-{
-    let mut refs_count = 0usize;
-    let mut unmerged = 0usize;
-    let mut merged = 0usize;
-    let mut unknown = 0usize;
-    let mut branch_vals = Vec::new();
-    for (branch, relation) in branches {
-        if branch.is_empty() || branch == "HEAD" || branch == head_ref {
+    head_blobs: &BTreeMap<String, gix::ObjectId>,
+    blobs: &mut HashSet<gix::ObjectId>,
+) -> Option<Value> {
+    let base = crate::git::repo::merge_base_id(repo, branch)?;
+    let base_blobs = crate::git::repo::path_blobs(repo, &base.to_hex().to_string());
+    let tip_blobs = crate::git::repo::path_blobs(repo, branch);
+    let mut files = Vec::new();
+    for (path, &tip_oid) in &tip_blobs {
+        let base_oid = base_blobs.get(path).copied();
+        if base_oid == Some(tip_oid) {
             continue;
         }
-        if let Some((verdict, val)) = branch_stray_from_facts(branch, relation) {
-            refs_count += 1;
-            match verdict.as_str() {
-                "unmerged" => {
-                    unmerged += 1;
-                    branch_vals.push(val);
-                }
-                "merged" => merged += 1,
-                _ => unknown += 1,
-            }
+        let head_oid = head_blobs.get(path).copied();
+        blobs.extend([Some(tip_oid), base_oid, head_oid].into_iter().flatten());
+        let text = |oid: Option<gix::ObjectId>| {
+            oid.map_or_else(String::new, |o| crate::git::repo::blob_text(repo, o))
+        };
+        let stat = classify_file(
+            &text(base_oid),
+            &text(Some(tip_oid)),
+            &text(head_oid),
+            head_oid != base_oid,
+        );
+        if stat.stray > 0 {
+            files.push((path.clone(), stat));
         }
     }
-    (refs_count, unmerged, merged, unknown, branch_vals)
+    files.sort_by(|a, b| b.1.stray.cmp(&a.1.stray).then_with(|| a.0.cmp(&b.0)));
+    let stray: usize = files.iter().map(|(_, f)| f.stray).sum();
+    let superseded: usize = files
+        .iter()
+        .filter(|(_, f)| f.superseded)
+        .map(|(_, f)| f.stray)
+        .sum();
+    let verdict = branch_verdict(stray, superseded);
+    let (tip, date) = crate::git::repo::commit_stamp(repo, branch).unwrap_or_default();
+    let file_rows: Vec<Value> = files
+        .iter()
+        .map(|(path, f)| {
+            json!({
+                "p": path,
+                "verdict": f.verdict(),
+                "stray": f.stray,
+                "authored": f.authored,
+                "del": f.del,
+                "redone": f.redone,
+                "sim": f.sim,
+                "head_touched": f.head_touched,
+            })
+        })
+        .collect();
+    Some(json!({
+        "name": branch,
+        "tip": tip,
+        "date": date,
+        "base": crate::git::repo::short_id(base),
+        "verdict": verdict.as_str(),
+        "stray": stray,
+        "superseded": superseded,
+        "files": file_rows,
+    }))
 }
 
-fn gather_branch_stray(
-    repo: &gix::Repository,
+/// Counts of branch verdicts across one `--stray-content` sweep.
+#[derive(Default)]
+struct StrayTally {
+    refs: usize,
+    unmerged: usize,
+    superseded: usize,
+    merged: usize,
+    unknown: usize,
+    branches: Vec<Value>,
+}
+
+impl StrayTally {
+    fn add(&mut self, report: Option<Value>) {
+        self.refs += 1;
+        let Some(report) = report else {
+            self.unknown += 1;
+            return;
+        };
+        match report["verdict"].as_str() {
+            Some("superseded") => self.superseded += 1,
+            Some("merged") => self.merged += 1,
+            _ => self.unmerged += 1,
+        }
+        if report["stray"].as_u64() != Some(0) {
+            self.branches.push(report);
+        }
+    }
+}
+
+/// Whether `branch` is a divergent ref to scan: not HEAD, not the checked-out branch, and not
+/// sitting at HEAD's commit (that ref is the live line itself).
+#[must_use]
+pub fn is_stray_candidate<T: PartialEq>(
+    branch: &str,
     head_ref: &str,
-) -> (usize, usize, usize, usize, Vec<Value>) {
-    let branches = crate::git::repo::local_branches(repo);
-    gather_branch_stray_from_facts(
-        head_ref,
-        branches
-            .iter()
-            .map(|b| (b.as_str(), crate::git::repo::unmerged_commits(repo, b))),
-    )
+    branch_tip: Option<T>,
+    head_commit: Option<T>,
+) -> bool {
+    !(branch.is_empty() || branch == "HEAD" || branch == head_ref) && branch_tip != head_commit
+}
+
+/// `--stray-content` JSON from per-ref reports. `reports` holds one entry per scanned ref, `None`
+/// for a ref that could not be analysed; `blobs` counts the distinct blobs read.
+#[must_use]
+pub fn stray_content_value(
+    at: String,
+    head_sha: String,
+    head_ref: String,
+    blobs: usize,
+    reports: Vec<Option<Value>>,
+) -> Value {
+    let mut tally = StrayTally::default();
+    for report in reports {
+        tally.add(report);
+    }
+    json!({
+        "head": head_sha,
+        "head_ref": head_ref,
+        "refs": tally.refs,
+        "blobs": blobs,
+        "unmerged": tally.unmerged,
+        "superseded": tally.superseded,
+        "merged": tally.merged,
+        "unknown": tally.unknown,
+        "at": at,
+        "branches": tally.branches
+    })
+}
+
+/// Per-ref stray reports and the distinct blob count, gathered from the repository.
+fn gather_stray_reports(repo: &gix::Repository, head_ref: &str) -> (Vec<Option<Value>>, usize) {
+    let head_blobs = crate::git::repo::path_blobs(repo, "HEAD");
+    let head_commit = crate::git::repo::rev_id(repo, "HEAD");
+    let mut blobs = HashSet::new();
+    let reports = crate::git::repo::local_branches(repo)
+        .into_iter()
+        .filter(|branch| {
+            let tip = crate::git::repo::rev_id(repo, branch);
+            is_stray_candidate(branch, head_ref, tip, head_commit)
+        })
+        .map(|branch| branch_stray_report(repo, &branch, &head_blobs, &mut blobs))
+        .collect();
+    (reports, blobs.len())
 }
 
 /// Execute `stray_content` tool.
@@ -605,20 +679,8 @@ pub fn call_stray_content(root: &str) -> Value {
     let head_ref = repo
         .as_ref()
         .map_or_else(|| "HEAD".to_string(), crate::git::repo::head_ref);
-    let (refs_count, unmerged, merged, unknown, branches) =
-        repo.as_ref().map_or((0, 0, 0, 0, Vec::new()), |r| {
-            gather_branch_stray(r, &head_ref)
-        });
-    json!({
-        "head": head_sha,
-        "head_ref": head_ref,
-        "refs": refs_count,
-        "blobs": 0,
-        "unmerged": unmerged,
-        "superseded": 0,
-        "merged": merged,
-        "unknown": unknown,
-        "at": at_stamp,
-        "branches": branches
-    })
+    let (reports, blobs) = repo
+        .as_ref()
+        .map_or_else(|| (Vec::new(), 0), |r| gather_stray_reports(r, &head_ref));
+    stray_content_value(at_stamp, head_sha, head_ref, blobs, reports)
 }

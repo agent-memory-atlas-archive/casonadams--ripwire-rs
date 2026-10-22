@@ -25,7 +25,7 @@
 - Token-level normalization stripping comments, formatting, and identifier names.
 - Type-1: Exact token matching via 64-bit rolling hash.
 - Type-2: Parameter and identifier renaming normalization.
-- Type-3: Near-miss duplicate detection using $k$-gram Jaccard prefiltering ($k=5$) and Longest Common Subsequence (LCS).
+- Type-3: Near-miss duplicate detection using $k$-gram Jaccard prefiltering ($k=5$) and Longest Common Subsequence (LCS). Similarity floor 0.80, raised to 0.85 when the shorter body has fewer than 60 normalized tokens (short chains share tokens by chance).
 - Idiom Demotion: Demotes builder chains, threshold ladders, and switch tables to prevent false positives.
 
 ## 5. ARISE Intra-Procedural Slicing

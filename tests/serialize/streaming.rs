@@ -293,6 +293,28 @@ fn test_query_xml_retrieval_and_git() {
 }
 
 #[test]
+fn test_stray_content_xml_lists_capped_file_rows_with_more_count() {
+    let files: Vec<serde_json::Value> = (0..14)
+        .map(|i| {
+            json!({"p": format!("src/f{i:02}.rs"), "verdict": "unmerged", "stray": 14 - i,
+                   "authored": 20, "del": 0, "redone": 0, "sim": 0.3, "head_touched": true})
+        })
+        .collect();
+    let val = json!({
+        "branches": [{"name": "feature", "tip": "abc123", "date": "2026-10-22",
+                      "base": "base1", "verdict": "unmerged", "stray": 105,
+                      "superseded": 0, "files": files}]
+    });
+    let mut buf = Vec::new();
+    serialize_stray_content_xml(&val, &mut buf).unwrap();
+    let xml = String::from_utf8_lossy(&buf);
+    assert!(xml.contains("<ref name=\"feature\" tip=\"abc123\" date=\"2026-10-22\" base=\"base1\" ok=\"1\" v=\"unmerged\" stray=\"105\" files=\"14\" superseded=\"0\">"));
+    assert_eq!(xml.matches("<file ").count(), 12);
+    assert!(xml.contains("<more files=\"2\"/>"));
+    assert!(xml.contains("sim=\"0.30\" head-touched=\"1\""));
+}
+
+#[test]
 fn test_query_xml_detail_ladder() {
     let mut buf = Vec::new();
     let interner = Interner::new();

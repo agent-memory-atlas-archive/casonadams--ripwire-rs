@@ -95,8 +95,13 @@ pub trait CorpusView<'a> {
                 queue.push_back(sym.id);
             }
         }
+        let value = crate::graph::value_reach::ValueReach::build(ingest);
         while let Some(curr) = queue.pop_front() {
-            for (callee, _) in graph.callees(curr) {
+            for callee in graph
+                .callees(curr)
+                .map(|(c, _)| c)
+                .chain(value.targets(curr))
+            {
                 let idx = callee as usize;
                 if idx < n && !reached[idx] {
                     reached[idx] = true;
