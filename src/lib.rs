@@ -35,8 +35,8 @@ pub use gate::{
     AffectedReport, AffectedTest, CallerCheckResult, ContractStatus, DEFAULT_BASELINE_FILE,
     EditCheckReport, IncompatibleCallSite, QualityDeltaReport, QualityRegression, QualitySnapshot,
     SignatureContract, check_symbol_contract, compare_contracts, compute_quality_delta,
-    compute_snapshot, evaluate_quality_delta, find_affected_tests, is_test_path,
-    load_head_symbol_contract, read_baseline_file, write_baseline_file,
+    compute_snapshot, evaluate_quality_delta, find_affected_tests, find_affected_tests_for_symbols,
+    is_test_path, load_head_symbol_contract, read_baseline_file, write_baseline_file,
 };
 pub use git::cochange::{
     CoPair, CoPartner, CochangeOptions, StaticCouplingMap, check_pair_dependency_capability,

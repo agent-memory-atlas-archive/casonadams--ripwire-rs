@@ -247,6 +247,32 @@ fn write_pack_task_sigs_and_collect<'a, W: Write>(
     Ok((bodies, changed_paths, total_body_candidates))
 }
 
+/// Nodes of the ranked bundle symbols, matched by name, file, and line, so test candidates follow
+/// the task surface rather than every symbol in the files it touches.
+fn pack_seed_nodes(
+    syms: &[serde_json::Value],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> Vec<crate::domain::NodeId> {
+    if syms.is_empty() {
+        return ingest.symbols.first().map(|s| s.id).into_iter().collect();
+    }
+    syms.iter()
+        .flat_map(|it| {
+            let name = it["name"].as_str().unwrap_or("");
+            let path = it["path"].as_str().unwrap_or("");
+            let line = it["line"].as_u64().unwrap_or(1);
+            find_symbols_by_name(name, ingest, interner)
+                .into_iter()
+                .filter(move |&id| {
+                    ingest.sym(id).is_some_and(|s| {
+                        u64::from(s.line) == line && ingest.sym_file_path(s, interner) == path
+                    })
+                })
+        })
+        .collect()
+}
+
 struct PackRenderEnv<'a> {
     task: &'a str,
     root: &'a str,
@@ -297,7 +323,9 @@ fn write_pack_task_ctx<W: Write>(
     let (bodies, changed_paths, total_bodies) =
         write_pack_task_sigs_and_collect(syms, env.ingest, env.interner, &mut sigs_buf)?;
     let (top_caller_nodes, surface) = collect_pack_surface_and_callers(env, syms);
-    let mut aff = crate::gate::affected::find_affected_tests(
+    let seeds = pack_seed_nodes(syms, env.ingest, env.interner);
+    let mut aff = crate::gate::affected::find_affected_tests_for_symbols(
+        &seeds,
         &changed_paths,
         env.ingest,
         env.graph,

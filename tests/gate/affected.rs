@@ -1,6 +1,7 @@
 use ripwire_rs::{
-    FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
-    ToXmlString, find_affected_tests, is_test_path,
+    FileInfo, Graph, IngestResult, Interner, Lang, LanguageRegistry, RefRole, Reference, SymKind,
+    Symbol, ToXmlString, find_affected_tests, find_affected_tests_for_symbols,
+    ingest_in_memory_files, is_test_path,
 };
 
 #[test]
@@ -530,5 +531,56 @@ fn test_test_gate_rows_fold_like_upstream() {
     assert!(
         xml.contains("<t p=\"src/gate/test_gate.rs\" partner=\"1\" run_unknown=\"1\"/>"),
         "{xml}"
+    );
+}
+
+#[test]
+fn test_pack_task_seeds_follow_ranked_symbols_not_their_whole_file() {
+    let registry = LanguageRegistry::new().unwrap_or_else(|e| panic!("registry: {e:?}"));
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            (
+                "src/query/search.rs",
+                Lang::Rust,
+                b"pub fn ranked_search() -> u32 {\n    1\n}\n\npub fn unrelated_helper() -> u32 {\n    2\n}\n".as_slice(),
+            ),
+            (
+                "tests/alpha/uses_ranked.rs",
+                Lang::Rust,
+                b"fn test_ranked() {\n    ranked_search();\n}\n".as_slice(),
+            ),
+            (
+                "tests/beta/uses_helper.rs",
+                Lang::Rust,
+                b"fn test_helper() {\n    unrelated_helper();\n}\n".as_slice(),
+            ),
+        ],
+        &registry,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let ranked = ingest
+        .symbols
+        .iter()
+        .find(|s| interner.resolve(&s.name) == "ranked_search")
+        .unwrap_or_else(|| panic!("ranked_search symbol"))
+        .id;
+
+    let scoped = find_affected_tests_for_symbols(
+        &[ranked],
+        &["src/query/search.rs"],
+        &ingest,
+        &graph,
+        &interner,
+    );
+    let scoped_paths: Vec<&str> = scoped.tests.iter().map(|t| t.path.as_str()).collect();
+    assert_eq!(scoped_paths, ["tests/alpha/uses_ranked.rs"]);
+
+    let whole_file = find_affected_tests(&["src/query/search.rs"], &ingest, &graph, &interner);
+    let whole_paths: Vec<&str> = whole_file.tests.iter().map(|t| t.path.as_str()).collect();
+    assert_eq!(
+        whole_paths,
+        ["tests/alpha/uses_ranked.rs", "tests/beta/uses_helper.rs"]
     );
 }

@@ -190,28 +190,38 @@ fn push_unique(list: &mut Vec<String>, path: &str) {
     }
 }
 
+fn classify_file_seed(
+    f: &crate::domain::FileInfo,
+    path_str: &str,
+    ingest: &IngestResult,
+    seeds: &mut SeedResolution,
+) {
+    if is_test_path(path_str) {
+        if ingest.symbols.iter().any(|s| s.file_id == f.id) {
+            push_unique(&mut seeds.seed_test_files, path_str);
+        }
+    } else {
+        // A changed source file names partner tests even with no symbols.
+        push_unique(&mut seeds.seed_source_files, path_str);
+    }
+}
+
 fn match_file_seeds(
     f: &crate::domain::FileInfo,
     path_str: &str,
     ingest: &IngestResult,
     seeds: &mut SeedResolution,
 ) {
-    let has_symbols = ingest.symbols.iter().any(|s| s.file_id == f.id);
-    if is_test_path(path_str) {
-        if has_symbols {
-            push_unique(&mut seeds.seed_test_files, path_str);
-        }
-        return;
+    classify_file_seed(f, path_str, ingest, seeds);
+    if !is_test_path(path_str) {
+        seeds.seed_nodes.extend(
+            ingest
+                .symbols
+                .iter()
+                .filter(|s| s.file_id == f.id)
+                .map(|s| s.id),
+        );
     }
-    // A changed source file names partner tests even with no symbols; only symbols seed the graph.
-    push_unique(&mut seeds.seed_source_files, path_str);
-    seeds.seed_nodes.extend(
-        ingest
-            .symbols
-            .iter()
-            .filter(|s| s.file_id == f.id)
-            .map(|s| s.id),
-    );
 }
 
 fn match_symbol_seeds(
@@ -296,10 +306,43 @@ pub fn find_affected_tests(
         seed_test_files: Vec::new(),
         seed_source_files: Vec::new(),
     };
-
     for &spec in changed_specs {
         resolve_spec_seeds(spec.trim(), ingest, interner, &mut seeds);
     }
+    affected_from_seeds(seeds, changed_specs.join(","), graph, ingest, interner)
+}
+
+/// Find test files that reach the given symbols by reverse calls. Changed paths only name partner
+/// and direct tests; they do not widen the seed set to every symbol in those files.
+#[must_use]
+pub fn find_affected_tests_for_symbols(
+    symbols: &[NodeId],
+    changed_paths: &[&str],
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> AffectedReport {
+    let mut seeds = SeedResolution {
+        seed_nodes: symbols.to_vec(),
+        seed_test_files: Vec::new(),
+        seed_source_files: Vec::new(),
+    };
+    for f in &ingest.files {
+        let path_str = interner.resolve(&f.path);
+        if changed_paths.contains(&path_str) {
+            classify_file_seed(f, path_str, ingest, &mut seeds);
+        }
+    }
+    affected_from_seeds(seeds, changed_paths.join(","), graph, ingest, interner)
+}
+
+fn affected_from_seeds(
+    mut seeds: SeedResolution,
+    changed_spec: String,
+    graph: &Graph,
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> AffectedReport {
     seeds.seed_nodes.sort_unstable();
     seeds.seed_nodes.dedup();
 
@@ -347,7 +390,7 @@ pub fn find_affected_tests(
     impacted.sort_unstable();
 
     AffectedReport {
-        changed_spec: changed_specs.join(","),
+        changed_spec,
         seed_count: seeds.seed_nodes.len(),
         seed_test_files: seeds.seed_test_files,
         total_tests: tests.len(),

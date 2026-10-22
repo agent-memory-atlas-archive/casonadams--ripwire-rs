@@ -11,7 +11,7 @@
 # defect_budget must equal the number of defect entries: a new defect fails, a fixed one must lower it.
 # An entry with a [divergence.files] table runs against that fixture (written to a temp dir) instead of the tree.
 
-defect_budget = 23
+defect_budget = 22
 
 [[divergence]]
 id = "partner-unindexed-languages"
@@ -356,14 +356,6 @@ case = ""
 kind = "defect"
 why = "Python module globals in scripts/*.py (Outcome, WARNINGS) are reported as mutable cells that upstream does not report; the Rust fix does not cover Python."
 evidence = "measured on a2e114c: cell n=Outcome absent from upstream's full set; owner: unassigned"
-
-[[divergence]]
-id = "pack-task-search-rows"
-command = "--pack-task=search"
-case = ""
-kind = "defect"
-why = "44 test rows are seeded from whole files, so they are false positives; fixed on lp/packtask."
-evidence = "measured on a2e114c: rw <t>=44 rip <t>=0; owner: lp/packtask 3810fbe"
 
 [[divergence]]
 id = "stray-content-superseded"
