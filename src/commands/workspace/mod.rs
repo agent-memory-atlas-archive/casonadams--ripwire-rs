@@ -135,13 +135,14 @@ impl CliVerb for WorkspaceArgs {
             return crate::serialize::serialize_stray_content_xml(&val, out);
         }
         if let Some((spec, op)) = self.active_edit_op() {
+            let safety = crate::commands::safety::args(ctx.cli);
             execute_edit_op_with_options(
                 EditCliOptions {
                     root: ctx.root,
                     spec,
                     op,
-                    payload_override: ctx.cli.safety.edit_payload.as_deref(),
-                    dry_run: ctx.cli.safety.dry_run,
+                    payload_override: safety.edit_payload.as_deref(),
+                    dry_run: safety.dry_run,
                 },
                 ctx.ingest,
                 ctx.interner,

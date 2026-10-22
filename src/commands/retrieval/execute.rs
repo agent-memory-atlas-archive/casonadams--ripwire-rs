@@ -81,7 +81,7 @@ fn write_help_task_xml<W: Write>(
         ingest,
         interner,
         gix::open(root).is_ok(),
-        !crate::cli::safety::get_working_tree_changed_files(root).is_empty(),
+        !crate::commands::safety::get_working_tree_changed_files(root).is_empty(),
         out,
     )
 }

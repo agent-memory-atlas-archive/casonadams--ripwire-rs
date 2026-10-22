@@ -35,6 +35,7 @@ register_commands! {
     retrieval::RETRIEVAL,
     workspace::WORKSPACE,
     detail::DETAIL,
+    safety::SAFETY,
 }
 
 /// The CLI with every plugin's flags added.

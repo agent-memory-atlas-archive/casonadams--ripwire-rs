@@ -129,11 +129,11 @@ fn community_summary_partitions_isolated_documents_declarations_and_bodies() {
         graph: &graph,
         interner: &interner,
     };
-    let args = ripwire_rs::cli::TopSafetyArgs {
+    let args = ripwire_rs::commands::safety::SafetyArgs {
         partition: Some(Some(2)),
         ..Default::default()
     };
-    ripwire_rs::cli::safety::execute_safety_dispatch(&args, &ctx, &mut out).unwrap();
+    ripwire_rs::commands::safety::execute_safety_dispatch(&args, &ctx, &mut out).unwrap();
     let xml = String::from_utf8(out).unwrap();
     let summary = xml.split_once("<communities ").unwrap().1;
     assert_eq!(attr(summary, "isolated"), "3", "{xml}");

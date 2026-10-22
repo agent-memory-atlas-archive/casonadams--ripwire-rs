@@ -1,4 +1,5 @@
-use super::args::TopSafetyArgs;
+use super::SafetyArgs;
+use crate::cli::{Cli, OutputDialect, load_repo_analysis_for_cli};
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
 use crate::query::safety::SafetyContext;
@@ -66,12 +67,12 @@ pub fn run_quality_delta_gate_with_args<W: Write>(
 }
 
 fn load_gate_state(
-    cli: &super::args::Cli,
+    cli: &Cli,
     root: &str,
     is_delta: bool,
 ) -> io::Result<crate::Workspace> {
     let (ingest, graph, pr, interner) =
-        super::dispatch::load_repo_analysis_for_cli(cli, root, is_delta)?;
+        load_repo_analysis_for_cli(cli, root, is_delta)?;
     let mut state = crate::Workspace::from_analysis(root, ingest, graph, pr, interner);
     state.at = crate::git::history::compute_git_at_stamp(root);
     if is_delta && !get_working_tree_changed_files(root).is_empty() {
@@ -99,7 +100,7 @@ pub fn validate_gate_modifiers(args: &GateDispatchArgs<'_>) -> io::Result<()> {
 pub fn dispatch_gate_command(
     root: &str,
     args: GateDispatchArgs<'_>,
-    cli: &super::args::Cli,
+    cli: &Cli,
 ) -> Option<io::Result<()>> {
     if let Err(e) = validate_gate_modifiers(&args) {
         return Some(Err(e));
@@ -112,7 +113,7 @@ pub fn dispatch_gate_command(
         Err(e) => return Some(Err(e)),
     };
     let mut stdout_lock = io::stdout().lock();
-    let mut stdout = super::args::OutputDialect::wrap_xml_writer(cli, &mut stdout_lock, false);
+    let mut stdout = OutputDialect::wrap_xml_writer(cli, &mut stdout_lock, false);
     let res = execute_gate_action(args, &state, &mut stdout);
     res.map(|result| result.and_then(|()| stdout.finish()))
 }
@@ -596,7 +597,7 @@ pub fn execute_partition_from_facts<W: Write>(
 }
 
 pub fn execute_partition_or_baseline_queries<W: Write>(
-    s: &TopSafetyArgs,
+    s: &SafetyArgs,
     ctx: &SafetyContext<'_>,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
@@ -712,7 +713,7 @@ pub fn compute_plan_lanes_from_facts<W: Write>(
 }
 
 pub fn execute_tool_safety_queries<W: Write>(
-    s: &TopSafetyArgs,
+    s: &SafetyArgs,
     ctx: &SafetyContext<'_>,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
@@ -749,7 +750,7 @@ pub fn execute_tool_safety_queries<W: Write>(
 }
 
 pub fn execute_verification_queries<W: Write>(
-    s: &TopSafetyArgs,
+    s: &SafetyArgs,
     ctx: &SafetyContext<'_>,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
@@ -784,7 +785,7 @@ pub fn execute_verification_queries<W: Write>(
 }
 
 pub fn execute_safety_dispatch<W: Write>(
-    s: &TopSafetyArgs,
+    s: &SafetyArgs,
     ctx: &SafetyContext<'_>,
     out: &mut W,
 ) -> io::Result<Option<i32>> {

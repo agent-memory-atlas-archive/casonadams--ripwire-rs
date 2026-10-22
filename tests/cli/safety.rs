@@ -1,4 +1,4 @@
-use ripwire_rs::cli::safety::*;
+use ripwire_rs::commands::safety::*;
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::query::safety::SafetyContext;
 use ripwire_rs::serialize::PageRequest;
@@ -229,7 +229,7 @@ fn seams_take_precedence_over_partition_and_preserve_the_uncovered_edge() {
         graph: &graph,
         interner: &interner,
     };
-    let args = ripwire_rs::cli::TopSafetyArgs {
+    let args = ripwire_rs::commands::safety::SafetyArgs {
         seams: true,
         partition: Some(Some(2)),
         ..Default::default()

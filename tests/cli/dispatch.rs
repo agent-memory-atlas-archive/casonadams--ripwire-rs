@@ -44,13 +44,13 @@ fn test_safe_delete_reports_callers_and_missing_symbols() {
         graph: &graph,
         interner: &interner,
     };
-    let mut args = ripwire_rs::cli::TopSafetyArgs {
+    let mut args = ripwire_rs::commands::safety::SafetyArgs {
         safe_delete: Some("helper".into()),
         exercises: Some("tests/check.rs".into()),
         seams: true,
         ..Default::default()
     };
-    ripwire_rs::cli::safety::execute_safety_dispatch(&args, &ctx, &mut out).unwrap();
+    ripwire_rs::commands::safety::execute_safety_dispatch(&args, &ctx, &mut out).unwrap();
     let xml = String::from_utf8(out).unwrap();
     assert!(
         xml.contains("<safe-delete schema=\"ripwire-rs.safe-delete/v1\""),
@@ -60,7 +60,7 @@ fn test_safe_delete_reports_callers_and_missing_symbols() {
 
     let mut out = Vec::new();
     args.safe_delete = Some("missing".into());
-    ripwire_rs::cli::safety::execute_safety_dispatch(&args, &ctx, &mut out).unwrap_err();
+    ripwire_rs::commands::safety::execute_safety_dispatch(&args, &ctx, &mut out).unwrap_err();
     assert!(out.is_empty());
 }
 
@@ -116,12 +116,12 @@ fn test_exercises_reports_production_callees() {
         graph: &graph,
         interner: &interner,
     };
-    let args = ripwire_rs::cli::TopSafetyArgs {
+    let args = ripwire_rs::commands::safety::SafetyArgs {
         exercises: Some("tests/check.rs".into()),
         seams: true,
         ..Default::default()
     };
-    ripwire_rs::cli::safety::execute_safety_dispatch(&args, &ctx, &mut out).unwrap();
+    ripwire_rs::commands::safety::execute_safety_dispatch(&args, &ctx, &mut out).unwrap();
     let xml = String::from_utf8(out).unwrap();
     assert!(
         xml.contains("<exercises schema=\"ripwire-rs.exercises/v1\""),

@@ -1,6 +1,9 @@
 use super::args::*;
 use super::queries::*;
-use super::safety::*;
+use crate::commands::safety::{
+    GateDispatchArgs, GitMetricsFlags, SafetyArgs, dispatch_gate_command,
+    dispatch_git_metrics_with_flags,
+};
 use crate::domain::Interner;
 use crate::graph::Graph;
 use crate::query::map::*;
@@ -225,53 +228,6 @@ pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::R
         stdout.finish()
     })())
 }
-impl CliVerb for TopSafetyArgs {
-    fn execute_verb<W: Write>(
-        &self,
-        ctx: &ExecutionContext<'_>,
-        out: &mut crate::serialize::XmlWriter<'_, W>,
-    ) -> io::Result<()> {
-        let page = crate::serialize::PageRequest {
-            limit: ctx.cli.modifiers.limit,
-            offset: ctx.cli.modifiers.offset,
-        };
-        let safety = crate::query::safety::SafetyContext {
-            root: ctx.root,
-            ingest: ctx.ingest,
-            graph: ctx.graph,
-            interner: ctx.interner,
-        };
-        let res = execute_safety_verb(self, page, &safety, out);
-        let code = res?;
-        out.finish()?;
-        if let Some(code) = code {
-            std::process::exit(code);
-        }
-        Ok(())
-    }
-}
-
-/// Route a top-level safety verb; `--test-gate` pages its untested rows with `page`.
-pub fn execute_safety_verb<W: Write>(
-    args: &TopSafetyArgs,
-    page: crate::serialize::PageRequest,
-    ctx: &crate::query::safety::SafetyContext<'_>,
-    out: &mut W,
-) -> io::Result<Option<i32>> {
-    let Some(files_opt) = &args.test_gate else {
-        return execute_safety_dispatch(args, ctx, out);
-    };
-    let failed = execute_test_gate_query_paged(
-        ctx.root,
-        files_opt.as_deref(),
-        page,
-        ctx.ingest,
-        ctx.graph,
-        ctx.interner,
-        out,
-    )?;
-    Ok(failed.then_some(4))
-}
 
 pub fn split_csv_patterns(raw: &str) -> Vec<&str> {
     raw.split(',')
@@ -490,7 +446,6 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
         })());
     }
     crate::commands::run(cli, root)
-        .or_else(|| run_cli_verb(&cli.safety, cli, root))
         .or_else(|| run_cli_verb(&cli.arch, cli, root))
 }
 
@@ -505,11 +460,9 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
     } else {
         &cli.rank_by
     };
-    let changed_files = cli
-        .safety
-        .map_diff
-        .then(|| crate::git::repo::working_tree_changes(root));
-    let at = cli.safety.map_diff.then(|| {
+    let map_diff = crate::commands::safety::args(cli).map_diff;
+    let changed_files = map_diff.then(|| crate::git::repo::working_tree_changes(root));
+    let at = map_diff.then(|| {
         crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".to_string())
     });
     let mut args = MapRequest::new(root);
@@ -619,7 +572,8 @@ pub fn dispatch_subcommand(command: &Commands, cli: &Cli, default_root: &str) ->
 
 fn execute_gate_subcommand(args: &GateArgs, cli: &Cli, default_root: &str) -> io::Result<()> {
     let root = args.path.as_deref().unwrap_or(default_root);
-    let inherited = gate_args_for_cli(cli);
+    let safety = crate::commands::safety::args(cli);
+    let inherited = gate_args_for_cli(cli, &safety);
     let gate = GateDispatchArgs {
         edit_check: args.edit_check.as_deref().or(inherited.edit_check),
         affected: args.affected.as_deref().or(inherited.affected),
@@ -684,12 +638,13 @@ fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     if let Some(res) = dispatch_top_flags(cli, root) {
         return Some(res);
     }
+    let safety = crate::commands::safety::args(cli);
     if let Some(res) = dispatch_git_metrics_with_flags(
         root,
         GitMetricsFlags {
             cochange: cli.cochange.as_ref().map(|o| o.as_deref()),
-            cochange_groups: cli.safety.cochange_groups,
-            cochange_recur: cli.safety.cochange_recur,
+            cochange_groups: safety.cochange_groups,
+            cochange_recur: safety.cochange_recur,
             hotspots: cli.hotspots,
             since: cli.since.as_deref(),
             pretty: cli.is_pretty_out(),
@@ -712,21 +667,20 @@ fn validate_arch_modifiers(a: &TopArchitectureArgs) -> io::Result<()> {
     Ok(())
 }
 
-fn gate_args_for_cli(cli: &Cli) -> GateDispatchArgs<'_> {
+fn gate_args_for_cli<'a>(cli: &'a Cli, safety: &'a SafetyArgs) -> GateDispatchArgs<'a> {
     GateDispatchArgs {
         edit_check: cli.edit_check.as_deref(),
         affected: cli.affected.as_deref(),
         quality_baseline: cli.quality_baseline,
-        quality_delta: cli.quality_delta || cli.safety.quality_ack.is_some(),
-        scope: cli.safety.scope.as_deref(),
-        quality_ack: cli
-            .safety
+        quality_delta: cli.quality_delta || safety.quality_ack.is_some(),
+        scope: safety.scope.as_deref(),
+        quality_ack: safety
             .quality_ack
             .as_ref()
             .map(|o| o.as_deref().unwrap_or("acknowledged")),
-        ack_only: cli.safety.ack_only.as_deref(),
-        show_stale: cli.safety.show_stale,
-        allow_dirty: cli.safety.allow_dirty,
+        ack_only: safety.ack_only.as_deref(),
+        show_stale: safety.show_stale,
+        allow_dirty: safety.allow_dirty,
         limit: cli.limit_opt(),
         offset: cli.offset_opt(),
     }
@@ -750,8 +704,9 @@ pub fn run_cli_args(cli: Cli) -> io::Result<()> {
     if let Some(res) = dispatch_primary_workflows(&cli, root) {
         return res;
     }
+    let safety = crate::commands::safety::args(&cli);
     if !matches!(cli.command.as_ref(), Some(Commands::Gate(_)))
-        && let Some(res) = dispatch_gate_command(root, gate_args_for_cli(&cli), &cli)
+        && let Some(res) = dispatch_gate_command(root, gate_args_for_cli(&cli, &safety), &cli)
     {
         return res;
     }

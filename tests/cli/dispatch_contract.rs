@@ -286,3 +286,37 @@ fn workspace_group_is_active_only_for_its_primary_flags() {
         assert!(!active(flag), "{flag}");
     }
 }
+
+#[test]
+fn safety_group_is_active_only_for_its_primary_flags() {
+    let active = |flag: &str| {
+        let cli = ripwire_rs::parse_from(["rw", flag]).unwrap();
+        cli.plugins
+            .decode::<ripwire_rs::commands::safety::SafetyArgs>()
+            .unwrap()
+            .is_group_active()
+    };
+    for flag in [
+        "--test-gate=a",
+        "--situ=a",
+        "--safe-delete=a",
+        "--exercises=a",
+        "--pr-context=a",
+        "--merge-scout=a",
+        "--dmm=a",
+        "--plan-lanes",
+        "--scan-skills=a",
+        "--edit-plan=a",
+        "--edit-payload=a",
+        "--partition",
+        "--seams",
+        "--pin-census",
+        "--baseline",
+        "--baseline-update",
+    ] {
+        assert!(active(flag), "{flag}");
+    }
+    for flag in ["--owners", "--doc-drift", "--flags", "--lint-select=a"] {
+        assert!(!active(flag), "{flag}");
+    }
+}

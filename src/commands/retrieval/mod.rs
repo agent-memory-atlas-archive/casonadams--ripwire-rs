@@ -172,7 +172,7 @@ impl CliVerb for RetrievalArgs {
         out: &mut crate::serialize::XmlWriter<'_, W>,
     ) -> io::Result<()> {
         if let Some(task) = self.pack_task.as_deref()
-            && let Some(part_opt) = ctx.cli.safety.partition
+            && let Some(part_opt) = crate::commands::safety::args(ctx.cli).partition
         {
             return crate::navigate::execute_pack_task_partitioned(
                 task,

@@ -270,7 +270,7 @@ pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner)
     let at_stamp = root.git_at_or_head();
     let (branch, subject, detached) = resolve_git_branch_and_subject(root);
     let detached_attr = if detached { " detached=\"1\"" } else { "" };
-    let changed = crate::cli::safety::get_working_tree_changed_files(root);
+    let changed = crate::commands::safety::get_working_tree_changed_files(root);
     let verified_rows = build_handoff_verified_rows(&changed, ingest, interner);
     let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, None);
     let probe_path = changed.first().map(String::as_str).unwrap_or_else(|| {
