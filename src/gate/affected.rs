@@ -101,9 +101,37 @@ impl AffectedTest {
 
 const PARTNER_SUFFIXES: [&str; 4] = ["_test", "_spec", ".test", ".spec"];
 
-fn can_be_test_file(lang: Lang) -> bool {
-    let semantics = lang.semantics();
-    semantics.supports_slice() || semantics.is_script_runner()
+/// Languages upstream ripwire indexes. A file in any other language (SQL, Scala, Zig, ...) is
+/// neither a test nor a partner.
+fn partner_language(lang: Lang) -> bool {
+    matches!(
+        lang,
+        Lang::Rust
+            | Lang::TypeScript
+            | Lang::JavaScript
+            | Lang::Python
+            | Lang::Go
+            | Lang::C
+            | Lang::Cpp
+            | Lang::Cuda
+            | Lang::Metal
+            | Lang::ObjC
+            | Lang::Java
+            | Lang::CSharp
+            | Lang::Swift
+            | Lang::Bash
+            | Lang::Ruby
+            | Lang::Php
+            | Lang::Lua
+            | Lang::Elixir
+            | Lang::Dart
+            | Lang::Kotlin
+            | Lang::GDScript
+            | Lang::Json
+            | Lang::Toml
+            | Lang::Yaml
+            | Lang::Markdown
+    )
 }
 
 fn universal_partner_subject(stem: &str) -> Option<&str> {
@@ -129,19 +157,13 @@ pub fn is_test_path<P: AsRef<Path>>(path: P) -> bool {
     }) {
         return true;
     }
-    let lang = Lang::from_path(p);
-    if !can_be_test_file(lang) {
+    if !partner_language(Lang::from_path(p)) {
         return false;
     }
-    let Some((stem, _)) = p
-        .file_name()
+    p.file_name()
         .and_then(|s| s.to_str())
         .and_then(|n| n.rsplit_once('.'))
-    else {
-        return false;
-    };
-    universal_partner_subject(stem).is_some()
-        || lang.semantics().camel_test_partner_subject(stem).is_some()
+        .is_some_and(|(stem, _)| universal_partner_subject(stem).is_some())
 }
 
 /// Check if a path is a test, benchmark, or fixture path for ranking and module naming.
@@ -165,25 +187,25 @@ pub fn is_test_or_bench_path<P: AsRef<Path>>(path: P) -> bool {
 /// in any language, or the language's own convention (e.g. `WidgetTest`) inside a test dir.
 #[must_use]
 pub fn partner_subject_stem(path: &str, lang: Lang) -> Option<&str> {
-    if !can_be_test_file(lang) {
+    if !partner_language(lang) {
         return None;
     }
     let name = path.rsplit('/').next().unwrap_or(path);
     let (stem, _) = name.rsplit_once('.')?;
     universal_partner_subject(stem).or_else(|| {
         has_dir_component(Path::new(path), |d| matches!(d, "test" | "tests"))
-            .then(|| lang.semantics().camel_test_partner_subject(stem))
+            .then(|| crate::languages::strip_camel_test_suffix(stem))
             .flatten()
     })
 }
 
 fn file_stem_of(path: &str) -> &str {
     let name = path.rsplit('/').next().unwrap_or(path);
-    name.split_once('.').map_or(name, |(stem, _)| stem)
+    name.rsplit_once('.').map_or(name, |(stem, _)| stem)
 }
 
-/// Test files named after any of `changed_paths` by convention, sorted by path; a subject with
-/// several candidate tests is ambiguous and gets none.
+/// Test files named after any of `changed_paths` by convention, sorted by path. Every candidate
+/// counts, including a changed test and tests that share a subject across directories.
 #[must_use]
 pub fn find_partner_tests(
     changed_paths: &[String],
@@ -191,21 +213,15 @@ pub fn find_partner_tests(
     interner: &Interner,
 ) -> Vec<String> {
     let stems: HashSet<&str> = changed_paths.iter().map(|p| file_stem_of(p)).collect();
-    let mut by_subject: HashMap<&str, Vec<&str>> = HashMap::new();
-    for f in &ingest.files {
-        let p = interner.resolve(&f.path);
-        if changed_paths.iter().any(|c| c == p) {
-            continue;
-        }
-        if let Some(subject) = partner_subject_stem(p, f.lang).filter(|s| stems.contains(s)) {
-            by_subject.entry(subject).or_default().push(p);
-        }
-    }
-    let mut partners: Vec<String> = by_subject
-        .into_values()
-        .filter(|tests| tests.len() == 1)
-        .flatten()
-        .map(String::from)
+    let mut partners: Vec<String> = ingest
+        .files
+        .iter()
+        .filter_map(|f| {
+            let p = interner.resolve(&f.path);
+            partner_subject_stem(p, f.lang)
+                .filter(|s| stems.contains(s))
+                .map(|_| p.to_string())
+        })
         .collect();
     partners.sort_unstable();
     partners
@@ -229,6 +245,9 @@ fn match_file_seeds(
     ingest: &IngestResult,
     seeds: &mut SeedResolution,
 ) {
+    if !ingest.symbols.iter().any(|s| s.file_id == f.id) {
+        return;
+    }
     if is_test_path(path_str) {
         push_unique(&mut seeds.seed_test_files, path_str);
         return;
@@ -344,10 +363,13 @@ pub fn find_affected_tests(
     }
 
     for partner in find_partner_tests(&seeds.seed_source_files, ingest, interner) {
-        if seen_test_paths.insert(partner.clone()) {
+        if let Some(row) = tests.iter_mut().find(|t| t.path == partner) {
+            row.is_partner = true;
+        } else {
             let hops = test_hops.remove(&partner).unwrap_or(0);
-            tests.push(AffectedTest::new(partner, hops, false, true));
+            tests.push(AffectedTest::new(partner.clone(), hops, false, true));
         }
+        seen_test_paths.insert(partner);
     }
 
     for (test_path, hops) in test_hops {

@@ -41,7 +41,7 @@ Maps modified files and symbols to transitively reachable test files across the 
 
 - **Ranking**: Test files are prioritized by hop distance and coupling evidence.
 - **Transitive Reach**: Identifies tests that execute modified symbols even when located multiple calls away.
-- **Partner Tests**: A test named after a changed file is listed with `partner="1"` even without a call edge (scripts run by a test harness): `test_X`, `X_test`, `X_spec`, `X.test`, `X.spec` in any language, plus `XTest` inside a `test/`/`tests/` dir for Java, Kotlin, C#, and PHP. A file with two or more candidate partners is ambiguous and gets none. `--test-gate` exits 4 while any test row exists.
+- **Partner Tests**: A test named after a changed file is listed with `partner="1"` even without a call edge (scripts run by a test harness): `test_X`, `X_test`, `X_spec`, `X.test`, `X.spec` in any indexed language, plus `XTest` inside a `test/`/`tests/` dir. Every candidate is listed, even when several share a subject. A changed file with no symbols names no partner, and a changed test with no symbols gets no row. A changed test that is also a partner keeps its row and gets `partner="1"`. Runner-less rows that agree on every flag fold into one `<g n= p=>` row. `--test-gate` exits 4 while any test row exists.
 
 ---
 

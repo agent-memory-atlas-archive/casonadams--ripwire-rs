@@ -458,11 +458,6 @@ pub trait LanguageSemantics: Sync {
         !sym_name.starts_with('_')
     }
 
-    /// Subject a camelCase test file (`WidgetTest`) under a `test`/`tests` dir names, for languages with that convention.
-    fn camel_test_partner_subject<'a>(&self, _file_stem: &'a str) -> Option<&'a str> {
-        None
-    }
-
     /// File stems that hold only tests by this language's module convention (e.g. Rust `tests.rs`).
     fn is_test_module_stem(&self, _file_stem: &str) -> bool {
         false

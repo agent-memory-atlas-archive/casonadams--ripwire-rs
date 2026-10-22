@@ -109,7 +109,7 @@ fn test_affected_transitive_reachability() {
 #[test]
 fn test_partner_subject_stem_naming_cases() {
     use ripwire_rs::gate::affected::partner_subject_stem;
-    let cases: [(&str, Option<&str>); 22] = [
+    let cases: [(&str, Option<&str>); 24] = [
         ("scripts/test_lint_rules.py", Some("lint_rules")),
         ("src/lint_test.py", Some("lint")),
         ("pkg/ring.test.ts", Some("ring")),
@@ -119,13 +119,15 @@ fn test_partner_subject_stem_naming_cases() {
         ("src/widget_test.rs", Some("widget")),
         ("spec/widget_spec.rb", Some("widget")),
         ("tests/test_widget.ts", Some("widget")),
+        ("tests/test_config.v2.py", Some("config.v2")),
+        ("test/WidgetTest.py", Some("Widget")),
         ("src/widget_test.cpp", Some("widget")),
         ("tests/WidgetTest.java", Some("Widget")),
         ("src/test/java/WidgetTest.java", Some("Widget")),
         ("tests/WidgetTest.kt", Some("Widget")),
         ("tests/WidgetTest.php", Some("Widget")),
         ("src/WidgetTest.java", None),
-        ("tests/WidgetTest.py", None),
+        ("tests/WidgetTest.py", Some("Widget")),
         ("test/WidgetTest.scala", None),
         ("tests/widget.rs", None),
         ("src/widget_unittest.cc", None),
@@ -140,25 +142,50 @@ fn test_partner_subject_stem_naming_cases() {
 }
 
 fn partner_fixture(paths: &[&str]) -> (IngestResult, Interner) {
+    partner_fixture_where(paths, |_| true)
+}
+
+fn partner_fixture_where(
+    paths: &[&str],
+    has_symbols: impl Fn(&str) -> bool,
+) -> (IngestResult, Interner) {
     let interner = Interner::new();
     let mut ingest = IngestResult::new();
     for (id, p) in paths.iter().enumerate() {
+        let file_id = u32::try_from(id).unwrap_or(u32::MAX);
+        let lang = Lang::from_path(std::path::Path::new(p));
         ingest.files.push(FileInfo {
-            id: u32::try_from(id).unwrap_or(u32::MAX),
+            id: file_id,
             path: interner.intern(p),
-            lang: Lang::from_path(std::path::Path::new(p)),
+            lang,
             line_count: 10,
             byte_size: 100,
         });
+        if has_symbols(p) {
+            let name = interner.intern("f");
+            ingest.symbols.push(Symbol::new(
+                file_id,
+                name,
+                name,
+                SymKind::Function,
+                lang,
+                file_id,
+                1,
+            ));
+        }
     }
     (ingest, interner)
 }
 
+fn affected_in(ingest: &IngestResult, interner: &Interner, changed: &str) -> Vec<String> {
+    let graph = Graph::build(ingest, interner);
+    let report = find_affected_tests(&[changed], ingest, &graph, interner);
+    report.tests.iter().map(|t| t.path.clone()).collect()
+}
+
 fn affected_paths(paths: &[&str], changed: &str) -> Vec<String> {
     let (ingest, interner) = partner_fixture(paths);
-    let graph = Graph::build(&ingest, &interner);
-    let report = find_affected_tests(&[changed], &ingest, &graph, &interner);
-    report.tests.iter().map(|t| t.path.clone()).collect()
+    affected_in(&ingest, &interner, changed)
 }
 
 #[test]
@@ -198,28 +225,148 @@ fn test_affected_partner_cross_language_and_cross_package() {
 }
 
 #[test]
-fn test_affected_partner_declined_when_ambiguous_or_unnamed() {
-    let cases: [(&[&str], &str); 4] = [
-        (
+fn test_affected_partner_lists_every_candidate() {
+    assert_eq!(
+        affected_paths(
             &["a/widget.py", "a/test_widget.py", "a/widget_test.py"],
-            "a/widget.py",
+            "a/widget.py"
         ),
-        (
+        ["a/test_widget.py", "a/widget_test.py"]
+    );
+    assert_eq!(
+        affected_paths(
             &["a/widget.py", "a/test_widget.py", "b/test_widget.py"],
-            "a/widget.py",
+            "a/widget.py"
         ),
-        (
+        ["a/test_widget.py", "b/test_widget.py"]
+    );
+    assert_eq!(
+        affected_paths(
             &["a/widget.ts", "a/widget.test.ts", "a/widget.spec.ts"],
-            "a/widget.ts",
+            "a/widget.ts"
         ),
-        (
+        ["a/widget.spec.ts", "a/widget.test.ts"]
+    );
+}
+
+#[test]
+fn test_affected_partner_declined_when_unnamed() {
+    assert!(
+        affected_paths(
             &["src/gate/affected.rs", "tests/gate/affected.rs"],
-            "src/gate/affected.rs",
-        ),
+            "src/gate/affected.rs"
+        )
+        .is_empty()
+    );
+    assert!(
+        affected_paths(
+            &["src/Widget.java", "src/WidgetTest.java"],
+            "src/Widget.java"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn test_affected_partner_changed_test_keeps_row_and_flags_partner() {
+    let paths = [
+        "src/commands/gate.rs",
+        "src/commands/test_gate.rs",
+        "src/gate/test_gate.rs",
     ];
-    for (paths, changed) in cases {
-        assert!(affected_paths(paths, changed).is_empty(), "{paths:?}");
-    }
+    let (ingest, interner) = partner_fixture(&paths);
+    let graph = Graph::build(&ingest, &interner);
+    let report = find_affected_tests(
+        &["src/commands/gate.rs", "src/commands/test_gate.rs"],
+        &ingest,
+        &graph,
+        &interner,
+    );
+    let rows: Vec<(&str, bool, bool)> = report
+        .tests
+        .iter()
+        .map(|t| (t.path.as_str(), t.is_direct_change, t.is_partner))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("src/commands/test_gate.rs", true, true),
+            ("src/gate/test_gate.rs", false, true),
+        ]
+    );
+    let xml = report.to_xml_string();
+    assert!(xml.contains(
+        "<test p=\"src/commands/test_gate.rs\" partner=\"1\" direct=\"1\" run_unknown=\"1\"/>"
+    ));
+    assert!(xml.contains("<test p=\"src/gate/test_gate.rs\" partner=\"1\" run_unknown=\"1\"/>"));
+}
+
+#[test]
+fn test_affected_partner_dotted_stem_matches_full_subject() {
+    assert_eq!(
+        affected_paths(
+            &[
+                "src/config.v2.py",
+                "tests/test_config.py",
+                "tests/test_config.v2.py",
+            ],
+            "src/config.v2.py"
+        ),
+        ["tests/test_config.v2.py"]
+    );
+}
+
+#[test]
+fn test_affected_partner_needs_symbols_on_changed_seed_only() {
+    let paths = ["src/widget.ts", "tests/widget.test.ts"];
+    let (ingest, interner) = partner_fixture_where(&paths, |p| p != "src/widget.ts");
+    assert!(affected_in(&ingest, &interner, "src/widget.ts").is_empty());
+    let (ingest, interner) = partner_fixture_where(&paths, |p| p != "tests/widget.test.ts");
+    assert_eq!(
+        affected_in(&ingest, &interner, "src/widget.ts"),
+        ["tests/widget.test.ts"]
+    );
+    assert!(affected_in(&ingest, &interner, "tests/widget.test.ts").is_empty());
+}
+
+#[test]
+fn test_affected_partner_language_gate_follows_upstream_index() {
+    assert_eq!(
+        affected_paths(
+            &["src/widget.json", "src/test_widget.json"],
+            "src/widget.json"
+        ),
+        ["src/test_widget.json"]
+    );
+    assert_eq!(
+        affected_paths(
+            &["src/widget.toml", "src/test_widget.toml"],
+            "src/widget.toml"
+        ),
+        ["src/test_widget.toml"]
+    );
+    assert!(affected_paths(&["db/widget.sql", "db/test_widget.sql"], "db/widget.sql").is_empty());
+    assert!(
+        affected_paths(
+            &["src/widget.scala", "src/test_widget.scala"],
+            "src/widget.scala"
+        )
+        .is_empty()
+    );
+}
+
+#[test]
+fn test_affected_partner_camel_convention_needs_test_dir() {
+    assert_eq!(
+        affected_paths(&["src/Widget.py", "tests/WidgetTest.py"], "src/Widget.py"),
+        ["tests/WidgetTest.py"]
+    );
+    assert_eq!(
+        affected_paths(&["src/Widget.ts", "test/WidgetTest.ts"], "src/Widget.ts"),
+        ["test/WidgetTest.ts"]
+    );
+    assert!(affected_paths(&["src/Widget.py", "src/WidgetTest.py"], "src/Widget.py").is_empty());
+    assert!(!is_test_path("src/WidgetTest.java"));
 }
 
 #[test]
@@ -335,4 +482,41 @@ fn test_summarize_test_gate_separates_modscope_and_sorts_by_ccx() {
         .collect();
     assert_eq!(names, ["branchy"]);
     assert_eq!(sum.run_first, 1);
+}
+
+#[test]
+fn test_test_gate_rows_fold_like_upstream() {
+    use ripwire_rs::gate::affected::AffectedTest;
+    use ripwire_rs::serialize::arch_xml::serialize_test_gate_xml;
+    let render = |tests: &[AffectedTest]| {
+        let mut buf = Vec::new();
+        serialize_test_gate_xml(".", tests, 0, &mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    };
+    let siblings = [
+        AffectedTest::new("src/a/test_widget.py".to_string(), 0, false, true),
+        AffectedTest::new("src/a/widget_test.py".to_string(), 0, false, true),
+    ];
+    let xml = render(&siblings);
+    assert!(
+        xml.contains(
+            "<g partner=\"1\" n=\"2\" p=\"src/a/test_widget.py,src/a/widget_test.py\" run_unknown=\"1\"/>"
+        ),
+        "{xml}"
+    );
+    let pair = [
+        AffectedTest::new("src/commands/test_gate.rs".to_string(), 0, true, true),
+        AffectedTest::new("src/gate/test_gate.rs".to_string(), 0, false, true),
+    ];
+    let xml = render(&pair);
+    assert!(
+        xml.contains(
+            "<t p=\"src/commands/test_gate.rs\" changed=\"1\" partner=\"1\" run_unknown=\"1\"/>"
+        ),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("<t p=\"src/gate/test_gate.rs\" partner=\"1\" run_unknown=\"1\"/>"),
+        "{xml}"
+    );
 }

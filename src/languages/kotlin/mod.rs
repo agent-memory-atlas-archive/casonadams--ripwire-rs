@@ -84,10 +84,6 @@ impl LanguageSemantics for KotlinLanguage {
         &["kt", "kts"]
     }
 
-    fn camel_test_partner_subject<'a>(&self, file_stem: &'a str) -> Option<&'a str> {
-        super::strip_camel_test_suffix(file_stem)
-    }
-
     fn display_color(&self) -> &'static str {
         "#a97bff"
     }

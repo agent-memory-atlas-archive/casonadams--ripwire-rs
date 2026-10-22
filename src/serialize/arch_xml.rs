@@ -52,10 +52,7 @@ fn write_untested_row<W: Write>(u: &UntestedSymbol<'_>, out: &mut W) -> io::Resu
     )
 }
 
-fn write_test_gate_row<W: Write>(
-    t: &crate::gate::affected::AffectedTest,
-    out: &mut W,
-) -> io::Result<()> {
+fn test_row_flags(t: &crate::gate::affected::AffectedTest) -> String {
     let changed = if t.is_direct_change {
         " changed=\"1\""
     } else {
@@ -72,12 +69,61 @@ fn write_test_gate_row<W: Write>(
     } else {
         String::new()
     };
-    let run = t.run_attr();
+    format!("{changed}{partner}{hops}{evidence}")
+}
+
+fn write_test_gate_row<W: Write>(
+    t: &crate::gate::affected::AffectedTest,
+    out: &mut W,
+) -> io::Result<()> {
     write!(
         out,
-        "<t p=\"{}\"{changed}{partner}{hops}{evidence}{run}/>",
-        t.path.xml_escaped()
+        "<t p=\"{}\"{}{}/>",
+        t.path.xml_escaped(),
+        test_row_flags(t),
+        t.run_attr()
     )
+}
+
+/// Upstream folds runner-less rows that agree on every flag into one `<g n= p=>` row, listing
+/// their paths in order at the first member's position. A path holding ',' never folds.
+fn write_test_rows<W: Write>(
+    rows: &[crate::gate::affected::AffectedTest],
+    out: &mut W,
+) -> io::Result<()> {
+    let foldable =
+        |t: &crate::gate::affected::AffectedTest| t.run.is_none() && !t.path.contains(',');
+    let mut taken = vec![false; rows.len()];
+    for (i, t) in rows.iter().enumerate() {
+        if taken[i] {
+            continue;
+        }
+        taken[i] = true;
+        if !foldable(t) {
+            write_test_gate_row(t, out)?;
+            continue;
+        }
+        let flags = test_row_flags(t);
+        let mut paths = vec![t.path.as_str()];
+        for (j, u) in rows.iter().enumerate().skip(i + 1) {
+            if !taken[j] && foldable(u) && test_row_flags(u) == flags {
+                taken[j] = true;
+                paths.push(u.path.as_str());
+            }
+        }
+        if paths.len() == 1 {
+            write_test_gate_row(t, out)?;
+        } else {
+            write!(
+                out,
+                "<g{flags} n=\"{}\" p=\"{}\"{}/>",
+                paths.len(),
+                paths.join(",").xml_escaped(),
+                t.run_attr()
+            )?;
+        }
+    }
+    Ok(())
 }
 
 impl crate::serialize::XmlReport for TestGateReport<'_> {
@@ -134,9 +180,7 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for t in self.tests_page().rows() {
-            write_test_gate_row(t, out)?;
-        }
+        write_test_rows(self.tests_page().rows(), out)?;
         for u in self.untested_page().rows() {
             write_untested_row(u, out)?;
         }
