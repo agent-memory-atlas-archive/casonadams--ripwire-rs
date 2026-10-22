@@ -1,45 +1,12 @@
-use super::SafetyArgs;
+use crate::commands::common::changes::{
+    get_working_tree_changed_files, resolve_changed_or_spec_files,
+};
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
 use crate::query::safety::SafetyContext;
 use crate::serialize::ToXmlString;
 use std::io::{self, Write};
 use std::path::Path;
-
-pub fn get_working_tree_changed_files(root: &str) -> Vec<String> {
-    crate::git::repo::working_tree_changes(root)
-}
-
-pub fn resolve_changed_or_spec_files(root: &str, files_spec: Option<&str>) -> Vec<String> {
-    match files_spec {
-        Some(f) => f
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(String::from)
-            .collect(),
-        None => get_working_tree_changed_files(root),
-    }
-}
-
-pub fn execute_test_gate_query<W: Write>(
-    root: &str,
-    files_spec: Option<&str>,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<bool> {
-    execute_test_gate_query_paged(
-        root,
-        files_spec,
-        crate::serialize::PageRequest::default(),
-        ingest,
-        graph,
-        interner,
-        out,
-    )
-}
 
 #[derive(Clone, Copy)]
 pub struct TestGateRequest<'a> {
@@ -420,38 +387,6 @@ pub fn execute_partition_from_facts<W: Write>(
     }
 }
 
-pub fn execute_partition_or_baseline_queries<W: Write>(
-    s: &SafetyArgs,
-    ctx: &SafetyContext<'_>,
-    out: &mut W,
-) -> io::Result<Option<i32>> {
-    let SafetyContext {
-        root,
-        ingest,
-        graph,
-        interner,
-    } = *ctx;
-    if let Some(part_opt) = s.partition {
-        let k = part_opt.unwrap_or(2);
-        execute_partition_from_facts(ctx, k, s.task.as_deref(), out)?;
-        return Ok(Some(0));
-    }
-    if s.pin_census || s.baseline || s.baseline_update {
-        let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-        let short_sha = &head_sha[..9.min(head_sha.len())];
-        let snap = crate::gate::baseline::compute_snapshot(ingest, graph, interner, short_sha);
-        let baseline_path = Path::new(root).join(crate::gate::baseline::DEFAULT_BASELINE_FILE);
-        crate::gate::baseline::write_baseline_file(&snap, &baseline_path)?;
-        writeln!(
-            out,
-            "ripwire-rs: pinned quality baseline stamped at {short_sha} -> {}",
-            baseline_path.display()
-        )?;
-        return Ok(Some(0));
-    }
-    Ok(None)
-}
-
 pub fn compute_dmm_from_facts<W: Write>(
     baseline_snap: &crate::gate::baseline::QualitySnapshot,
     working_snap: &crate::gate::baseline::QualitySnapshot,
@@ -535,91 +470,3 @@ pub fn compute_plan_lanes_from_facts<W: Write>(
     writeln!(out)?;
     Ok(val)
 }
-
-pub fn execute_tool_safety_queries<W: Write>(
-    s: &SafetyArgs,
-    ctx: &SafetyContext<'_>,
-    out: &mut W,
-) -> io::Result<Option<i32>> {
-    let SafetyContext {
-        root,
-        ingest,
-        graph,
-        interner,
-    } = *ctx;
-    if let Some(range_opt) = &s.dmm {
-        return execute_dmm_query(range_opt.as_deref(), root, ingest, graph, interner, out)
-            .map(Some);
-    }
-    if let Some(lanes_opt) = &s.plan_lanes {
-        let requested = lanes_opt.unwrap_or(2);
-        let task = s.task.as_deref().unwrap_or("general refactoring");
-        let brief_lines = s
-            .brief
-            .as_deref()
-            .filter(|p| !p.is_empty())
-            .and_then(|p| std::fs::read_to_string(p).ok())
-            .map(|c| c.lines().map(str::to_string).collect::<Vec<_>>());
-        compute_plan_lanes_from_facts(ctx, requested, task, brief_lines.as_deref(), out)?;
-        return Ok(Some(0));
-    }
-    if let Some(dir_opt) = &s.scan_skills {
-        let raw = dir_opt.as_deref().unwrap_or("");
-        return execute_scan_skills_dispatch(raw, out).map(Some);
-    }
-    if let Some(plan_spec) = s.edit_plan.as_deref().or(s.edit_payload.as_deref()) {
-        return execute_edit_plan_dispatch(plan_spec, ctx, s.dry_run, out).map(Some);
-    }
-    execute_partition_or_baseline_queries(s, ctx, out)
-}
-
-pub fn execute_verification_queries<W: Write>(
-    s: &SafetyArgs,
-    ctx: &SafetyContext<'_>,
-    out: &mut W,
-) -> io::Result<Option<i32>> {
-    let SafetyContext {
-        root,
-        ingest,
-        graph,
-        interner,
-    } = *ctx;
-    if let Some(files_opt) = &s.test_gate {
-        let has_failures =
-            execute_test_gate_query(root, files_opt.as_deref(), ingest, graph, interner, out)?;
-        if has_failures {
-            return Ok(Some(4));
-        }
-    } else if let Some(files_opt) = &s.situ {
-        execute_situ_query(root, files_opt.as_deref(), ingest, graph, interner, out)?;
-    } else if let Some(sym) = s.safe_delete.as_deref() {
-        execute_safe_delete_query(root, sym, ingest, graph, interner, out)?;
-    } else if let Some(testfile) = s.exercises.as_deref() {
-        execute_exercises_query(root, testfile, ingest, graph, interner, out)?;
-    } else if s.seams {
-        use crate::serialize::XmlReport;
-        let rep = crate::gate::seams::find_integration_seams(ingest, graph, interner);
-        rep.write_xml_report(root, out)?;
-    } else if let Some(ref_opt) = &s.pr_context {
-        execute_pr_context_dispatch(root, ref_opt.as_deref(), ingest, graph, interner, out)?;
-    } else {
-        return Ok(None);
-    }
-    Ok(Some(0))
-}
-
-pub fn execute_safety_dispatch<W: Write>(
-    s: &SafetyArgs,
-    ctx: &SafetyContext<'_>,
-    out: &mut W,
-) -> io::Result<Option<i32>> {
-    if let Some(code) = execute_verification_queries(s, ctx, out)? {
-        return Ok((code > 0).then_some(code));
-    }
-    if let Some(branches) = s.merge_scout.as_deref() {
-        return execute_merge_scout_dispatch(ctx.root, branches, ctx.ingest, ctx.interner, out);
-    }
-    Ok(execute_tool_safety_queries(s, ctx, out)?.filter(|code| *code > 0))
-}
-
-

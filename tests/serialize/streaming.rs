@@ -614,7 +614,12 @@ fn test_page_window_and_xml_report_trait() {
         cc.to_xml_string()
             .contains("ripwire-rs.comment-coherence/v1")
     );
-    let seams = ripwire_rs::gate::seams::find_integration_seams(&ingest, &graph, &interner);
+    let seams = ripwire_rs::gate::seams::find_integration_seams(
+        &ingest,
+        &graph,
+        &interner,
+        Default::default(),
+    );
     assert!(seams.to_xml_string().contains("ripwire-rs.seams/v1"));
     let scout = ripwire_rs::gate::merge_scout::evaluate_merge_scout("main", &ingest, &interner);
     assert!(scout.to_xml_string().contains("ripwire-rs.merge-scout/v1"));

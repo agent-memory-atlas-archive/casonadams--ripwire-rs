@@ -1,14 +1,12 @@
-//! Html group: `--html [FILE]` and `--color-by`, which write the interactive call-graph page.
-
-use super::Command;
+//! `--html [FILE]` / `--color-by`: writes the interactive call-graph HTML page.
+use super::{Plugin, Run};
 use crate::cli::Cli;
 use crate::commands::context::load_repo_analysis_for_cli;
-use clap::{Args, Command as ClapCommand};
+use clap::Args;
 use std::io;
 
-/// Top-level call-graph HTML export flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct HtmlFlags {
+pub struct HtmlArgs {
     #[arg(long, value_name = "FILE")]
     pub html: Option<Option<String>>,
 
@@ -44,23 +42,16 @@ fn execute_html_export(
     }
 }
 
-pub struct Html;
-
-pub static HTML: Html = Html;
-
-impl Command for Html {
-    fn augment(&self, cmd: ClapCommand) -> ClapCommand {
-        HtmlFlags::augment_args(cmd)
-    }
-
-    fn run(&self, cli: &Cli, root: &str) -> Option<io::Result<()>> {
-        let flags = cli.plugins.decode::<HtmlFlags>()?;
-        let out_file = flags.html.as_ref()?;
-        Some(execute_html_export(
-            cli,
-            root,
-            out_file.as_deref(),
-            &flags.color_by,
-        ))
-    }
+fn run(run: &Run<'_>, args: &HtmlArgs) -> io::Result<()> {
+    let out_file = args.html.as_ref().and_then(|file| file.as_deref());
+    execute_html_export(run.cli, run.root, out_file, &args.color_by)
 }
+
+pub static HTML: Plugin<HtmlArgs> = Plugin {
+    name: "html",
+    options: &[],
+    selected: |args| args.html.is_some(),
+    run,
+    check: None,
+    tools: &[],
+};

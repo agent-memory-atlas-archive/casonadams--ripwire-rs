@@ -1,5 +1,5 @@
 use ripwire_rs::commands::around::{AroundConfig, execute_around_query};
-use ripwire_rs::commands::safety::execute_safe_delete_query;
+use ripwire_rs::commands::common::safety_queries::execute_safe_delete_query;
 use ripwire_rs::gate::contract::{ContractStatus, SignatureContract, is_symbol_name_public};
 use ripwire_rs::gate::edit_check::check_symbol_contract;
 use ripwire_rs::ingest::{Capture, classify_capture, parse_file_content};

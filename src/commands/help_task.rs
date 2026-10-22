@@ -20,7 +20,7 @@ pub fn execute<W: Write>(query: &QueryContext<'_>, task: &str, out: &mut W) -> i
         query.ingest,
         query.interner,
         gix::open(query.root).is_ok(),
-        !crate::commands::safety::get_working_tree_changed_files(query.root).is_empty(),
+        !crate::commands::common::changes::get_working_tree_changed_files(query.root).is_empty(),
         out,
     )
 }

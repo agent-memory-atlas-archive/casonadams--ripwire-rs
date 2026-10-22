@@ -1,4 +1,4 @@
-use ripwire_rs::commands::context::{ExecutionContext, Paginated, VerbGroup};
+use ripwire_rs::commands::context::{ExecutionContext, Paginated};
 use ripwire_rs::commands::{
     around, biggest_first, communities, context_ratio, external_surface, layout,
     naming_calibration, naming_consistency, quality_panel, report, symbol_metrics, tree,
@@ -400,10 +400,26 @@ fn workspace_group_is_active_only_for_its_primary_flags() {
 fn safety_group_is_active_only_for_its_primary_flags() {
     let active = |flag: &str| {
         let cli = ripwire_rs::parse_from(["rw", flag]).unwrap();
-        cli.plugins
-            .decode::<ripwire_rs::commands::safety::SafetyArgs>()
-            .unwrap()
-            .is_group_active()
+        let p = &cli.plugins;
+        use ripwire_rs::commands as c;
+        [
+            (c::test_gate::TEST_GATE.selected)(&p.decode().unwrap()),
+            (c::situ::SITU.selected)(&p.decode().unwrap()),
+            (c::safe_delete::SAFE_DELETE.selected)(&p.decode().unwrap()),
+            (c::exercises::EXERCISES.selected)(&p.decode().unwrap()),
+            (c::pr_context::PR_CONTEXT.selected)(&p.decode().unwrap()),
+            (c::merge_scout::MERGE_SCOUT.selected)(&p.decode().unwrap()),
+            (c::dmm::DMM.selected)(&p.decode().unwrap()),
+            (c::plan_lanes::PLAN_LANES.selected)(&p.decode().unwrap()),
+            (c::scan_skills::SCAN_SKILLS.selected)(&p.decode().unwrap()),
+            (c::edit_plan::EDIT_PLAN.selected)(&p.decode().unwrap()),
+            (c::partition::PARTITION.selected)(&p.decode().unwrap()),
+            (c::seams::SEAMS.selected)(&p.decode().unwrap()),
+            (c::pin_census::PIN_CENSUS.selected)(&p.decode().unwrap()),
+            (c::baseline::BASELINE.selected)(&p.decode().unwrap()),
+        ]
+        .into_iter()
+        .any(|on| on)
     };
     for flag in [
         "--test-gate=a",

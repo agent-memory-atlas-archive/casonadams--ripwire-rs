@@ -1,8 +1,9 @@
-use ripwire_rs::commands::gate::{GateDispatchArgs, validate_gate_modifiers};
-use ripwire_rs::commands::safety::*;
+use ripwire_rs::commands::common::changes::resolve_changed_or_spec_files;
+use ripwire_rs::commands::common::gate::validate_gate_modifiers;
+use ripwire_rs::commands::common::safety_queries::*;
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::query::safety::SafetyContext;
-use ripwire_rs::serialize::PageRequest;
+use ripwire_rs::serialize::{PageRequest, XmlReport};
 use ripwire_rs::skills::{SkillScanFinding, SkillScanReport};
 use ripwire_rs::{Graph, IngestResult, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
 
@@ -183,60 +184,37 @@ fn test_execute_test_gate_and_situ_from_facts() {
 }
 #[test]
 fn test_validate_gate_modifiers_policy() {
-    let args_err_dirty = GateDispatchArgs {
-        allow_dirty: true,
-        quality_baseline: false,
-        ..Default::default()
-    };
-    let err_dirty = validate_gate_modifiers(&args_err_dirty).unwrap_err();
+    let err_dirty = validate_gate_modifiers(true, false, false, false).unwrap_err();
     assert!(
         err_dirty
             .to_string()
             .contains("--allow-dirty modifies --quality-baseline")
     );
 
-    let args_err_stale = GateDispatchArgs {
-        show_stale: true,
-        quality_delta: false,
-        ..Default::default()
-    };
-    let err_stale = validate_gate_modifiers(&args_err_stale).unwrap_err();
+    let err_stale = validate_gate_modifiers(false, false, true, false).unwrap_err();
     assert!(
         err_stale
             .to_string()
             .contains("--show-stale modifies --quality-delta")
     );
 
-    let args_ok = GateDispatchArgs {
-        quality_baseline: true,
-        allow_dirty: true,
-        ..Default::default()
-    };
-    assert!(validate_gate_modifiers(&args_ok).is_ok());
-
-    let args_inactive = GateDispatchArgs::default();
-    assert!(!args_inactive.is_active());
+    assert!(validate_gate_modifiers(true, true, false, false).is_ok());
 }
 
 #[test]
-fn seams_take_precedence_over_partition_and_preserve_the_uncovered_edge() {
+fn seams_report_preserves_the_uncovered_edge() {
     let (ingest, graph, interner) = sample_corpus(&[
         ("api/entry.rs", Lang::Rust, b"pub fn entry() { store(); }\n"),
         ("data/store.rs", Lang::Rust, b"pub fn store() {}\n"),
     ]);
-    let ctx = SafetyContext {
-        root: ":memory:",
-        ingest: &ingest,
-        graph: &graph,
-        interner: &interner,
-    };
-    let args = ripwire_rs::commands::safety::SafetyArgs {
-        seams: true,
-        partition: Some(Some(2)),
-        ..Default::default()
-    };
     let mut out = Vec::new();
-    execute_safety_dispatch(&args, &ctx, &mut out).unwrap();
+    let rep = ripwire_rs::gate::seams::find_integration_seams(
+        &ingest,
+        &graph,
+        &interner,
+        PageRequest::default(),
+    );
+    rep.write_xml_report(":memory:", &mut out).unwrap();
     let report = roxmltree::Document::parse(std::str::from_utf8(&out).unwrap()).unwrap();
     assert_eq!(report.root_element().tag_name().name(), "seams");
     assert_eq!(report.root_element().attribute("untested"), Some("1"));

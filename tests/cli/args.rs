@@ -1,28 +1,13 @@
 use ripwire_rs::DEFAULT_PACK_BUDGET_BYTES;
 use ripwire_rs::cli::compute_effective_budget;
-use ripwire_rs::commands::gate::{GateDispatchArgs, validate_gate_modifiers};
+use ripwire_rs::commands::common::gate::validate_gate_modifiers;
 use ripwire_rs::query::graph::split_endpoint_pair;
 
 #[test]
 fn test_gate_modifiers_refused_without_their_verb() {
-    let lone_dirty = GateDispatchArgs {
-        allow_dirty: true,
-        ..Default::default()
-    };
-    assert!(validate_gate_modifiers(&lone_dirty).is_err());
-    let lone_stale = GateDispatchArgs {
-        show_stale: true,
-        ..Default::default()
-    };
-    assert!(validate_gate_modifiers(&lone_stale).is_err());
-    let paired = GateDispatchArgs {
-        quality_baseline: true,
-        allow_dirty: true,
-        quality_delta: true,
-        show_stale: true,
-        ..Default::default()
-    };
-    assert!(validate_gate_modifiers(&paired).is_ok());
+    assert!(validate_gate_modifiers(true, false, false, false).is_err());
+    assert!(validate_gate_modifiers(false, false, true, false).is_err());
+    assert!(validate_gate_modifiers(true, true, true, true).is_ok());
 }
 
 #[test]

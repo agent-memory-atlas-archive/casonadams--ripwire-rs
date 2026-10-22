@@ -1,9 +1,13 @@
-//! Slice group: `--slice`, `--slice-flow`, `--slice-depth` and the `slice` subcommand.
-
+//! `--slice SYM[:VAR]` and the `slice` subcommand: ARISE intra-procedural def-use variable slice; MCP `slice`.
+use super::common::mcp::mcp_tool;
 use super::{Command, decode_subcommand};
 use crate::cli::Cli;
 use crate::commands::context::{OutputDialect, load_repo_analysis_for_cli};
+use crate::ingest::LanguageRegistry;
+use crate::query::commands::{CommandDescriptor, QueryContext};
+use crate::serialize::JsonValueExt;
 use clap::{Args, Command as ClapCommand};
+use serde_json::Value;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -48,7 +52,7 @@ fn execute_slice_for_cli(
         .parse()
         .map_err(|e: String| io::Error::new(io::ErrorKind::InvalidInput, e))?;
     let (ingest, _, _, interner) = load_repo_analysis_for_cli(cli, root, false)?;
-    let registry = crate::ingest::LanguageRegistry::new().map_err(io::Error::other)?;
+    let registry = LanguageRegistry::new().map_err(io::Error::other)?;
     let sources = crate::query::FileSources {
         root: Path::new(root),
     };
@@ -74,6 +78,37 @@ fn execute_slice_for_cli(
     stdout.write_all(report.as_bytes())?;
     stdout.finish()
 }
+
+fn call_slice(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
+    let registry = LanguageRegistry::new().map_err(|error| error.to_string())?;
+    let request = crate::slice::SliceRequest {
+        root: state.root,
+        target: args.req_str("target")?,
+        at: state.at,
+        flow: args
+            .str_or("flow", "fwd")
+            .parse::<crate::slice::SliceFlowDir>()?,
+        max_depth: args.opt_usize("max_depth").unwrap_or(8) as u32,
+    };
+    let context = crate::slice::SliceContext {
+        ingest: state.ingest,
+        interner: state.interner,
+        registry: &registry,
+    };
+    crate::slice::query_slice(request, context, state.sources).map(Value::String)
+}
+
+static TOOLS: &[&CommandDescriptor] = &[mcp_tool!(
+    "slice",
+    "ARISE intra-procedural def-use variable dataflow slice inside a function",
+    &[
+        ("target", "string", "sym:var or bare sym to list locals"),
+        ("flow", "string", "fwd, back, or both"),
+        ("max_depth", "integer", "Maximum dataflow depth (default 8)"),
+    ],
+    &["target"],
+    call_slice
+)];
 
 pub struct Slice;
 
@@ -117,5 +152,9 @@ impl Command for Slice {
             let depth = cli.plugins.decode::<SliceFlags>().unwrap_or_default().slice_depth;
             execute_slice_for_cli(cli, root, args.target.as_deref(), &args.flow, depth)
         }))
+    }
+
+    fn tools(&self) -> &'static [&'static CommandDescriptor] {
+        TOOLS
     }
 }

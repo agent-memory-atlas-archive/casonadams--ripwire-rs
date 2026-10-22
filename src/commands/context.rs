@@ -1,4 +1,4 @@
-//! Shared plumbing for command plugins: output dialect, pagination, repository loading, verb runner.
+//! Shared plumbing for command plugins: output dialect, pagination, repository loading.
 use crate::cli::{Cli, TopModifierArgs};
 use crate::domain::Interner;
 use crate::graph::Graph;
@@ -167,53 +167,6 @@ impl ExecutionContext<'_> {
     }
 }
 
-/// Trait for CLI verb groups that execute against an `ExecutionContext`.
-pub trait CliVerb: VerbGroup {
-    fn execute_verb<W: Write>(
-        &self,
-        ctx: &ExecutionContext<'_>,
-        out: &mut crate::serialize::XmlWriter<'_, W>,
-    ) -> io::Result<()>;
-
-    fn force_plain_markdown(&self) -> bool {
-        false
-    }
-
-    fn emits_plain_text(&self) -> bool {
-        false
-    }
-}
-
-pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    if !verb.is_group_active() {
-        return None;
-    }
-    Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
-        let ctx = ExecutionContext {
-            cli,
-            root,
-            ingest: &ingest,
-            graph: &graph,
-            pr: &pr,
-            interner: &interner,
-        };
-        let plain = verb.force_plain_markdown();
-        let mut stdout_lock = io::stdout().lock();
-        let mut stdout = if verb.emits_plain_text() && !cli.is_json_out() {
-            crate::serialize::XmlWriter::new(&mut stdout_lock, true)
-        } else {
-            cli.wrap_xml_writer(&mut stdout_lock, plain)
-        };
-        verb.execute_verb(&ctx, &mut stdout)?;
-        stdout.finish()
-    })())
-}
-
-/// Trait implemented by each CLI argument group.
-pub trait VerbGroup {
-    fn is_group_active(&self) -> bool;
-}
 impl OutputDialect for Cli {
     fn is_json_out(&self) -> bool {
         self.modifiers.is_json()

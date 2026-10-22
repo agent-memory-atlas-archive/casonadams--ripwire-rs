@@ -1,5 +1,11 @@
+pub mod changes;
 pub mod edit;
+pub mod gate;
 pub mod grep;
+pub mod history;
 pub mod ladder;
 pub mod mcp;
+pub mod pin;
 pub mod retrieval;
+pub mod safety;
+pub mod safety_queries;

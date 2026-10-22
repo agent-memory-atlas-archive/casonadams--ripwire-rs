@@ -34,6 +34,7 @@ pub struct SeamsReport {
     pub groups: Vec<SeamGroup>,
     pub pr_iters: u32,
     pub gauges: crate::serialize::GraphGauges,
+    pub page: crate::serialize::PageRequest,
 }
 
 fn compute_directory(path: &str) -> String {
@@ -134,6 +135,7 @@ pub fn find_integration_seams(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
+    page: crate::serialize::PageRequest,
 ) -> SeamsReport {
     use crate::domain::CorpusView;
     let (all_modules, test_files) = collect_module_and_test_files(ingest, interner);
@@ -182,6 +184,7 @@ pub fn find_integration_seams(
             .iterations
             .max(1),
         gauges: graph.gauges(),
+        page,
     }
 }
 
@@ -193,12 +196,7 @@ impl crate::serialize::XmlReport for SeamsReport {
         comment: "ripwire-rs seams schema=ripwire-rs.seams/v1: cross-directory call edges NO test reaches."
     );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
-        Some(crate::serialize::PageWindow::compute(
-            self.seam_pairs_count,
-            20,
-            None,
-            None,
-        ))
+        Some(self.page.window(self.seam_pairs_count, 20))
     }
     fn pr_iters(&self) -> Option<u32> {
         Some(self.pr_iters)
@@ -218,7 +216,8 @@ impl crate::serialize::XmlReport for SeamsReport {
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        for g in self.groups.iter().take(20) {
+        let window = self.page.window(self.groups.len(), 20);
+        for g in self.groups.iter().skip(window.begin).take(window.shown) {
             let e_len = g.edges.len();
             let e_shown = e_len.min(5);
             let e_cap = usize::from(e_shown < e_len);
