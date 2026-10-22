@@ -136,6 +136,15 @@ impl LanguageSemantics for TypeScriptLanguage {
         decl.scope == def.scope && decl.file_id == def.file_id
     }
 
+    fn declarations_yield_to_definitions(&self) -> bool {
+        true
+    }
+
+    fn is_contract_member(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        ctx.def_node
+            .is_some_and(types::is_interface_function_property)
+    }
+
     fn tag(&self) -> &'static str {
         "ts"
     }

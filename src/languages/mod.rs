@@ -138,6 +138,13 @@ pub trait LanguageSemantics: Sync {
         false
     }
 
+    /// True where a bodyless declaration (a TypeScript interface member) is a contract its
+    /// implementations satisfy by shape, not a definition that shares their name: by-name calls
+    /// reach a same-named implementation instead of the contract.
+    fn declarations_yield_to_definitions(&self) -> bool {
+        false
+    }
+
     /// True if scope `spec` names a specialization of the generic scope `primary` (C++ `Box<int>`).
     fn is_specialization_of(&self, _spec: &str, _primary: &str) -> bool {
         false
@@ -466,6 +473,12 @@ pub trait LanguageSemantics: Sync {
 
     /// True if a captured `Var` binding holds an immutable scalar, so reading it is not mutable state.
     fn is_immutable_scalar_binding(&self, _ctx: &DefCaptureGateContext<'_>) -> bool {
+        false
+    }
+
+    /// True if a captured definition is a bodyless member an interface declares by contract (a
+    /// TypeScript function-typed interface property): typed dispatch reaches it, a by-name call never does.
+    fn is_contract_member(&self, _ctx: &DefCaptureGateContext<'_>) -> bool {
         false
     }
 

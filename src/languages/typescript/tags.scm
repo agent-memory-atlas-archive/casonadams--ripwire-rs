@@ -170,6 +170,16 @@
 (method_signature
   name: (property_identifier) @name) @definition.method
 
+; `commitIssueKeys: () => Promise<T>;` — a function-typed property of an interface is the interface's
+; callable member, reached like a method signature. Only interface bodies: a function-typed property
+; of an object type literal (`{ emit: (...) => ... }` in a return type or cast) is not a member.
+; The function type is the definition node so its parameter list counts toward arity.
+(interface_declaration
+  body: (interface_body
+    (property_signature
+      name: (property_identifier) @name
+      type: (type_annotation (function_type) @definition.method))))
+
 ; ---- references ----
 
 (call_expression

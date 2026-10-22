@@ -11,6 +11,7 @@ pub struct BindingSpan {
 pub struct ReadBindings<'a> {
     scopes: HashMap<&'a str, Vec<BindingSpan>>,
     returns: HashMap<&'a str, String>,
+    members: HashMap<(String, String), String>,
 }
 
 impl<'a> ReadBindings<'a> {
@@ -67,6 +68,19 @@ impl<'a> ReadBindings<'a> {
     /// Declared result type of a function named `name`, when one is annotated.
     pub fn return_type(&self, name: &str) -> Option<&str> {
         self.returns.get(name).map(String::as_str)
+    }
+
+    /// Records the declared type of member `member` of the named type `owner` (a class field).
+    pub fn insert_member(&mut self, owner: &str, member: &str, ty: String) {
+        self.members
+            .insert((owner.to_string(), member.to_string()), ty);
+    }
+
+    /// Declared type of member `member` of the named type `owner`, when recorded.
+    pub fn member_type(&self, owner: &str, member: &str) -> Option<&str> {
+        self.members
+            .get(&(owner.to_string(), member.to_string()))
+            .map(String::as_str)
     }
 }
 

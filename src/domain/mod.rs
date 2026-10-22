@@ -247,6 +247,9 @@ pub struct Symbol {
     pub ev: u16,
     /// Immutable scalar binding (a `const` number, string, or boolean): a read is never mutable state.
     pub immutable: bool,
+    /// A bodyless interface member typed as a function (`f: () => T`): reached by typed dispatch and
+    /// conformance, never by a by-name call (its name is not evidence of the callee).
+    pub contract_member: bool,
 }
 
 impl Symbol {
@@ -280,6 +283,7 @@ impl Symbol {
             deep: 0,
             ev: 1,
             immutable: false,
+            contract_member: false,
         }
     }
 

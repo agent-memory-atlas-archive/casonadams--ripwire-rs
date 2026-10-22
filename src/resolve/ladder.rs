@@ -479,6 +479,17 @@ pub fn tied_definition(decl: &Symbol, cands: &[NodeId], symbols: &[Symbol]) -> O
     })
 }
 
+/// True when bodyless `decl` is a contract a same-named bodied candidate implements, in a language
+/// whose declarations do not tie to implementations by name (TypeScript interface members). By-name
+/// calls then reach the implementation, not the contract; typed calls still reach the contract.
+fn yields_to_definition(decl: &Symbol, cands: &[NodeId], symbols: &[Symbol]) -> bool {
+    decl.lang.semantics().declarations_yield_to_definitions()
+        && is_declaration(decl)
+        && cands
+            .iter()
+            .any(|&id| symbols[id as usize].has_body() && symbols[id as usize].name == decl.name)
+}
+
 /// The one candidate whose scope every other candidate's scope specializes, if any.
 fn primary_template(defs: &[NodeId], symbols: &[Symbol], interner: &Interner) -> Option<NodeId> {
     if defs.len() < 2 {
@@ -864,6 +875,7 @@ pub trait ResolutionLookup {
             .iter()
             .copied()
             .filter(|&id| tied_definition(&symbols[id as usize], cands, symbols).is_none())
+            .filter(|&id| !yields_to_definition(&symbols[id as usize], cands, symbols))
             .collect();
         let primary = self
             .interner()
@@ -875,8 +887,20 @@ pub trait ResolutionLookup {
     }
 
     fn classify_by_name(&self, r: &Reference) -> RefOutcome {
-        let Some(all_cands) = self.by_name().get(&r.callee_name) else {
+        let Some(named) = self.by_name().get(&r.callee_name) else {
             return RefOutcome::External;
+        };
+        let symbols = self.symbols();
+        let without_contracts: Vec<NodeId>;
+        let all_cands: &[NodeId] = if named.iter().any(|&id| symbols[id as usize].contract_member) {
+            without_contracts = named
+                .iter()
+                .copied()
+                .filter(|&id| !symbols[id as usize].contract_member)
+                .collect();
+            &without_contracts
+        } else {
+            named
         };
         let Some((cands, narrowing)) = self.filter_ref_candidates(all_cands, r) else {
             return classify_rejected_candidates(r, self.interner());

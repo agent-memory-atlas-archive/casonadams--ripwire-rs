@@ -184,6 +184,7 @@ fn assemble_defs(headings: &[HeadingEntry], rel_path: &str, source_len: usize) -
         params: 0,
         metrics: crate::metrics::ComplexityMetrics::default(),
         immutable: false,
+        contract_member: false,
     });
 
     for (i, h) in headings.iter().enumerate() {
@@ -215,6 +216,7 @@ fn assemble_defs(headings: &[HeadingEntry], rel_path: &str, source_len: usize) -
             params: 0,
             metrics: crate::metrics::ComplexityMetrics::default(),
             immutable: false,
+            contract_member: false,
         });
     }
 

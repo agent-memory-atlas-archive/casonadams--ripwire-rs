@@ -19,6 +19,8 @@ pub struct RawDef {
     pub metrics: crate::metrics::ComplexityMetrics,
     /// Set by the language plugin for bindings whose value can never change (see `is_immutable_scalar_binding`).
     pub immutable: bool,
+    /// Set by the language plugin for bodyless members reached only by typed dispatch (see `is_contract_member`).
+    pub contract_member: bool,
 }
 
 /// Raw reference extracted before enclosing symbol attribution.
@@ -291,12 +293,17 @@ fn receiver_type_at(
         };
     }
     let mut segments = receiver.split('.');
-    let mut ty = bindings.type_at(segments.next()?, byte)?.to_string();
+    let first = segments.next()?;
+    let mut ty = bindings.type_at(first, byte)?.to_string();
     if !receiver.contains('.') {
-        return Some(ty);
+        // A bare `this` receiver keeps name resolution; only a chain such as `this.client` is typed.
+        return (first != "this").then_some(ty);
     }
     for segment in segments {
-        ty = lang.semantics().member_receiver_type(&ty, segment)?;
+        ty = bindings
+            .member_type(&ty, segment)
+            .map(str::to_string)
+            .or_else(|| lang.semantics().member_receiver_type(&ty, segment))?;
     }
     is_plain_type_name(&ty).then_some(ty)
 }
@@ -543,6 +550,7 @@ fn record_def_item(
         lang.semantics()
             .resolve_def_params_and_name(ext.def_node, source_bytes, kind, orig_name);
     let immutable = kind == SymKind::Var && lang.semantics().is_immutable_scalar_binding(&gate_ctx);
+    let contract_member = lang.semantics().is_contract_member(&gate_ctx);
     defs.push(RawDef {
         name,
         scope,
@@ -555,6 +563,7 @@ fn record_def_item(
         params,
         metrics,
         immutable,
+        contract_member,
     });
 }
 
