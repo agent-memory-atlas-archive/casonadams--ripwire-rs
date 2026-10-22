@@ -468,6 +468,7 @@ pub trait LanguageSemantics: Sync {
     fn is_immutable_scalar_binding(&self, _ctx: &DefCaptureGateContext<'_>) -> bool {
         false
     }
+
     /// True if a symbol name is public by language naming convention.
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_')
@@ -540,6 +541,30 @@ pub trait LanguageSemantics: Sync {
     }
     /// True where `impl Trait for Type` blocks bind methods to types and traits dispatch to them (Rust).
     fn has_trait_impls(&self) -> bool {
+        false
+    }
+    /// True where declared implementations (Rust `impl`, TypeScript `class … implements`) feed the trait index.
+    fn indexes_implementations(&self) -> bool {
+        self.has_trait_impls()
+    }
+    /// True where a receiver whose declared type text is not an indexed type may use name resolution.
+    fn unindexed_receiver_type_uses_names(&self, _receiver_type: &str) -> bool {
+        false
+    }
+    /// True where a call receiver whose result type is not declared (`make().m()`) declines instead of name resolution.
+    fn undeclared_call_receiver_declines(&self) -> bool {
+        false
+    }
+    /// Declared type text of member `member` of a receiver whose declared type text is `receiver_type`.
+    fn member_receiver_type(&self, _receiver_type: &str, _member: &str) -> Option<String> {
+        None
+    }
+    /// True where a call through an interface also reaches the interface's own declaration of the method.
+    fn interface_calls_keep_declaration(&self) -> bool {
+        false
+    }
+    /// True where interfaces are satisfied by shape, so a class conforms without declaring it (TypeScript).
+    fn interfaces_are_structural(&self) -> bool {
         false
     }
     /// The module an import specifier names and the identifier it binds in the importing file, when

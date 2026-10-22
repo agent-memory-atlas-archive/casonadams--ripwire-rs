@@ -10,6 +10,7 @@ pub struct BindingSpan {
 #[derive(Default)]
 pub struct ReadBindings<'a> {
     scopes: HashMap<&'a str, Vec<BindingSpan>>,
+    returns: HashMap<&'a str, String>,
 }
 
 impl<'a> ReadBindings<'a> {
@@ -49,7 +50,6 @@ impl<'a> ReadBindings<'a> {
             .get(name)
             .is_some_and(|spans| spans.iter().any(|span| span.range.contains(&byte)))
     }
-
     pub fn type_at(&self, name: &str, byte: usize) -> Option<&str> {
         let spans = self.scopes.get(name)?;
         spans
@@ -57,6 +57,16 @@ impl<'a> ReadBindings<'a> {
             .filter(|span| span.range.contains(&byte))
             .max_by_key(|span| span.range.start)
             .and_then(|span| span.ty.as_deref())
+    }
+
+    /// Records the declared result type of a function named `name`, for calls `name()`.
+    pub fn insert_return(&mut self, name: &'a str, ty: String) {
+        self.returns.insert(name, ty);
+    }
+
+    /// Declared result type of a function named `name`, when one is annotated.
+    pub fn return_type(&self, name: &str) -> Option<&str> {
+        self.returns.get(name).map(String::as_str)
     }
 }
 

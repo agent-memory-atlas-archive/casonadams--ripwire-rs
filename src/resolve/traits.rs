@@ -28,6 +28,7 @@ pub struct TraitIndex {
     by_subject: HashMap<NodeId, Vec<usize>>,
     blankets: Vec<usize>,
     trait_defaults: HashMap<NodeId, Vec<NodeId>>,
+    trait_members: HashMap<NodeId, Vec<NodeId>>,
     nominals_by_name: HashMap<Spur, Vec<NodeId>>,
     scopes: RustScopes,
     crate_roots: Vec<Option<u32>>,
@@ -72,6 +73,7 @@ impl TraitIndex {
         for imp in implementations {
             index.add_implementation(imp, env, &methods);
         }
+        index.add_structural_implementors(env);
         index
     }
 
@@ -79,6 +81,25 @@ impl TraitIndex {
     #[must_use]
     pub fn is_non_inherent(&self, method: NodeId) -> bool {
         self.non_inherent.contains(&method)
+    }
+
+    /// Methods named `name` that trait `trait_id` declares in its own body (bodied or bodyless).
+    #[must_use]
+    pub fn declared_methods(
+        &self,
+        trait_id: NodeId,
+        name: Spur,
+        symbols: &[Symbol],
+    ) -> Vec<NodeId> {
+        self.trait_members
+            .get(&trait_id)
+            .map(|ids| {
+                ids.iter()
+                    .copied()
+                    .filter(|&m| symbols[m as usize].name == name)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// The type a receiver names (concrete or trait) as seen from `file_id`, or `None` when
@@ -203,8 +224,64 @@ impl TraitIndex {
             );
             for &m in members {
                 self.non_inherent.insert(m);
+                self.trait_members.entry(trait_id).or_default().push(m);
                 if env.symbols[m as usize].has_body() {
                     self.trait_defaults.entry(trait_id).or_default().push(m);
+                }
+            }
+        }
+    }
+
+    /// Classes that satisfy a structurally typed interface by shape: each interface method has a
+    /// same-named method with the same parameter count on the class. Such a class is recorded as an
+    /// implementor of the interface (dispatch only), never as a subject, so `implements` checks and
+    /// unrelated classes stay as declared.
+    fn add_structural_implementors(&mut self, env: &TraitEnv<'_>) {
+        let symbols = env.symbols;
+        let mut interfaces: Vec<NodeId> = self
+            .nominals_by_name
+            .values()
+            .flatten()
+            .copied()
+            .filter(|&id| {
+                let sym = &symbols[id as usize];
+                sym.kind == SymKind::Interface && sym.lang.semantics().interfaces_are_structural()
+            })
+            .collect();
+        interfaces.sort_unstable();
+        let mut subjects: Vec<NodeId> = self.by_subject.keys().copied().collect();
+        subjects.sort_unstable();
+        for iface in interfaces {
+            let required: Vec<(Spur, u16)> = self
+                .trait_members
+                .get(&iface)
+                .into_iter()
+                .flatten()
+                .map(|&m| (symbols[m as usize].name, symbols[m as usize].params))
+                .collect();
+            if required.is_empty() {
+                continue;
+            }
+            for &subject in &subjects {
+                let methods: Vec<NodeId> = self.by_subject[&subject]
+                    .iter()
+                    .flat_map(|&i| self.impls[i].methods.iter().copied())
+                    .collect();
+                let conforms = required.iter().all(|&(name, params)| {
+                    methods.iter().any(|&m| {
+                        let sym = &symbols[m as usize];
+                        sym.name == name && sym.params == params && sym.has_body()
+                    })
+                });
+                if conforms {
+                    let idx = self.impls.len();
+                    self.impls.push(TraitImpl {
+                        trait_id: Some(iface),
+                        subject: Some(subject),
+                        bound: None,
+                        methods,
+                    });
+                    self.by_trait.entry(iface).or_default().push(idx);
                 }
             }
         }
@@ -380,7 +457,7 @@ fn nominals_by_name(symbols: &[Symbol]) -> HashMap<Spur, Vec<NodeId>> {
     let mut map: HashMap<Spur, Vec<NodeId>> = HashMap::new();
     for s in symbols
         .iter()
-        .filter(|s| s.lang.semantics().has_trait_impls() && s.kind.is_type_container())
+        .filter(|s| s.lang.semantics().indexes_implementations() && s.kind.is_type_container())
     {
         map.entry(s.name).or_default().push(s.id);
     }
@@ -391,7 +468,7 @@ fn methods_by_file(symbols: &[Symbol]) -> MethodsByFile {
     let mut map: MethodsByFile = HashMap::new();
     for s in symbols
         .iter()
-        .filter(|s| s.kind == SymKind::Method && s.lang.semantics().has_trait_impls())
+        .filter(|s| s.kind == SymKind::Method && s.lang.semantics().indexes_implementations())
     {
         map.entry(s.file_id).or_default().push(s.id);
     }

@@ -1,9 +1,11 @@
 use super::javascript::{
-    JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_jsx_intrinsic_tag_call,
-    parse_tsconfig_paths, resolve_web_import_target,
+    JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_const_scalar_binding,
+    is_jsx_intrinsic_tag_call, is_std_member_call_value, parse_tsconfig_paths,
+    resolve_web_import_target,
 };
 use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
+mod types;
 pub mod astro;
 
 use crate::ingest::{FileParseResult, parse_file_tree};
@@ -153,9 +155,43 @@ impl LanguageSemantics for TypeScriptLanguage {
         root: tree_sitter::Node<'_>,
         source: &'a [u8],
     ) -> super::reads::ReadBindings<'a> {
-        super::reads::ReadBindings::collect(root, source, |node| {
-            super::javascript::javascript_binding_scope(node).map(|scope| scope.byte_range())
-        })
+        types::typed_read_bindings(root, source)
+    }
+
+    fn implementations(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &[u8],
+    ) -> Vec<super::Implementation> {
+        types::class_implementations(root, source)
+    }
+
+    fn indexes_implementations(&self) -> bool {
+        true
+    }
+
+    fn unindexed_receiver_type_uses_names(&self, receiver_type: &str) -> bool {
+        // Object-literal and plain-name types the index does not know: name resolution, as before.
+        receiver_type.starts_with('{')
+            || receiver_type
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    }
+
+    fn undeclared_call_receiver_declines(&self) -> bool {
+        true
+    }
+
+    fn interface_calls_keep_declaration(&self) -> bool {
+        true
+    }
+
+    fn interfaces_are_structural(&self) -> bool {
+        true
+    }
+
+    fn member_receiver_type(&self, receiver_type: &str, member: &str) -> Option<String> {
+        types::object_member_type(receiver_type, member)
     }
 
     fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {
@@ -199,7 +235,15 @@ impl LanguageSemantics for TypeScriptLanguage {
     }
 
     fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
-        ctx.sub != Some("constant") || super::is_screaming_snake(ctx.name)
+        match ctx.sub {
+            Some("constant") => super::is_screaming_snake(ctx.name),
+            None => ctx.kind != crate::domain::SymKind::Function || !is_std_member_call_value(ctx),
+            _ => true,
+        }
+    }
+
+    fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        is_const_scalar_binding(ctx)
     }
 
     fn should_ignore_call(&self, name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {

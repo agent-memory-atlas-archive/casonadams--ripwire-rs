@@ -252,10 +252,55 @@ fn bare_member_receiver(
     lang: Lang,
 ) -> Option<String> {
     let recv = member_access_receiver(name_node.parent()?, name_node, lang)?;
+    if recv.kind() == "call_expression" {
+        let callee = recv.child_by_field_name("function")?;
+        let name = callee.utf8_text(source_bytes).ok()?;
+        return (callee.kind() == "identifier").then(|| format!("{name}()"));
+    }
     let text = recv.utf8_text(source_bytes).ok()?.trim();
-    text.bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    text.split('.')
+        .all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        })
         .then(|| text.to_string())
+}
+
+/// Declared type of a receiver: a bound identifier's type, or for a dotted chain the member type
+/// the language reports at each step. A chain counts only when it ends at a plain type name.
+fn receiver_type_at(
+    receiver: &str,
+    byte: usize,
+    bindings: &crate::languages::reads::ReadBindings<'_>,
+    lang: Lang,
+) -> Option<String> {
+    if let Some(callee) = receiver.strip_suffix("()") {
+        let declared = bindings
+            .return_type(callee)
+            .filter(|ty| is_plain_type_name(ty));
+        return match declared {
+            Some(ty) => Some(ty.to_string()),
+            None => lang
+                .semantics()
+                .undeclared_call_receiver_declines()
+                .then(|| receiver.to_string()),
+        };
+    }
+    let mut segments = receiver.split('.');
+    let mut ty = bindings.type_at(segments.next()?, byte)?.to_string();
+    if !receiver.contains('.') {
+        return Some(ty);
+    }
+    for segment in segments {
+        ty = lang.semantics().member_receiver_type(&ty, segment)?;
+    }
+    is_plain_type_name(&ty).then_some(ty)
+}
+
+fn is_plain_type_name(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 fn find_call_qualifier(
@@ -820,15 +865,15 @@ pub fn parse_file_tree(
             .semantics()
             .read_bindings(tree.root_node(), source_bytes);
         refs.retain(|reference| {
-            reference.role != RefRole::Read
+            !matches!(reference.role, RefRole::Read | RefRole::Write)
                 || !bindings.shadows(&reference.callee_name, reference.start_byte)
         });
         for r in &mut refs {
             if r.receiver_type.is_none()
                 && let Some(receiver) = &r.receiver
-                && let Some(ty) = bindings.type_at(receiver, r.start_byte)
+                && let Some(ty) = receiver_type_at(receiver, r.start_byte, &bindings, lang)
             {
-                r.receiver_type = Some(ty.to_string());
+                r.receiver_type = Some(ty);
             }
         }
         if lang.semantics().supports_embedded_sql() {

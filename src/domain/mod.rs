@@ -350,7 +350,13 @@ impl Symbol {
             return fallback_name.to_string();
         }
         let raw = String::from_utf8_lossy(&file_bytes[start..end]);
-        let header = truncate_at_declaration_body(&raw);
+        // A signature ending before its end_byte is bounded by the parser (the body starts there), so
+        // braces inside the header are type syntax (`(): { a: string }`), not the body.
+        let header = if self.sig_end_byte < self.end_byte {
+            raw.trim()
+        } else {
+            truncate_at_declaration_body(&raw)
+        };
         let collapsed = header.split_whitespace().collect::<Vec<_>>().join(" ");
         if collapsed.is_empty() {
             fallback_name.to_string()
@@ -366,19 +372,32 @@ impl Symbol {
 fn truncate_at_declaration_body(raw: &str) -> &str {
     let mut paren_depth = 0i32;
     let mut bracket_depth = 0i32;
+    let mut angle_depth = 0i32;
+    let mut prev = 0u8;
+    let mut first_stop = None;
     for (idx, b) in raw.bytes().enumerate() {
+        let top = paren_depth == 0 && bracket_depth == 0;
         match b {
             b'(' => paren_depth += 1,
             b')' => paren_depth = (paren_depth - 1).max(0),
             b'[' => bracket_depth += 1,
             b']' => bracket_depth = (bracket_depth - 1).max(0),
-            b'{' | b';' if paren_depth == 0 && bracket_depth == 0 => {
-                return raw[..idx].trim();
+            b'<' if top => angle_depth += 1,
+            b'>' if top && prev != b'=' => angle_depth = (angle_depth - 1).max(0),
+            b'{' | b';' if top => {
+                if angle_depth == 0 {
+                    return raw[..idx].trim();
+                }
+                first_stop.get_or_insert(idx);
             }
             _ => {}
         }
+        prev = b;
     }
-    raw.trim().trim_end_matches('{').trim()
+    match first_stop.filter(|_| angle_depth != 0) {
+        Some(idx) => raw[..idx].trim(),
+        None => raw.trim().trim_end_matches('{').trim(),
+    }
 }
 
 /// Unresolved reference extracted from AST syntax.

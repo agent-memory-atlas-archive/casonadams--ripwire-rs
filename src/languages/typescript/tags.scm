@@ -88,6 +88,35 @@
     value: [ (as_expression        (parenthesized_expression [ (arrow_function) (function_expression) ]))
              (satisfies_expression (parenthesized_expression [ (arrow_function) (function_expression) ])) ])) @definition.function
 
+; ---- fluent builders ending in a callable: `export const getX = createServerFn({..}).handler(async () => {..})` ----
+; The const's value is the function the builder returns. The receiver of the final member call must be a
+; factory call, optionally behind one or two more member calls (`createX().inputValidator(v).handler(f)`).
+; Plain data chains (`list.filter(f).map(g)`) have a non-call root and stay out; standard members such as
+; `then`/`map` on a factory call are rejected by is_def_capture_allowed. Module scope only.
+(program
+  (lexical_declaration
+    (variable_declarator
+      name: (identifier) @name
+      value: (call_expression
+        function: (member_expression object: [
+          (call_expression function: (identifier))
+          (call_expression function: (member_expression object: (call_expression function: (identifier))))
+          (call_expression function: (member_expression object: (call_expression function: (member_expression object: (call_expression function: (identifier))))))
+        ])
+        arguments: (arguments [ (arrow_function) (function_expression) ] .)))) @definition.function)
+
+(export_statement
+  (lexical_declaration
+    (variable_declarator
+      name: (identifier) @name
+      value: (call_expression
+        function: (member_expression object: [
+          (call_expression function: (identifier))
+          (call_expression function: (member_expression object: (call_expression function: (identifier))))
+          (call_expression function: (member_expression object: (call_expression function: (member_expression object: (call_expression function: (identifier))))))
+        ])
+        arguments: (arguments [ (arrow_function) (function_expression) ] .)))) @definition.function)
+
 ; ---- module-level settings constants (r3 q10 — bench/headtohead/r3-headroom-2026-08-03) ----
 ; `const PASSWORD_HASHERS = [...]` at module scope: a settings/config constant is a real, rankable
 ; symbol — before these patterns a whole settings module contributed ZERO symbols to the map, so
@@ -109,6 +138,30 @@
     "const"
     (variable_declarator
       name: (identifier) @name)) @definition.constant)
+
+; Module-level `let` / `var` are mutable state: the only bindings the const patterns above never
+; captured. Kept as @definition.var (no immutable flag), so a read or write of them reaches state.
+(program
+  (lexical_declaration
+    "let"
+    (variable_declarator
+      name: (identifier) @name)) @definition.var)
+
+(export_statement
+  (lexical_declaration
+    "let"
+    (variable_declarator
+      name: (identifier) @name)) @definition.var)
+
+(program
+  (variable_declaration
+    (variable_declarator
+      name: (identifier) @name)) @definition.var)
+
+(export_statement
+  (variable_declaration
+    (variable_declarator
+      name: (identifier) @name)) @definition.var)
 
 ; declaration-file signatures (kept so .d.ts still yields symbols)
 (function_signature
@@ -235,6 +288,32 @@
 
 (export_statement
   source: (string) @import.path)
+
+; ---- writes ----
+; An assignment target is a write, not a read: `x = v`, `x += v`, `x++`, and the object of
+; `x.p = v` / `x[i] = v` (a mutation through the binding). javascript_read_position drops the read
+; capture for the same identifiers, so each site yields exactly one reference.
+(assignment_expression
+  left: (identifier) @name) @reference.write
+
+(augmented_assignment_expression
+  left: (identifier) @name) @reference.write
+
+(update_expression
+  argument: (identifier) @name) @reference.write
+
+(assignment_expression
+  left: [ (member_expression object: (identifier) @name)
+          (subscript_expression object: (identifier) @name)
+          (member_expression object: (member_expression object: (identifier) @name)) ]) @reference.write
+
+(augmented_assignment_expression
+  left: [ (member_expression object: (identifier) @name)
+          (subscript_expression object: (identifier) @name) ]) @reference.write
+
+(update_expression
+  argument: [ (member_expression object: (identifier) @name)
+              (subscript_expression object: (identifier) @name) ]) @reference.write
 
 ; JavaScript value semantics also apply to TypeScript expressions.
 [(identifier) (shorthand_property_identifier)] @name @reference.read
