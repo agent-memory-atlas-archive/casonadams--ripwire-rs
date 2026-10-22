@@ -1,12 +1,11 @@
 use clap::{Args, Parser, Subcommand};
 
+/// Root command description.
+pub const ABOUT: &str = "High-throughput agent context router and static analysis engine";
+
 /// CLI command line options.
 #[derive(Parser, Debug, Default, PartialEq)]
-#[command(
-    name = "ripwire-rs",
-    version,
-    about = "High-throughput agent context router and static analysis engine"
-)]
+#[command(name = "ripwire-rs", version, about = ABOUT)]
 pub struct Cli {
     /// Target repository path (default: current directory)
     #[arg(value_name = "PATH")]

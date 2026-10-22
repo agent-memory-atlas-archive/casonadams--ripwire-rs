@@ -380,6 +380,7 @@ where
     T: Into<std::ffi::OsString> + Clone,
 {
     let matches = crate::commands::augment(Commands::augment_subcommands(Cli::command()))
+        .about(ABOUT)
         .try_get_matches_from(args)?;
     let mut cli = Cli::from_arg_matches(&matches)?;
     cli.command = match matches.subcommand_name() {
