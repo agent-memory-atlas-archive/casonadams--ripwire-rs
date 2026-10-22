@@ -333,8 +333,8 @@ jobs:
 For contributors developing `ripwire-rs` itself, the repository provides Makefile targets to benchmark performance and verify upstream parity:
 
 ```bash
-# Verify 1:1 input/output equivalence across upstream test matrices
-make validate REPO=.
+# Verify upstream DOM and contract parity (also: make parity or make validate)
+make validate-parity REPO=.
 
 # Benchmark execution speed and peak memory against upstream C++ ripwire
 make bench REPO=.
@@ -342,6 +342,17 @@ make bench REPO=.
 # Run statistical micro-benchmarks across in-memory indexing pipelines
 make bench-pipeline
 ```
+
+Parity validation is quiet on success. Failures emit GitHub Actions
+`::error::` annotations on stderr and exit nonzero; successful checks are not
+listed. This is the default for all three parity targets and the
+`scripts/validate-parity.sh` launcher. Make still displays build output.
+
+`make complexity` also emits GitHub Actions `::error file=...,line=...::`
+annotations on stderr, one for each Rust function above cognitive complexity
+15, and exits nonzero. It is quiet when the gate passes. The
+`scripts/check-complexity.py` adapter converts `cccc` JSON output without
+capping the number of reported violations.
 
 ### Benefits
 - **Automated Merge Blocking**: Fails PR jobs automatically (exit code 4 on `--test-gate` or exit code 2 on `--quality-delta`) before untested changes or architectural rot merge into production branches.

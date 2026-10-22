@@ -139,6 +139,11 @@ OPTIONAL_ATTRS = {
 }
 
 
+def report_error(message):
+    escaped = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+    print(f"::error::{escaped}", file=sys.stderr)
+
+
 def find_binaries():
     rw_bin = os.path.abspath("target/release/ripwire-rs")
     if not os.path.exists(rw_bin):
@@ -149,7 +154,7 @@ def find_binaries():
     if not os.path.exists(rip_bin):
         rip_bin = shutil.which("ripwire")
     if not rw_bin or not rip_bin:
-        print("Error: ripwire-rs or ripwire binary not found.", file=sys.stderr)
+        report_error("ripwire-rs or ripwire binary not found.")
         sys.exit(1)
     rw_dir = os.path.dirname(os.path.abspath(rw_bin))
     if rw_dir not in os.environ.get("PATH", "").split(os.pathsep):
@@ -445,34 +450,21 @@ def run_one_check(rw_bin, rip_bin, repo, cmd):
 def main():
     repo = sys.argv[1] if len(sys.argv) > 1 else "."
     if not os.path.exists(repo):
-        print(f"Error: repository path '{repo}' does not exist", file=sys.stderr)
+        report_error(f"Repository path '{repo}' does not exist")
         sys.exit(1)
     rw_bin, rip_bin = find_binaries()
     merge_ref = detect_merge_ref(repo)
     target_file, target_sym, second_sym = discover_repo_targets(rw_bin, repo)
     commands = build_command_list(merge_ref, target_file, target_sym, second_sym)
-    print("=" * 66)
-    print(f"Validating 1:1 Head-to-Head Parity on: {os.path.abspath(repo)}")
-    print(f"Seed file: {target_file} | Symbols: {target_sym}, {second_sym}")
-    print(f"ripwire-rs binary: {rw_bin}")
-    print(f"ripwire binary:    {rip_bin}")
-    print("=" * 66)
     failures = 0
     for cmd, desc in commands:
         reason = run_one_check(rw_bin, rip_bin, repo, cmd)
-        label = cmd if cmd else "(default)"
-        if reason is None:
-            print(f"  \033[32m[PASS]\033[0m {label:<36} - {desc}")
-        else:
+        if reason is not None:
             failures += 1
-            print(f"  \033[31m[FAIL]\033[0m {label:<36} - {desc} ({reason})")
-    print("=" * 66)
-    total = len(commands)
-    passed = total - failures
+            label = cmd if cmd else "(default)"
+            report_error(f"Parity failed on {repo}: {label} - {desc} ({reason})")
     if failures == 0:
-        print(f"\033[32mPARITY VERIFIED: {passed}/{total} commands matched 1:1 DOM & contract parity.\033[0m")
         sys.exit(0)
-    print(f"\033[31mPARITY FAILED: {failures}/{total} commands diverged from ripwire.\033[0m")
     sys.exit(1)
 
 

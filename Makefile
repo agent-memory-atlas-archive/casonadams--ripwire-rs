@@ -76,9 +76,8 @@ crap: coverage ## Evaluate CRAP metrics and gate on functions exceeding threshol
 	rm -f "$$err"
 
 .PHONY: complexity
-complexity: ## Evaluate Cognitive and Cyclomatic complexity with cccc and gate on cognitive <= 15
-	@command -v cccc >/dev/null 2>&1 || { echo "Error: cccc not found. Install with: cargo install cccc-cli"; exit 1; }
-	@cccc --top-cognitive 15 --max-cognitive 15 --lang rust . >/dev/null
+complexity: ## Gate on cccc cognitive complexity <= 15 with GitHub error annotations
+	@python3 ./scripts/check-complexity.py .
 
 .PHONY: quality
 quality: ## Measure quality regressions against git HEAD with ripwire-rs
@@ -106,11 +105,14 @@ upstream-parity: build-release ## Run upstream regression.sh against target/rele
 REPO ?= .
 
 .PHONY: parity
-parity: build-release ## Validate 1:1 input/output parity with upstream ripwire across 66 commands on REPO (default: REPO=.)
+parity: build-release ## Validate upstream parity on REPO; quiet on success, GitHub error annotations on failure (default: REPO=.)
 	@./scripts/validate-parity.sh "$(REPO)"
 
 .PHONY: validate
 validate: parity ## Alias for parity validation on REPO (e.g. make validate REPO=../cccc)
+
+.PHONY: validate-parity
+validate-parity: parity ## Alias for parity validation with GitHub error annotations
 
 .PHONY: validate-knowledge
 validate-knowledge: build-release ## Run deep knowledge, computed-metric, and resource comparison against upstream ripwire on REPO (default: REPO=.)
