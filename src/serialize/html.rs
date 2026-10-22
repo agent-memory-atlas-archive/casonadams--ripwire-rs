@@ -217,7 +217,11 @@ pub fn generate_call_graph_html(
     modules_json.push_str("];\n");
 
     const HTML_VIS_JS: &str = include_str!("html_vis.js");
-
+    let lang_colors = crate::languages::ALL_LANGS
+        .iter()
+        .filter_map(|lang| Some(format!("{:?}: {:?}", lang.tag(), lang.semantics().color()?)))
+        .collect::<Vec<_>>()
+        .join(", ");
     format!(
         r##"<!DOCTYPE html>
 <html lang="en">
@@ -266,10 +270,7 @@ const NODE_TOTAL = {};
 const EDGE_TOTAL = {};
 const SYM_TOTAL = {};
 const COLOR_MODE = "{}";
-const LANG_COLORS = {{
-  "rs": "#dea584", "ts": "#3178c6", "js": "#f1e05a", "py": "#3572a5", "go": "#00add8",
-  "c": "#555", "cpp": "#f34b7d", "java": "#b07219", "cs": "#178600", "swift": "#f05138"
-}};
+const LANG_COLORS = {{ {} }};
 const SHAPES = {{}};
 const CHURN_MAP = [];
 const HAS_CHURN = false;
@@ -286,6 +287,7 @@ const HAS_CHURN = false;
         edges.len(),
         nodes.len(),
         initial_color_by.mode_name(),
+        lang_colors,
         files_json,
         nodes_json,
         links_json,

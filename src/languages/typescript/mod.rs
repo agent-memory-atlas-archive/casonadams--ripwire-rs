@@ -137,6 +137,10 @@ impl LanguageSemantics for TypeScriptLanguage {
     fn tag(&self) -> &'static str {
         "ts"
     }
+
+    fn color(&self) -> Option<&'static str> {
+        Some("#3178c6")
+    }
     super::impl_grammar_method!(crate tree_sitter_typescript::LANGUAGE_TYPESCRIPT, "tags.scm");
 
     fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>) -> bool {

@@ -117,6 +117,10 @@ impl LanguageSemantics for SwiftLanguage {
     fn tag(&self) -> &'static str {
         "swift"
     }
+
+    fn color(&self) -> Option<&'static str> {
+        Some("#f05138")
+    }
     super::impl_grammar_method!(crate tree_sitter_swift::LANGUAGE, "tags.scm");
 
     fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {

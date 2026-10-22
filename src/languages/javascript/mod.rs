@@ -379,6 +379,10 @@ impl LanguageSemantics for JavaScriptLanguage {
         "js"
     }
 
+    fn color(&self) -> Option<&'static str> {
+        Some("#f1e05a")
+    }
+
     fn is_generated_file_name(&self, file_name: &str) -> bool {
         file_name.ends_with(".min.js")
     }

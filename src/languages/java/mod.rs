@@ -147,6 +147,10 @@ impl LanguageSemantics for JavaLanguage {
     fn tag(&self) -> &'static str {
         "java"
     }
+
+    fn color(&self) -> Option<&'static str> {
+        Some("#b07219")
+    }
     super::impl_grammar_method!(crate tree_sitter_java::LANGUAGE, "tags.scm");
 
     fn lint_return_type<'a>(&self, sig: &'a str, name: &str) -> Option<&'a str> {

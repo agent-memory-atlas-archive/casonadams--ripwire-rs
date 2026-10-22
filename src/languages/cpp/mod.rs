@@ -186,6 +186,10 @@ impl LanguageSemantics for CppLanguage {
     fn tag(&self) -> &'static str {
         "cpp"
     }
+
+    fn color(&self) -> Option<&'static str> {
+        Some("#f34b7d")
+    }
     super::impl_grammar_method!(crate tree_sitter_cpp::LANGUAGE, "tags.scm");
 
     fn lint_return_type<'a>(&self, sig: &'a str, name: &str) -> Option<&'a str> {

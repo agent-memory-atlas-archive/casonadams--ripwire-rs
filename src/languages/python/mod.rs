@@ -237,6 +237,10 @@ impl LanguageSemantics for PythonLanguage {
         "py"
     }
 
+    fn color(&self) -> Option<&'static str> {
+        Some("#3572a5")
+    }
+
     fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {
         super::lint_hooks::arrow_return_type(sig)
     }

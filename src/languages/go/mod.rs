@@ -98,6 +98,10 @@ impl LanguageSemantics for GoLanguage {
         "go"
     }
 
+    fn color(&self) -> Option<&'static str> {
+        Some("#00add8")
+    }
+
     fn type_declaration_keywords(&self) -> &'static [&'static str] {
         &["type"]
     }

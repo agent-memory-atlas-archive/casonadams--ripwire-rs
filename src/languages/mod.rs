@@ -97,6 +97,11 @@ pub trait LanguageSemantics: Sync {
     /// Short canonical tag used in XML output (`"rs"`, `"ts"`, etc.).
     fn tag(&self) -> &'static str;
 
+    /// Hex color of this language in graph visualizations.
+    fn color(&self) -> Option<&'static str> {
+        None
+    }
+
     /// Grammar node kinds the language-neutral extraction, slicing, and contract passes use.
     fn syntax_kinds(&self) -> &'static SyntaxKinds;
 

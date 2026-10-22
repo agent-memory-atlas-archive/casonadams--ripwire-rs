@@ -618,6 +618,10 @@ impl LanguageSemantics for CLanguage {
     fn tag(&self) -> &'static str {
         "c"
     }
+
+    fn color(&self) -> Option<&'static str> {
+        Some("#555")
+    }
     super::impl_grammar_method!(crate tree_sitter_c::LANGUAGE, "tags.scm");
 
     fn lint_return_type<'a>(&self, sig: &'a str, name: &str) -> Option<&'a str> {
