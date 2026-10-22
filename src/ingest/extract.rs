@@ -237,7 +237,7 @@ fn extract_member_receiver_qualifier(
 ) -> Option<String> {
     let recv = member_access_receiver(parent, name_node, lang)?;
     let text = recv.utf8_text(source_bytes).ok()?.trim();
-    if lang != Lang::Rust && lang.semantics().self_receivers().contains(&text) {
+    if lang.semantics().self_receivers().contains(&text) {
         return find_enclosing_scope(name_node, source_bytes, lang);
     }
     let keep = is_pascal_type_ident(text) || lang.semantics().is_std_or_builtin_qualifier(text);
@@ -275,18 +275,17 @@ fn find_call_qualifier(
             .or_else(|| parent.child_by_field_name("scope"))
         && let Ok(text) = path_node.utf8_text(source_bytes)
     {
-        if lang == Lang::Rust
-            && text.trim() == "Self"
+        if lang.semantics().self_receivers().contains(&text.trim())
             && let Some(scope) = find_enclosing_scope(name_node, source_bytes, lang)
         {
             return Some(scope);
         }
-        let clean = if lang == Lang::Rust {
-            text.split('<').next().unwrap_or(text).trim()
+        let path = if lang.semantics().keeps_path_qualifier() {
+            text
         } else {
-            let last = text.rsplit("::").next().unwrap_or(text);
-            last.split('<').next().unwrap_or(last).trim()
+            text.rsplit("::").next().unwrap_or(text)
         };
+        let clean = path.split('<').next().unwrap_or(path).trim();
         if !clean.is_empty() {
             return Some(clean.to_string());
         }
@@ -530,7 +529,7 @@ fn ref_qualifiers(
     lang: Lang,
     source_bytes: &[u8],
 ) -> (Option<String>, Option<String>) {
-    if role == RefRole::Extends && lang == Lang::Rust {
+    if role == RefRole::Extends && lang.semantics().has_trait_impls() {
         let recv_ty = ext
             .name_node
             .and_then(|n| find_enclosing_scope(n, source_bytes, lang));

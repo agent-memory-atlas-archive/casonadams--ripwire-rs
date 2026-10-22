@@ -295,6 +295,18 @@ impl LanguageSemantics for RustLanguage {
         true
     }
 
+    fn self_receivers(&self) -> &'static [&'static str] {
+        &["Self"]
+    }
+
+    fn keeps_path_qualifier(&self) -> bool {
+        true
+    }
+
+    fn crate_root_suffixes(&self) -> &'static [&'static str] {
+        &["src/lib.rs", "src/main.rs"]
+    }
+
     fn visibility_mode(&self) -> VisibilityMode {
         VisibilityMode::ExplicitModifier
     }

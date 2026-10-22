@@ -152,6 +152,14 @@ pub trait LanguageSemantics: Sync {
     fn self_receivers(&self) -> &'static [&'static str] {
         &["self", "this", "Self"]
     }
+    /// True where a scoped call keeps its whole module path as the qualifier (`a::b::f()` -> `a::b`), not just the last segment.
+    fn keeps_path_qualifier(&self) -> bool {
+        false
+    }
+    /// Path suffixes of the files that root a crate/package module tree (Rust `src/lib.rs`).
+    fn crate_root_suffixes(&self) -> &'static [&'static str] {
+        &[]
+    }
 
     /// True if this language writes bodyless declarations of entities defined elsewhere
     /// (C prototypes, TypeScript overload signatures).

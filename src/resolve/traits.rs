@@ -455,10 +455,16 @@ fn crate_roots(files: &[FileInfo], interner: &Interner) -> Vec<Option<u32>> {
         .iter()
         .filter_map(|f| Some((f.id, interner.try_resolve(&f.path)?)))
         .collect();
-    let roots: Vec<(u32, &str)> = paths
+    let roots: Vec<(u32, &str)> = files
         .iter()
-        .copied()
-        .filter(|(_, p)| p.ends_with("src/lib.rs") || p.ends_with("src/main.rs"))
+        .filter_map(|f| {
+            let path = interner.try_resolve(&f.path)?;
+            let suffixes = f.lang.semantics().crate_root_suffixes();
+            suffixes
+                .iter()
+                .any(|s| path.ends_with(s))
+                .then_some((f.id, path))
+        })
         .collect();
     let len = files.iter().map(|f| f.id as usize + 1).max().unwrap_or(0);
     let mut out = vec![None; len];
