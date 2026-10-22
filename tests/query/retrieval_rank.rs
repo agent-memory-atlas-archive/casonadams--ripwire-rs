@@ -123,3 +123,24 @@ fn presentation_component_with_matching_names_does_not_outrank_coordinator() {
         );
     }
 }
+
+const FLUENT_TS: &[u8] = b"declare function createServerFn(o: object): any;
+export const resumeSession = createServerFn({ method: \"POST\" })
+  .inputValidator((d: unknown) => d)
+  .handler(async ({ data }) => {
+    return reconcileLedger(data);
+  });
+export const listRoutes = createServerFn({ method: \"GET\" })
+  .handler(async () => {
+    return [];
+  });
+";
+
+#[test]
+fn fluent_handler_body_text_is_searchable() {
+    let rows = ranked(FLUENT_TS, "reconcile ledger");
+    assert!(
+        position(&rows, "resumeSession", 2).is_some(),
+        "a term only in the handler body must admit the fluent definition: {rows:?}"
+    );
+}

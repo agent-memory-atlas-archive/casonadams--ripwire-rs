@@ -97,3 +97,54 @@ fn object_literal_return_type_ends_at_the_body() {
         "export function point(a: number): { x: number; y: number }"
     );
 }
+
+fn has_body_of(source: &str, name: &str) -> bool {
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let ingest = ingest_in_memory_files(
+        &[("src/mod.ts", Lang::TypeScript, source.as_bytes())],
+        &registry,
+        &interner,
+    );
+    let found: Vec<bool> = ingest
+        .symbols
+        .iter()
+        .filter(|sym| interner.resolve(&sym.name) == name)
+        .map(|sym| sym.has_body())
+        .collect();
+    assert_eq!(found.len(), 1, "{name}: {found:?}");
+    found[0]
+}
+
+#[test]
+fn fluent_builder_declaration_has_its_handler_callback_as_body() {
+    let source = "declare function createServerFn(o: object): any;\n\
+        export const resumeSession = createServerFn({ method: \"POST\" })\n\
+          .inputValidator((d: unknown) => d)\n\
+          .handler(async ({ data }) => {\n\
+            return reconcileLedger(data);\n\
+          });\n";
+    assert!(has_body_of(source, "resumeSession"));
+}
+
+#[test]
+fn unrelated_bodyless_declaration_keeps_the_stub_shape() {
+    let source = "declare function createServerFn(o: object): any;\n\
+        export declare function resolveRoute(path: string): string;\n";
+    assert!(!has_body_of(source, "resolveRoute"));
+}
+
+#[test]
+fn chain_whose_last_call_is_not_a_handler_takes_no_callback_body() {
+    let source = "declare function createServerFn(o: object): any;\n\
+        export const notAHandler = createServerFn({ method: \"GET\" })\n\
+          .handler(async () => {\n\
+            return reconcileLedger();\n\
+          })\n\
+          .finish(1);\n";
+    let names: Vec<String> = symbols_of(source)
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert!(!names.contains(&"notAHandler".to_string()), "{names:?}");
+}

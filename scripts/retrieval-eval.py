@@ -31,10 +31,11 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE = os.path.join(HERE, "retrieval-eval.json")
+FIXTURE_HELD2 = os.path.join(HERE, "retrieval-eval-held2.json")
 ROW = re.compile(r"<d\s([^>]*)>")
 ATTR = re.compile(r'(\w+)="([^"]*)"')
 AUTH = "authoritative"
-SPLITS = ("tune", "held")
+SPLITS = ("tune", "held", "held2")
 
 
 def parse_rows(text):
@@ -124,16 +125,19 @@ def main():
     ap.add_argument("--bin", action="append", default=[], metavar="NAME=PATH")
     ap.add_argument("--budget", type=int, default=2000)
     ap.add_argument("--runs", type=int, default=3)
-    ap.add_argument("--split", choices=("tune", "held", "all"), default="all")
+    ap.add_argument("--split", choices=("tune", "held", "held2", "all"), default="all")
     ap.add_argument("--json", metavar="OUT")
     args = ap.parse_args()
 
     with open(FIXTURE, encoding="utf-8") as fh:
         fixture = json.load(fh)
-    questions = [
-        q for q in fixture["questions"] if args.split == "all" or q["split"] == args.split
-    ]
+    with open(FIXTURE_HELD2, encoding="utf-8") as fh:
+        extra = json.load(fh)["questions"]
     repos = fixture["repos"]
+    questions = [
+        q for q in fixture["questions"] + extra
+        if args.split == "all" or q["split"] == args.split
+    ]
     for q in questions:
         q["repo"] = repos[q["repo"]]
 

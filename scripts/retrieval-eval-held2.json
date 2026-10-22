@@ -1,0 +1,90 @@
+{
+  "description": "HELD-OUT-2: fresh conceptual --for questions authored from source after the TUNE/HELD split was fixed; never used for tuning. Same labels and metrics as retrieval-eval.json. Repos are read from retrieval-eval.json.",
+  "questions": [
+    {"id": "ra2-1", "repo": "review-agent", "split": "held2", "query": "agent file reads escaping checkout rejected",
+     "question": "When the reviewing model asks a file tool for a path, which checks reject it if it would resolve outside the checkout or land on a protected file, and what message does the model get back?",
+     "targets": [
+      {"name": "validateResolvedRepositoryPath", "path": "src/pi/path-gate.ts", "line": 59, "label": "authoritative"},
+      {"name": "createPathGate", "path": "src/pi/path-gate.ts", "line": 129, "label": "caller"},
+      {"name": "isInside", "path": "src/pi/path-gate.ts", "line": 17, "label": "unrelated"}
+     ]},
+    {"id": "ra2-2", "repo": "review-agent", "split": "held2", "query": "enqueue duplicate task name already exists",
+     "question": "When a review job is enqueued and the queue reports that its task name is already taken, how do we decide between treating it as a duplicate and creating the task again?",
+     "targets": [
+      {"name": "createIdempotentTask", "path": "src/gcp/idempotent-task.ts", "line": 35, "label": "authoritative"},
+      {"name": "recoverRetainedTaskName", "path": "src/gcp/idempotent-task.ts", "line": 18, "label": "authoritative"},
+      {"name": "enqueue", "path": "src/gcp/tasks.ts", "line": 76, "label": "caller"}
+     ]},
+    {"id": "ra2-3", "repo": "review-agent", "split": "held2", "query": "fetched diff line counts mismatch completeness",
+     "question": "How do we decide that a fetched pull request diff is incomplete when a file's additions and deletions do not match the counts GitHub reported for that file?",
+     "targets": [
+      {"name": "completeDiff", "path": "src/github/diff-completeness.ts", "line": 38, "label": "authoritative"},
+      {"name": "completeIncrementalDiff", "path": "src/github/diff-fetch.ts", "line": 167, "label": "caller"},
+      {"name": "selectChangedFiles", "path": "src/github/diff-completeness.ts", "line": 11, "label": "unrelated"}
+     ]},
+    {"id": "ra2-4", "repo": "review-agent", "split": "held2", "query": "stable identity for repeated review findings",
+     "question": "How is each finding given an identity that stays the same across repeated runs, and which field makes a left-side finding distinct from a right-side one with the same wording?",
+     "targets": [
+      {"name": "findingFingerprint", "path": "src/review/fingerprint.ts", "line": 11, "label": "authoritative"},
+      {"name": "identifyFindings", "path": "src/review/fingerprint.ts", "line": 22, "label": "caller"}
+     ]},
+    {"id": "ra2-5", "repo": "review-agent", "split": "held2", "query": "submission rejection reason codes list",
+     "question": "Which reasons can a reviewer's submission be turned away for, and how is each turned-away submission tallied by reason?",
+     "targets": [
+      {"name": "REJECTION_REASONS", "path": "src/core/rejections.ts", "line": 1, "label": "authoritative"},
+      {"name": "countRejection", "path": "src/core/rejections.ts", "line": 39, "label": "caller"},
+      {"name": "CANDIDATE_REJECTION_REASONS", "path": "src/core/types.ts", "line": 18, "label": "unrelated"}
+     ]},
+    {"id": "ra2-6", "repo": "review-agent", "split": "held2", "query": "tracker ticket keys mentioned in text",
+     "question": "Which strings in a branch name or commit message count as ticket identifiers from our tracker, and which team prefixes are accepted as valid?",
+     "targets": [
+      {"name": "linearIssueKeys", "path": "src/linear/issue-keys.ts", "line": 6, "label": "authoritative"},
+      {"name": "TEAM_KEYS", "path": "src/linear/issue-keys.ts", "line": 3, "label": "authoritative"},
+      {"name": "keySearch", "path": "src/service/ticket.ts", "line": 52, "label": "caller"}
+     ]},
+    {"id": "mp2-1", "repo": "member-portal", "split": "held2", "query": "work email domain launched employer match",
+     "question": "When someone signs up with their work address, how do we find which launched employer that email domain belongs to, and what happens if two employers match?",
+     "targets": [
+      {"name": "emailDomain", "path": "src/lib/queries/employer-domain.ts", "line": 53, "label": "authoritative"},
+      {"name": "EMPLOYER_BY_DOMAIN_QUERY", "path": "src/lib/queries/employer-domain.ts", "line": 17, "label": "authoritative"},
+      {"name": "resolveEmployerByDomain", "path": "src/lib/create-account/resolve-employer.ts", "line": 27, "label": "caller"},
+      {"name": "emailDomains", "path": "src/graphql/schema.graphql", "line": 20420, "label": "unrelated"}
+     ]},
+    {"id": "mp2-2", "repo": "member-portal", "split": "held2", "query": "states with no insurance offered",
+     "question": "Which states does the portal treat as having no insurance coverage offered at all, rather than coming soon?",
+     "targets": [
+      {"name": "UNAVAILABLE_STATES", "path": "src/lib/insurance-coverage.ts", "line": 17, "label": "authoritative"},
+      {"name": "useCoverageAvailability", "path": "src/lib/hooks/use-coverage-availability.ts", "line": 17, "label": "caller"},
+      {"name": "isStateCovered", "path": "src/lib/insurance-coverage.ts", "line": 38, "label": "unrelated"}
+     ]},
+    {"id": "mp2-3", "repo": "member-portal", "split": "held2", "query": "selectable transfer nights for number move",
+     "question": "Which evenings can a customer pick as the day their number moves over, and how far out can they book?",
+     "targets": [
+      {"name": "allowedTransferNights", "path": "src/lib/transfer-nights.ts", "line": 26, "label": "authoritative"},
+      {"name": "defaultPortPick", "path": "src/lib/port-schedule.ts", "line": 89, "label": "caller"},
+      {"name": "portWindowsFor", "path": "src/lib/port-schedule.ts", "line": 81, "label": "unrelated"}
+     ]},
+    {"id": "mp2-4", "repo": "member-portal", "split": "held2", "query": "replacement claim stage after deductible paid",
+     "question": "A replacement was approved and the member already paid the deductible; what stage does their device protection claim show?",
+     "targets": [
+      {"name": "deriveClaimStage", "path": "src/lib/queries/device-protection-claims.ts", "line": 247, "label": "authoritative"},
+      {"name": "isRecentlyShippedReplacement", "path": "src/lib/queries/device-protection-claims.ts", "line": 363, "label": "caller"},
+      {"name": "STAGE_ROW_LABEL", "path": "src/lib/queries/device-protection-claims.ts", "line": 133, "label": "presentation"}
+     ]},
+    {"id": "mp2-5", "repo": "member-portal", "split": "held2", "query": "referral invite cap reached which reason",
+     "question": "When is a member blocked from sending another referral invite, and which limit is reported first when both are full?",
+     "targets": [
+      {"name": "referralCapRejection", "path": "src/lib/queries/referrals.ts", "line": 63, "label": "authoritative"},
+      {"name": "useReferrals", "path": "src/lib/hooks/use-referrals.ts", "line": 115, "label": "caller"},
+      {"name": "referralShareMessage", "path": "src/lib/referral.ts", "line": 37, "label": "unrelated"}
+     ]},
+    {"id": "mp2-6", "repo": "member-portal", "split": "held2", "query": "post-login redirect destination must stay internal",
+     "question": "After sign-in, what keeps the app from sending someone to a page outside the portal or back into the login flow?",
+     "targets": [
+      {"name": "isSafeInternalPath", "path": "src/lib/safe-path.ts", "line": 25, "label": "authoritative"},
+      {"name": "BLOCKED_PATHS", "path": "src/lib/safe-path.ts", "line": 3, "label": "authoritative"},
+      {"name": "CallbackPage", "path": "src/routes/callback.tsx", "line": 30, "label": "caller"},
+      {"name": "buildRedirectUri", "path": "src/routes/callback.tsx", "line": 24, "label": "unrelated"}
+     ]}
+  ]
+}

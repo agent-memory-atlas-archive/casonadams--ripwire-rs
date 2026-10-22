@@ -295,6 +295,25 @@ impl LanguageSemantics for TypeScriptLanguage {
         true
     }
 
+    /// A fluent builder's body is its handler callback, not the declarator: without this the definition
+    /// reads as bodyless and its text is never searched.
+    fn resolve_def_body_and_end<'a>(
+        &self,
+        def_node: Option<tree_sitter::Node<'a>>,
+        default_end: usize,
+    ) -> (Option<tree_sitter::Node<'a>>, usize) {
+        if let Some(handler) = def_node.and_then(fluent_handler) {
+            return (Some(handler), default_end);
+        }
+        let Some(dn) = def_node else {
+            return (None, default_end);
+        };
+        match super::find_enclosing_definition_node(dn) {
+            Some(parent) => (Some(parent), parent.end_byte()),
+            None => (Some(dn), default_end),
+        }
+    }
+
     fn should_ignore_call(&self, name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {
         is_jsx_intrinsic_tag_call(name_node, name)
     }
