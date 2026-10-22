@@ -1,8 +1,7 @@
 use ripwire_rs::Lang;
 use ripwire_rs::ingest::classify_capture;
 use ripwire_rs::languages::{ALL_LANGS, LanguageSemantics};
-use std::collections::{BTreeSet, HashMap, HashSet};
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
 
 fn effective_extensions(sem: &'static dyn LanguageSemantics) -> Vec<&'static str> {
     let exts = sem.extensions();
@@ -78,20 +77,4 @@ fn partner_subject_is_none_for_an_empty_stem() {
         assert!(sem.test_partner_subject("", true).is_none(), "{lang:?}");
     }
     assert!(!Lang::Unknown.semantics().supports_test_partners());
-}
-
-#[test]
-fn every_language_directory_is_registered() {
-    // Registration is one `register_languages!` line per module, and a line without its module
-    // directory does not compile. So equal counts mean no directory is left unregistered.
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/languages");
-    let plugin_dirs: BTreeSet<String> = std::fs::read_dir(&dir)
-        .expect("src/languages is readable")
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let name = entry.file_name().into_string().ok()?;
-            (name != "common" && entry.path().join("mod.rs").is_file()).then_some(name)
-        })
-        .collect();
-    assert_eq!(plugin_dirs.len(), ALL_LANGS.len(), "{plugin_dirs:?}");
 }

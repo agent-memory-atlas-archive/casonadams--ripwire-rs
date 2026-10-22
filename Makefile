@@ -18,7 +18,7 @@ ensure-grammars:
 	fi
 
 .PHONY: all
-all: clippy complexity quality crap parity fmt ## Run all checks (clippy, complexity, quality regressions, CRAP/tests, parity, format)
+all: clippy complexity registry quality crap parity fmt ## Run all checks (clippy, complexity, registry, quality regressions, CRAP/tests, parity, format)
 
 .PHONY: build
 build: ## Build the project in debug mode
@@ -78,6 +78,10 @@ crap: coverage ## Evaluate CRAP metrics and gate on functions exceeding threshol
 .PHONY: complexity
 complexity: ## Gate on cccc cognitive complexity <= 15 with GitHub error annotations
 	@python3 ./scripts/check-complexity.py .
+
+.PHONY: registry
+registry: ## Check every language and command plugin directory is registered
+	@python3 ./scripts/check-registry.py .
 
 .PHONY: quality
 quality: ## Measure quality regressions against git HEAD with ripwire-rs
