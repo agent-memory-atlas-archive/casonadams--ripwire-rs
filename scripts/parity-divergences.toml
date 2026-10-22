@@ -11,7 +11,7 @@
 # defect_budget must equal the number of defect entries: a new defect fails, a fixed one must lower it.
 # An entry with a [divergence.files] table runs against that fixture (written to a temp dir) instead of the tree.
 
-defect_budget = 20
+defect_budget = 23
 
 [[divergence]]
 id = "partner-unindexed-languages"
@@ -136,12 +136,12 @@ why = "Hub-ranked map is 12% fewer bytes than upstream, so the same ranking carr
 evidence = "bytes rw=37015 rip=42131; facts rw=3104 rip=3681; density rw=0.08386 rip=0.08737; ours 74 file rows and 902 c rows vs upstream 89 and 1052."
 
 [[divergence]]
-id = "map-diff-top30-richer"
+id = "map-diff-top30-smaller"
 command = "--map-diff --top-k=30"
 case = ""
-kind = "richer"
-why = "Map diff at 30 symbols carries more facts than upstream at 1.6x the facts-per-byte within 28% fewer bytes."
-evidence = "bytes rw=2779 rip=3873; facts rw=210 rip=186; density rw=0.07557 rip=0.04802; ours 30 s rows and 41 c rows vs upstream 30 and 29."
+kind = "smaller"
+why = "Map diff at 30 symbols is about 35% fewer bytes than upstream at a slightly higher facts-per-byte, so the same token budget carries it further."
+evidence = "measured on 2370c85: bytes rw=4151 rip=6369; facts rw=330 rip=352; density rw=0.07950 rip=0.05527; ours carries fewer facts than upstream, so the claim is smaller, not richer."
 [[divergence]]
 id = "around-row-bytes-ego-graph"
 command = "--around=row_bytes"
@@ -170,9 +170,9 @@ evidence = "Measured in the real repo: bytes ours=42634 upstream=10240; facts ou
 id = "edit-check-row-bytes-all-callers"
 command = "--edit-check=row_bytes"
 case = ""
-kind = "smaller"
-why = "Ours lists all 51 callers of row_bytes in 3259 bytes, where upstream's 40-row cap hides 11 of them yet still costs more bytes, so the contract check is complete and cheaper."
-evidence = "Measured in the real repo: bytes ours=3259 upstream=3558; facts ours=170 upstream=144. Ours c=51; upstream c=40 with shown_unflagged=40 unflagged_capped=1. Same cause as safe-delete-row-bytes-all-callers: upstream's 40-row caller cap versus ours uncapped under the 64 KB budget."
+kind = "defect"
+why = "Edit check lists all 51 callers of row_bytes in 3.2 KB, while upstream's answer for the same symbol is now 1.1 KB with 18 facts; the difference in upstream's answer is unexplained and is not a budget-policy row cap."
+evidence = "measured on 2370c85: bytes rw=3253 rip=1124; facts rw=170 rip=18; owner: unassigned"
 
 [[divergence]]
 id = "cochange-counts-match-git"
@@ -181,14 +181,6 @@ case = ""
 kind = "richer"
 why = "Pair counts are the real git history (the top pair src/cli/dispatch.rs + src/cli/queries.rs co-changes in 39 commits of the 18-month window, which git log confirms), where upstream caps its top pair at together=7, so the co-change evidence it reports is more complete and more accurate; the byte count is driven by the shared 64KB default budget, not by this entry."
 evidence = "rw: 64744 B, 4354 facts, density 0.06725; rip: 5559 B, 312 facts, density 0.05613. git log --since='18 months ago' -- src/cli/dispatch.rs src/cli/queries.rs: 39 commits. Upstream max together=7 across 30 rows (678 total pairs); ours 3214 total pairs. Conditional: revisit if DEFAULT_PACK_BUDGET_BYTES changes."
-[[divergence]]
-id = "pr-context-smaller-no-caller-partner-rows"
-command = "--pr-context"
-case = ""
-kind = "smaller"
-why = "PR review bundle stays at a fraction of upstream's bytes by omitting per-caller and per-partner rows, which is the footprint-first trade the mission asks for."
-evidence = "measured (ws-step2, repo '.'): ours 1759 B, 126 facts, density 0.07163; upstream 11425 B, 580 facts, density 0.05077. Upstream-only elements: <caller> 44, <partner> 9, <file-scope> 1."
-
 [[divergence]]
 id = "merge-scout-smaller-no-sym-rows"
 command = "--merge-scout=main"
@@ -226,40 +218,40 @@ id = "ensemble-default-window"
 command = "--ensemble"
 case = ""
 kind = "defect"
-why = "Default ensemble prints every ranked row (64 KB, 4.6x upstream bytes) instead of a budget-derived window; the uncommitted DEFAULT_ROW_LIMIT=40 literal must become a Paged window."
-evidence = "measured on a2e114c: ours 64505 B, upstream 14034 B; owner: group-edit cleanup (plan step 9)"
+why = "Default ensemble fills the 64 KB budget (4.6x upstream bytes); the window is budget-derived by policy, so it stays a counted defect until the generic paged-list rule accepts it."
+evidence = "measured on a2e114c: ours 64505 B, upstream 14034 B; owner: unassigned"
 
 [[divergence]]
 id = "affected-root-attrs-set-1"
 command = "--affected"
 case = "src/gate/affected.rs,src/serialize/arch_xml.rs"
 kind = "defect"
-why = "Affected root omits upstream's changed, order, seeded_by and script_gates_unmodelled gauges; the uncommitted affected.rs edit owns them."
-evidence = "measured on a2e114c: root attr keys missing=[changed, order, partners, script_gates_unmodelled, seeded_by]; owner: group-edit cleanup (plan step 9)"
+why = "Affected root still omits upstream's changed, order, seeded_by and script_gates_unmodelled gauges; partners= landed in 2370c85."
+evidence = "measured on 2370c85: root attr keys missing=[changed, order, seeded_by, script_gates_unmodelled]; owner: unassigned"
 
 [[divergence]]
 id = "affected-root-attrs-set-2"
 command = "--affected"
 case = "src/commands/test_gate.rs,src/commands/gate.rs"
 kind = "defect"
-why = "Affected root omits upstream's changed, order, seeded_by and script_gates_unmodelled gauges; the uncommitted affected.rs edit owns them."
-evidence = "measured on a2e114c: root attr keys missing=[changed, order, partners, script_gates_unmodelled, seeded_by]; owner: group-edit cleanup (plan step 9)"
+why = "Affected root still omits upstream's changed, order, seeded_by and script_gates_unmodelled gauges; partners= landed in 2370c85."
+evidence = "measured on 2370c85: root attr keys missing=[changed, order, seeded_by, script_gates_unmodelled]; owner: unassigned"
 
 [[divergence]]
 id = "affected-root-attrs-set-3"
 command = "--affected"
 case = "src/commands/situ.rs,src/commands/edit_check.rs,src/commands/safe_delete.rs"
 kind = "defect"
-why = "Affected root omits upstream's changed, order, seeded_by and script_gates_unmodelled gauges; the uncommitted affected.rs edit owns them."
-evidence = "measured on a2e114c: root attr keys missing=[changed, order, partners, script_gates_unmodelled, seeded_by]; owner: group-edit cleanup (plan step 9)"
+why = "Affected root still omits upstream's changed, order, seeded_by and script_gates_unmodelled gauges; partners= landed in 2370c85."
+evidence = "measured on 2370c85: root attr keys missing=[changed, order, seeded_by, script_gates_unmodelled]; owner: unassigned"
 
 [[divergence]]
 id = "test-gate-untested-default-window"
 command = "--test-gate"
 case = "src/gate/affected.rs,src/serialize/arch_xml.rs"
 kind = "defect"
-why = "Untested rows are unwindowed by default (156 rows, 13 KB against upstream's 25-row window at 6.9 KB); the uncommitted UNTESTED_DEFAULT_LIMIT=25 is a literal and must become a budget-derived Paged window."
-evidence = "measured on a2e114c: ours 13276 B, upstream 6871 B; owner: group-edit cleanup (plan step 9)"
+why = "Untested rows use the budget-derived default window (156 rows, 13 KB) against upstream's 25-row window (6.9 KB); the richer check does not accept it yet."
+evidence = "measured on a2e114c: ours 13276 B, upstream 6871 B; owner: unassigned"
 
 [[divergence]]
 id = "test-gate-smaller-set-2"
@@ -326,14 +318,6 @@ why = "Clone row src/gate/seams.rs compute_directory is absent from upstream's f
 evidence = "measured on a2e114c: f p=src/gate/seams.rs n=compute_directory absent from upstream's full set; owner: unassigned"
 
 [[divergence]]
-id = "quality-delta-rows"
-command = "--quality-delta"
-case = ""
-kind = "defect"
-why = "Quality delta reports 6 regression rows against upstream's 14; cause not traced."
-evidence = "measured on a2e114c: rw <r>=6 rip <r>=14; owner: unassigned"
-
-[[divergence]]
 id = "seams-ast-match-edge"
 command = "--seams"
 case = ""
@@ -396,3 +380,27 @@ case = ""
 kind = "defect"
 why = "Grep hit rows are out of our ranking order when the full run is compared; not traced."
 evidence = "measured on a2e114c: hit rows out of ranking order; owner: unassigned"
+
+[[divergence]]
+id = "pack-task-search-route"
+command = "--pack-task=search"
+case = ""
+kind = "defect"
+why = "Pack task routes the query to call_pattern_search and lists test rows only for that symbol; upstream routes name-exact(search) to the search module and emits tests: none, so the bundle content differs."
+evidence = "measured on 2370c85: unrecorded <callers> rw=1 rip=0, <s> rw=2 rip=11, <t> rw=1 rip=0; owner: unassigned (route selection)"
+
+[[divergence]]
+id = "scan-skills-doc-line"
+command = "--scan-skills=skills"
+case = ""
+kind = "defect"
+why = "The credential-path rule also flags a prose line in a skill doc that quotes ~/.ssh and ~/.aws in backticks; upstream flags only the exfiltration line, and AGENTS.md requires prose backticks to be filtered before reporting."
+evidence = "measured on 2370c85: rw findings=2 (SKILL.md lines 42 and 74), rip findings=1; owner: unassigned"
+
+[[divergence]]
+id = "pr-context-string-literal-symbol"
+command = "--pr-context"
+case = ""
+kind = "defect"
+why = "PR context lists a symbol named \"billing.scala\" with its quotes, which is a string literal captured as a definition, not a callable; upstream's full set has no such row."
+evidence = "measured on 2370c85: paged <s> row n=\"billing.scala\" absent from upstream's full set; owner: unassigned (symbol extraction)"

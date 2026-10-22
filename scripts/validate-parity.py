@@ -688,33 +688,55 @@ def paged_verdict(rw_bin, rip_bin, repo, cmd, out_rw, out_rip, root_rw, root_rip
     return size_verdict(out_rw, out_rip, root_rw, root_rip)
 
 
-def judge(rw_bin, rip_bin, repo, cmd, outcome, entry):
-    roots = divergence_roots(outcome)
-    diff = tag_divergence(*roots) if roots else {}
-    ident = entry["id"] if entry else None
-    if entry is not None and entry["kind"] == "defect":
-        if outcome.reason or diff:
-            return None, f"{ident}: {entry['why']}"
+def generic_covers(rw_bin, rip_bin, repo, cmd, outcome, roots):
+    return is_paged(roots[0]) and paged_verdict(rw_bin, rip_bin, repo, cmd, outcome.rw, outcome.rip, *roots) is None
+
+
+def defect_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots, diff):
+    ident = entry["id"]
+    if not outcome.reason and not diff:
         return f"ledger entry {ident} no longer diverges; remove it", None
-    if outcome.reason and entry is None:
-        return outcome.reason, None
-    if outcome.reason and outcome.reason.startswith("exit code mismatch"):
-        return check_exit_entry(entry, outcome), None
-    if outcome.reason:
-        return outcome.reason, None
+    if not outcome.reason and generic_covers(rw_bin, rip_bin, repo, cmd, outcome, roots):
+        return f"ledger entry {ident} is covered by the generic paged-list rule; remove it", None
+    return None, f"{ident}: {entry['why']}"
+
+
+def stale_message(entry, why):
+    return f"ledger entry {entry['id']} {why}" if entry else None
+
+
+def paged_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots):
+    reason = paged_verdict(rw_bin, rip_bin, repo, cmd, outcome.rw, outcome.rip, *roots)
+    if reason is None:
+        return True, stale_message(entry, "is covered by the generic paged-list rule; remove it")
+    return entry is None, reason
+
+
+def measured_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots, diff):
     if roots is None:
-        return (f"ledger entry {ident} cannot be measured: output not comparable" if entry else None), None
+        return stale_message(entry, "cannot be measured: output not comparable"), None
     if not diff:
-        return (f"ledger entry {ident} no longer diverges; remove it" if entry else None), None
+        return stale_message(entry, "no longer diverges; remove it"), None
     if is_paged(roots[0]):
-        reason = paged_verdict(rw_bin, rip_bin, repo, cmd, outcome.rw, outcome.rip, *roots)
-        if reason is None:
-            return (f"ledger entry {ident} is covered by the generic paged-list rule; remove it" if entry else None), None
-        if entry is None:
-            return reason, None
+        handled, verdict = paged_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots)
+        if handled:
+            return verdict, None
     if entry is None:
         return f"unrecorded difference {describe_divergence(diff)}; record it in scripts/parity-divergences.toml", None
     return check_entry(entry, outcome), None
+
+
+def judge(rw_bin, rip_bin, repo, cmd, outcome, entry):
+    roots = divergence_roots(outcome)
+    diff = tag_divergence(*roots) if roots else {}
+    if entry is not None and entry["kind"] == "defect":
+        return defect_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots, diff)
+    if outcome.reason and (entry is None or not outcome.reason.startswith("exit code mismatch")):
+        return outcome.reason, None
+    if outcome.reason:
+        return check_exit_entry(entry, outcome), None
+    return measured_judgement(rw_bin, rip_bin, repo, cmd, outcome, entry, roots, diff)
+
 
 
 def check_one(rw_bin, rip_bin, where, cmd, desc, entry):
