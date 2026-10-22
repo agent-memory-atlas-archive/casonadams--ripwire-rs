@@ -7,6 +7,7 @@ mod metrics {
     mod layout;
     mod lint;
     mod nonlocal;
+    mod nonlocal_typescript;
     mod paging;
     mod quality_panel;
     mod readability;

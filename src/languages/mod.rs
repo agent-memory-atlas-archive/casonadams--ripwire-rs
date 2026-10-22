@@ -453,6 +453,12 @@ pub trait LanguageSemantics: Sync {
     fn is_def_capture_allowed(&self, _ctx: &DefCaptureGateContext<'_>) -> bool {
         true
     }
+
+    /// True if a captured `Var` binding holds an immutable scalar, so reading it is not mutable state.
+    fn is_immutable_scalar_binding(&self, _ctx: &DefCaptureGateContext<'_>) -> bool {
+        false
+    }
+
     /// True if a symbol name is public by language naming convention.
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_')

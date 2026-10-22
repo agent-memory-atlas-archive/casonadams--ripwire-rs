@@ -124,6 +124,19 @@
     (variable_declarator
       name: (identifier) @name)) @definition.constant)
 
+; Module-level `let` is mutable state. The legacy `var` spellings above stay SCREAMING-gated.
+(program
+  (lexical_declaration
+    "let"
+    (variable_declarator
+      name: (identifier) @name)) @definition.var)
+
+(export_statement
+  (lexical_declaration
+    "let"
+    (variable_declarator
+      name: (identifier) @name)) @definition.var)
+
 ; ---- references (calls) ----
 ; A bare `require("x")` / `import()` is itself a call_expression with an (identifier) function,
 ; so it is captured by the first rule below — no separate import rule needed for the call graph.
@@ -190,6 +203,32 @@
 
 (export_statement
   source: (string) @import.path)
+
+; ---- writes ----
+; An assignment target is a write, not a read: `x = v`, `x += v`, `x++`, and the object of
+; `x.p = v` / `x[i] = v` (a mutation through the binding). javascript_read_position drops the read
+; capture for the same identifiers, so each site yields exactly one reference.
+(assignment_expression
+  left: (identifier) @name) @reference.write
+
+(augmented_assignment_expression
+  left: (identifier) @name) @reference.write
+
+(update_expression
+  argument: (identifier) @name) @reference.write
+
+(assignment_expression
+  left: [ (member_expression object: (identifier) @name)
+          (subscript_expression object: (identifier) @name)
+          (member_expression object: (member_expression object: (identifier) @name)) ]) @reference.write
+
+(augmented_assignment_expression
+  left: [ (member_expression object: (identifier) @name)
+          (subscript_expression object: (identifier) @name) ]) @reference.write
+
+(update_expression
+  argument: [ (member_expression object: (identifier) @name)
+              (subscript_expression object: (identifier) @name) ]) @reference.write
 
 ; Value-position and lexical-binding rules live in languages/javascript.rs.
 [(identifier) (shorthand_property_identifier)] @name @reference.read

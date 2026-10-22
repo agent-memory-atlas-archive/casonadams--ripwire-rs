@@ -1,6 +1,6 @@
 use super::javascript::{
-    JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_jsx_intrinsic_tag_call,
-    parse_tsconfig_paths, resolve_web_import_target,
+    JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_const_scalar_binding,
+    is_jsx_intrinsic_tag_call, parse_tsconfig_paths, resolve_web_import_target,
 };
 use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
@@ -200,6 +200,10 @@ impl LanguageSemantics for TypeScriptLanguage {
 
     fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
         ctx.sub != Some("constant") || super::is_screaming_snake(ctx.name)
+    }
+
+    fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        is_const_scalar_binding(ctx)
     }
 
     fn should_ignore_call(&self, name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {

@@ -438,6 +438,10 @@ impl LanguageSemantics for JavaScriptLanguage {
         }
     }
 
+    fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        is_const_scalar_binding(ctx)
+    }
+
     fn should_ignore_call(&self, name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {
         is_jsx_intrinsic_tag_call(name_node, name)
     }
@@ -578,6 +582,9 @@ fn javascript_non_value(parent: tree_sitter::Node<'_>, node: tree_sitter::Node<'
 }
 
 pub(super) fn javascript_read_position(node: tree_sitter::Node<'_>) -> bool {
+    if is_write_target_root(node) {
+        return false;
+    }
     let Some(parent) = node.parent() else {
         return false;
     };
@@ -615,6 +622,72 @@ pub(super) fn javascript_read_position(node: tree_sitter::Node<'_>) -> bool {
     );
     expression && super::reads::value_position(node, javascript_non_value, javascript_scope)
 }
+
+/// True when `node` is the root of an assignment target: `x` in `x = v`, `x += v`, `x++`, or the object
+/// of `x.p = v` / `x[i] = v`. Such an identifier is a write, not a read of its value.
+fn is_write_target_root(node: tree_sitter::Node<'_>) -> bool {
+    let mut top = node;
+    while let Some(parent) = top.parent() {
+        if !matches!(parent.kind(), "member_expression" | "subscript_expression")
+            || parent.child_by_field_name("object") != Some(top)
+        {
+            break;
+        }
+        top = parent;
+    }
+    let Some(parent) = top.parent() else {
+        return false;
+    };
+    match parent.kind() {
+        "assignment_expression" | "augmented_assignment_expression" => {
+            parent.child_by_field_name("left") == Some(top)
+        }
+        "update_expression" => true,
+        _ => false,
+    }
+}
+
+/// True for a literal scalar initializer: number, string, boolean, `null`, a substitution-free template,
+/// a signed number, or such a literal under `as`/`satisfies`/parentheses.
+fn is_scalar_literal(node: tree_sitter::Node<'_>) -> bool {
+    match node.kind() {
+        "number" | "string" | "true" | "false" | "null" => true,
+        "template_string" => {
+            let mut cursor = node.walk();
+            node.named_children(&mut cursor)
+                .all(|child| child.kind() != "template_substitution")
+        }
+        "unary_expression" => node
+            .child_by_field_name("argument")
+            .is_some_and(|arg| arg.kind() == "number"),
+        "as_expression" | "satisfies_expression" | "parenthesized_expression" => {
+            node.named_child(0).is_some_and(is_scalar_literal)
+        }
+        _ => false,
+    }
+}
+
+/// A `const` declarator bound to a scalar literal: an immutable binding whose reads are never state.
+/// `const` objects and arrays are not scalars; their contents stay mutable and are tracked by writes.
+pub(super) fn is_const_scalar_binding(ctx: &DefCaptureGateContext<'_>) -> bool {
+    let Some(declarator) = ctx
+        .name_node
+        .and_then(|name| name.parent())
+        .filter(|node| node.kind() == "variable_declarator")
+    else {
+        return false;
+    };
+    let is_const = declarator
+        .parent()
+        .filter(|decl| decl.kind() == "lexical_declaration")
+        .and_then(|decl| decl.child(0))
+        .is_some_and(|keyword| keyword.kind() == "const");
+    is_const
+        && declarator
+            .child_by_field_name("value")
+            .is_some_and(is_scalar_literal)
+}
+
 /// JS-family runner: the nearest manifest's vitest/jest, else `require('node:test')` when `node_test` applies.
 #[must_use]
 pub(crate) fn js_test_run_command(

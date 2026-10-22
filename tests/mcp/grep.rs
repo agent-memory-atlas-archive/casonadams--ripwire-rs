@@ -102,7 +102,17 @@ fn test_javascript_and_typescript_variable_reads_ignore_targets_and_shadowing() 
         ("src/sample.ts", Lang::TypeScript),
     ] {
         let (uses, xml) = semantic_read_report(path, lang, source);
-        assert_read_sites(&uses, &[2, 3]);
+        let sites = uses["uses"].as_array().unwrap();
+        let reads: Vec<Value> = sites
+            .iter()
+            .filter(|u| u["role"] == "read")
+            .cloned()
+            .collect();
+        assert_read_sites(&json!({ "uses": reads }), &[2, 3]);
+        assert!(
+            sites.iter().any(|u| u["role"] == "write" && u["line"] == 6),
+            "{uses}"
+        );
         assert!(xml.contains("reads=\"2\""), "{xml}");
     }
 }
