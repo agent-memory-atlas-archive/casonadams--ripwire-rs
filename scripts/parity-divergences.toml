@@ -11,7 +11,7 @@
 # defect_budget must equal the number of defect entries: a new defect fails, a fixed one must lower it.
 # An entry with a [divergence.files] table runs against that fixture (written to a temp dir) instead of the tree.
 
-defect_budget = 22
+defect_budget = 21
 
 [[divergence]]
 id = "partner-unindexed-languages"
@@ -380,14 +380,6 @@ case = ""
 kind = "defect"
 why = "Comment-coherence row src/cache/mod.rs auto_cache_path is absent from upstream's full set; cause not traced."
 evidence = "measured on a2e114c: fn n=auto_cache_path absent from upstream's full set; owner: unassigned"
-
-[[divergence]]
-id = "scan-skills-credential-path"
-command = "--scan-skills=skills"
-case = ""
-kind = "defect"
-why = "The documented credential-path rule (~/.ssh, ~/.aws) is missing from the scanner."
-evidence = "measured on a2e114c: rw findings=0, rip findings=1; fixed on lp/skills 045b2ea"
 
 [[divergence]]
 id = "metrics-per-symbol-rows"

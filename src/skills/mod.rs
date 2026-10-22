@@ -251,6 +251,24 @@ fn record_exfil_line(
     }
 }
 
+const CREDENTIAL_PATHS: &[&str] = &["$HOME/.ssh", "~/.ssh", "~/.aws"];
+
+fn record_credential_line(
+    path_str: &str,
+    line_num: usize,
+    l: &str,
+    findings: &mut Vec<SkillScanFinding>,
+) {
+    if CREDENTIAL_PATHS.iter().any(|p| l.contains(p)) {
+        findings.push(SkillScanFinding {
+            path: path_str.to_string(),
+            line: line_num,
+            rule: "EXFILTRATE:ssh-aws-creds",
+            sev: "critical",
+        });
+    }
+}
+
 fn record_split_line_injection(
     path_str: &str,
     per_line_ignore: bool,
@@ -300,7 +318,9 @@ fn scan_skill_markdown(path_str: &str, content: &str, findings: &mut Vec<SkillSc
 
 pub fn scan_content_for_exfil(path_str: &str, content: &str, findings: &mut Vec<SkillScanFinding>) {
     for (idx, line) in content.lines().enumerate() {
-        record_exfil_line(path_str, idx + 1, line.trim(), findings);
+        let l = line.trim();
+        record_exfil_line(path_str, idx + 1, l, findings);
+        record_credential_line(path_str, idx + 1, l, findings);
     }
     scan_skill_markdown(path_str, content, findings);
 }
