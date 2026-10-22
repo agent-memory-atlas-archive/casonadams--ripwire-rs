@@ -3,6 +3,7 @@ pub use super::search::*;
 
 use crate::domain::{IngestResult, Interner, SymKind};
 use crate::graph::Graph;
+use memchr::memmem::Finder;
 use serde_json::{Value, json};
 
 fn stem_derivational_suffix(t: &str) -> Option<String> {
@@ -137,6 +138,76 @@ fn score_single_term(
     )
 }
 
+/// Per-term needles (lowercase term and its stem) searched in source text.
+fn body_term_finders(raw_terms: &[&str]) -> Vec<Vec<Finder<'static>>> {
+    raw_terms
+        .iter()
+        .take(16)
+        .map(|&t| {
+            let low = t.to_ascii_lowercase();
+            let stem = stem_plural_only(&low);
+            let mut out = vec![Finder::new(low.as_bytes()).into_owned()];
+            if stem != low {
+                out.push(Finder::new(stem.as_bytes()).into_owned());
+            }
+            out
+        })
+        .collect()
+}
+
+/// Whether a lowercase body contains the needle; short needles must stand as whole tokens.
+fn body_contains_term(body: &[u8], finder: &Finder<'_>) -> bool {
+    let needle_len = finder.needle().len();
+    if needle_len >= 4 {
+        return finder.find(body).is_some();
+    }
+    finder.find_iter(body).any(|at| {
+        let before = at == 0 || !body[at - 1].is_ascii_alphanumeric();
+        let after = body
+            .get(at + needle_len)
+            .is_none_or(|b| !b.is_ascii_alphanumeric());
+        before && after
+    })
+}
+
+/// Marks symbols whose own source text contains a query term (case-insensitive), not only callee names.
+/// Each file is read and lowercased once; bodies are searched as slices of that copy.
+fn add_body_text_masks(
+    ingest: &IngestResult,
+    interner: &Interner,
+    sources: &dyn crate::query::SourceReader,
+    raw_terms: &[&str],
+    masks: &mut [u32],
+) {
+    let finders = body_term_finders(raw_terms);
+    let mut by_file: std::collections::BTreeMap<u32, Vec<&crate::domain::Symbol>> =
+        std::collections::BTreeMap::new();
+    for sym in &ingest.symbols {
+        if sym.is_code_symbol()
+            && sym.has_body()
+            && !matches!(sym.kind, SymKind::Var | SymKind::Field)
+        {
+            by_file.entry(sym.file_id).or_default().push(sym);
+        }
+    }
+    for syms in by_file.values() {
+        let path = ingest.sym_file_path(syms[0], interner);
+        let lower = sources
+            .read(path)
+            .map(|bytes| bytes.to_ascii_lowercase())
+            .unwrap_or_default();
+        for sym in syms {
+            let body = sym.source_bytes(&lower);
+            let slot = &mut masks[sym.id as usize];
+            for (i, term_finders) in finders.iter().enumerate() {
+                if term_finders.iter().any(|f| body_contains_term(body, f)) {
+                    *slot |= 1u32 << i;
+                }
+            }
+        }
+    }
+}
+
 fn build_body_term_masks(
     ingest: &IngestResult,
     interner: &Interner,
@@ -216,7 +287,7 @@ struct SymbolMatchCtx<'a> {
 }
 
 fn compute_match_synergy(direct_hits: usize, body_only_hits: usize, name_hits: usize) -> f64 {
-    let eff_matches = direct_hits as f64 + (body_only_hits as f64) * 0.45;
+    let eff_matches = direct_hits as f64 + (body_only_hits as f64) * 0.7;
     eff_matches.powi(3) * (1.0 + (name_hits.saturating_sub(1) as f64) * 0.75)
 }
 
@@ -253,7 +324,8 @@ fn score_symbol_match_with_idf(ctx: &SymbolMatchCtx<'_>) -> f64 {
             weighted_sum += raw * idf;
         }
     }
-    if max_raw <= 6.0 {
+    // A lone body-only term is a weak hint; two distinct query concepts called from one body coordinate them.
+    if max_raw <= 6.0 && body_only_hits < 2 {
         return 0.0;
     }
     let synergy = compute_match_synergy(direct_hits, body_only_hits, name_hits);
@@ -271,14 +343,20 @@ fn score_symbol_match_with_idf(ctx: &SymbolMatchCtx<'_>) -> f64 {
     weighted_sum * synergy * non_test * (1.0 + ctx.rank * 10.0)
 }
 
+/// Per-query inputs shared by every candidate's score.
+struct ScoringInputs<'a> {
+    ranks: &'a [f64],
+    body_masks: &'a [u32],
+    raw_terms: &'a [&'a str],
+    idf_weights: &'a [f64],
+    conceptual: bool,
+}
+
 fn score_candidate_symbol(
     sym: &crate::domain::Symbol,
     ingest: &IngestResult,
     interner: &Interner,
-    ranks: &[f64],
-    body_masks: &[u32],
-    raw_terms: &[&str],
-    idf_weights: &[f64],
+    inputs: &ScoringInputs<'_>,
 ) -> f64 {
     use crate::domain::CorpusView;
     if !sym.is_code_symbol() {
@@ -288,6 +366,12 @@ fn score_candidate_symbol(
     let file_path = view.sym_path(sym);
     let kind_factor = if matches!(sym.kind, SymKind::Var | SymKind::Field) {
         0.2
+    } else if inputs.conceptual && sym.is_callable() && !sym.has_body() {
+        // A bodyless declaration names the contract, not the coordinating implementation.
+        0.5 * sym.lang.semantics().retrieval_weight()
+    } else if inputs.conceptual && sym.kind == SymKind::Interface {
+        // An interface is the contract that implementations satisfy; they coordinate the behavior.
+        0.5 * sym.lang.semantics().retrieval_weight()
     } else {
         sym.lang.semantics().retrieval_weight()
     };
@@ -295,10 +379,10 @@ fn score_candidate_symbol(
         name: view.sym_name(sym),
         scope: view.sym_scope(sym),
         file_path,
-        body_mask: body_masks.get(sym.id as usize).copied().unwrap_or(0),
-        terms: raw_terms,
-        idf_weights,
-        rank: ranks.get(sym.id as usize).copied().unwrap_or(0.0),
+        body_mask: inputs.body_masks.get(sym.id as usize).copied().unwrap_or(0),
+        terms: inputs.raw_terms,
+        idf_weights: inputs.idf_weights,
+        rank: inputs.ranks.get(sym.id as usize).copied().unwrap_or(0.0),
     };
     score_symbol_match_with_idf(&ctx) * kind_factor
 }
@@ -452,7 +536,7 @@ fn compute_for_route_metadata(
     raw_terms: &[&str],
     scored: &[(f64, &crate::domain::Symbol)],
     interner: &Interner,
-) -> (String, &'static str, u64, u64) {
+) -> (String, &'static str, u64) {
     let exact_hit = raw_terms.len() == 1
         && scored
             .first()
@@ -476,24 +560,37 @@ fn compute_for_route_metadata(
     } else {
         "low"
     };
-    let matched_terms = raw_terms
+    (route, confidence, margin_pct)
+}
+
+/// Percent of query terms that a top row names, or whose source text uses it (`body_masks`).
+fn term_coverage_percent(
+    raw_terms: &[&str],
+    scored: &[(f64, &crate::domain::Symbol)],
+    body_masks: &[u32],
+    interner: &Interner,
+) -> u64 {
+    if raw_terms.is_empty() {
+        return 100;
+    }
+    let covered = raw_terms
         .iter()
-        .filter(|&&t| {
+        .enumerate()
+        .filter(|&(i, &t)| {
             let lower_t = t.to_ascii_lowercase();
             scored.iter().take(10).any(|(_, s)| {
                 interner
                     .resolve(&s.name)
                     .to_ascii_lowercase()
                     .contains(&lower_t)
+                    || (i < 32
+                        && body_masks
+                            .get(s.id as usize)
+                            .is_some_and(|m| m & (1u32 << i) != 0))
             })
         })
         .count();
-    let coverage = if raw_terms.is_empty() {
-        100
-    } else {
-        ((matched_terms * 100) / raw_terms.len()) as u64
-    };
-    (route, confidence, margin_pct, coverage)
+    ((covered * 100) / raw_terms.len()) as u64
 }
 
 fn symbol_matches_term(
@@ -512,6 +609,39 @@ fn symbol_matches_term(
         || contains_term_aware(&name, &stem)
         || contains_term_aware(&path, &lower_t)
         || contains_term_aware(&path, &stem)
+}
+
+/// Every in-scope symbol with a positive score for the query, unsorted.
+fn score_candidates<'a>(
+    ingest: &'a IngestResult,
+    interner: &Interner,
+    inputs: &ScoringInputs<'_>,
+    in_scope: Option<&str>,
+) -> Vec<(f64, &'a crate::domain::Symbol)> {
+    let mut scored = Vec::new();
+    for sym in &ingest.symbols {
+        if in_scope.is_some_and(|scope| !ingest.sym_file_path(sym, interner).contains(scope)) {
+            continue;
+        }
+        let score = score_candidate_symbol(sym, ingest, interner, inputs);
+        if score > 0.0 {
+            scored.push((score, sym));
+        }
+    }
+    scored
+}
+
+/// True for a one-word query naming an existing symbol; such lookups keep the exact-name scoring.
+fn is_exact_name_query(ingest: &IngestResult, interner: &Interner, raw_terms: &[&str]) -> bool {
+    use crate::domain::CorpusView;
+    let [term] = raw_terms else {
+        return false;
+    };
+    let view = (ingest, interner);
+    ingest
+        .symbols
+        .iter()
+        .any(|s| s.is_code_symbol() && view.sym_name(s).eq_ignore_ascii_case(term))
 }
 
 fn diversify_top_candidates<'a>(
@@ -572,29 +702,20 @@ pub fn call_for_task_with_options(
         filtered_terms
     };
 
-    let body_masks = build_body_term_masks(ingest, interner, &raw_terms);
-    let idf_weights = compute_term_idf_weights(ingest, interner, &raw_terms);
-    let mut scored = Vec::new();
-    for sym in &ingest.symbols {
-        if opts
-            .in_scope
-            .is_some_and(|scope| !ingest.sym_file_path(sym, interner).contains(scope))
-        {
-            continue;
-        }
-        let score = score_candidate_symbol(
-            sym,
-            ingest,
-            interner,
-            ranks,
-            &body_masks,
-            &raw_terms,
-            &idf_weights,
-        );
-        if score > 0.0 {
-            scored.push((score, sym));
-        }
+    let conceptual = !is_exact_name_query(ingest, interner, &raw_terms);
+    let mut body_masks = build_body_term_masks(ingest, interner, &raw_terms);
+    if let (true, Some(sources)) = (conceptual, opts.sources) {
+        add_body_text_masks(ingest, interner, sources, &raw_terms, &mut body_masks);
     }
+    let idf_weights = compute_term_idf_weights(ingest, interner, &raw_terms);
+    let inputs = ScoringInputs {
+        ranks,
+        body_masks: &body_masks,
+        raw_terms: &raw_terms,
+        idf_weights: &idf_weights,
+        conceptual,
+    };
+    let mut scored = score_candidates(ingest, interner, &inputs, opts.in_scope);
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     diversify_top_candidates(&mut scored, &raw_terms, ingest, interner);
@@ -640,8 +761,11 @@ pub fn call_for_task_with_options(
             build_for_symbol_entry(idx, *score, sym, &view, is_tested, opts, &mut file_cache)
         })
         .collect();
-    let (route, confidence, margin_pct, coverage) =
+    // Exact-name lookups keep name-only coverage; conceptual rows also count their source text.
+    let coverage_masks: &[u32] = if conceptual { &body_masks } else { &[] };
+    let (route, confidence, margin_pct) =
         compute_for_route_metadata(task, &raw_terms, &scored, interner);
+    let coverage = term_coverage_percent(&raw_terms, &scored, coverage_masks, interner);
     let lego = collect_for_lego(ingest, interner, &scored[..limit]);
     let compose = collect_for_compose(ingest, interner, &scored[..limit]);
     let hops = collect_for_hops(ingest, interner, opts.graph, &scored[..limit], page);

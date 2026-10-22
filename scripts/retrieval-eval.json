@@ -1,0 +1,597 @@
+{
+  "description": "Conceptual --for retrieval fixture. Labels: authoritative = implements the behavior (has a body); caller = orchestrates it; presentation = renders the result; unrelated = same-term distractor. Split tune = used to tune ranking; held = never used for tuning, reported separately. query = concise phrase (as agents pass --for); question = the natural-language form it paraphrases. ra-10 (HCL resource blocks) and ra-11 (package.json script) were removed: HCL resource labels and manifest scripts are not indexed as symbols, so no retrieval ranking can reach them (disclosed as a coverage gap).",
+  "repos": {
+    "review-agent": "/Users/cason/src/github.com/previ-inc/review-agent",
+    "member-portal": "/Users/cason/src/github.com/previ-inc/member-portal"
+  },
+  "questions": [
+    {
+      "id": "ra-1",
+      "repo": "review-agent",
+      "split": "tune",
+      "query": "incremental review changed lines anchors safe for inline comments",
+      "targets": [
+        {
+          "name": "incrementalPublishableAnchors",
+          "path": "src/github/diff-anchors.ts",
+          "line": 108,
+          "label": "authoritative"
+        },
+        {
+          "name": "unpublishableIncrement",
+          "path": "src/github/diff-fetch.ts",
+          "line": 207,
+          "label": "caller"
+        },
+        {
+          "name": "parseDiffAnchors",
+          "path": "src/github/diff-anchors.ts",
+          "line": 85,
+          "label": "caller"
+        }
+      ],
+      "question": "When a pull request gets a new push and we only review the commits since the last reviewed head, which diff lines are still safe to attach inline comments to?"
+    },
+    {
+      "id": "ra-2",
+      "repo": "review-agent",
+      "split": "tune",
+      "query": "webhook pull request enqueue review task queue failure status",
+      "targets": [
+        {
+          "name": "acceptEvent",
+          "path": "src/service/webhook.ts",
+          "line": 47,
+          "label": "authoritative"
+        },
+        {
+          "name": "processWebhook",
+          "path": "src/service/webhook.ts",
+          "line": 93,
+          "label": "caller"
+        },
+        {
+          "name": "enqueue",
+          "path": "src/gcp/tasks.ts",
+          "line": 76,
+          "label": "authoritative"
+        }
+      ],
+      "question": "How does an incoming pull request webhook become a queued review task, and what status do we return to GitHub when the queue write fails?"
+    },
+    {
+      "id": "ra-3",
+      "repo": "review-agent",
+      "split": "tune",
+      "query": "external analysis subprocess timeout failure logging",
+      "targets": [
+        {
+          "name": "logFailure",
+          "path": "src/ripwire/runner.ts",
+          "line": 24,
+          "label": "authoritative"
+        },
+        {
+          "name": "executeRipwireCommand",
+          "path": "src/ripwire/runner.ts",
+          "line": 75,
+          "label": "caller"
+        },
+        {
+          "name": "promptWithTimeout",
+          "path": "src/pi/session.ts",
+          "line": 272,
+          "label": "unrelated"
+        }
+      ],
+      "question": "When the external analysis binary gets killed for running past its time limit, how is that failure recorded in our logs?"
+    },
+    {
+      "id": "ra-4",
+      "repo": "review-agent",
+      "split": "tune",
+      "query": "exclude lockfiles vendored generated files from changed file list",
+      "targets": [
+        {
+          "name": "isNoiseFile",
+          "path": "src/github/noise.ts",
+          "line": 54,
+          "label": "authoritative"
+        },
+        {
+          "name": "SKIP_NAMES",
+          "path": "src/github/noise.ts",
+          "line": 4,
+          "label": "authoritative"
+        },
+        {
+          "name": "filterChangedFiles",
+          "path": "src/github/noise.ts",
+          "line": 62,
+          "label": "caller"
+        }
+      ],
+      "question": "Which policy decides that lockfiles, vendored dependencies, and generated or minified output get dropped before the model reviews a changed-file list?"
+    },
+    {
+      "id": "ra-5",
+      "repo": "review-agent",
+      "split": "tune",
+      "query": "refresh OAuth model login credentials before expiry",
+      "targets": [
+        {
+          "name": "refreshModelAuth",
+          "path": "src/pi/model-auth-refresh.ts",
+          "line": 148,
+          "label": "authoritative"
+        },
+        {
+          "name": "oauthExpiry",
+          "path": "src/pi/model-auth-credential.ts",
+          "line": 20,
+          "label": "authoritative"
+        },
+        {
+          "name": "scheduleNext",
+          "path": "src/gcp/model-auth-refresh-schedule.ts",
+          "line": 48,
+          "label": "caller"
+        }
+      ],
+      "question": "How does the worker keep the model provider's OAuth login from lapsing, and how far ahead of expiry does it rotate the refresh token?"
+    },
+    {
+      "id": "ra-6",
+      "repo": "review-agent",
+      "split": "tune",
+      "query": "rotated credential secret store write failure recovery",
+      "targets": [
+        {
+          "name": "publishRotation",
+          "path": "src/pi/model-auth-refresh.ts",
+          "line": 103,
+          "label": "authoritative"
+        },
+        {
+          "name": "publishIfChanged",
+          "path": "src/gcp/secret-versions.ts",
+          "line": 37,
+          "label": "authoritative"
+        },
+        {
+          "name": "refreshModelAuth",
+          "path": "src/pi/model-auth-refresh.ts",
+          "line": 148,
+          "label": "caller"
+        }
+      ],
+      "question": "If a rotated provider credential cannot be written back to the secret store, what error does the operator see and what must they do to recover?"
+    },
+    {
+      "id": "ra-7",
+      "repo": "review-agent",
+      "split": "held",
+      "query": "forged saved review progress marker signature verification",
+      "targets": [
+        {
+          "name": "parseReviewState",
+          "path": "src/github/state-marker.ts",
+          "line": 184,
+          "label": "authoritative"
+        },
+        {
+          "name": "authentic",
+          "path": "src/github/state-marker.ts",
+          "line": 152,
+          "label": "authoritative"
+        },
+        {
+          "name": "decodedState",
+          "path": "src/github/state-marker.ts",
+          "line": 162,
+          "label": "caller"
+        }
+      ],
+      "question": "When a bot comment carries saved progress for a review, how do we make sure a forged or hand-edited copy is ignored when we read it back?"
+    },
+    {
+      "id": "ra-8",
+      "repo": "review-agent",
+      "split": "held",
+      "query": "redact access tokens private keys from error logs",
+      "targets": [
+        {
+          "name": "redactSecrets",
+          "path": "src/redact.ts",
+          "line": 21,
+          "label": "authoritative"
+        },
+        {
+          "name": "emitGithubLog",
+          "path": "src/github/request.ts",
+          "line": 21,
+          "label": "caller"
+        },
+        {
+          "name": "clamp",
+          "path": "src/github/finding-render.ts",
+          "line": 40,
+          "label": "caller"
+        }
+      ],
+      "question": "Before an error from a failed GitHub call is written to the logs, what scrubs access tokens and private keys out of the text?"
+    },
+    {
+      "id": "ra-9",
+      "repo": "review-agent",
+      "split": "held",
+      "query": "GitHub rate limit retry backoff request options",
+      "targets": [
+        {
+          "name": "githubOctokitOptions",
+          "path": "src/github/request.ts",
+          "line": 43,
+          "label": "authoritative"
+        },
+        {
+          "name": "shouldRetry",
+          "path": "src/github/request.ts",
+          "line": 39,
+          "label": "authoritative"
+        },
+        {
+          "name": "createReviewOctokit",
+          "path": "src/github/request.ts",
+          "line": 60,
+          "label": "caller"
+        }
+      ],
+      "question": "How long will the GitHub client keep waiting out a rate limit, and how many times does it retry a request before giving up?"
+    },
+    {
+      "id": "ra-12",
+      "repo": "review-agent",
+      "split": "held",
+      "query": "untrusted pull request text prompt injection reviewer",
+      "targets": [
+        {
+          "name": "reviewDataPrompt",
+          "path": "src/review/context.ts",
+          "line": 136,
+          "label": "authoritative"
+        },
+        {
+          "name": "reviewerPrompt",
+          "path": "src/review/context.ts",
+          "line": 143,
+          "label": "caller"
+        },
+        {
+          "name": "createPromptCacheKey",
+          "path": "src/pi/prompt-cache.ts",
+          "line": 5,
+          "label": "unrelated"
+        }
+      ],
+      "question": "How do we stop text pulled from the pull request or the linked ticket from being read by the reviewing model as instructions?"
+    },
+    {
+      "id": "mp-1",
+      "repo": "member-portal",
+      "split": "tune",
+      "query": "overdue balance pending ACH payment status",
+      "targets": [
+        {
+          "name": "useAccountStatus",
+          "path": "src/lib/hooks/use-account-status.ts",
+          "line": 60,
+          "label": "authoritative"
+        },
+        {
+          "name": "BillCard",
+          "path": "src/routes/_auth/dashboard/components/-upcoming-bill-card.tsx",
+          "line": 66,
+          "label": "presentation"
+        }
+      ],
+      "question": "A member's bill shows they still owe money, but an ACH payment is still clearing. How does the app decide whether they count as overdue or just waiting on that payment?"
+    },
+    {
+      "id": "mp-2",
+      "repo": "member-portal",
+      "split": "tune",
+      "query": "device financing down payment cart pricing",
+      "targets": [
+        {
+          "name": "priceCart",
+          "path": "src/lib/onboarding-flow/cart-pricing.ts",
+          "line": 56,
+          "label": "authoritative"
+        },
+        {
+          "name": "priceReview",
+          "path": "src/lib/onboarding-flow/review-pricing.ts",
+          "line": 115,
+          "label": "authoritative"
+        },
+        {
+          "name": "CartPage",
+          "path": "src/routes/onboarding/-cart-page.tsx",
+          "line": 72,
+          "label": "presentation"
+        },
+        {
+          "name": "estimateMonthlyCents",
+          "path": "src/lib/onboarding/estimate-monthly.ts",
+          "line": 40,
+          "label": "unrelated"
+        }
+      ],
+      "question": "How is the amount a member owes up front on a financed phone worked out from the items in their cart, including the down payment?"
+    },
+    {
+      "id": "mp-3",
+      "repo": "member-portal",
+      "split": "tune",
+      "query": "refresh expired member session tokens",
+      "targets": [
+        {
+          "name": "resumeSession",
+          "path": "src/lib/auth.ts",
+          "line": 572,
+          "label": "authoritative"
+        },
+        {
+          "name": "NativeResumeRoute",
+          "path": "src/routes/native-resume.tsx",
+          "line": 21,
+          "label": "caller"
+        },
+        {
+          "name": "authErrorCode",
+          "path": "src/lib/auth.ts",
+          "line": 722,
+          "label": "unrelated"
+        }
+      ],
+      "question": "When the native app holds a stored refresh credential after a member's session has lapsed, where is that credential exchanged for a fresh session?"
+    },
+    {
+      "id": "mp-4",
+      "repo": "member-portal",
+      "split": "tune",
+      "query": "member account balance GraphQL query",
+      "targets": [
+        {
+          "name": "memberAccountDetailsOptions",
+          "path": "src/lib/queries/billing.ts",
+          "line": 883,
+          "label": "authoritative"
+        },
+        {
+          "name": "MemberAccountDetails",
+          "path": "src/graphql/schema.graphql",
+          "line": 29556,
+          "label": "presentation"
+        },
+        {
+          "name": "useAccountStatus",
+          "path": "src/lib/hooks/use-account-status.ts",
+          "line": 60,
+          "label": "caller"
+        }
+      ],
+      "question": "Which GraphQL type carries the balance figures the portal reads for a member's account, and which client code issues that request?"
+    },
+    {
+      "id": "mp-5",
+      "repo": "member-portal",
+      "split": "tune",
+      "query": "port scheduling blocked minutes away check",
+      "targets": [
+        {
+          "name": "soon",
+          "path": "src/lib/port-schedule.check.ts",
+          "line": 292,
+          "label": "authoritative"
+        },
+        {
+          "name": "derivePortSchedule",
+          "path": "src/lib/port-schedule.ts",
+          "line": 133,
+          "label": "authoritative"
+        },
+        {
+          "name": "thursday",
+          "path": "src/lib/transfer-nights.check.ts",
+          "line": 14,
+          "label": "unrelated"
+        }
+      ],
+      "question": "Which automated check pins the behavior that blocks rescheduling a mobile number port when the port is only minutes away?"
+    },
+    {
+      "id": "mp-6",
+      "repo": "member-portal",
+      "split": "tune",
+      "query": "remove only payment method disabled reason",
+      "targets": [
+        {
+          "name": "removalBlockedReason",
+          "path": "src/lib/hooks/use-payment-method-removal.ts",
+          "line": 148,
+          "label": "authoritative"
+        },
+        {
+          "name": "usePaymentMethodRemoval",
+          "path": "src/lib/hooks/use-payment-method-removal.ts",
+          "line": 76,
+          "label": "caller"
+        },
+        {
+          "name": "removalBlockedTooltip",
+          "path": "src/lib/hooks/use-payment-method-removal.ts",
+          "line": 159,
+          "label": "presentation"
+        }
+      ],
+      "question": "Why is the remove button disabled when a member tries to delete their only remaining payment method?"
+    },
+    {
+      "id": "mp-7",
+      "repo": "member-portal",
+      "split": "held",
+      "query": "home address required fields validation",
+      "targets": [
+        {
+          "name": "validateHomeAddress",
+          "path": "src/lib/home-address.ts",
+          "line": 28,
+          "label": "authoritative"
+        },
+        {
+          "name": "useHomeAddress",
+          "path": "src/lib/hooks/use-home-address.ts",
+          "line": 34,
+          "label": "caller"
+        },
+        {
+          "name": "useBillingMethodCapture",
+          "path": "src/lib/hooks/use-billing-method-capture.ts",
+          "line": 36,
+          "label": "caller"
+        }
+      ],
+      "question": "When a member enters a home address for billing, which rules decide whether the required fields are complete enough to continue?"
+    },
+    {
+      "id": "mp-8",
+      "repo": "member-portal",
+      "split": "held",
+      "query": "test-only URL switch down payment flag allowed",
+      "targets": [
+        {
+          "name": "useDownPaymentTestFlag",
+          "path": "src/lib/onboarding-flow/use-down-payment-test-flag.ts",
+          "line": 7,
+          "label": "authoritative"
+        },
+        {
+          "name": "MEMBER_STATE_ENV_ALLOWED",
+          "path": "src/lib/member-states/active.ts",
+          "line": 16,
+          "label": "authoritative"
+        },
+        {
+          "name": "useCreditApproval",
+          "path": "src/lib/hooks/use-credit-approval.ts",
+          "line": 24,
+          "label": "caller"
+        },
+        {
+          "name": "isTestEmployer",
+          "path": "src/lib/onboarding-flow/onboarding-flow-state.ts",
+          "line": 153,
+          "label": "unrelated"
+        }
+      ],
+      "question": "How does the app decide whether a test-only switch in the URL is allowed to change down-payment behavior for a member?"
+    },
+    {
+      "id": "mp-9",
+      "repo": "member-portal",
+      "split": "held",
+      "query": "default recurring payment method bank account",
+      "targets": [
+        {
+          "name": "pickDefaultMethod",
+          "path": "src/lib/queries/payment-methods-promote.ts",
+          "line": 26,
+          "label": "authoritative"
+        },
+        {
+          "name": "findNewPaymentMethod",
+          "path": "src/lib/queries/payment-methods-promote.ts",
+          "line": 4,
+          "label": "unrelated"
+        }
+      ],
+      "question": "For recurring billing, which saved payment option is treated as the default when a member only has a bank account on file?"
+    },
+    {
+      "id": "mp-10",
+      "repo": "member-portal",
+      "split": "held",
+      "query": "stored access token usable member credentials",
+      "targets": [
+        {
+          "name": "sessionMemberAuth",
+          "path": "src/lib/auth.ts",
+          "line": 144,
+          "label": "authoritative"
+        },
+        {
+          "name": "isTokenExpired",
+          "path": "src/lib/auth.ts",
+          "line": 163,
+          "label": "authoritative"
+        },
+        {
+          "name": "useMemberSession",
+          "path": "src/lib/auth.ts",
+          "line": 127,
+          "label": "caller"
+        }
+      ],
+      "question": "Which server-side helper returns member credentials only when the stored access token is still usable, and otherwise returns nothing?"
+    },
+    {
+      "id": "mp-11",
+      "repo": "member-portal",
+      "split": "held",
+      "query": "onboarding access code employer negotiated rates fetch",
+      "targets": [
+        {
+          "name": "onboardingEmployerPricingOptions",
+          "path": "src/routes/onboarding/-use-onboarding-pricing.ts",
+          "line": 20,
+          "label": "authoritative"
+        },
+        {
+          "name": "useOnboardingPricing",
+          "path": "src/routes/onboarding/-use-onboarding-pricing.ts",
+          "line": 29,
+          "label": "caller"
+        }
+      ],
+      "question": "When a sign-up link carries an access code in the URL, how does the onboarding page fetch the employer's negotiated rates?"
+    },
+    {
+      "id": "mp-12",
+      "repo": "member-portal",
+      "split": "held",
+      "query": "shipping name address validation messages checkout",
+      "targets": [
+        {
+          "name": "validateShipTo",
+          "path": "src/lib/onboarding-flow/ship-to.ts",
+          "line": 33,
+          "label": "authoritative"
+        },
+        {
+          "name": "CheckoutShipTo",
+          "path": "src/routes/onboarding/-checkout-ship-to.tsx",
+          "line": 33,
+          "label": "presentation"
+        },
+        {
+          "name": "shipToSeed",
+          "path": "src/lib/onboarding-flow/ship-to.ts",
+          "line": 44,
+          "label": "unrelated"
+        }
+      ],
+      "question": "When someone fills in the shipping details at checkout, which validation messages appear for missing name or address fields?"
+    }
+  ]
+}

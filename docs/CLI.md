@@ -324,6 +324,10 @@ ripwire-rs . --doctor
 ripwire-rs . --notes
 ripwire-rs . --note-add="symbol: gotcha note"
 
+# Conceptual queries (several words) also match each symbol's own source text, admit a body that calls or
+# mentions two or more query concepts, and rank bodyless declarations and interface contracts below
+# implementations. A one-word exact symbol name keeps name-only scoring.
+
 # Importance-weighted detail: full bodies for top N symbols, signatures for rest
 ripwire-rs . --for="parser" --detail=5
 

@@ -1631,6 +1631,7 @@ dependencies = [
  "gix",
  "ignore",
  "lasso",
+ "memchr",
  "protobuf",
  "rayon",
  "roxmltree",
