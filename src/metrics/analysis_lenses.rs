@@ -360,17 +360,16 @@ impl crate::serialize::XmlReport for EnsembleReport {
         use crate::metrics::quality_panel::{ENSEMBLE_FAMILIES, family_attrs, history_root_attrs};
         let pw = self.window();
         let f_shown = pw.shown;
-        let history_attrs = history_root_attrs(&self.history);
+        let history_attrs = history_root_attrs(&self.history, self.hranked);
         let family = family_attrs(ENSEMBLE_FAMILIES.len(), &self.enabled, &self.unavailable);
         write!(
             w,
-            "{} eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"{}\" hranked=\"{}\"{history_attrs} cfiles=\"{}\" cscope=\"{}\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
+            "{} eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hranked=\"{}\"{history_attrs} cfiles=\"{}\" cscope=\"{}\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
             family,
             self.eligible,
             self.ranked,
             self.no_family,
             self.eligible,
-            crate::metrics::quality_panel::HISTORY_CUT,
             self.hranked,
             self.cfiles,
             self.cscope,

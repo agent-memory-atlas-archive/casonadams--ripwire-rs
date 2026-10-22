@@ -232,8 +232,11 @@ ripwire-rs . --slice="compute:x" --slice-flow=fwd
 ripwire-rs . --metrics
 
 # Entire quality panel in one report across 6 evidence families (strict|default|lenient).
-# historical = git commits per file in the 12-month window (cut at 14); lexical = 1-2 letter or
-# over-long names; each ranked row lists one <e> child per fired family with its measured values.
+# historical = git commits per file in the 12-month window at or above hcut, the 90th percentile of
+# changed files clamped to 3..14 (hbasis= says which bound applied; hstatus=measured-empty means churn was
+# read and nothing crossed it); state = mutable non-local state only (configuration reads are not state,
+# state_lens=mutable); lexical = 1-2 letter or over-long names; each ranked row lists one <e> child per
+# fired family with its measured values.
 # Families that cannot be measured (confusion: non-C; historical: no git, shallow) are listed in
 # unavailable= and never substituted.
 ripwire-rs . --quality-panel=default

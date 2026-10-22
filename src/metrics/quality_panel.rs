@@ -10,8 +10,12 @@ use crate::serialize::{PageRequest, PageWindow, XmlEscapeExt, row_bytes};
 use std::collections::HashMap;
 use std::io::{self, Write};
 
-/// Commits touching one file inside the churn window at which the historical family fires.
-pub const HISTORY_CUT: u32 = 14;
+/// Historical ceiling: a file with this many commits in the window always fires, so a busy repository
+/// keeps the fixed cut it always had.
+pub const HISTORY_CUT_CEILING: u32 = 14;
+/// Historical floor: no file fires on fewer window commits, so a quiet repository's hottest files surface
+/// while a file touched once or twice never does.
+pub const HISTORY_CUT_FLOOR: u32 = 3;
 const SECS_PER_DAY: i64 = 86_400;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,6 +67,14 @@ pub struct PanelHistory {
     pub at: String,
     /// Window start (epoch seconds); commits older than this are excluded.
     pub since: i64,
+    /// Commits in the window a file needs before the historical family fires.
+    pub cut: u32,
+    /// What set `cut`: `p90` (90th percentile of changed files), `floor` or `ceiling`.
+    pub cut_basis: &'static str,
+    /// Indexed files with at least one commit in the window: the population `cut` is read from.
+    pub measured: usize,
+    /// Of `measured`, the files at or above `cut`.
+    pub crossed: usize,
     /// Churn indexed by ingest file id.
     churn: Vec<Option<FileChurn>>,
 }
@@ -80,12 +92,21 @@ impl PanelHistory {
         let window: Vec<&CommitInfo> = commits.iter().filter(|c| c.timestamp >= since).collect();
         let head = window.first().map_or(0, |c| c.timestamp);
         let by_path = compute_file_churn(window, head, MERGE_BOMB_MAX_FILES);
-        let churn = ingest
+        let churn: Vec<Option<FileChurn>> = ingest
             .files
             .iter()
             .map(|f| by_path.get(interner.resolve(&f.path)).cloned())
             .collect();
-        Self { at, since, churn }
+        let (cut, cut_basis, measured, crossed) = history_cut(&churn);
+        Self {
+            at,
+            since,
+            cut,
+            cut_basis,
+            measured,
+            crossed,
+            churn,
+        }
     }
 
     /// Walks the default churn window ending at HEAD of `root`.
@@ -103,21 +124,54 @@ impl PanelHistory {
     }
 }
 
+/// The historical cut: the 90th percentile of window commits across changed files, clamped to
+/// `[HISTORY_CUT_FLOOR, HISTORY_CUT_CEILING]`. Returns `(cut, basis, changed files, files at or above cut)`.
+fn history_cut(churn: &[Option<FileChurn>]) -> (u32, &'static str, usize, usize) {
+    let mut counts: Vec<u32> = churn.iter().flatten().map(|c| c.commits).collect();
+    counts.sort_unstable();
+    let n = counts.len();
+    if n == 0 {
+        return (HISTORY_CUT_FLOOR, "floor", 0, 0);
+    }
+    let p90 = counts[(9 * n).div_ceil(10) - 1];
+    let basis = if p90 > HISTORY_CUT_CEILING {
+        "ceiling"
+    } else if p90 < HISTORY_CUT_FLOOR {
+        "floor"
+    } else {
+        "p90"
+    };
+    let cut = p90.clamp(HISTORY_CUT_FLOOR, HISTORY_CUT_CEILING);
+    (cut, basis, n, counts.iter().filter(|&&c| c >= cut).count())
+}
+
 pub(crate) fn iso_date(epoch: i64) -> String {
     let (y, m, d) = civil_from_days(epoch.div_euclid(SECS_PER_DAY));
     format!("{y:04}-{m:02}-{d:02}")
 }
 
-/// Window and HEAD-stamp root attributes; empty when history is unavailable. `window=12mo@DATE`
-/// names the churn window's start date.
-pub(crate) fn history_root_attrs(history: &Result<PanelHistory, String>) -> String {
-    history.as_ref().ok().map_or_else(String::new, |h| {
-        format!(
-            " window=\"12mo@{}\" at=\"{}\"",
+/// Historical root attributes. `hstatus` says whether the family is `ranked` (rows fired), `measured-empty`
+/// (churn read, no function ranked) or `unavailable` (no history; `unavailable=` names why). `window`, `at`,
+/// `hcut`, `hbasis` (`p90`, `floor` or `ceiling`), `hfiles` (changed files measured) and `hcrossed` (of
+/// those, files at or above `hcut`) follow when history was read.
+pub(crate) fn history_root_attrs(history: &Result<PanelHistory, String>, hranked: usize) -> String {
+    match history {
+        Err(_) => " hstatus=\"unavailable\"".to_string(),
+        Ok(h) => format!(
+            " window=\"12mo@{}\" at=\"{}\" hcut=\"{}\" hbasis=\"{}\" hfiles=\"{}\" hcrossed=\"{}\" hstatus=\"{}\"",
             iso_date(h.since),
-            h.at.as_str().xml_escaped()
-        )
-    })
+            h.at.as_str().xml_escaped(),
+            h.cut,
+            h.cut_basis,
+            h.measured,
+            h.crossed,
+            if hranked == 0 {
+                "measured-empty"
+            } else {
+                "ranked"
+            }
+        ),
+    }
 }
 
 pub struct QualityFamilyContext<'a> {
@@ -236,8 +290,8 @@ const CONFUSION_FAMILY: QualityFamilySpec = QualityFamilySpec {
 };
 
 fn historical_fires(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
-    ctx.file_churn(sym)
-        .is_some_and(|c| c.commits >= HISTORY_CUT)
+    ctx.history
+        .is_some_and(|h| ctx.file_churn(sym).is_some_and(|c| c.commits >= h.cut))
 }
 
 fn historical_measure(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> String {
@@ -574,16 +628,16 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         "quality_panel",
         "ripwire-rs.quality-panel/v1",
         root: true,
-        comment: "ripwire-rs quality-panel schema=ripwire-rs.quality-panel/v1: every quality family in ONE report."
+        comment: "ripwire-rs quality-panel schema=ripwire-rs.quality-panel/v1: every quality family in ONE report. state = MUTABLE non-local state only (reassignable module/class bindings, and constants the indexed files mutate); reads of unmutated configuration constants are NOT state (state_lens=mutable). historical = git commits per file in the window at or above hcut (p90 of changed files, clamped to 3..14; hbasis says which)."
     );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let pw = self.window();
         let ccut = if self.cfiles > 0 { 40 } else { 0 };
-        let history_attrs = history_root_attrs(&self.history);
+        let history_attrs = history_root_attrs(&self.history, self.hranked);
         let family = family_attrs(PANEL_FAMILIES.len(), &self.enabled, &self.unavailable);
         write!(
             w,
-            "{} preset=\"{}\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"{HISTORY_CUT}\" hranked=\"{}\"{history_attrs} cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"{}\" sscope=\"{}\" cells=\"{}\" tested_scope=\"{}\" deep_untested=\"{}\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
+            "{} preset=\"{}\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hranked=\"{}\"{history_attrs} cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"{}\" sscope=\"{}\" state_lens=\"mutable\" cells=\"{}\" tested_scope=\"{}\" deep_untested=\"{}\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
             family,
             self.preset,
             self.cut,

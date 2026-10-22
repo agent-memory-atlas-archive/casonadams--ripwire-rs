@@ -211,15 +211,15 @@ id = "quality-panel-richer-family-evidence"
 command = "--quality-panel"
 case = ""
 kind = "richer"
-why = "Each ranked finding carries one child per fired family with the measured values behind its rank (structural bars and, when non-zero, the nesting humps and deep lines, lexical name length and words, historical churn count and last-change date, colocation fan-out, state reads and writes), so a reader can audit why it ranked. Upstream's per-family evidence rows are the same kind of fact and ours are denser per byte."
-evidence = "measured at default preset: ours 35592 B, 2385 facts, density 0.06701; upstream 14024 B, 711 facts, density 0.05070."
+why = "Each ranked finding carries one child per fired family with the measured values behind its rank (structural bars and, when non-zero, the nesting humps and deep lines, lexical name length and words, historical churn count and last-change date, colocation fan-out, state reads and writes), so a reader can audit why it ranked. Upstream's per-family evidence rows are the same kind of fact and ours are denser per byte. Ours-only root attributes disclose the lenses: state_lens=mutable (state is mutable non-local state; configuration reads are excluded, unlike upstream's state), and hcut/hbasis/hfiles/hcrossed/hstatus (the historical cut and whether the family was ranked, measured-empty or unavailable)."
+evidence = "measured at default preset by make parity: see the printed ledger line for the current bytes, facts and density; upstream about 14 KB, 711 facts, density 0.0507. Root extras state_lens, hcut, hbasis, hfiles, hcrossed, hstatus are disclosure only; upstream root attributes are all present."
 
 [[divergence]]
 id = "ensemble-default-window"
 command = "--ensemble"
 case = ""
 kind = "richer"
-why = "The default ensemble is budget-derived like every paged default window: it fills the 64 KB pack budget (276 of 1433 ranked symbols) where upstream stops at a fixed 40-symbol window, so it carries more facts at a higher density. Its root also discloses ours-only enabled and enabled_n (the families that ran), which richer permits; upstream's required root attributes are all present."
+why = "The default ensemble is budget-derived like every paged default window: it fills the 64 KB pack budget (276 of 1433 ranked symbols) where upstream stops at a fixed 40-symbol window, so it carries more facts at a higher density. Its root also discloses ours-only enabled and enabled_n (the families that ran) and hcut, hbasis, hfiles and hstatus (the historical cut and whether the family was ranked, measured-empty or unavailable), which richer permits; upstream's required root attributes are all present."
 evidence = "measured: bytes rw=64407 rip=14009; facts rw=3897 rip=714; density rw=0.06051 rip=0.05097; upstream default shown_syms=40 of total=1421; root extras enabled, enabled_n allowed by test_validate_parity.py RootAttributeRule."
 
 [[divergence]]

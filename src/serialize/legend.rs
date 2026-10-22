@@ -157,7 +157,7 @@ pub const LEGEND_DICT_ENTRIES: &[(&str, &str, &str)] = &[
     (
         "schema",
         "ripwire-rs.quality-panel/v1",
-        "Unified 6-family code quality panel (structural, lexical, confusion, historical, colocation, state)",
+        "Unified 6-family code quality panel (structural, lexical, confusion, historical, colocation, state); state = mutable non-local state only, configuration reads excluded (state_lens=mutable); historical cut = p90 of changed files clamped 3..14",
     ),
     (
         "schema",

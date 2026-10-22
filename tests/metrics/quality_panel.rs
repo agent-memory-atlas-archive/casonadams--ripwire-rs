@@ -1,3 +1,4 @@
+use ripwire_rs::domain::Binding;
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::metrics::{
     PanelHistory, PanelInputs, QualityPanelReport, compute_quality_panel_report,
@@ -47,6 +48,46 @@ fn commits_in_window(count: usize) -> Vec<CommitInfo> {
             changed_files: vec![PATH.to_string()],
         })
         .collect()
+}
+
+/// `count` commits touching `path`, newest first, one day apart, all inside the window.
+fn commits_touching(path: &str, count: usize) -> Vec<CommitInfo> {
+    (0..count)
+        .map(|i| CommitInfo {
+            id: format!("{path}{i}"),
+            timestamp: NOW - i as i64 * 86_400,
+            author: "Ada".to_string(),
+            changed_files: vec![path.to_string()],
+        })
+        .collect()
+}
+
+/// A function in file `file_id` (whose path is `path`) of a multi-file in-memory ingest.
+fn function_in(interner: &Interner, id: u32, file_id: u32, path: &str, name: &str) -> Symbol {
+    Symbol::new(
+        id,
+        interner.intern(name),
+        interner.intern(&format!("{path}::{name}")),
+        SymKind::Function,
+        Lang::Rust,
+        file_id,
+        id + 1,
+    )
+}
+
+fn ingest_files(interner: &Interner, paths: &[&str], symbols: Vec<Symbol>) -> IngestResult {
+    let mut ingest = IngestResult::new();
+    for (id, path) in paths.iter().enumerate() {
+        ingest.files.push(FileInfo {
+            id: id as u32,
+            path: interner.intern(path),
+            lang: Lang::Rust,
+            line_count: 150,
+            byte_size: 3000,
+        });
+    }
+    ingest.symbols = symbols;
+    ingest
 }
 
 fn history(
@@ -165,11 +206,14 @@ fn test_historical_follows_churn_not_structure() {
     let busy = run(&commits_in_window(14));
     assert_eq!(busy.hranked, 2);
 
-    let quiet = run(&commits_in_window(3));
+    let quiet = run(&commits_in_window(2));
     assert_eq!(quiet.hranked, 0);
     assert_eq!(quiet.rows.len(), 1);
     assert_eq!(quiet.rows[0].name, "tangled_dispatch");
     assert_eq!(quiet.rows[0].fired, "structural");
+
+    let floor = run(&commits_in_window(3));
+    assert_eq!(floor.hranked, 2, "a file at the floor fires");
 
     let stale: Vec<CommitInfo> = (0..14)
         .map(|i| CommitInfo {
@@ -251,6 +295,7 @@ fn test_unavailable_history_is_disclosed_not_substituted() {
     assert!(row.evidence.iter().all(|e| e.family != "historical"));
     let xml = rep.to_xml_string();
     assert!(xml.contains("unavailable=\"confusion,historical\""));
+    assert!(xml.contains("hstatus=\"unavailable\""));
     assert!(!xml.contains(" at=\""));
     assert!(!xml.contains(" window=\""));
 }
@@ -302,6 +347,234 @@ fn test_denominators_and_evidence_match_enabled_families() {
     assert!(xml.contains("families=\"6\""));
     assert!(xml.contains("enabled_n=\"5\""));
     assert!(xml.contains("at=\"abc123def\""));
+}
+
+#[test]
+fn test_historical_fires_only_in_the_hottest_file_of_a_quiet_repo() {
+    let interner = Interner::new();
+    let paths = ["src/hot.rs", "src/warm.rs", "src/cold.rs"];
+    let symbols = vec![
+        function_in(&interner, 0, 0, paths[0], "hot_a"),
+        function_in(&interner, 1, 0, paths[0], "hot_b"),
+        function_in(&interner, 2, 1, paths[1], "warm_fn"),
+        function_in(&interner, 3, 2, paths[2], "cold_fn"),
+    ];
+    let ingest = ingest_files(&interner, &paths, symbols);
+    let graph = Graph::build(&ingest, &interner);
+    let mut commits = commits_touching(paths[0], 5);
+    commits.extend(commits_touching(paths[1], 2));
+    commits.extend(commits_touching(paths[2], 1));
+    let rep = panel(
+        &ingest,
+        &graph,
+        &interner,
+        Some("lenient"),
+        history(&ingest, &interner, &commits),
+    );
+    assert_eq!(rep.hranked, 2);
+    let historical: Vec<&str> = rep
+        .rows
+        .iter()
+        .filter(|r| r.fired.contains("historical"))
+        .map(|r| r.name.as_str())
+        .collect();
+    assert_eq!(historical, ["hot_a", "hot_b"]);
+    let xml = rep.to_xml_string();
+    assert!(
+        xml.contains("hcut=\"5\" hbasis=\"p90\" hfiles=\"3\" hcrossed=\"1\" hstatus=\"ranked\"")
+    );
+}
+
+#[test]
+fn test_uniform_low_churn_below_the_floor_is_measured_and_empty() {
+    let interner = Interner::new();
+    let paths = ["src/a.rs", "src/b.rs", "src/c.rs", "src/d.rs"];
+    let symbols = paths
+        .iter()
+        .enumerate()
+        .map(|(i, p)| function_in(&interner, i as u32, i as u32, p, "touched_twice"))
+        .collect();
+    let ingest = ingest_files(&interner, &paths, symbols);
+    let graph = Graph::build(&ingest, &interner);
+    let commits: Vec<CommitInfo> = paths.iter().flat_map(|p| commits_touching(p, 2)).collect();
+    let rep = panel(
+        &ingest,
+        &graph,
+        &interner,
+        Some("lenient"),
+        history(&ingest, &interner, &commits),
+    );
+    assert_eq!(rep.hranked, 0);
+    assert!(rep.rows.iter().all(|r| !r.fired.contains("historical")));
+    let xml = rep.to_xml_string();
+    assert!(xml.contains(
+        "hcut=\"3\" hbasis=\"floor\" hfiles=\"4\" hcrossed=\"0\" hstatus=\"measured-empty\""
+    ));
+}
+
+#[test]
+fn test_busy_repo_keeps_the_fixed_ceiling() {
+    let interner = Interner::new();
+    let paths = ["src/a.rs", "src/b.rs", "src/c.rs", "src/d.rs"];
+    let symbols = paths
+        .iter()
+        .enumerate()
+        .map(|(i, p)| function_in(&interner, i as u32, i as u32, p, &format!("f{i}")))
+        .collect();
+    let ingest = ingest_files(&interner, &paths, symbols);
+    let graph = Graph::build(&ingest, &interner);
+    let counts = [20, 20, 13, 14];
+    let commits: Vec<CommitInfo> = paths
+        .iter()
+        .zip(counts)
+        .flat_map(|(p, n)| commits_touching(p, n))
+        .collect();
+    let rep = panel(
+        &ingest,
+        &graph,
+        &interner,
+        Some("lenient"),
+        history(&ingest, &interner, &commits),
+    );
+    let historical: Vec<&str> = rep
+        .rows
+        .iter()
+        .filter(|r| r.fired.contains("historical"))
+        .map(|r| r.name.as_str())
+        .collect();
+    assert_eq!(
+        historical,
+        ["f0", "f1", "f3"],
+        "13 commits stays below the ceiling"
+    );
+    let xml = rep.to_xml_string();
+    assert!(
+        xml.contains(
+            "hcut=\"14\" hbasis=\"ceiling\" hfiles=\"4\" hcrossed=\"3\" hstatus=\"ranked\""
+        )
+    );
+}
+
+#[test]
+fn test_state_means_mutable_state_not_configuration_reads() {
+    let interner = Interner::new();
+    let writer = function(&interner, 0, "bump_counter");
+    let mut reader = function(&interner, 1, "read_limits");
+    reader.params = 6;
+    let counter = Symbol::new(
+        2,
+        interner.intern("COUNTER"),
+        interner.intern("src/lib.rs::COUNTER"),
+        SymKind::Var,
+        Lang::Rust,
+        0,
+        120,
+    );
+    let mut limits = Symbol::new(
+        3,
+        interner.intern("LIMITS"),
+        interner.intern("src/lib.rs::LIMITS"),
+        SymKind::Var,
+        Lang::Rust,
+        0,
+        121,
+    );
+    limits.binding = Binding::Const;
+    let mut ingest = ingest_for(&interner, vec![writer, reader, counter, limits]);
+    ingest.references.push(Reference::new(
+        0,
+        interner.intern("COUNTER"),
+        0,
+        10,
+        Lang::Rust,
+        RefRole::Write,
+    ));
+    ingest.references.push(Reference::new(
+        1,
+        interner.intern("LIMITS"),
+        0,
+        20,
+        Lang::Rust,
+        RefRole::Read,
+    ));
+    let graph = Graph::build(&ingest, &interner);
+    let rep = panel(
+        &ingest,
+        &graph,
+        &interner,
+        Some("lenient"),
+        Err(NO_HISTORY.to_string()),
+    );
+    let writer_row = rep
+        .rows
+        .iter()
+        .find(|r| r.name == "bump_counter")
+        .expect("writer row");
+    assert!(writer_row.fired.contains("state"));
+    let state = writer_row
+        .evidence
+        .iter()
+        .find(|e| e.family == "state")
+        .expect("state evidence");
+    assert!(state.attrs.contains("writes=\"1\""));
+    let reader_row = rep
+        .rows
+        .iter()
+        .find(|r| r.name == "read_limits")
+        .expect("reader row");
+    assert_eq!(
+        reader_row.fired, "structural",
+        "a configuration read is not state"
+    );
+    assert!(rep.to_xml_string().contains("state_lens=\"mutable\""));
+}
+
+#[test]
+fn test_constant_the_corpus_mutates_is_state() {
+    let interner = Interner::new();
+    let writer = function(&interner, 0, "reset_limits");
+    let reader = function(&interner, 1, "read_limits");
+    let mut limits = Symbol::new(
+        2,
+        interner.intern("LIMITS"),
+        interner.intern("src/lib.rs::LIMITS"),
+        SymKind::Var,
+        Lang::Rust,
+        0,
+        120,
+    );
+    limits.binding = Binding::Const;
+    let mut ingest = ingest_for(&interner, vec![writer, reader, limits]);
+    ingest.references.push(Reference::new(
+        0,
+        interner.intern("LIMITS"),
+        0,
+        10,
+        Lang::Rust,
+        RefRole::Write,
+    ));
+    ingest.references.push(Reference::new(
+        1,
+        interner.intern("LIMITS"),
+        0,
+        20,
+        Lang::Rust,
+        RefRole::Read,
+    ));
+    let graph = Graph::build(&ingest, &interner);
+    let rep = panel(
+        &ingest,
+        &graph,
+        &interner,
+        Some("lenient"),
+        Err(NO_HISTORY.to_string()),
+    );
+    let reader_row = rep
+        .rows
+        .iter()
+        .find(|r| r.name == "read_limits")
+        .expect("reader row");
+    assert!(reader_row.fired.contains("state"));
 }
 
 #[test]
