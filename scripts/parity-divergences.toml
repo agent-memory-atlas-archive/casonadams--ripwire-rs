@@ -11,7 +11,7 @@
 # defect_budget must equal the number of defect entries: a new defect fails, a fixed one must lower it.
 # An entry with a [divergence.files] table runs against that fixture (written to a temp dir) instead of the tree.
 
-defect_budget = 21
+defect_budget = 20
 
 [[divergence]]
 id = "partner-unindexed-languages"
@@ -286,12 +286,12 @@ why = "Tree lists the symbol FileSources, which upstream's full map lacks; cause
 evidence = "measured on a2e114c: <s n=FileSources> absent from upstream's full set; owner: unassigned"
 
 [[divergence]]
-id = "dead-code-rust-candidates"
+id = "dead-code-pub-items-upstream"
 command = "--dead-code"
 case = ""
-kind = "defect"
-why = "Rust never yields internal-linkage candidates because the Rust plugin leaves supports_internal_linkage unset; fixed on lp/deadcode, which turns this into fixes-upstream-defect."
-evidence = "measured on a2e114c: ours count=0, upstream count=3; owner: lp/deadcode 28feb7a"
+kind = "fixes-upstream-defect"
+why = "Upstream reports three pub fn rows (commands, lang_color, cx_color) as internal-linkage dead code because its rule ignores Rust visibility; ours counts only non-pub private functions and reports none, which is the correct answer for this repo."
+evidence = "tests/cli/architecture_behavior.rs::dead_code_reports_only_private_unused_rust_functions"
 
 [[divergence]]
 id = "communities-file-scope-members"

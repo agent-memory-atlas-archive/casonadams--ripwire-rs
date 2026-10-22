@@ -479,3 +479,28 @@ fn dead_code_does_not_inherit_linkage_from_parameter_names_or_other_overloads() 
         .collect();
     assert_eq!(dead, ["c_dead", "cpp_dead"]);
 }
+
+#[test]
+fn dead_code_reports_only_private_unused_rust_functions() {
+    let source_rs = b"fn private_unused() -> u8 {\n    1\n}\npub fn public_api() -> u8 {\n    2\n}\npub(crate) fn crate_api() -> u8 {\n    3\n}\nfn helper_used() -> u8 {\n    4\n}\ntrait Runner {\n    fn run(&self) -> u8;\n}\nstruct Engine;\nimpl Runner for Engine {\n    fn run(&self) -> u8 {\n        5\n    }\n}\n#[test]\nfn checks_engine() {\n    assert_eq!(1, 1);\n}\n#[no_mangle]\nfn plain_hook() -> u8 {\n    6\n}\n#[no_mangle]\nextern \"C\" fn c_hook() -> u8 {\n    7\n}\n#[cfg(test)]\nmod tests {\n    fn fixture_unused() -> u8 {\n        8\n    }\n}\nfn main() {\n    let _ = helper_used();\n}\n";
+    let (ingest, graph, interner) = corpus(&[("src/lib.rs", Lang::Rust, source_rs.as_slice())]);
+    let sources: &[(&str, &[u8])] = &[("src/lib.rs", source_rs)];
+    let page = ripwire_rs::cli::TopModifierArgs::default();
+    let ctx = ripwire_rs::commands::dead_code::DeadCodeContext {
+        root: ":memory:",
+        sources: &sources,
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+        page: &page,
+    };
+    let mut out = Vec::new();
+    ripwire_rs::commands::dead_code::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+    let report = roxmltree::Document::parse(std::str::from_utf8(&out).unwrap()).unwrap();
+    let dead: Vec<_> = report
+        .descendants()
+        .filter(|node| node.has_tag_name("d"))
+        .map(|node| node.attribute("n").unwrap())
+        .collect();
+    assert_eq!(dead, ["private_unused"]);
+}

@@ -1,4 +1,5 @@
 mod callables;
+mod linkage;
 
 use super::{
     ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode,
@@ -354,6 +355,19 @@ impl LanguageSemantics for RustLanguage {
         file_index: &HashMap<&str, u32>,
     ) -> Option<u32> {
         resolve_rust_use_target(importer_path, raw_target, file_index)
+    }
+
+    fn supports_internal_linkage(&self) -> bool {
+        true
+    }
+
+    fn is_internal_function(
+        &self,
+        root: tree_sitter::Node<'_>,
+        name_byte: usize,
+        source: &[u8],
+    ) -> bool {
+        linkage::is_rust_internal_function(root, name_byte, source)
     }
 }
 
