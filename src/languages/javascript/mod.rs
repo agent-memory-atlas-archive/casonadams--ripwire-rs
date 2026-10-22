@@ -894,8 +894,8 @@ pub(crate) fn js_test_run_command(
     node_test: bool,
 ) -> Option<String> {
     if is_assertion_script(path) {
-        // Run by its own header command (`tsx <file>`), not by the manifest's test runner.
-        return None;
+        // Run by the command its leading comment block documents, not by the manifest's test runner.
+        return assertion_header_command(path, source);
     }
     match manifest {
         Some(m) if m.contains("vitest") => Some(format!("npx vitest run {path}")),
@@ -914,6 +914,42 @@ pub(crate) fn is_assertion_script(path: &str) -> bool {
     [".check.ts", ".check.tsx", ".check.js"]
         .iter()
         .any(|suffix| name.ends_with(suffix))
+}
+
+/// Runner prefixes an assertion script's header may document, longest first.
+const HEADER_RUNNERS: [&[&str]; 6] = [
+    &["pnpm", "dlx", "tsx"],
+    &["npx", "tsx"],
+    &["tsx"],
+    &["node"],
+    &["bun"],
+    &["deno", "run"],
+];
+
+/// The command an assertion script's leading comment block documents for running it, e.g.
+/// `//   pnpm dlx tsx src/x.check.ts`. Trusted only when the named file is this script (repo-relative
+/// path or basename); the derived command always names the repo-relative path.
+fn assertion_header_command(path: &str, source: &str) -> Option<String> {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    source
+        .lines()
+        .map(str::trim)
+        .take_while(|line| {
+            line.is_empty() || line.starts_with("//") || line.starts_with("/*") || line.starts_with('*')
+        })
+        .find_map(|line| {
+            let words: Vec<&str> = line.trim_start_matches(['/', '*']).split_whitespace().collect();
+            (0..words.len()).find_map(|at| header_runner_at(&words[at..], path, name))
+        })
+}
+
+/// The runner command starting at `words[0]` when it names this script as its file argument.
+fn header_runner_at(words: &[&str], path: &str, name: &str) -> Option<String> {
+    HEADER_RUNNERS.into_iter().find_map(|runner| {
+        let target = words.get(runner.len())?;
+        (words.starts_with(runner) && (*target == path || *target == name))
+            .then(|| format!("{} {path}", runner.join(" ")))
+    })
 }
 
 /// Partner subject for JS-family files: an assertion script names its subject as `x.check`, else the

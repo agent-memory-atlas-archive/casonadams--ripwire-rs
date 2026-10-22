@@ -84,7 +84,7 @@ The definitive pre-commit verification gate combining changed symbols, affected 
 ```
 
 - **Exit Code**: Returns exit code 4 while any `<t>` test row or `<u>` untested impacted symbol row exists.
-- **Runners**: Derives `run=` from the test file's language (`python3` when `__main__` is present, `bash` for `.sh`, `npx vitest run` / `npx jest` from the nearest `package.json`, `node --test` when `require('node:test')` is present) and emits `run_unknown="1"` otherwise.
+- **Runners**: Derives `run=` from the test file's language (`python3` when `__main__` is present, `bash` for `.sh`, `npx vitest run` / `npx jest` from the nearest `package.json`, `node --test` when `require('node:test')` is present) and emits `run_unknown="1"` otherwise. An assertion script (`x.check.ts`, `.tsx`, `.js`) takes the command its leading comment block documents (`pnpm dlx tsx`, `npx tsx`, `tsx`, `node`, `bun`, or `deno run` followed by its file) only when that file is the script itself, named by repo-relative path or basename; the derived `run=` uses the repo-relative path. Without such a header it stays `run_unknown="1"`: no runner is guessed.
 - **Untested Blast Radius**: `<u>` rows list impacted non-test symbols that no test transitively reaches, sorted by cognitive complexity descending and paged by `--limit`/`--offset`; `<file-scope>` owners are counted separately in `untested_modscope=`.
 
 ---

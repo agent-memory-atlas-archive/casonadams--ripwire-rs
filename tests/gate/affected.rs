@@ -465,6 +465,87 @@ fn test_runner_command_by_language_and_nearest_manifest() {
 }
 
 #[test]
+fn test_assertion_script_run_comes_from_its_documented_header() {
+    let cases: &[(&str, &str, Option<&str>)] = &[
+        (
+            "src/lib/cart-pricing.check.ts",
+            "// Self-check.\n//\n//   pnpm dlx tsx src/lib/cart-pricing.check.ts\n\nimport x from 'y';\n",
+            Some("pnpm dlx tsx src/lib/cart-pricing.check.ts"),
+        ),
+        (
+            "src/lib/queries/payment-methods-promote.check.ts",
+            "// pnpm dlx tsx src/lib/queries/payment-methods-promote.check.ts - because\n",
+            Some("pnpm dlx tsx src/lib/queries/payment-methods-promote.check.ts"),
+        ),
+        (
+            "src/lib/cart-pricing.check.ts",
+            "// Run: npx tsx cart-pricing.check.ts\n",
+            Some("npx tsx src/lib/cart-pricing.check.ts"),
+        ),
+        (
+            "pkg/a.check.ts",
+            "// tsx a.check.ts\n",
+            Some("tsx pkg/a.check.ts"),
+        ),
+        (
+            "pkg/a.check.ts",
+            "// bun pkg/a.check.ts\n",
+            Some("bun pkg/a.check.ts"),
+        ),
+        (
+            "pkg/a.check.ts",
+            "// deno run pkg/a.check.ts\n",
+            Some("deno run pkg/a.check.ts"),
+        ),
+        (
+            "pkg/a.check.js",
+            "/* node pkg/a.check.js */\n",
+            Some("node pkg/a.check.js"),
+        ),
+        (
+            "src/lib/cart-pricing.check.ts",
+            "import x from 'y';\n",
+            None,
+        ),
+        (
+            "src/lib/cart-pricing.check.ts",
+            "import x;\n// pnpm dlx tsx src/lib/cart-pricing.check.ts\n",
+            None,
+        ),
+        (
+            "src/lib/cart-pricing.check.ts",
+            "// pnpm dlx tsx src/lib/other.check.ts\n",
+            None,
+        ),
+        (
+            "src/lib/cart-pricing.check.ts",
+            "// tsx src/other/cart-pricing.check.ts\n",
+            None,
+        ),
+        (
+            "src/lib/cart-pricing.check.ts",
+            "// deno test src/lib/cart-pricing.check.ts\n",
+            None,
+        ),
+        (
+            "src/lib/cart-pricing.check.ts",
+            "// src/lib/cart-pricing.check.ts\n",
+            None,
+        ),
+    ];
+    for &(path, src, want) in cases {
+        let lang = Lang::from_path(std::path::Path::new(path));
+        assert_eq!(
+            lang.semantics()
+                .test_run_command(path, src, None)
+                .as_deref(),
+            want,
+            "{path}"
+        );
+    }
+}
+
+#[test]
 fn test_summarize_test_gate_separates_modscope_and_sorts_by_ccx() {
     use ripwire_rs::gate::summarize_test_gate;
     use ripwire_rs::navigate::compute_tested_node_mask;

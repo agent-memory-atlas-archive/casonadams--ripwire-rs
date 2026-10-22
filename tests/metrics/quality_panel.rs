@@ -303,3 +303,47 @@ fn test_denominators_and_evidence_match_enabled_families() {
     assert!(xml.contains("enabled_n=\"5\""));
     assert!(xml.contains("at=\"abc123def\""));
 }
+
+#[test]
+fn test_structural_evidence_carries_humps_and_deep_only_when_informative() {
+    let interner = Interner::new();
+    let mut deep = function(&interner, 0, "deep_dispatch");
+    deep.ccx = 30;
+    deep.loc = 100;
+    deep.max_nest = 5;
+    deep.humps = 3;
+    deep.deep = 39;
+    let mut flat = function(&interner, 0, "flat_dispatch");
+    flat.ccx = 30;
+    flat.loc = 100;
+    flat.max_nest = 5;
+    let ingest = ingest_for(&interner, vec![deep, flat]);
+    let graph = Graph::build(&ingest, &interner);
+    let rep = panel(
+        &ingest,
+        &graph,
+        &interner,
+        Some("lenient"),
+        Err("not a git repository".to_string()),
+    );
+    let attrs_of = |name: &str| {
+        let row = rep
+            .rows
+            .iter()
+            .find(|r| r.name == name)
+            .expect("ranked row");
+        row.evidence
+            .iter()
+            .find(|e| e.family == "structural")
+            .expect("structural evidence")
+            .attrs
+            .clone()
+    };
+    let informative = attrs_of("deep_dispatch");
+    assert!(informative.contains("humps=\"3\""));
+    assert!(informative.contains("deep=\"39\""));
+    let quiet = attrs_of("flat_dispatch");
+    assert!(!quiet.contains("humps="));
+    assert!(!quiet.contains("deep="));
+    assert!(quiet.contains("ccx=\"30\""));
+}

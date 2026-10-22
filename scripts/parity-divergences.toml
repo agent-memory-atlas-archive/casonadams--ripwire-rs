@@ -211,8 +211,8 @@ id = "quality-panel-richer-family-evidence"
 command = "--quality-panel"
 case = ""
 kind = "richer"
-why = "Each ranked finding carries one child per fired family with the measured values behind its rank (structural bars, lexical name length and words, historical churn count and last-change date, colocation fan-out, state reads and writes), so a reader can audit why it ranked. Upstream's per-family evidence rows are the same kind of fact and ours are denser per byte."
-evidence = "measured at default preset: ours 29441 B, 1980 facts, density 0.06725; upstream 13690 B, 703 facts, density 0.05135."
+why = "Each ranked finding carries one child per fired family with the measured values behind its rank (structural bars and, when non-zero, the nesting humps and deep lines, lexical name length and words, historical churn count and last-change date, colocation fan-out, state reads and writes), so a reader can audit why it ranked. Upstream's per-family evidence rows are the same kind of fact and ours are denser per byte."
+evidence = "measured at default preset: ours 35592 B, 2385 facts, density 0.06701; upstream 14024 B, 711 facts, density 0.05070."
 
 [[divergence]]
 id = "ensemble-default-window"

@@ -306,12 +306,12 @@ pub const LEGEND_DICT_ENTRIES: &[(&str, &str, &str)] = &[
     (
         "attr",
         "humps",
-        "Identifier camelCase/snake_case sub-token hump count",
+        "Separate entries into nesting at or past the bar (deep-nesting regions)",
     ),
     (
         "attr",
         "deep",
-        "Count of deeply nested statements exceeding nesting bar",
+        "Lines inside deep-nesting regions, each line counted once",
     ),
     (
         "attr",

@@ -178,10 +178,21 @@ fn is_structural_base(sym: &Symbol) -> bool {
 }
 
 fn structural_measure(sym: &Symbol, _: &QualityFamilyContext<'_>) -> String {
+    let humps = nonzero_attr("humps", sym.humps);
+    let deep = nonzero_attr("deep", sym.deep);
     format!(
-        " ccx=\"{}\" loc=\"{}\" nest=\"{}\" params=\"{}\"",
+        " ccx=\"{}\" loc=\"{}\" nest=\"{}\" params=\"{}\"{humps}{deep}",
         sym.ccx, sym.loc, sym.max_nest, sym.params
     )
+}
+
+/// ` name="value"` for an informative (non-zero) measure, else nothing: present-only serialization.
+fn nonzero_attr(name: &str, value: u16) -> String {
+    if value == 0 {
+        String::new()
+    } else {
+        format!(" {name}=\"{value}\"")
+    }
 }
 
 fn lexical_fires(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
