@@ -371,6 +371,15 @@ impl LanguageSemantics for RustLanguage {
         linkage::is_rust_internal_function(root, name_byte, source)
     }
 
+    fn for_each_identifier(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &[u8],
+        visit: &mut dyn FnMut(&str),
+    ) {
+        linkage::for_each_rust_identifier(root, source, visit);
+    }
+
     fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
         ctx.def_node
             .is_some_and(|def| is_rust_immutable_binding(def, ctx.source_bytes))

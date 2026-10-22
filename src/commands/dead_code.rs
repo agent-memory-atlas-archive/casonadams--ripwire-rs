@@ -47,6 +47,31 @@ pub struct DeadCodeContext<'a> {
     pub page: &'a dyn crate::commands::context::Paginated,
 }
 
+/// Counts identifier tokens of `lang` across the corpus for each name in `uses`. A function's own
+/// definition contributes one, so a count above one is evidence of a reference somewhere else.
+fn count_identifier_uses(
+    ctx: &DeadCodeContext<'_>,
+    lang: crate::domain::Lang,
+    uses: &mut std::collections::HashMap<&str, u32>,
+) {
+    for file in ctx.ingest.files.iter().filter(|file| file.lang == lang) {
+        let path = ctx.ingest.file_path(file.id, ctx.interner);
+        let source = ctx
+            .sources
+            .read(path)
+            .unwrap_or(std::borrow::Cow::Borrowed(&[]));
+        let Some(tree) = parse_file_tree(lang, path, source.as_ref()) else {
+            continue;
+        };
+        lang.semantics()
+            .for_each_identifier(tree.root_node(), source.as_ref(), &mut |text| {
+                if let Some(count) = uses.get_mut(text) {
+                    *count += 1;
+                }
+            });
+    }
+}
+
 pub fn execute_dead_code_query_paged<W: Write>(
     ctx: &DeadCodeContext<'_>,
     out: &mut W,
@@ -55,7 +80,7 @@ pub fn execute_dead_code_query_paged<W: Write>(
     let view = (ctx.ingest, ctx.interner);
     let mut file_cache: std::collections::HashMap<u32, CachedFile<'_>> =
         std::collections::HashMap::new();
-    let mut dead = Vec::new();
+    let mut candidates = Vec::new();
     for sym in &ctx.ingest.symbols {
         if sym.kind != crate::domain::SymKind::Function
             || !sym.lang.semantics().supports_internal_linkage()
@@ -84,7 +109,29 @@ pub fn execute_dead_code_query_paged<W: Write>(
             )
         });
         if is_internal {
-            dead.push((view.sym_name(sym), sym.kind.tag(), p, sym.line));
+            candidates.push(sym);
+        }
+    }
+    let mut uses_by_lang: std::collections::HashMap<crate::domain::Lang, std::collections::HashMap<&str, u32>> =
+        std::collections::HashMap::new();
+    for sym in &candidates {
+        uses_by_lang
+            .entry(sym.lang)
+            .or_default()
+            .insert(view.sym_name(sym), 0);
+    }
+    for (lang, uses) in &mut uses_by_lang {
+        count_identifier_uses(ctx, *lang, uses);
+    }
+    let mut dead = Vec::new();
+    for sym in candidates {
+        let name = view.sym_name(sym);
+        let referenced = uses_by_lang
+            .get(&sym.lang)
+            .and_then(|uses| uses.get(name))
+            .is_some_and(|&count| count > 1);
+        if !referenced {
+            dead.push((name, sym.kind.tag(), view.sym_path(sym), sym.line));
         }
     }
     dead.sort_by(|a, b| {

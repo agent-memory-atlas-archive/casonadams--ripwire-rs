@@ -504,3 +504,28 @@ fn dead_code_reports_only_private_unused_rust_functions() {
         .collect();
     assert_eq!(dead, ["private_unused"]);
 }
+
+#[test]
+fn dead_code_keeps_rust_functions_referenced_by_value_or_method_shape() {
+    let source_rs = b"struct Plugin {\n    run: fn() -> u8,\n}\nimpl Plugin {\n    fn method_unused(&self) -> u8 {\n        5\n    }\n}\nfn run() -> u8 {\n    1\n}\nfn helper() -> u8 {\n    2\n}\nfn unused_free() -> u8 {\n    3\n}\nfn plugin() -> Plugin {\n    Plugin { run }\n}\nfn pointer_user() -> u8 {\n    let f = helper;\n    f()\n}\nfn main() {\n    let _ = plugin();\n    let _ = pointer_user();\n}\n";
+    let sources: &[(&str, &[u8])] = &[("src/lib.rs", source_rs)];
+    let (ingest, graph, interner) = corpus(&[("src/lib.rs", Lang::Rust, source_rs.as_slice())]);
+    let page = ripwire_rs::cli::TopModifierArgs::default();
+    let ctx = ripwire_rs::commands::dead_code::DeadCodeContext {
+        root: ":memory:",
+        sources: &sources,
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+        page: &page,
+    };
+    let mut out = Vec::new();
+    ripwire_rs::commands::dead_code::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+    let report = roxmltree::Document::parse(std::str::from_utf8(&out).unwrap()).unwrap();
+    let dead: Vec<_> = report
+        .descendants()
+        .filter(|node| node.has_tag_name("d"))
+        .map(|node| node.attribute("n").unwrap())
+        .collect();
+    assert_eq!(dead, ["unused_free"]);
+}

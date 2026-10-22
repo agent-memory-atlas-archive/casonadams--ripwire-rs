@@ -404,6 +404,16 @@ pub trait LanguageSemantics: Sync {
         false
     }
 
+    /// Calls `visit` with the text of every identifier token in `root`; `--dead-code` counts these
+    /// as name-use evidence, so value-position references (struct shorthand, fn pointers) count too.
+    fn for_each_identifier(
+        &self,
+        _root: tree_sitter::Node<'_>,
+        _source: &[u8],
+        _visit: &mut dyn FnMut(&str),
+    ) {
+    }
+
     /// Optional language-specific enclosing scope extractor for non-standard container AST shapes.
     fn extract_custom_scope(
         &self,
