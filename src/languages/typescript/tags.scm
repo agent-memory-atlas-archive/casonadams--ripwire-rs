@@ -88,6 +88,26 @@
     value: [ (as_expression        (parenthesized_expression [ (arrow_function) (function_expression) ]))
              (satisfies_expression (parenthesized_expression [ (arrow_function) (function_expression) ])) ])) @definition.function
 
+; ---- fluent builders ending in a callable: `export const getX = createServerFn({..}).handler(async () => {..})` ----
+; The const's value is the function the builder returns. Only a factory call (a bare call whose result
+; receives a member call with the function as its last argument) counts, so `list.filter(f).map(g)` and
+; ordinary locals stay out. Module scope only, like the constant patterns above.
+(program
+  (lexical_declaration
+    (variable_declarator
+      name: (identifier) @name
+      value: (call_expression
+        function: (member_expression object: (call_expression function: (identifier)))
+        arguments: (arguments [ (arrow_function) (function_expression) ] .)))) @definition.function)
+
+(export_statement
+  (lexical_declaration
+    (variable_declarator
+      name: (identifier) @name
+      value: (call_expression
+        function: (member_expression object: (call_expression function: (identifier)))
+        arguments: (arguments [ (arrow_function) (function_expression) ] .)))) @definition.function)
+
 ; ---- module-level settings constants (r3 q10 — bench/headtohead/r3-headroom-2026-08-03) ----
 ; `const PASSWORD_HASHERS = [...]` at module scope: a settings/config constant is a real, rankable
 ; symbol — before these patterns a whole settings module contributed ZERO symbols to the map, so

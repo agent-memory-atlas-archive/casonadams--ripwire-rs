@@ -1,6 +1,7 @@
 use super::javascript::{
     JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_const_scalar_binding,
-    is_jsx_intrinsic_tag_call, parse_tsconfig_paths, resolve_web_import_target,
+    is_jsx_intrinsic_tag_call, is_std_member_call_value, parse_tsconfig_paths,
+    resolve_web_import_target,
 };
 use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
@@ -199,7 +200,11 @@ impl LanguageSemantics for TypeScriptLanguage {
     }
 
     fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
-        ctx.sub != Some("constant") || super::is_screaming_snake(ctx.name)
+        match ctx.sub {
+            Some("constant") => super::is_screaming_snake(ctx.name),
+            None => ctx.kind != crate::domain::SymKind::Function || !is_std_member_call_value(ctx),
+            _ => true,
+        }
     }
 
     fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {

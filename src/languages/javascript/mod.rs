@@ -688,6 +688,25 @@ pub(super) fn is_const_scalar_binding(ctx: &DefCaptureGateContext<'_>) -> bool {
             .is_some_and(is_scalar_literal)
 }
 
+/// A const whose value calls a standard member (`fetch(u).then(f)`, `items.map(f)`) holds data, not a builder.
+pub(super) fn is_std_member_call_value(ctx: &DefCaptureGateContext<'_>) -> bool {
+    let Some(value) = ctx
+        .name_node
+        .and_then(|name| name.parent())
+        .filter(|node| node.kind() == "variable_declarator")
+        .and_then(|declarator| declarator.child_by_field_name("value"))
+    else {
+        return false;
+    };
+    value.kind() == "call_expression"
+        && value
+            .child_by_field_name("function")
+            .filter(|callee| callee.kind() == "member_expression")
+            .and_then(|callee| callee.child_by_field_name("property"))
+            .and_then(|property| property.utf8_text(ctx.source_bytes).ok())
+            .is_some_and(|name| JS_STD_MEMBERS.contains(&name))
+}
+
 /// JS-family runner: the nearest manifest's vitest/jest, else `require('node:test')` when `node_test` applies.
 #[must_use]
 pub(crate) fn js_test_run_command(
