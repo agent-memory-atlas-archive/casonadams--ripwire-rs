@@ -1,0 +1,156 @@
+{
+  "description": "HELD-OUT-3: fresh conceptual --for questions authored from source after the TUNE, HELD and HELD-OUT-2 splits were fixed; never used for tuning. Covers orchestration questions (a coordinator that decides, schedules or publishes versus its leaf helpers) and policy/data questions (exported arrays of names or patterns plus the predicates around them). Same labels and metrics as retrieval-eval.json. Repos are read from retrieval-eval.json.",
+  "questions": [
+    {
+      "id": "h3-1",
+      "repo": "review-agent",
+      "split": "held3",
+      "query": "run one review from input load through discovery to coordinated findings",
+      "question": "When a review run starts, how do the discovery stage and the coordinator run in order, and which function ties them together?",
+      "targets": [
+        {"name": "runReview", "path": "src/review/orchestrator.ts", "line": 71, "label": "authoritative"},
+        {"name": "runDiscovery", "path": "src/review/discovery.ts", "line": 219, "label": "caller"},
+        {"name": "coordinateWithFallback", "path": "src/review/coordination.ts", "line": 116, "label": "caller"}
+      ]
+    },
+    {
+      "id": "h3-2",
+      "repo": "review-agent",
+      "split": "held3",
+      "query": "decide whether a pull request review should start or be skipped as duplicate",
+      "question": "Before reviewers run, what decides that a pull request is already reviewed at this head and should be skipped?",
+      "targets": [
+        {"name": "prepareReview", "path": "src/review/preparation.ts", "line": 159, "label": "authoritative"},
+        {"name": "alreadyReviewed", "path": "src/review/preparation.ts", "line": 150, "label": "caller"}
+      ]
+    },
+    {
+      "id": "h3-3",
+      "repo": "member-portal",
+      "split": "held3",
+      "query": "book overnight port for confirmed lines when no device order is open",
+      "question": "When mobile lines are confirmed and no device order is still shipping, who books the overnight number port and with which schedule?",
+      "targets": [
+        {"name": "autoScheduleOvernightPort", "path": "src/lib/onboarding/auto-schedule-port.ts", "line": 18, "label": "authoritative"},
+        {"name": "linesConfirmedTodayToSchedule", "path": "src/lib/port-schedule.ts", "line": 225, "label": "caller"},
+        {"name": "canSelfSchedulePort", "path": "src/lib/port-schedule.ts", "line": 237, "label": "caller"}
+      ]
+    },
+    {
+      "id": "h3-4",
+      "repo": "review-agent",
+      "split": "held3",
+      "query": "fan out reviewer instances per agent during discovery",
+      "question": "How many reviewer instances does each agent get in discovery, and which stage launches them?",
+      "targets": [
+        {"name": "runDiscovery", "path": "src/review/discovery.ts", "line": 219, "label": "authoritative"},
+        {"name": "reviewerInstances", "path": "src/review/discovery.ts", "line": 94, "label": "caller"}
+      ]
+    },
+    {
+      "id": "h3-5",
+      "repo": "review-agent",
+      "split": "held3",
+      "query": "keep git metadata dotenv files and private key files away from the reviewer",
+      "question": "Which repository paths must never be shown to the review model, such as version-control internals, environment files, and private keys?",
+      "targets": [
+        {"name": "isProtectedRelativePath", "path": "src/protected-paths.ts", "line": 16, "label": "authoritative"},
+        {"name": "BLOCKED_NAMES", "path": "src/protected-paths.ts", "line": 4, "label": "authoritative"},
+        {"name": "isPrivateKeyPath", "path": "src/protected-paths.ts", "line": 12, "label": "authoritative"},
+        {"name": "PRIVATE_KEY_PATH", "path": "src/protected-paths.ts", "line": 5, "label": "authoritative"}
+      ]
+    },
+    {
+      "id": "h3-6",
+      "repo": "review-agent",
+      "split": "held3",
+      "query": "hard caps on changed files findings and review time per run",
+      "question": "What hard limits bound the number of changed files, the findings per agent, and the total review time?",
+      "targets": [
+        {"name": "LIMITS", "path": "src/config.ts", "line": 3, "label": "authoritative"}
+      ]
+    },
+    {
+      "id": "h3-7",
+      "repo": "member-portal",
+      "split": "held3",
+      "query": "which carrier names share a transfer kind on each network",
+      "question": "Which source carriers are treated as the same billing-transfer family on AT&T and on T-Mobile, and how is the transfer kind chosen?",
+      "targets": [
+        {"name": "carrierTransferKind", "path": "src/lib/carriers.ts", "line": 18, "label": "authoritative"},
+        {"name": "TMOBILE_FAMILY", "path": "src/lib/carriers.ts", "line": 14, "label": "authoritative"},
+        {"name": "ATT_FAMILY", "path": "src/lib/carriers.ts", "line": 16, "label": "authoritative"},
+        {"name": "VERIZON_FAMILY", "path": "src/lib/carriers.ts", "line": 29, "label": "unrelated"}
+      ]
+    },
+    {
+      "id": "h3-8",
+      "repo": "member-portal",
+      "split": "held3",
+      "query": "lazy page download failed so reload once after deploy",
+      "question": "Which error messages mean a lazily loaded page file failed to download, so the app should reload instead of showing a crash?",
+      "targets": [
+        {"name": "isChunkLoadError", "path": "src/lib/chunk-reload.ts", "line": 31, "label": "authoritative"},
+        {"name": "CHUNK_LOAD_MESSAGES", "path": "src/lib/chunk-reload.ts", "line": 25, "label": "authoritative"},
+        {"name": "releaseChunkReloadGuardsOnNewBuild", "path": "src/lib/chunk-reload.ts", "line": 19, "label": "unrelated"}
+      ]
+    },
+    {
+      "id": "h3-9",
+      "repo": "member-portal",
+      "split": "held3",
+      "query": "employers exempt from the financed device limit",
+      "question": "Which access codes or employers may finance phones past the account limit, and how is that exemption applied to the over-limit count?",
+      "targets": [
+        {"name": "financedLimitExempt", "path": "src/lib/onboarding-flow/financed-device-limit.ts", "line": 22, "label": "authoritative"},
+        {"name": "FINANCED_LIMIT_EXEMPT", "path": "src/lib/onboarding-flow/financed-device-limit.ts", "line": 18, "label": "authoritative"},
+        {"name": "financedDevicesOverLimit", "path": "src/lib/onboarding-flow/financed-device-limit.ts", "line": 33, "label": "caller"}
+      ]
+    },
+    {
+      "id": "h3-10",
+      "repo": "member-portal",
+      "split": "held3",
+      "query": "tracking parameters kept from the landing link across login",
+      "question": "Which campaign tracking parameters are captured from the landing URL and kept for the session, even after login sends the member to a deep link?",
+      "targets": [
+        {"name": "UTM_KEYS", "path": "src/lib/analytics/utm.ts", "line": 26, "label": "authoritative"},
+        {"name": "persistUtmFromUrl", "path": "src/lib/analytics/utm.ts", "line": 107, "label": "caller"}
+      ]
+    },
+    {
+      "id": "h3-11",
+      "repo": "review-agent",
+      "split": "held3",
+      "query": "evidence quote must appear in the reviewed file before a finding is kept",
+      "question": "What checks that a finding's quoted evidence really exists in the changed file before the finding is accepted?",
+      "targets": [
+        {"name": "validateEvidence", "path": "src/review/evidence.ts", "line": 150, "label": "authoritative"},
+        {"name": "validateReviewerFindings", "path": "src/review/reviewer-validation.ts", "line": 8, "label": "caller"}
+      ]
+    },
+    {
+      "id": "h3-12",
+      "repo": "review-agent",
+      "split": "held3",
+      "query": "when is a pull request too large or its diff incomplete for AI review",
+      "question": "What measures decide that a pull request is too large or incompletely fetched for an AI review, and what is the check run titled when it is rejected?",
+      "targets": [
+        {"name": "assessReviewCoverage", "path": "src/review/coverage.ts", "line": 44, "label": "authoritative"},
+        {"name": "coverageTitle", "path": "src/review/preparation.ts", "line": 96, "label": "presentation"},
+        {"name": "rejectOversized", "path": "src/review/preparation.ts", "line": 104, "label": "caller"}
+      ]
+    },
+    {
+      "id": "h3-13",
+      "repo": "member-portal",
+      "split": "held3",
+      "query": "port window hour for the date a member picked",
+      "question": "Given the date and window a member picked for the port, what local time is the scheduled port sent to the carrier?",
+      "targets": [
+        {"name": "portScheduleAtFor", "path": "src/lib/port-schedule.ts", "line": 66, "label": "authoritative"},
+        {"name": "autoScheduleOvernightPort", "path": "src/lib/onboarding/auto-schedule-port.ts", "line": 18, "label": "caller"}
+      ]
+    }
+  ]
+}

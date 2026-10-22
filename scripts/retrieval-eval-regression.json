@@ -1,0 +1,55 @@
+{
+  "description": "REGRESSION: the five published DIRT P1 queries (DIRT.md, Reproduction) with their source-checked targets. Reported on every run, never used for tuning. Same labels and metrics as retrieval-eval.json. Repo is read from retrieval-eval.json.",
+  "questions": [
+    {
+      "id": "dirt-1",
+      "repo": "review-agent",
+      "split": "regression",
+      "query": "incremental review changed lines finding anchors",
+      "targets": [
+        {"name": "incrementalPublishableAnchors", "path": "src/github/diff-anchors.ts", "line": 108, "label": "authoritative"}
+      ]
+    },
+    {
+      "id": "dirt-2",
+      "repo": "review-agent",
+      "split": "regression",
+      "query": "Cloud Tasks webhook enqueue pull request",
+      "targets": [
+        {"name": "acceptEvent", "path": "src/service/webhook.ts", "line": 47, "label": "authoritative"},
+        {"name": "enqueue", "path": "src/gcp/tasks.ts", "line": 76, "label": "authoritative"}
+      ]
+    },
+    {
+      "id": "dirt-3",
+      "repo": "review-agent",
+      "split": "regression",
+      "query": "external analysis subprocess timeout failure logging",
+      "targets": [
+        {"name": "logFailure", "path": "src/ripwire/runner.ts", "line": 24, "label": "authoritative"},
+        {"name": "executeRipwireCommand", "path": "src/ripwire/runner.ts", "line": 75, "label": "caller"}
+      ]
+    },
+    {
+      "id": "dirt-4",
+      "repo": "review-agent",
+      "split": "regression",
+      "query": "exclude generated lock files from review diff",
+      "targets": [
+        {"name": "isNoiseFile", "path": "src/github/noise.ts", "line": 54, "label": "authoritative"},
+        {"name": "SKIP_NAMES", "path": "src/github/noise.ts", "line": 4, "label": "authoritative"},
+        {"name": "filterChangedFiles", "path": "src/github/noise.ts", "line": 62, "label": "caller"}
+      ]
+    },
+    {
+      "id": "dirt-5",
+      "repo": "review-agent",
+      "split": "regression",
+      "query": "refresh OAuth credentials before expiry concurrent sessions",
+      "targets": [
+        {"name": "refreshModelAuth", "path": "src/pi/model-auth-refresh.ts", "line": 148, "label": "authoritative"},
+        {"name": "refreshAndPublish", "path": "src/pi/model-auth-refresh.ts", "line": 118, "label": "authoritative"}
+      ]
+    }
+  ]
+}

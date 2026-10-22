@@ -32,10 +32,12 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 FIXTURE = os.path.join(HERE, "retrieval-eval.json")
 FIXTURE_HELD2 = os.path.join(HERE, "retrieval-eval-held2.json")
+FIXTURE_HELD3 = os.path.join(HERE, "retrieval-eval-held3.json")
+FIXTURE_REGRESSION = os.path.join(HERE, "retrieval-eval-regression.json")
 ROW = re.compile(r"<d\s([^>]*)>")
 ATTR = re.compile(r'(\w+)="([^"]*)"')
 AUTH = "authoritative"
-SPLITS = ("tune", "held", "held2")
+SPLITS = ("tune", "held", "held2", "held3", "regression")
 
 
 def parse_rows(text):
@@ -58,6 +60,36 @@ def run_query(binary, repo, query, budget):
     proc = subprocess.run(argv, capture_output=True, text=True)
     elapsed = (time.perf_counter() - start) * 1000.0
     return proc.stdout, proc.returncode, elapsed
+
+
+def json_rows(node):
+    """Row objects (with `n` and `p`) of the JSON pack, in document order."""
+    if isinstance(node, dict):
+        if "n" in node and "p" in node:
+            yield node
+        for value in node.values():
+            yield from json_rows(value)
+    elif isinstance(node, list):
+        for value in node:
+            yield from json_rows(value)
+
+
+def confusion_table(binary, questions, budget):
+    """Reported `confidence` against whether the first returned symbol is authoritative."""
+    table = {}
+    for q in questions:
+        argv = [binary, q["repo"], "--json", f"--for={q['query']}", "--signatures-only",
+                f"--token-budget={budget}"]
+        data = json.loads(subprocess.run(argv, capture_output=True, text=True).stdout or "{}")
+        first = next(json_rows(data), None)
+        top = (first["n"], first["p"]) if first else None
+        auth = {(t["name"], t["path"]) for t in q["targets"] if t["label"] == AUTH}
+        key = (data.get("confidence", "none"), top in auth)
+        table[key] = table.get(key, 0) + 1
+    print("confidence  top1-auth=yes  top1-auth=no")
+    for conf in ("high", "medium", "low", "none"):
+        print(f"{conf:10}  {table.get((conf, True), 0):>12}  {table.get((conf, False), 0):>11}")
+    print()
 
 
 def score(question, rows, first_auth_pos, auth_targets):
@@ -125,14 +157,17 @@ def main():
     ap.add_argument("--bin", action="append", default=[], metavar="NAME=PATH")
     ap.add_argument("--budget", type=int, default=2000)
     ap.add_argument("--runs", type=int, default=3)
-    ap.add_argument("--split", choices=("tune", "held", "held2", "all"), default="all")
+    ap.add_argument("--split", choices=SPLITS + ("all",), default="all")
+    ap.add_argument("--confusion", action="store_true", help="also print confidence vs top-1 table")
     ap.add_argument("--json", metavar="OUT")
     args = ap.parse_args()
 
     with open(FIXTURE, encoding="utf-8") as fh:
         fixture = json.load(fh)
-    with open(FIXTURE_HELD2, encoding="utf-8") as fh:
-        extra = json.load(fh)["questions"]
+    extra = []
+    for path in (FIXTURE_HELD2, FIXTURE_HELD3, FIXTURE_REGRESSION):
+        with open(path, encoding="utf-8") as fh:
+            extra += json.load(fh)["questions"]
     repos = fixture["repos"]
     questions = [
         q for q in fixture["questions"] + extra
@@ -171,6 +206,10 @@ def main():
             r = next(x for x in report[name]["results"] if x["id"] == q["id"])
             cells.append(f"{name}={r['rank']}/{r['bytes']}B")
         print(f"  {q['id']:8} {q['split']:5} {'  '.join(cells)}")
+    if args.confusion:
+        for name, path in bins.items():
+            print(f"== confidence vs top-1 ({name}, budget={args.budget}) ==")
+            confusion_table(path, questions, args.budget)
 
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:
