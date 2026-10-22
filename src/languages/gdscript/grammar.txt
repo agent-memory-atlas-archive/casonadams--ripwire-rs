@@ -1,1 +1,3 @@
 files = parser.c scanner.c
+upstream = https://github.com/PrestonKnopp/tree-sitter-gdscript master src
+patch = s/return (Delimiter){0};/Delimiter d; d.flags = 0; return d;/

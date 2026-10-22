@@ -1,1 +1,3 @@
 files = parser.c scanner.c
+upstream = https://github.com/yutaro-sakamoto/tree-sitter-cobol main src
+patch = s/char \*keyword_pointer\[number_of_words\];/char *keyword_pointer[16];/g; s/bool continue_check\[number_of_words\];/bool continue_check[16];/g

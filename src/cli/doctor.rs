@@ -1,4 +1,3 @@
-use crate::domain::Lang;
 use crate::ingest::LanguageRegistry;
 use crate::serialize::XmlEscapeExt;
 use std::borrow::Cow;
@@ -13,7 +12,7 @@ const SNIFF_BYTES: u64 = 8000;
 const AUTO_CACHE_PREFIX: &str = "ripwire-rs-cache-";
 const AUTO_CACHE_SUFFIX: &str = ".json";
 
-const DOCTOR_LEGEND: &str = "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. checks=/passed=: rows emitted / rows with ok=1. n=: binary-path, grammars, cache-dir, git, tree-sitter, tracked-binaries, index-cache, git-config-trust, layout. self=/which=: this binary / the same name found on PATH; on_path=0 fails the row and hint= carries the export line; same_file=1: both resolve to one file. loaded=/expected=: distinct compiled-in grammars ABI-compatible with the linked tree-sitter / distinct compiled-in grammars; a shortfall fails the row. dir=: the temp directory holding auto-cache blobs (ripwire-rs-cache-*.json); unwritable fails the row. blobs=/bytes=: blob count / total size; blobs_floor=1 when the scan stopped at 4096. many=1: more than 50 blobs, informational. truncated=1: scan cut short (cache-dir: cap or I/O error; tracked-binaries: over 20000 tracked files, binaries= omitted). volatile=: attributes reading live machine state. repo=0|1: root is inside a git repository; git is read in-process, so a git executable is needed only to clone a remote URL root. history=0|1: HEAD resolves to a commit; head= its 9-hex short sha. core_abi=/cpp_grammar_abi=: tree-sitter language ABI / the C++ grammar ABI. languages=N: distinct compiled-in grammars. tracked=N: index entries under root. binaries=N: tracked files whose first 8000 bytes hold a NUL. non_git=1: no repository; the row passes unscanned. cache_version=: index cache format version. lean_path=: the auto-cache artifact for root. lean=: ok, absent, cache-version (other format), corrupt or unreadable; only the last two fail the row. fsmonitor=: core.fsmonitor: unset, builtin, off or hook (a command git runs). neutralised=1: a hook is configured but never runs: ripwire-rs reads git in-process, and its one git invocation (cloning a remote URL root) passes -c core.fsmonitor=false. filter_drivers=N: filter drivers the repository's own config defines. state=/checked=/units=: C++ struct-layout cross-check; ripwire-rs registers no layout records. -->\n";
+const DOCTOR_LEGEND: &str = "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. checks=/passed=: rows emitted / rows with ok=1. n=: binary-path, grammars, cache-dir, git, tree-sitter, tracked-binaries, index-cache, git-config-trust, layout. self=/which=: this binary / the same name found on PATH; on_path=0 fails the row and hint= carries the export line; same_file=1: both resolve to one file. loaded=/expected=: distinct compiled-in grammars ABI-compatible with the linked tree-sitter / distinct compiled-in grammars; a shortfall fails the row. dir=: the temp directory holding auto-cache blobs (ripwire-rs-cache-*.json); unwritable fails the row. blobs=/bytes=: blob count / total size; blobs_floor=1 when the scan stopped at 4096. many=1: more than 50 blobs, informational. truncated=1: scan cut short (cache-dir: cap or I/O error; tracked-binaries: over 20000 tracked files, binaries= omitted). volatile=: attributes reading live machine state. repo=0|1: root is inside a git repository; git is read in-process, so a git executable is needed only to clone a remote URL root. history=0|1: HEAD resolves to a commit; head= its 9-hex short sha. core_abi=/newest_grammar_abi=: tree-sitter language ABI / the newest compiled-in grammar ABI. languages=N: distinct compiled-in grammars. tracked=N: index entries under root. binaries=N: tracked files whose first 8000 bytes hold a NUL. non_git=1: no repository; the row passes unscanned. cache_version=: index cache format version. lean_path=: the auto-cache artifact for root. lean=: ok, absent, cache-version (other format), corrupt or unreadable; only the last two fail the row. fsmonitor=: core.fsmonitor: unset, builtin, off or hook (a command git runs). neutralised=1: a hook is configured but never runs: ripwire-rs reads git in-process, and its one git invocation (cloning a remote URL root) passes -c core.fsmonitor=false. filter_drivers=N: filter drivers the repository's own config defines. state=/checked=/units=: C++ struct-layout cross-check; ripwire-rs registers no layout records. -->\n";
 
 /// One `<c>` row of the doctor report: a named check, its verdict, and measured attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -183,7 +182,7 @@ fn check_binary_path() -> DoctorCheck {
 struct GrammarCensus {
     distinct: usize,
     compatible: usize,
-    cpp_abi: Option<usize>,
+    newest_abi: Option<usize>,
 }
 
 fn abi_compatible(abi: usize) -> bool {
@@ -194,18 +193,20 @@ fn grammar_census() -> GrammarCensus {
     let registry = LanguageRegistry;
     let mut seen: HashSet<&tree_sitter::Language> = HashSet::new();
     let mut compatible = 0;
+    let mut newest_abi = None;
     for lang in crate::languages::ALL_LANGS {
         if let Some((ts, _)) = registry.get(lang)
             && seen.insert(ts)
-            && abi_compatible(ts.abi_version())
         {
-            compatible += 1;
+            let abi = ts.abi_version();
+            compatible += usize::from(abi_compatible(abi));
+            newest_abi = newest_abi.max(Some(abi));
         }
     }
     GrammarCensus {
         distinct: seen.len(),
         compatible,
-        cpp_abi: registry.get(Lang::Cpp).map(|(ts, _)| ts.abi_version()),
+        newest_abi,
     }
 }
 
@@ -219,11 +220,11 @@ fn check_grammars(census: &GrammarCensus) -> DoctorCheck {
 }
 
 fn check_tree_sitter(census: &GrammarCensus) -> DoctorCheck {
-    let ok = census.distinct > 0 && census.cpp_abi.is_none_or(abi_compatible);
+    let ok = census.distinct > 0 && census.newest_abi.is_none_or(abi_compatible);
     let mut check =
         DoctorCheck::new("tree-sitter", ok).attr("core_abi", tree_sitter::LANGUAGE_VERSION);
-    if let Some(abi) = census.cpp_abi {
-        check = check.attr("cpp_grammar_abi", abi);
+    if let Some(abi) = census.newest_abi {
+        check = check.attr("newest_grammar_abi", abi);
     }
     check.attr("languages", crate::languages::ALL_LANGS.len())
 }

@@ -1,1 +1,2 @@
 files = parser.c
+upstream = https://github.com/ajdelcimmuto/tree-sitter-brightscript main src

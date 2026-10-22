@@ -1,1 +1,2 @@
 files = parser.c scanner.c
+upstream = https://github.com/fwcd/tree-sitter-kotlin main src

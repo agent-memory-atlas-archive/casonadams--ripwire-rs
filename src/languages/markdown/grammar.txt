@@ -1,1 +1,2 @@
 files = parser.c scanner.c
+upstream = https://github.com/tree-sitter-grammars/tree-sitter-markdown split_parser tree-sitter-markdown/src

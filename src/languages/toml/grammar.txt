@@ -1,1 +1,2 @@
 files = parser.c scanner.c
+upstream = https://github.com/tree-sitter-grammars/tree-sitter-toml master src
