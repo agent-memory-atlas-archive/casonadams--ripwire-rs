@@ -1,4 +1,3 @@
-pub mod arch;
 pub mod args;
 pub mod dispatch;
 pub mod queries;

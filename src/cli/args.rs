@@ -81,9 +81,6 @@ pub struct Cli {
     /// Parsed values of command-plugin flags
     #[arg(skip)]
     pub plugins: PluginArgs,
-    /// Top-level architecture and discovery flags
-    #[command(flatten)]
-    pub arch: TopArchitectureArgs,
     /// Top-level global modifiers and batching flags
     #[command(flatten)]
     pub modifiers: TopModifierArgs,
@@ -100,74 +97,6 @@ pub struct Cli {
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
-}
-
-/// Top-level architecture and discovery flags.
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct TopArchitectureArgs {
-    /// Internal functions with zero incoming callers across the repository
-    #[arg(long = "dead-code")]
-    pub dead_code: bool,
-    /// Cluster call graph into cohesive modules (Louvain community detection)
-    #[arg(long)]
-    pub communities: bool,
-    /// Inspect members and bridges of one specific community module
-    #[arg(long, value_name = "ID")]
-    pub community: Option<u32>,
-    /// File-to-file dependency graph with instability and cycle metrics
-    #[arg(long)]
-    pub deps: bool,
-    /// Ego-graph around a symbol
-    #[arg(long, value_name = "SYM")]
-    pub around: Option<String>,
-    /// Depth for --around ego-graph (default: 1)
-    #[arg(long = "around-depth", default_value_t = 1)]
-    pub around_depth: u32,
-    /// Fanout limit for --around ego-graph (default: 32)
-    #[arg(long = "around-fanout", default_value_t = 32)]
-    pub around_fanout: usize,
-    /// Names used but never defined in the index (external stdlib/deps surface)
-    #[arg(long = "external-surface")]
-    pub external_surface: bool,
-    /// Enforce architectural layering rules from file (exits 2 on violation)
-    #[arg(long = "arch", value_name = "RULES_FILE")]
-    pub arch: Option<String>,
-    /// Emit Mermaid flowchart diagram of module call graph
-    #[arg(long = "mermaid")]
-    pub mermaid: bool,
-    /// Multi-level hierarchical Louvain community clustering
-    #[arg(long = "zoom", value_name = "DEPTH")]
-    pub zoom: Option<Option<u32>>,
-    /// Max depth levels for --zoom
-    #[arg(long = "zoom-levels", value_name = "N")]
-    pub zoom_levels: Option<u32>,
-    /// Include built-in functions in external-surface
-    #[arg(long = "include-builtins")]
-    pub include_builtins: bool,
-    /// SARIF format export for lint
-    #[arg(long = "sarif")]
-    pub sarif: bool,
-    /// Annotate every symbol with fan-in, fan-out, complexity, and change-amplification
-    #[arg(long = "metrics")]
-    pub metrics: bool,
-    /// Entire quality panel in one report (strict|default|lenient)
-    #[arg(long = "quality-panel", num_args = 0..=1, default_missing_value = "default", value_name = "PRESET")]
-    pub quality_panel: Option<Option<String>>,
-    /// Show one struct's memory layout with computed field offsets and padding
-    #[arg(long = "layout", value_name = "STRUCT")]
-    pub layout: Option<String>,
-    /// Cache-conscious field affinity analysis
-    #[arg(long = "field-affinity", num_args = 0..=1, default_missing_value = "", value_name = "STRUCT")]
-    pub field_affinity: Option<Option<String>>,
-    /// Local-reasoning lens measuring share of context outside a unit's file
-    #[arg(long = "context-ratio")]
-    pub context_ratio: bool,
-    /// Four orthogonal evidence families joined, ranked by distinct families fired
-    #[arg(long = "ensemble")]
-    pub ensemble: bool,
-    /// Comment-to-identifier coherence check
-    #[arg(long = "comment-coherence")]
-    pub comment_coherence: bool,
 }
 
 /// Top-level global modifiers and batching flags.
@@ -401,13 +330,6 @@ pub struct SkillsArgs {
     pub path: Option<String>,
 }
 
-/// Configuration for `--around` ego-graph queries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AroundConfig {
-    pub depth: u32,
-    pub fanout: usize,
-}
-
 /// Capability trait for extracting pagination windows (`--limit`, `--offset`) from CLI modifiers.
 pub trait Paginated {
     fn limit_opt(&self) -> Option<usize>;
@@ -562,27 +484,3 @@ impl PluginArgs {
 pub trait VerbGroup {
     fn is_group_active(&self) -> bool;
 }
-macro_rules! impl_verb_group {
-    ($ty:ty, opts: [$($opt:ident),* $(,)?], flags: [$($flag:ident),* $(,)?] $(, extra: $extra:ident)?) => {
-        impl $ty {
-            #[must_use]
-            pub fn is_active(&self) -> bool {
-                $(self.$opt.is_some() ||)* $(self.$flag ||)* $(self.$extra().is_some() ||)? false
-            }
-        }
-        impl VerbGroup for $ty {
-            fn is_group_active(&self) -> bool {
-                self.is_active()
-            }
-        }
-    };
-}
-
-impl_verb_group!(
-    TopArchitectureArgs,
-    opts: [community, around, arch, zoom, quality_panel, layout, field_affinity],
-    flags: [
-        dead_code, communities, deps, external_surface, mermaid,
-        metrics, context_ratio, ensemble, comment_coherence
-    ]
-);

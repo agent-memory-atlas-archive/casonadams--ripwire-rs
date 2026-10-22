@@ -2,9 +2,7 @@ use super::SourceReader;
 use crate::domain::{IngestResult, Interner};
 use crate::git::history::CommitInfo;
 use crate::graph::Graph;
-use crate::query::map::{MapRequest, execute_stream_xml_ranked};
 use crate::rank::PageRankResult;
-use crate::serialize::JsonValueExt;
 use serde_json::{Value, json};
 /// Borrowed facts shared by all query transports.
 pub struct QueryContext<'a> {
@@ -53,27 +51,6 @@ pub fn render_query_value(
     render_xml(|out| render(&value, out))
 }
 
-pub fn call_explore(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
-    let mut request = MapRequest::new(state.root);
-    request.rank_by = args.str_or("rank_by", request.rank_by);
-    if let Some(top_k) = args.opt_usize("top_k") {
-        request.top_k = Some(top_k);
-    }
-    if let Some(budget) = args.opt_usize("budget_tokens") {
-        request.pack_budget = Some(super::map::token_budget_bytes(budget));
-    }
-    render_xml(|out| {
-        execute_stream_xml_ranked(
-            &request,
-            state.ingest,
-            state.graph,
-            state.pr,
-            state.interner,
-            out,
-        )
-    })
-}
-
 pub fn resolve_state_commits<'a>(
     state: &QueryContext<'a>,
     months: u32,
@@ -96,90 +73,12 @@ pub struct CommandDescriptor {
     pub handler: fn(&QueryContext<'_>, &Value) -> Result<Value, String>,
 }
 
-macro_rules! mcp_tool {
-    ($name:expr, $desc:expr, $params:expr, $req:expr, $handler:expr) => {
-        &CommandDescriptor {
-            name: $name,
-            description: $desc,
-            params: $params,
-            required: $req,
-            handler: $handler,
-        }
-    };
-}
-
-pub static COMMANDS: &[&CommandDescriptor] = &[
-    mcp_tool!(
-        "analyze",
-        "Architecture map for a directory: top symbols, signatures, and direct callees",
-        &[
-            ("top_k", "integer", "Maximum number of symbols"),
-            (
-                "rank_by",
-                "string",
-                "Signal to rank by: pagerank, authority, hub, degree, ccx, stable"
-            ),
-        ],
-        &[],
-        call_explore
-    ),
-    mcp_tool!(
-        "explore",
-        "ONE-call task orientation: ranked symbols, files, and architecture map",
-        &[("top_k", "integer", "Maximum number of symbols to include"),],
-        &[],
-        call_explore
-    ),
-    mcp_tool!(
-        "rank_by",
-        "Architecture map ranked by the same signals as CLI --rank-by",
-        &[
-            (
-                "rank_by",
-                "string",
-                "pagerank, authority, hub, degree, ccx, stable"
-            ),
-            ("top_k", "integer", "Maximum symbols to include"),
-        ],
-        &["rank_by"],
-        call_explore
-    ),
-];
-
-/// Every MCP tool: commands not yet owned by a plugin plus every plugin's, sorted by name.
+/// Every MCP tool from the command plugins, sorted by name.
 #[must_use]
 pub fn all_commands() -> Vec<&'static CommandDescriptor> {
-    let mut all: Vec<_> = COMMANDS
-        .iter()
-        .copied()
-        .chain(crate::commands::tools())
-        .collect();
+    let mut all: Vec<_> = crate::commands::tools().collect();
     all.sort_by_key(|command| command.name);
     all
-}
-
-impl CommandDescriptor {
-    pub fn parameters(&self) -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
-        self.params
-            .iter()
-            .copied()
-            .chain(extra_parameters(self.name).iter().copied())
-    }
-}
-
-fn extra_parameters(name: &str) -> &'static [(&'static str, &'static str, &'static str)] {
-    match name {
-        "analyze" | "explore" | "rank_by" => &[
-            (
-                "rank_by",
-                "string",
-                "pagerank, authority, hub, degree, ccx, stable",
-            ),
-            ("budget_tokens", "integer", "Approximate token ceiling"),
-            ("top_k", "integer", "Maximum symbols"),
-        ],
-        _ => &[],
-    }
 }
 
 pub fn validate_arguments(command: &CommandDescriptor, args: &Value) -> Result<(), String> {
@@ -191,7 +90,8 @@ pub fn validate_arguments(command: &CommandDescriptor, args: &Value) -> Result<(
     }
     for (name, value) in object {
         let (_, kind, _) = command
-            .parameters()
+            .params
+            .iter()
             .find(|(parameter, _, _)| *parameter == name)
             .ok_or_else(|| format!("unknown argument '{name}'"))?;
         validate_argument_type(name, kind, value)?;

@@ -1,5 +1,6 @@
 use clap::Parser;
 use ripwire_rs::cli::{Cli, CliVerb, ExecutionContext, VerbGroup};
+use ripwire_rs::commands::architecture::ArchitectureArgs;
 use ripwire_rs::commands::detail::DetailArgs;
 use ripwire_rs::serialize::XmlWriter;
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, PageRankConfig, ingest_in_memory_files};
@@ -37,7 +38,10 @@ fn render(args: &[&str], detail: bool) -> std::io::Result<String> {
                 .unwrap()
                 .execute_verb(&ctx, &mut writer)?;
         } else {
-            cli.arch.execute_verb(&ctx, &mut writer)?;
+            cli.plugins
+                .decode::<ArchitectureArgs>()
+                .unwrap()
+                .execute_verb(&ctx, &mut writer)?;
         }
         writer.finish()?;
     }
@@ -317,6 +321,45 @@ fn safety_group_is_active_only_for_its_primary_flags() {
         assert!(active(flag), "{flag}");
     }
     for flag in ["--owners", "--doc-drift", "--flags", "--lint-select=a"] {
+        assert!(!active(flag), "{flag}");
+    }
+}
+
+#[test]
+fn architecture_group_is_active_only_for_its_primary_flags() {
+    let active = |flag: &str| {
+        let cli = ripwire_rs::parse_from(["rw", flag]).unwrap();
+        cli.plugins
+            .decode::<ArchitectureArgs>()
+            .unwrap()
+            .is_group_active()
+    };
+    for flag in [
+        "--dead-code",
+        "--communities",
+        "--community=1",
+        "--deps",
+        "--around=a",
+        "--external-surface",
+        "--arch=a",
+        "--mermaid",
+        "--zoom=2",
+        "--metrics",
+        "--quality-panel",
+        "--layout=a",
+        "--field-affinity",
+        "--context-ratio",
+        "--ensemble",
+        "--comment-coherence",
+    ] {
+        assert!(active(flag), "{flag}");
+    }
+    for flag in [
+        "--sarif",
+        "--zoom-levels=1",
+        "--around-depth=2",
+        "--include-builtins",
+    ] {
         assert!(!active(flag), "{flag}");
     }
 }

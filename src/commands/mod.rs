@@ -36,6 +36,7 @@ register_commands! {
     workspace::WORKSPACE,
     detail::DETAIL,
     safety::SAFETY,
+    architecture::ARCHITECTURE,
 }
 
 /// The CLI with every plugin's flags added.

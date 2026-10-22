@@ -55,7 +55,7 @@ pub fn all_tool_definitions() -> Vec<Value> {
             build_tool_schema_json(
                 command.name,
                 command.description,
-                &command.parameters().collect::<Vec<_>>(),
+                command.params,
                 command.required,
             )
         })

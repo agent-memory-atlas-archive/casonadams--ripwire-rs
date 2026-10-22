@@ -248,7 +248,12 @@ fn whereis_catalogue_advertises_selectors_and_renderer_exposes_refs() {
         .find(|command| command.name == "whereis")
         .unwrap();
     for selector in ["listing", "full_text"] {
-        assert!(descriptor.parameters().any(|(name, _, _)| name == selector));
+        assert!(
+            descriptor
+                .params
+                .iter()
+                .any(|&(name, _, _)| name == selector)
+        );
     }
     with_context(|context| {
         assert!(

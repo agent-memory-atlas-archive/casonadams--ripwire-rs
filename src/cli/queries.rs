@@ -1,5 +1,3 @@
-pub use super::arch::*;
-
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
 use crate::rank::PageRankResult;

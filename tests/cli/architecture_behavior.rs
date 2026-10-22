@@ -1,6 +1,6 @@
-use ripwire_rs::cli::{
-    NavigateArgs, build_community_module, compute_deps_report, execute_external_surface_query,
-    execute_navigate_with,
+use ripwire_rs::cli::{NavigateArgs, execute_navigate_with};
+use ripwire_rs::commands::architecture::{
+    build_community_module, compute_deps_report, execute_external_surface_query,
 };
 use ripwire_rs::query::map::{MapRequest, execute_stream_xml_ranked};
 use ripwire_rs::query::navigation::NavContext;
@@ -334,7 +334,7 @@ fn dead_code_excludes_public_called_and_header_functions() {
         ..Default::default()
     };
     let mut out = Vec::new();
-    let ctx = ripwire_rs::cli::arch::DeadCodeContext {
+    let ctx = ripwire_rs::commands::architecture::DeadCodeContext {
         root: ":memory:",
         sources: &sources,
         ingest: &ingest,
@@ -342,7 +342,7 @@ fn dead_code_excludes_public_called_and_header_functions() {
         interner: &interner,
         page: &page,
     };
-    ripwire_rs::cli::arch::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+    ripwire_rs::commands::architecture::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
     let xml = String::from_utf8(out).unwrap();
     assert!(xml.contains("schema=\"ripwire-rs.dead-code/v1\""), "{xml}");
     assert!(xml.contains("n=\"unused_helper\""), "{xml}");
@@ -358,7 +358,7 @@ fn dead_code_ignores_comments_containing_static_and_detects_multiline_declaratio
     let sources: &[(&str, &[u8])] = &[("src/lib.c", source_c)];
     let page = ripwire_rs::cli::TopModifierArgs::default();
     let mut out = Vec::new();
-    let ctx = ripwire_rs::cli::arch::DeadCodeContext {
+    let ctx = ripwire_rs::commands::architecture::DeadCodeContext {
         root: ":memory:",
         sources: &sources,
         ingest: &ingest,
@@ -366,7 +366,7 @@ fn dead_code_ignores_comments_containing_static_and_detects_multiline_declaratio
         interner: &interner,
         page: &page,
     };
-    ripwire_rs::cli::arch::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+    ripwire_rs::commands::architecture::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
     let xml = String::from_utf8(out).unwrap();
     assert!(xml.contains("n=\"multiline_unused\""), "{xml}");
     assert!(!xml.contains("n=\"comment_fake_static\""), "{xml}");
@@ -385,7 +385,7 @@ fn dead_code_pagination_selects_expected_slice_of_static_functions() {
             ..Default::default()
         };
         let mut out = Vec::new();
-        let ctx = ripwire_rs::cli::arch::DeadCodeContext {
+        let ctx = ripwire_rs::commands::architecture::DeadCodeContext {
             root: ":memory:",
             sources: &sources,
             ingest: &ingest,
@@ -393,7 +393,7 @@ fn dead_code_pagination_selects_expected_slice_of_static_functions() {
             interner: &interner,
             page: &page,
         };
-        ripwire_rs::cli::arch::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+        ripwire_rs::commands::architecture::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
         String::from_utf8(out).unwrap()
     };
 
@@ -426,7 +426,7 @@ fn dead_code_detects_static_prototype_linkage_inheritance() {
     let sources: &[(&str, &[u8])] = &[("src/inherited.c", source_c)];
     let page = ripwire_rs::cli::TopModifierArgs::default();
     let mut out = Vec::new();
-    let ctx = ripwire_rs::cli::arch::DeadCodeContext {
+    let ctx = ripwire_rs::commands::architecture::DeadCodeContext {
         root: ":memory:",
         sources: &sources,
         ingest: &ingest,
@@ -434,7 +434,7 @@ fn dead_code_detects_static_prototype_linkage_inheritance() {
         interner: &interner,
         page: &page,
     };
-    ripwire_rs::cli::arch::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+    ripwire_rs::commands::architecture::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
     let xml = String::from_utf8(out).unwrap();
     assert!(xml.contains("n=\"inherited_helper\""), "{xml}");
 }
@@ -452,7 +452,7 @@ fn dead_code_does_not_inherit_linkage_from_parameter_names_or_other_overloads() 
         ("src/linkage.cpp", cpp.as_slice()),
     ];
     let page = ripwire_rs::cli::TopModifierArgs::default();
-    let context = ripwire_rs::cli::arch::DeadCodeContext {
+    let context = ripwire_rs::commands::architecture::DeadCodeContext {
         root: ":memory:",
         sources: &sources,
         ingest: &ingest,
@@ -461,7 +461,7 @@ fn dead_code_does_not_inherit_linkage_from_parameter_names_or_other_overloads() 
         page: &page,
     };
     let mut out = Vec::new();
-    ripwire_rs::cli::arch::execute_dead_code_query_paged(&context, &mut out).unwrap();
+    ripwire_rs::commands::architecture::execute_dead_code_query_paged(&context, &mut out).unwrap();
     let report = roxmltree::Document::parse(std::str::from_utf8(&out).unwrap()).unwrap();
     let dead: Vec<_> = report
         .descendants()

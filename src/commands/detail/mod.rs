@@ -185,7 +185,7 @@ fn execute_extended<W: Write>(
             lint_options(detail),
         )
         .map_err(io::Error::other)?;
-        if cli.arch.sarif {
+        if crate::commands::architecture::args(cli).sarif {
             crate::metrics::lint::serialize_lint_sarif(&findings, stdout)
         } else {
             let page = crate::serialize::PageRequest {

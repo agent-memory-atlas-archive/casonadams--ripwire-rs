@@ -1,7 +1,15 @@
-use super::args::AroundConfig;
+use super::ArchitectureArgs;
+use crate::cli::ExecutionContext;
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
 use std::io::{self, Write};
+
+/// Configuration for `--around` ego-graph queries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AroundConfig {
+    pub depth: u32,
+    pub fanout: usize,
+}
 
 struct CachedFile<'a> {
     source: std::borrow::Cow<'a, [u8]>,
@@ -28,7 +36,7 @@ pub struct DeadCodeContext<'a> {
     pub ingest: &'a IngestResult,
     pub graph: &'a Graph,
     pub interner: &'a Interner,
-    pub page: &'a dyn super::args::Paginated,
+    pub page: &'a dyn crate::cli::Paginated,
 }
 
 pub fn execute_dead_code_query_paged<W: Write>(
@@ -706,7 +714,7 @@ pub fn execute_deps_query_paged<W: Write>(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
-    page: &dyn super::args::Paginated,
+    page: &dyn crate::cli::Paginated,
     out: &mut W,
 ) -> io::Result<()> {
     let mut rep = compute_deps_report(ingest, graph, interner);
@@ -714,3 +722,139 @@ pub fn execute_deps_query_paged<W: Write>(
     rep.offset = page.offset_opt();
     crate::serialize::serialize_deps_report_xml(root, &rep, out)
 }
+
+fn execute_arch_rules_query<W: Write>(
+    rules_file: &str,
+    root: &str,
+    ingest: &crate::domain::IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    stdout: &mut crate::serialize::XmlWriter<'_, W>,
+) -> io::Result<()> {
+    let content = std::fs::read_to_string(rules_file)?;
+    let cfg = crate::gate::arch::ArchConfig::parse(&content);
+    let violations = crate::gate::arch::check_architecture_rules(&cfg, ingest, graph, interner);
+    crate::gate::arch::serialize_arch_xml(root, &violations, stdout)?;
+    stdout.finish()?;
+    if !violations.is_empty() {
+        std::process::exit(2);
+    }
+    Ok(())
+}
+
+pub fn execute_arch_or_zoom_query<W: Write>(
+    arch_args: &ArchitectureArgs,
+    ctx: &ExecutionContext<'_>,
+    out: &mut crate::serialize::XmlWriter<'_, W>,
+) -> Option<io::Result<()>> {
+    if arch_args.mermaid {
+        return Some(crate::graph::generate_mermaid_diagram(
+            ctx.ingest,
+            ctx.graph,
+            ctx.interner,
+            out,
+        ));
+    }
+    if let Some(rules_file) = arch_args.arch.as_deref() {
+        return Some(execute_arch_rules_query(
+            rules_file,
+            ctx.root,
+            ctx.ingest,
+            ctx.graph,
+            ctx.interner,
+            out,
+        ));
+    }
+    if let Some(depth) = arch_args.zoom {
+        let opts = crate::graph::zoom::ZoomOptions {
+            depth,
+            levels_shown: arch_args.zoom_levels,
+            limit: ctx.cli.modifiers.limit,
+            offset: ctx.cli.modifiers.offset,
+        };
+        return Some(crate::graph::zoom::execute_zoom_query(
+            ctx.ingest,
+            ctx.graph,
+            ctx.interner,
+            ctx.pr.iterations,
+            opts,
+            out,
+        ));
+    }
+    None
+}
+
+pub fn dispatch_lens_queries<W: Write>(ctx: &ExecutionContext<'_>, stdout: &mut W) -> io::Result<bool> {
+    let (cli, root, ingest, graph, pr, interner) = (
+        ctx.cli,
+        ctx.root,
+        ctx.ingest,
+        ctx.graph,
+        ctx.pr,
+        ctx.interner,
+    );
+    let a = super::args(cli);
+    if a.metrics {
+        let opts = crate::serialize::SerializeOptions {
+            root: root.to_string(),
+            top_k: cli.top_k,
+            pack_budget_bytes: if cli.top_k.is_some() {
+                None
+            } else {
+                Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES)
+            },
+            metrics: true,
+            ..Default::default()
+        };
+        crate::serialize::serialize_xml(ingest, graph, pr, interner, stdout, &opts)?;
+        return Ok(true);
+    }
+    if let Some(preset_opt) = &a.quality_panel {
+        let rep = crate::metrics::compute_quality_panel_report(
+            ingest,
+            graph,
+            interner,
+            preset_opt.as_deref(),
+        );
+        return ctx.write_report(&rep, stdout);
+    }
+    if let Some(sym) = a.layout.as_deref() {
+        use crate::domain::CorpusView;
+        let has_c_agg = ingest
+            .symbols
+            .iter()
+            .any(|s| ctx.sym_name(s) == sym && s.lang.semantics().supports_c_layout());
+        if !has_c_agg {
+            return Err(io::Error::other(format!(
+                "ripwire-rs: --layout: '{sym}' is indexed but has no C-family aggregate body — this verb models C/C++/ObjC byte layout only"
+            )));
+        }
+        let rep = crate::metrics::compute_layout_report(sym, ingest, interner, root);
+        return ctx.write_report(&rep, stdout);
+    }
+    if let Some(sym_opt) = &a.field_affinity {
+        let rep = crate::metrics::layout::compute_field_affinity_report(
+            sym_opt.as_deref(),
+            ingest,
+            interner,
+            root,
+        );
+        return ctx.write_report(&rep, stdout);
+    }
+    if a.context_ratio {
+        let rep = crate::metrics::compute_context_ratio(ingest, graph, interner);
+        return ctx.write_report(&rep, stdout);
+    }
+    if a.ensemble {
+        let rep = crate::metrics::compute_ensemble(ingest, graph, interner);
+        return ctx.write_report(&rep, stdout);
+    }
+    if a.comment_coherence {
+        let rep = crate::metrics::analysis_lenses::compute_comment_coherence_in_root(
+            root, ingest, interner,
+        );
+        return ctx.write_report(&rep, stdout);
+    }
+    Ok(false)
+}
+
