@@ -1,0 +1,3 @@
+files = parser.c scanner.c
+src = php/src
+include = common

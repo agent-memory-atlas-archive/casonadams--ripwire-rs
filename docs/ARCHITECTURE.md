@@ -81,6 +81,17 @@ dispatch or callback invocation. Unproven or ambiguous owners decline rather
 than binding to an unrelated same-named method. `--lego` uses the same Rust
 trait/subject index and declaration spans for implementors and contract methods.
 
+## Language Plugins
+
+A language is a directory, `src/languages/<lang>/`, that holds everything specific to it:
+`mod.rs` (its `LanguageSemantics` impl and helpers), `tags.scm` (the Tree-sitter query), and
+optionally `grammar.txt` (a vendored C grammar: `files = parser.c scanner.c`, optional `src =` and
+`include =`, discovered by `build.rs`). Callers only see the `LanguageSemantics` trait, so shared
+code never names a language. To add one, create the directory and add one line to
+`register_languages!` in `src/languages/mod.rs`, which generates the `Lang` enum, the module
+declaration and the semantics table. `src/languages/kit/` holds the shared vocabulary plugins build
+on (syntax and complexity kinds, flag facts, lint groups, keyword fallback) and no language logic.
+
 ## Lineage & Acknowledgments
 
 This crate is a pure Rust port and rewrite of the groundbreaking [ripwire (C++23)](https://github.com/redhat-et/ripwire) static analysis engine, originally conceived and authored by **David Brewster** at **Red Hat Emerging Technologies**.

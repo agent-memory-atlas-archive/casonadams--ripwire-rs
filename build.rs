@@ -1,18 +1,23 @@
 use std::path::PathBuf;
 
-fn compile_grammar(name: &str, files: &[&str], extra_includes: &[&str]) {
-    let dir = PathBuf::from("vendor/grammars").join(name);
-    let src_dir = if name == "php" {
-        dir.join("php/src")
-    } else {
-        dir.join("src")
+/// Compile the vendored C grammar a plugin declares in `src/languages/<name>/grammar.txt`:
+/// `files = parser.c scanner.c`, optional `src = <dir under vendor/grammars/<name>>` and `include = <dirs>`.
+fn compile_grammar(name: &str, manifest: &str) {
+    let field = |key: &str| -> Vec<&str> {
+        manifest
+            .lines()
+            .find_map(|line| line.strip_prefix(key)?.trim_start().strip_prefix('='))
+            .map(|values| values.split_whitespace().collect())
+            .unwrap_or_default()
     };
+    let dir = PathBuf::from("vendor/grammars").join(name);
+    let src_dir = dir.join(field("src").first().copied().unwrap_or("src"));
     let mut build = cc::Build::new();
     build.include(&src_dir);
-    for inc in extra_includes {
+    for inc in field("include") {
         build.include(dir.join(inc));
     }
-    for file in files {
+    for file in field("files") {
         let path = src_dir.join(file);
         println!("cargo:rerun-if-changed={}", path.display());
         build.file(path);
@@ -29,20 +34,18 @@ fn main() {
         "Missing 'vendor/grammars' directory. Run 'make update-grammars' or './scripts/update-grammars.sh' before building."
     );
 
-    let grammars: &[(&str, &[&str], &[&str])] = &[
-        ("dart", &["parser.c", "scanner.c"], &[]),
-        ("kotlin", &["parser.c", "scanner.c"], &[]),
-        ("php", &["parser.c", "scanner.c"], &["common"]),
-        ("gdscript", &["parser.c", "scanner.c"], &[]),
-        ("toml", &["parser.c", "scanner.c"], &[]),
-        ("markdown", &["parser.c", "scanner.c"], &[]),
-        ("sql", &["parser.c", "scanner.c"], &[]),
-        ("brightscript", &["parser.c"], &[]),
-        ("cobol", &["parser.c", "scanner.c"], &[]),
-    ];
-
-    for (name, files, extra_includes) in grammars {
-        compile_grammar(name, files, extra_includes);
+    println!("cargo:rerun-if-changed=src/languages");
+    let mut plugins: Vec<_> = std::fs::read_dir("src/languages")
+        .expect("src/languages")
+        .flatten()
+        .filter_map(|entry| {
+            let manifest = std::fs::read_to_string(entry.path().join("grammar.txt")).ok()?;
+            Some((entry.file_name().to_string_lossy().into_owned(), manifest))
+        })
+        .collect();
+    plugins.sort();
+    for (name, manifest) in &plugins {
+        compile_grammar(name, manifest);
     }
     install_man_pages();
     embed_skills();
