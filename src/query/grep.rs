@@ -1,4 +1,4 @@
-use crate::domain::{IngestResult, Interner, NodeId, RefRole, SymKind, Symbol};
+use crate::domain::{IngestResult, Interner, NodeId, RefRole, Reference, SymKind, Symbol};
 use crate::graph::Graph;
 use crate::languages::source::{SourceRegion, source_regions};
 use crate::serialize::{PageRequest, Paged, text_bytes};
@@ -332,16 +332,27 @@ fn resolved_callers(graph: Option<&Graph>, defs: &[&Symbol]) -> Option<HashSet<N
     })
 }
 
-fn read_sites(ingest: &IngestResult, interner: &Interner, name: lasso::Spur) -> Vec<String> {
+fn read_sites(
+    ingest: &IngestResult,
+    interner: &Interner,
+    name: lasso::Spur,
+    defs: &[&Symbol],
+) -> Vec<String> {
     let mut sites: Vec<(&str, u32)> = ingest
         .references
         .iter()
         .filter(|r| r.role == RefRole::Read && r.callee_name == name)
+        .filter(|r| defs.iter().any(|d| read_reaches(d, r)))
         .map(|r| (ingest.file_path(r.file_id, interner), r.line))
         .collect();
     sites.sort_unstable();
     sites.dedup();
     sites.into_iter().map(|(p, l)| format!("{p}:{l}")).collect()
+}
+
+/// A read binds to a definition only within its dialect group; table targets accept reads from any dialect.
+fn read_reaches(def: &Symbol, r: &Reference) -> bool {
+    def.lang.is_compatible(r.lang) || def.lang.semantics().is_table_read_write_target()
 }
 
 struct EncCtx<'a> {
@@ -359,7 +370,7 @@ fn enc_json(ctx: &EncCtx<'_>, defs: &[&Symbol]) -> Value {
             r.role == RefRole::Call && r.callee_name == spur && !set.contains(&r.from_symbol)
         })
     });
-    let reads = read_sites(ctx.ingest, ctx.interner, spur);
+    let reads = read_sites(ctx.ingest, ctx.interner, spur, defs);
     let read_kind = !reads.is_empty()
         || defs
             .iter()

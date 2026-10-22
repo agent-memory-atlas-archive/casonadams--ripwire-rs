@@ -119,6 +119,32 @@ fn test_rust_constant_reads_ignore_bindings_parameters_and_writes() {
 }
 
 #[test]
+fn test_grep_reads_do_not_cross_dialect_groups() {
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let rust = b"fn first() -> u32 { let LAYOUT = 3; LAYOUT }\nfn second() -> u32 { LAYOUT }\n";
+    let ts = b"const LAYOUT = 10;\nfunction show() { return LAYOUT; }\n";
+    let ingest = ingest_in_memory_files(
+        &[
+            ("src/app.rs", Lang::Rust, rust.as_slice()),
+            ("src/app.ts", Lang::TypeScript, ts.as_slice()),
+        ],
+        &registry,
+        &interner,
+    );
+    let hits = vec![
+        json!({"path": "src/app.ts", "line": 1, "text": "LAYOUT", "enclosing": "LAYOUT", "enc_id": 1}),
+    ];
+    let enc = enclosing_metadata(&ingest, &interner, None, None, &hits);
+    assert_eq!(enc["LAYOUT"]["reads"], 1, "{enc:?}");
+    assert_eq!(
+        enc["LAYOUT"]["reads_at"],
+        json!(["src/app.ts:2"]),
+        "{enc:?}"
+    );
+}
+
+#[test]
 fn test_callable_values_do_not_add_call_edges() {
     let registry = LanguageRegistry::new().unwrap();
     let interner = Interner::new();

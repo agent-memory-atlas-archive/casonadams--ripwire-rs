@@ -406,9 +406,9 @@ why = "Per-symbol metric rows differ from upstream (c, f, s, entry, ls, inv); ca
 evidence = "measured on a2e114c: rw <c>=335 rip <c>=392, <ls>=0 rip=88, <entry>=0 rip=7; owner: unassigned"
 
 [[divergence]]
-id = "grep-cross-dialect-reads"
+id = "grep-hit-order"
 command = "--grep=row_bytes"
 case = ""
 kind = "defect"
-why = "Read hits are counted across dialect groups and hit rows are out of ranking order; the dialect part is fixed on lp/grep, the ordering part is not traced."
-evidence = "measured on a2e114c: hit rows out of ranking order; owner: lp/grep 816c1f1 (dialect), unassigned (order)"
+why = "Grep hit rows are out of our ranking order when the full run is compared; not traced."
+evidence = "measured on a2e114c: hit rows out of ranking order; owner: unassigned"
