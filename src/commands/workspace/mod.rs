@@ -172,7 +172,7 @@ impl CliVerb for WorkspaceArgs {
             execute_workspace_doc_query_paged(
                 self,
                 &workspace,
-                crate::commands::retrieval::with_history(ctx.cli),
+                ctx.cli.modifiers.with_history,
                 ctx.cli,
                 out,
             )
@@ -198,7 +198,7 @@ fn execute_workspace_owners<W: Write>(ctx: &ExecutionContext<'_>, out: &mut W) -
     );
     val["root"] = serde_json::Value::String(ctx.root.to_string());
     ctx.apply_pagination_to_json(&mut val);
-    if crate::commands::retrieval::detail(ctx.cli).is_some_and(|d| d > 0) {
+    if crate::commands::for_task::detail(ctx.cli).is_some_and(|d| d > 0) {
         val["detail"] = serde_json::Value::Bool(true);
     }
     crate::serialize::serialize_owners_xml(&val, out)

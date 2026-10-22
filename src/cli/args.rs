@@ -71,6 +71,12 @@ pub struct TopModifierArgs {
     /// Do not respect .gitignore rules during crawling
     #[arg(long = "no-ignore", overrides_with = "no_ignore")]
     pub no_ignore: bool,
+    /// Enclosing symbol or directory filter
+    #[arg(long = "in", value_name = "SCOPE")]
+    pub in_scope: Option<String>,
+    /// Let --doc-drift and --whereis consult git history for deleted names
+    #[arg(long = "with-history")]
+    pub with_history: bool,
     /// Exclude test files and directories from analysis
     #[arg(long = "ignore-tests", overrides_with = "ignore_tests")]
     pub ignore_tests: bool,

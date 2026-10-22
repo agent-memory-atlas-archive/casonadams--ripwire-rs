@@ -1,11 +1,14 @@
 //! Batch lookups: `--batch FILE` runs newline-delimited verb:arg lines in one turn.
 use super::Command;
+use super::common::mcp::mcp_tool;
 use crate::cli::Cli;
 use crate::commands::context::{OutputDialect, load_repo_analysis_for_cli};
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
+use crate::query::commands::{CommandDescriptor, QueryContext, execute_batch_item};
 use crate::rank::PageRankResult;
 use clap::{Args, Command as ClapCommand};
+use serde_json::{Value, json};
 use std::io::{self, Write};
 
 /// Top-level batch flag.
@@ -34,6 +37,52 @@ impl Command for Batch {
             stdout.finish()
         })())
     }
+
+    fn tools(&self) -> &'static [&'static CommandDescriptor] {
+        TOOLS
+    }
+}
+
+static TOOLS: &[&CommandDescriptor] = &[mcp_tool!(
+    "batch",
+    "ONE-TURN CONTEXT SWEEP: answer up to 16 heterogeneous READ sub-queries in a single call",
+    &[("queries", "array", "Array of tool call objects")],
+    &["queries"],
+    call_batch
+)];
+
+fn call_batch(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
+    let queries = args["queries"]
+        .as_array()
+        .ok_or("queries must be an array")?;
+    if queries.len() > crate::query::commands::BATCH_LIMIT {
+        return Err(format!(
+            "batch supports at most {} queries",
+            crate::query::commands::BATCH_LIMIT
+        ));
+    }
+    Ok(Value::Array(
+        queries
+            .iter()
+            .map(|query| {
+                let name = query.get("name").and_then(Value::as_str);
+                let Some(name) = name else {
+                    return json!({"tool": null, "error": "batch item name must be a string"});
+                };
+                if let Some(object) = query.as_object()
+                    && object.keys().any(|key| key != "name" && key != "arguments")
+                {
+                    return json!({"tool": name, "error": "batch item contains unknown fields"});
+                }
+                execute_batch_item(
+                    state,
+                    crate::commands::tools(),
+                    name,
+                    query.get("arguments").unwrap_or(&json!({})),
+                )
+            })
+            .collect(),
+    ))
 }
 
 pub fn execute_batch_content<W: Write>(

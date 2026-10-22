@@ -1,9 +1,13 @@
-use ripwire_rs::commands::context::VerbGroup;
-use ripwire_rs::commands::retrieval::{RetrievalArgs, execute_retrieval_dispatch};
+use ripwire_rs::commands::{
+    ast_match, at, connect, exemplar, for_task, from_trace, graph_query, lego, pack_signatures,
+    pack_task, path_between, pattern, refetch, verify,
+};
 use ripwire_rs::query::commands::QueryContext;
+use ripwire_rs::serialize::PageRequest;
 use ripwire_rs::{
     Graph, IngestResult, Interner, Lang, LanguageRegistry, PageRankConfig, PageRankResult,
 };
+use std::io;
 
 const FLOW_RS: &[u8] =
     b"pub fn entry() { bridge(); }\nfn bridge() { leaf(); }\nfn leaf() {}\nfn isolated() {}\n";
@@ -44,17 +48,32 @@ fn context<'a>(
     }
 }
 
-fn query(args: RetrievalArgs) -> std::io::Result<String> {
+fn run_with<F>(f: F) -> io::Result<String>
+where
+    F: FnOnce(&QueryContext<'_>, &mut Vec<u8>) -> io::Result<()>,
+{
     let (ingest, graph, interner) = fixture();
     let ranks = graph.page_rank(&PageRankConfig::default());
     let mut output = Vec::new();
-    execute_retrieval_dispatch(
-        &args,
-        &context(&ingest, &graph, &ranks, &interner),
-        None,
-        &mut output,
-    )?;
+    f(&context(&ingest, &graph, &ranks, &interner), &mut output)?;
     Ok(String::from_utf8(output).unwrap())
+}
+
+#[test]
+fn pattern_and_ast_match_shrink_output_under_page_limit() {
+    let limited = PageRequest {
+        limit: Some(1),
+        offset: None,
+    };
+    let one = run_with(|q, out| pattern::execute(q, "bridge", None, limited, out)).unwrap();
+    assert!(one.contains("shown=\"1\""), "{one}");
+    assert!(one.contains("total=\"2\""), "{one}");
+    assert!(one.contains("has_more=\"1\""), "{one}");
+
+    let expr = "(function_item name: (identifier) @name)";
+    let one = run_with(|q, out| ast_match::execute(q, expr, limited, out)).unwrap();
+    assert!(one.contains("shown=\"1\""), "{one}");
+    assert!(one.contains("has_more=\"1\""), "{one}");
 }
 
 #[test]
@@ -64,11 +83,7 @@ fn directed_paths_distinguish_transitive_reverse_and_disconnected_calls() {
         ("leaf,entry", "0", "0"),
         ("entry:isolated", "0", "0"),
     ] {
-        let xml = query(RetrievalArgs {
-            path_between: Some(pair.into()),
-            ..Default::default()
-        })
-        .unwrap();
+        let xml = run_with(|q, out| path_between::execute(q, pair, out)).unwrap();
         assert!(xml.contains(&format!("reachable=\"{reachable}\"")), "{xml}");
         assert!(xml.contains(&format!("hops=\"{hops}\"")), "{xml}");
         if reachable == "1" {
@@ -80,13 +95,7 @@ fn directed_paths_distinguish_transitive_reverse_and_disconnected_calls() {
 
 #[test]
 fn connect_includes_intermediate_callers_but_not_disconnected_definitions() {
-    let xml = query(RetrievalArgs {
-        connect: Some(" entry , leaf ".into()),
-        connect_radius: Some(2),
-        path_between: Some("absent,leaf".into()),
-        ..Default::default()
-    })
-    .unwrap();
+    let xml = run_with(|q, out| connect::execute(q, " entry , leaf ", Some(2), out)).unwrap();
     assert!(xml.contains("<t n=\"entry\""), "{xml}");
     assert!(xml.contains("<t n=\"leaf\""), "{xml}");
     assert!(xml.contains("<s n=\"bridge\""), "{xml}");
@@ -99,32 +108,17 @@ fn connect_includes_intermediate_callers_but_not_disconnected_definitions() {
 fn missing_graph_endpoints_fail_before_emitting_partial_results() {
     let (ingest, graph, interner) = fixture();
     let ranks = graph.page_rank(&PageRankConfig::default());
-    for args in [
-        RetrievalArgs {
-            connect: Some("entry,absent".into()),
-            ..Default::default()
-        },
-        RetrievalArgs {
-            path_between: Some("absent,leaf".into()),
-            ..Default::default()
-        },
-        RetrievalArgs {
-            path_between: Some("entry,absent".into()),
-            ..Default::default()
-        },
-        RetrievalArgs {
-            lego: Some("absent".into()),
-            ..Default::default()
-        },
-    ] {
+    let q = context(&ingest, &graph, &ranks, &interner);
+    type Case = fn(&QueryContext<'_>, &mut Vec<u8>) -> io::Result<()>;
+    let cases: [Case; 4] = [
+        |q, out| connect::execute(q, "entry,absent", None, out),
+        |q, out| path_between::execute(q, "absent,leaf", out),
+        |q, out| path_between::execute(q, "entry,absent", out),
+        |q, out| lego::execute(q, "absent", out),
+    ];
+    for case in cases {
         let mut output = Vec::new();
-        let error = execute_retrieval_dispatch(
-            &args,
-            &context(&ingest, &graph, &ranks, &interner),
-            None,
-            &mut output,
-        )
-        .unwrap_err();
+        let error = case(&q, &mut output).unwrap_err();
         assert!(error.to_string().contains("absent"), "{error}");
         assert!(output.is_empty());
     }
@@ -132,22 +126,12 @@ fn missing_graph_endpoints_fail_before_emitting_partial_results() {
 
 #[test]
 fn location_resolution_rejects_ambiguous_suffixes_and_out_of_definition_lines() {
-    let xml = query(RetrievalArgs {
-        at: Some("src/flow.rs:2".into()),
-        verify: Some("calls(leaf,entry)".into()),
-        ..Default::default()
-    })
-    .unwrap();
+    let xml = run_with(|q, out| at::execute(q, "src/flow.rs:2", out)).unwrap();
     assert!(xml.contains("sym=\"bridge\""), "{xml}");
     assert!(xml.contains("l=\"2\""), "{xml}");
-    assert!(!xml.contains("verdict="), "{xml}");
     for spec in ["flow.rs:1", "src/flow.rs:99", "missing.rs:1"] {
         assert!(
-            query(RetrievalArgs {
-                at: Some(spec.into()),
-                ..Default::default()
-            })
-            .is_err(),
+            run_with(|q, out| at::execute(q, spec, out)).is_err(),
             "{spec}"
         );
     }
@@ -161,51 +145,32 @@ fn call_claims_report_transitive_witnesses_without_claiming_absence_proves_non_c
         ("calls(leaf,entry)", "not-established"),
         ("calls(absent,leaf)", "not-established"),
     ] {
-        let xml = query(RetrievalArgs {
-            verify: Some(claim.into()),
-            ..Default::default()
-        })
-        .unwrap();
+        let xml = run_with(|q, out| verify::execute(q, claim, out)).unwrap();
         assert!(xml.contains(&format!("verdict=\"{verdict}\"")), "{xml}");
     }
 }
 
 #[test]
-fn task_section_errors_are_atomic_even_with_signatures_only() {
-    let registry = LanguageRegistry::new().unwrap();
-    let interner = Interner::new();
-    let ingest = ripwire_rs::ingest_in_memory_files(&[], &registry, &interner);
-    let graph = Graph::build(&ingest, &interner);
-    let ranks = graph.page_rank(&PageRankConfig::default());
+fn task_section_errors_are_rejected_before_any_output_even_with_signatures_only() {
+    let check = for_task::FOR_TASK
+        .check
+        .expect("for_task validates its sections");
     for sections in ["lego,lego", "compose,", "unknown"] {
-        let args = RetrievalArgs {
+        let args = for_task::ForTaskArgs {
             task_for: Some("locate parser".into()),
             signatures_only: true,
             auto_bodies: true,
             sections: Some(sections.into()),
             ..Default::default()
         };
-        let mut output = Vec::new();
-        let error = execute_retrieval_dispatch(
-            &args,
-            &context(&ingest, &graph, &ranks, &interner),
-            None,
-            &mut output,
-        )
-        .unwrap_err();
+        let error = check(&args).unwrap_err();
         assert!(error.to_string().contains("--sections="), "{error}");
-        assert!(output.is_empty());
     }
 }
 
 #[test]
 fn signature_pack_preserves_indexed_definitions_and_resolved_callees() {
-    let xml = query(RetrievalArgs {
-        pack_signatures: true,
-        path_between: Some("absent,leaf".into()),
-        ..Default::default()
-    })
-    .unwrap();
+    let xml = run_with(pack_signatures::execute).unwrap();
     for name in ["entry", "bridge", "leaf", "isolated", "other"] {
         assert!(xml.contains(&format!("<s t=\"fn\" n=\"{name}\"")), "{xml}");
     }
@@ -232,35 +197,29 @@ fn quoted_search_literals_preserve_payload_and_do_not_capture_possessives() {
 
 #[test]
 fn advanced_retrieval_and_pattern_search_execute_over_context_sources() {
-    let pat_xml = query(RetrievalArgs {
-        pattern: Some("bridge".into()),
-        ..Default::default()
-    })
-    .unwrap();
+    let pat_xml =
+        run_with(|q, out| pattern::execute(q, "bridge", None, PageRequest::default(), out))
+            .unwrap();
     assert!(pat_xml.contains("bridge"), "{pat_xml}");
     assert!(pat_xml.contains("src/flow.rs"), "{pat_xml}");
 
-    let ast_xml = query(RetrievalArgs {
-        ast_match: Some("(function_item name: (identifier) @name)".into()),
-        ..Default::default()
+    let ast_xml = run_with(|q, out| {
+        ast_match::execute(
+            q,
+            "(function_item name: (identifier) @name)",
+            PageRequest::default(),
+            out,
+        )
     })
     .unwrap();
     let report = roxmltree::Document::parse(&ast_xml).unwrap();
     assert_eq!(report.root_element().attribute("hits"), Some("5"));
     assert_eq!(report.root_element().attribute("files"), Some("2"));
 
-    let refetch_xml = query(RetrievalArgs {
-        refetch: Some("entry".into()),
-        ..Default::default()
-    })
-    .unwrap();
+    let refetch_xml = run_with(|q, out| refetch::execute(q, "entry", out)).unwrap();
     assert!(refetch_xml.contains("bridge();"), "{refetch_xml}");
 
-    let trace_xml = query(RetrievalArgs {
-        from_trace: Some("src/flow.rs:2".into()),
-        ..Default::default()
-    })
-    .unwrap();
+    let trace_xml = run_with(|q, out| from_trace::execute(q, "src/flow.rs:2", out)).unwrap();
     let report = roxmltree::Document::parse(&trace_xml).unwrap();
     let suspect = report
         .descendants()
@@ -270,19 +229,13 @@ fn advanced_retrieval_and_pattern_search_execute_over_context_sources() {
     assert_eq!(suspect.attribute("p"), Some("src/flow.rs"));
     assert_eq!(suspect.attribute("l"), Some("2"));
 
-    let pack_xml = query(RetrievalArgs {
-        pack_task: Some("inspect bridge".into()),
-        ..Default::default()
-    })
-    .unwrap();
+    let pack_xml = run_with(|q, out| pack_task::execute(q, "inspect bridge", out)).unwrap();
     assert!(pack_xml.contains("bridge"), "{pack_xml}");
     assert!(pack_xml.contains("<sigs>"), "{pack_xml}");
 
-    let gq_xml = query(RetrievalArgs {
-        graph_query: Some("callees(entry)".into()),
-        ..Default::default()
-    })
-    .unwrap();
+    let gq_xml =
+        run_with(|q, out| graph_query::execute(q, "callees(entry)", PageRequest::default(), out))
+            .unwrap();
     let report = roxmltree::Document::parse(&gq_xml).unwrap();
     let callees: Vec<_> = report
         .descendants()
@@ -291,11 +244,7 @@ fn advanced_retrieval_and_pattern_search_execute_over_context_sources() {
         .collect();
     assert_eq!(callees, [(Some("bridge"), Some("src/flow.rs:2"))]);
 
-    let ex_xml = query(RetrievalArgs {
-        exemplar: Some("entry".into()),
-        ..Default::default()
-    })
-    .unwrap();
+    let ex_xml = run_with(|q, out| exemplar::execute(q, "entry", out)).unwrap();
     let report = roxmltree::Document::parse(&ex_xml).unwrap();
     assert_eq!(report.root_element().attribute("n"), Some("entry"));
     let body = report
@@ -311,14 +260,39 @@ fn advanced_retrieval_and_pattern_search_execute_over_context_sources() {
     assert_eq!(callees, [(Some("bridge"), Some("2"))]);
 }
 
+fn selects<A: clap::FromArgMatches>(plugin: &ripwire_rs::commands::Plugin<A>, flag: &str) -> bool {
+    let cli = ripwire_rs::parse_from(["rw", flag]).unwrap();
+    cli.plugins
+        .decode::<A>()
+        .is_some_and(|args| (plugin.selected)(&args))
+}
+
 #[test]
-fn retrieval_group_is_active_only_for_its_primary_flags() {
-    let active = |flag: &str| {
-        let cli = ripwire_rs::parse_from(["rw", flag]).unwrap();
-        cli.plugins
-            .decode::<RetrievalArgs>()
-            .unwrap()
-            .is_group_active()
+fn each_plugin_is_selected_only_by_its_primary_flag() {
+    use ripwire_rs::commands::{
+        ast_match::AST_MATCH, at::AT, connect::CONNECT, exemplar::EXEMPLAR, for_task::FOR_TASK,
+        from_trace::FROM_TRACE, graph_query::GRAPH_QUERY, grep::GREP, help_task::HELP_TASK,
+        lego::LEGO, pack_signatures::PACK_SIGNATURES, pack_task::PACK_TASK,
+        path_between::PATH_BETWEEN, pattern::PATTERN, recall::RECALL, regex::REGEX, verify::VERIFY,
+    };
+    let any = |flag: &str| {
+        selects(&FOR_TASK, flag)
+            || selects(&GREP, flag)
+            || selects(&REGEX, flag)
+            || selects(&CONNECT, flag)
+            || selects(&PATH_BETWEEN, flag)
+            || selects(&EXEMPLAR, flag)
+            || selects(&LEGO, flag)
+            || selects(&RECALL, flag)
+            || selects(&FROM_TRACE, flag)
+            || selects(&AT, flag)
+            || selects(&VERIFY, flag)
+            || selects(&PACK_TASK, flag)
+            || selects(&GRAPH_QUERY, flag)
+            || selects(&AST_MATCH, flag)
+            || selects(&PATTERN, flag)
+            || selects(&HELP_TASK, flag)
+            || selects(&PACK_SIGNATURES, flag)
     };
     for flag in [
         "--for=a",
@@ -337,12 +311,11 @@ fn retrieval_group_is_active_only_for_its_primary_flags() {
         "--pattern=a",
         "--regex=a",
         "--help-task=a",
-        "--refetch=a",
         "--pack-signatures",
     ] {
-        assert!(active(flag), "{flag}");
+        assert!(any(flag), "{flag}");
     }
-    for flag in ["--adaptive", "--no-route", "--refetch="] {
-        assert!(!active(flag), "{flag}");
+    for flag in ["--adaptive", "--no-route"] {
+        assert!(!any(flag), "{flag}");
     }
 }
