@@ -375,6 +375,16 @@ pub trait LanguageSemantics: Sync {
         None
     }
 
+    /// Byte offsets `(declaration, doc)` where a definition's span starts. The declaration covers keywords its
+    /// defining node leaves out (a TS/JS `export`); `doc` is where the doc comment attached above it begins.
+    fn resolve_def_span_start(
+        &self,
+        def_node: tree_sitter::Node<'_>,
+        _source_bytes: &[u8],
+    ) -> (usize, usize) {
+        (def_node.start_byte(), def_node.start_byte())
+    }
+
     /// Resolve the AST node containing the definition body and its ending byte offset.
     fn resolve_def_body_and_end<'a>(
         &self,

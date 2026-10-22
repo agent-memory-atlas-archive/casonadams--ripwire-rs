@@ -1,4 +1,5 @@
 mod query {
+    mod body_policy;
     mod commands;
     mod facts;
     mod module_anchor;

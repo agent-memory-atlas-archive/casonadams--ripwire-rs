@@ -1,7 +1,8 @@
 use super::javascript::{
     JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_const_scalar_binding,
     is_assertion_script, is_jsx_intrinsic_tag_call, is_std_member_call_value,
-    js_test_partner_subject, parse_tsconfig_paths, resolve_web_import_target,
+    js_definition_span_start, js_test_partner_subject, parse_tsconfig_paths,
+    resolve_web_import_target,
 };
 use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
@@ -253,6 +254,14 @@ impl LanguageSemantics for TypeScriptLanguage {
 
     fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
         is_const_scalar_binding(ctx)
+    }
+
+    fn resolve_def_span_start(
+        &self,
+        def_node: tree_sitter::Node<'_>,
+        source_bytes: &[u8],
+    ) -> (usize, usize) {
+        js_definition_span_start(def_node, source_bytes)
     }
 
     fn test_partner_subject<'a>(&self, file_stem: &'a str, in_test_dir: bool) -> Option<&'a str> {

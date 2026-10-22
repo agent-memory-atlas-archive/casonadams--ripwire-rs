@@ -38,6 +38,7 @@ mod languages {
     mod typescript_bindings;
     mod typescript_dispatch;
     mod typescript_extraction;
+    mod typescript_spans;
     mod yaml;
     mod zig;
 }

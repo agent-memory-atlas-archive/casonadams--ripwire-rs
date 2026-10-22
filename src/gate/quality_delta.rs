@@ -862,8 +862,9 @@ fn check_source_and_clone_regressions(
         let file_path = state.sym_path(sym);
         if is_changed_callable(sym, file_path, changed_files)
             && let Ok(bytes) = state.sources.read(file_path)
-            && let Some(body) = sym.source_text(&bytes)
+            && !sym.decl_bytes(&bytes).is_empty()
         {
+            let body = String::from_utf8_lossy(sym.decl_bytes(&bytes));
             let sym_name = state.sym_name(sym);
             let key = format!("{file_path}::{sym_name}");
             let is_new = !baseline.ccx_by_sym.contains_key(&key);
@@ -939,7 +940,7 @@ fn regression_content_id(state: &QueryContext<'_>, r: &QualityRegression) -> Opt
         })?;
     let bytes = state.sources.read(&r.file_path).ok()?;
     Some(content_id(
-        &String::from_utf8_lossy(sym.source_bytes(&bytes)),
+        &String::from_utf8_lossy(sym.decl_bytes(&bytes)),
         &r.sym_name,
     ))
 }

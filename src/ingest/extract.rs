@@ -12,6 +12,8 @@ pub struct RawDef {
     pub kind: SymKind,
     pub line: u32,
     pub start_byte: usize,
+    /// Bytes from the attached doc comment (if any) up to `start_byte`; 0 when none.
+    pub doc_len: usize,
     pub body_byte: usize,
     pub end_byte: usize,
     pub loc: u32,
@@ -551,12 +553,16 @@ fn record_def_item(
             .resolve_def_params_and_name(ext.def_node, source_bytes, kind, orig_name);
     let immutable = kind == SymKind::Var && lang.semantics().is_immutable_scalar_binding(&gate_ctx);
     let contract_member = lang.semantics().is_contract_member(&gate_ctx);
+    let (decl_start, doc_start) = ext.def_node.map_or((start, start), |n| {
+        lang.semantics().resolve_def_span_start(n, source_bytes)
+    });
     defs.push(RawDef {
         name,
         scope,
         kind,
         line,
-        start_byte: start,
+        start_byte: decl_start,
+        doc_len: decl_start.saturating_sub(doc_start),
         body_byte,
         end_byte: end,
         loc,

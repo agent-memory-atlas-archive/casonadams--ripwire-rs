@@ -236,6 +236,8 @@ pub struct Symbol {
     pub line: u32,
     pub sig_start_byte: u32,
     pub sig_end_byte: u32,
+    /// Bytes of the doc comment attached above `sig_start_byte`, with the gap to it; 0 when none.
+    pub doc_len: u32,
     pub end_byte: u32,
     pub cx: u32,
     pub ccx: u32,
@@ -272,6 +274,7 @@ impl Symbol {
             file_id,
             line,
             sig_start_byte: 0,
+            doc_len: 0,
             sig_end_byte: 0,
             end_byte: 0,
             cx: 1,
@@ -332,10 +335,17 @@ impl Symbol {
         self.line.saturating_add(self.loc.saturating_sub(1))
     }
 
-    /// Return the raw byte slice `[sig_start_byte..end_byte]` clamped to `file_bytes`.
+    /// Byte where the definition's span starts: its attached doc comment, else its declaration.
     #[inline]
     #[must_use]
-    pub fn source_bytes<'a>(&self, file_bytes: &'a [u8]) -> &'a [u8] {
+    pub const fn def_start_byte(&self) -> u32 {
+        self.sig_start_byte.saturating_sub(self.doc_len)
+    }
+
+    /// Return the raw byte slice `[sig_start_byte..end_byte]` (the declaration, without its doc comment).
+    #[inline]
+    #[must_use]
+    pub fn decl_bytes<'a>(&self, file_bytes: &'a [u8]) -> &'a [u8] {
         let start = (self.sig_start_byte as usize).min(file_bytes.len());
         let end = (self.end_byte as usize).min(file_bytes.len());
         if start < end {
@@ -345,7 +355,20 @@ impl Symbol {
         }
     }
 
-    /// Return the UTF-8 source text `[sig_start_byte..end_byte]` if non-empty.
+    /// Return the raw byte slice `[def_start_byte..end_byte]`: the definition as shown to a reader.
+    #[inline]
+    #[must_use]
+    pub fn source_bytes<'a>(&self, file_bytes: &'a [u8]) -> &'a [u8] {
+        let start = (self.def_start_byte() as usize).min(file_bytes.len());
+        let end = (self.end_byte as usize).min(file_bytes.len());
+        if start < end {
+            &file_bytes[start..end]
+        } else {
+            &[]
+        }
+    }
+
+    /// Return the UTF-8 source text `[def_start_byte..end_byte]` if non-empty.
     #[inline]
     #[must_use]
     pub fn source_text<'a>(&self, file_bytes: &'a [u8]) -> Option<std::borrow::Cow<'a, str>> {

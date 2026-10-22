@@ -443,6 +443,14 @@ impl LanguageSemantics for JavaScriptLanguage {
         is_const_scalar_binding(ctx)
     }
 
+    fn resolve_def_span_start(
+        &self,
+        def_node: tree_sitter::Node<'_>,
+        source_bytes: &[u8],
+    ) -> (usize, usize) {
+        js_definition_span_start(def_node, source_bytes)
+    }
+
     fn test_partner_subject<'a>(&self, file_stem: &'a str, in_test_dir: bool) -> Option<&'a str> {
         js_test_partner_subject(file_stem, in_test_dir)
     }
@@ -700,6 +708,36 @@ fn is_env_read(node: tree_sitter::Node<'_>, source: &[u8]) -> bool {
     node.child_by_field_name("object")
         .and_then(|object| object.utf8_text(source).ok())
         .is_some_and(|text| text == "process.env")
+}
+
+/// A TS/JS definition's `(declaration, doc)` span starts. An `export` wrapper supplies the declaration's start
+/// (the defining node begins after the keyword). A `/** */` block directly above, with at most one line break
+/// between, is its attached doc comment; plain `//` and `/* */` comments are never attached.
+pub(super) fn js_definition_span_start(
+    def: tree_sitter::Node<'_>,
+    source: &[u8],
+) -> (usize, usize) {
+    let outer = def
+        .parent()
+        .filter(|parent| parent.kind() == "export_statement")
+        .unwrap_or(def);
+    let decl = outer.start_byte();
+    let doc = outer
+        .prev_sibling()
+        .filter(|prev| prev.kind() == "comment" && is_attached_jsdoc(*prev, decl, source))
+        .map_or(decl, |prev| prev.start_byte());
+    (decl, doc)
+}
+
+fn is_attached_jsdoc(comment: tree_sitter::Node<'_>, decl: usize, source: &[u8]) -> bool {
+    let Some(gap) = source.get(comment.end_byte()..decl) else {
+        return false;
+    };
+    let text = &source[comment.start_byte()..comment.end_byte()];
+    text.starts_with(b"/**")
+        && text.len() > 4
+        && gap.iter().all(u8::is_ascii_whitespace)
+        && gap.iter().filter(|&&b| b == b'\n').count() <= 1
 }
 
 /// A `const` declarator bound to a provably scalar value: an immutable binding whose reads are never state.

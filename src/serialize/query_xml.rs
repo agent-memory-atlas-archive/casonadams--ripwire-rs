@@ -118,10 +118,17 @@ impl crate::serialize::XmlReport for ForReport<'_> {
         });
         let computed_tokens = ((self.inner.len() + 180) / 4).max(1) as u64;
         let est_tokens = self.val.u64_or("est_tokens", computed_tokens);
+        let bundle = escape_xml_str(self.val.str_or("bundle", "auto"));
         write!(
             out,
-            " task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" bundle=\"auto\" bodies=\"{bodies_cnt}\" est_tokens=\"{est_tokens}\""
+            " task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" bundle=\"{bundle}\" bodies=\"{bodies_cnt}\" est_tokens=\"{est_tokens}\""
         )?;
+        if let Some(reason) = self.val["reason"].as_str() {
+            write!(out, " reason=\"{}\"", reason.xml_escaped())?;
+        }
+        if let Some(follow) = self.val["follow"].as_str() {
+            write!(out, " follow=\"{}\"", follow.xml_escaped())?;
+        }
         if let Some(at) = self.val["at"].as_str() {
             write!(out, " at=\"{}\"", at.xml_escaped())?;
         }

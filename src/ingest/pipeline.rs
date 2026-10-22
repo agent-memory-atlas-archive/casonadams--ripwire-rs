@@ -328,6 +328,7 @@ pub fn build_file_symbols(
             sym.scope = Some(interner.intern(sc));
         }
         sym.sig_start_byte = def.start_byte as u32;
+        sym.doc_len = def.doc_len as u32;
         sym.sig_end_byte = if def.body_byte > def.start_byte {
             def.body_byte as u32
         } else {

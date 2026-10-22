@@ -6,6 +6,9 @@ use crate::graph::Graph;
 use memchr::memmem::Finder;
 use serde_json::{Value, json};
 
+/// Most rows the default body posture serves inline (the exact-name definitions, in rank order).
+const AUTO_BODY_ROWS: usize = 6;
+
 fn stem_derivational_suffix(t: &str) -> Option<String> {
     if let Some(prefix) = t.strip_suffix("ution").filter(|p| p.len() >= 3) {
         return Some(format!("{prefix}v"));
@@ -197,7 +200,7 @@ fn add_body_text_masks(
             .map(|bytes| bytes.to_ascii_lowercase())
             .unwrap_or_default();
         for sym in syms {
-            let body = sym.source_bytes(&lower);
+            let body = sym.decl_bytes(&lower);
             let slot = &mut masks[sym.id as usize];
             for (i, term_finders) in finders.iter().enumerate() {
                 if term_finders.iter().any(|f| body_contains_term(body, f)) {
@@ -486,28 +489,44 @@ fn symbol_row_bytes(
     ]) + signature
 }
 
-fn build_for_symbol_entry<'s>(
-    idx: usize,
+/// Rows that the body policy asks to serve inline. Explicit `--detail` and `--auto-bodies` take the first N
+/// rows. The default posture serves only the exact-name definitions on the name-exact route.
+fn body_wanted(idx: usize, name: &str, opts: ForTaskOptions<'_>, exact_term: Option<&str>) -> bool {
+    if opts.signatures_only {
+        return false;
+    }
+    match opts.detail.or(opts.auto_bodies.then_some(AUTO_BODY_ROWS)) {
+        Some(count) => idx < count,
+        None => {
+            idx < AUTO_BODY_ROWS && exact_term.is_some_and(|term| term.eq_ignore_ascii_case(name))
+        }
+    }
+}
+
+/// One ranked row. `wants_body` is the body policy's ask; the budget decides whether the body is served.
+struct RankedRow<'a> {
     score: f64,
-    sym: &crate::domain::Symbol,
-    view: &dyn crate::domain::CorpusView<'_>,
+    sym: &'a crate::domain::Symbol,
     is_tested: bool,
-    opts: ForTaskOptions<'s>,
+    wants_body: bool,
+}
+
+fn build_for_symbol_entry<'s>(
+    row: &RankedRow<'_>,
+    view: &dyn crate::domain::CorpusView<'_>,
+    sources: Option<&'s dyn crate::query::SourceReader>,
+    graph: Option<&Graph>,
     file_cache: &mut std::collections::HashMap<u32, std::borrow::Cow<'s, [u8]>>,
+    body_room: &mut usize,
 ) -> Value {
+    let sym = row.sym;
     let name = view.sym_name(sym);
     let path = view.sym_path(sym);
-    let detail_count = if opts.signatures_only {
-        0
-    } else {
-        opts.detail.or(opts.auto_bodies.then_some(6)).unwrap_or(0)
-    };
-    let bytes = opts
-        .sources
+    let bytes = sources
         .map(|sources| read_file_cached(sources, path, sym.file_id, file_cache))
         .unwrap_or_default();
     let sig = extract_normalized_sig(sym, bytes, name);
-    let in_deg = opts.graph.map_or(0, |g| g.in_degree(sym.id));
+    let in_deg = graph.map_or(0, |g| g.in_degree(sym.id));
     let end_line = sym.line.saturating_add(sym.loc.saturating_sub(1));
     let mut obj = json!({
         "name": name,
@@ -520,15 +539,49 @@ fn build_for_symbol_entry<'s>(
         "ccx": sym.ccx,
         "in": in_deg,
         "amp": in_deg.max(1),
-        "tested": u8::from(is_tested),
-        "score": (score * 100.0).round() / 100.0
+        "tested": u8::from(row.is_tested),
+        "score": (row.score * 100.0).round() / 100.0
     });
-    if idx < detail_count
+    if row.wants_body
         && let Some(body) = sym.source_text(bytes)
+        && body.len() <= *body_room
     {
+        *body_room -= body.len();
         obj["body"] = Value::String(body.into_owned());
     }
     obj
+}
+
+/// The bundle kind, why bodies were left out (if they were), and an executable `--expand` for the first row without one.
+fn body_disclosure(
+    opts: ForTaskOptions<'_>,
+    conceptual: bool,
+    rows: &[Value],
+    wanted: usize,
+    served: usize,
+) -> (&'static str, Option<&'static str>, Option<String>) {
+    let bundle = if conceptual { "compact" } else { "auto" };
+    let reason = if rows.is_empty() {
+        None
+    } else if opts.signatures_only {
+        Some("signatures-only")
+    } else if served < wanted {
+        Some("budget")
+    } else if served == 0 && conceptual && opts.detail.is_none() && !opts.auto_bodies {
+        Some("compact-route")
+    } else {
+        None
+    };
+    let follow = reason
+        .and(rows.iter().find(|row| !row["body"].is_string()))
+        .map(|row| {
+            format!(
+                "--expand={}:{}",
+                row["path"].as_str().unwrap_or_default(),
+                row["name"].as_str().unwrap_or_default()
+            )
+        });
+    (bundle, reason, follow)
 }
 
 fn compute_for_route_metadata(
@@ -764,17 +817,29 @@ pub fn call_for_task_with_options(
         adaptive_info = Some((kept, scored.len(), gap));
         limit = kept;
     }
-    let detail_count = if opts.signatures_only {
-        0
-    } else {
-        opts.detail
-            .or(opts.auto_bodies.then_some(6))
-            .unwrap_or(0)
-            .min(limit)
-    };
-    let mut file_cache = std::collections::HashMap::new();
     use crate::domain::CorpusView;
     let view = (ingest, interner);
+    let exact_term = match raw_terms.as_slice() {
+        [term] if !conceptual => Some(*term),
+        _ => None,
+    };
+    let wants: Vec<bool> = scored[..limit]
+        .iter()
+        .enumerate()
+        .map(|(idx, (_, sym))| body_wanted(idx, view.sym_name(sym), opts, exact_term))
+        .collect();
+    // Default bodies are admitted into the budget left after the signature rows; explicit requests are not.
+    let shown_bytes: usize = (0..limit)
+        .map(|i| symbol_row_bytes(scored[i].1, ingest, interner))
+        .sum();
+    let mut body_room = if opts.detail.is_some() || opts.auto_bodies {
+        usize::MAX
+    } else {
+        page.budget
+            .unwrap_or(crate::serialize::DEFAULT_PACK_BUDGET_BYTES)
+            .saturating_sub(shown_bytes)
+    };
+    let mut file_cache = std::collections::HashMap::new();
     let tested_bitmap = opts.graph.map(|g| view.compute_test_reachability(g));
     let symbols_json: Vec<Value> = scored[..limit]
         .iter()
@@ -784,9 +849,28 @@ pub fn call_for_task_with_options(
                 .as_ref()
                 .and_then(|bm| bm.get(sym.id as usize).copied())
                 .unwrap_or_else(|| view.is_test_symbol(sym));
-            build_for_symbol_entry(idx, *score, sym, &view, is_tested, opts, &mut file_cache)
+            let row = RankedRow {
+                score: *score,
+                sym,
+                is_tested,
+                wants_body: wants[idx],
+            };
+            build_for_symbol_entry(
+                &row,
+                &view,
+                opts.sources,
+                opts.graph,
+                &mut file_cache,
+                &mut body_room,
+            )
         })
         .collect();
+    let wanted = wants.iter().filter(|w| **w).count();
+    let served = symbols_json
+        .iter()
+        .filter(|s| s["body"].is_string())
+        .count();
+    let (bundle, reason, follow) = body_disclosure(opts, conceptual, &symbols_json, wanted, served);
     // Exact-name lookups keep name-only coverage; conceptual rows also count their source text.
     let coverage_masks: &[u32] = if conceptual { &body_masks } else { &[] };
     let (route, confidence, margin_pct) =
@@ -818,7 +902,10 @@ pub fn call_for_task_with_options(
         "est_tokens": est_tokens,
         "symbols": symbols_json,
         "count": symbols_json.len(),
-        "detail": detail_count,
+        "detail": wanted,
+        "bundle": bundle,
+        "reason": reason,
+        "follow": follow,
         "sections": sections,
         "lego": lego,
         "compose": compose,

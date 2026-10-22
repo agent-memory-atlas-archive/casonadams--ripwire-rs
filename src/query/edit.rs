@@ -201,7 +201,7 @@ fn try_atomic_edit_in_root(
     let (symbol, file_rel_path) =
         resolve_edit_target(ingest, interner, req.symbol_name, req.path_hint)?;
     let (target_path, original_bytes) = resolve_and_read_target_path(req.root, file_rel_path)?;
-    let sig_start = symbol.sig_start_byte as usize;
+    let sig_start = symbol.def_start_byte() as usize;
     let end_byte = symbol.end_byte as usize;
     let (new_bytes, new_start, new_end) = splice_file_bytes(
         &original_bytes,

@@ -68,7 +68,7 @@ identifiers). This is the rung that answers "where's the code for X".
 **What the bundle serves depends on which way the query routed, and the root says which.**
 *Named a symbol* (`bundle="auto" bodies="N"`): the anchor's FULL body rides inline, CDATA plus callee
 signatures — **read it here instead of opening the file the map named**, that follow-up read is the cost
-this default deletes. `bodies="0" reason="budget"` means it did not fit whole.
+this default deletes. `bodies="0" reason="budget"` means it did not fit whole; `follow="--expand=path:name"` is the command that fetches the first row without a body. `reason="signatures-only"` is `--signatures-only` at work; `--detail=N` serves N bodies regardless of budget.
 *Conceptual phrase* (`bundle="compact" bodies="0" reason="compact-route"`): no bodies — you get the ranked
 map plus a `<hops>` section, one row per top-ranked symbol with its one-hop callee names. **Read the map,
 pick ONE symbol, then `--expand=path:name`** (paste the row's own `p=` and `n=`; a bare name that is not

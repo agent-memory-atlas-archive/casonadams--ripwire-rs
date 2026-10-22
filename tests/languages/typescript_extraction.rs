@@ -75,7 +75,7 @@ fn multiline_return_type_keeps_nested_object_and_generics() {
     let source = "export async function loadThing(id: string): Promise<\n  { id: string; items: Array<{ key: string }> }\n> {\n  return { id, items: [] };\n}\n";
     assert_eq!(
         signature_of(source, "loadThing"),
-        "async function loadThing(id: string): Promise< { id: string; items: Array<{ key: string }> } >"
+        "export async function loadThing(id: string): Promise< { id: string; items: Array<{ key: string }> } >"
     );
 }
 
@@ -85,7 +85,7 @@ fn same_line_body_is_not_part_of_the_signature() {
         "export function single(a: number): Promise<number> { return Promise.resolve(a); }\n";
     assert_eq!(
         signature_of(source, "single"),
-        "function single(a: number): Promise<number>"
+        "export function single(a: number): Promise<number>"
     );
 }
 
@@ -94,6 +94,6 @@ fn object_literal_return_type_ends_at_the_body() {
     let source = "export function point(a: number): { x: number; y: number } {\n  return { x: a, y: a };\n}\n";
     assert_eq!(
         signature_of(source, "point"),
-        "function point(a: number): { x: number; y: number }"
+        "export function point(a: number): { x: number; y: number }"
     );
 }
