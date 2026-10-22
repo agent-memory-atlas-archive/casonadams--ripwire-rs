@@ -519,6 +519,10 @@ pub trait LanguageSemantics: Sync {
     fn symbol_implied_import(&self, _kind: SymKind, _name: &str) -> Option<String> {
         None
     }
+    /// True where `impl Trait for Type` blocks bind methods to types and traits dispatch to them (Rust).
+    fn has_trait_impls(&self) -> bool {
+        false
+    }
     /// The module an import specifier names and the identifier it binds in the importing file, when
     /// calls qualified by that identifier resolve into the module (Python `import x as y` -> `("x", "y")`).
     fn import_binding<'a>(&self, _raw_target: &'a str) -> Option<(&'a str, &'a str)> {

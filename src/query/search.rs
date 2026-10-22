@@ -217,32 +217,28 @@ fn collect_interface_methods(
     methods
 }
 
-fn rust_interface_methods(
+fn span_interface_methods(
     ingest: &IngestResult,
     interner: &Interner,
-    iface: Option<&crate::domain::Symbol>,
+    iface: &crate::domain::Symbol,
 ) -> Vec<Value> {
-    let Some(iface) = iface else {
-        return Vec::new();
-    };
     ingest
         .symbols
         .iter()
-        .filter(|symbol| {
-            symbol.file_id == iface.file_id
-                && symbol.lang == crate::domain::Lang::Rust
-                && symbol.kind == SymKind::Method
-                && symbol.sig_start_byte >= iface.sig_start_byte
-                && symbol.sig_start_byte < iface.end_byte
+        .filter(|s| {
+            s.file_id == iface.file_id
+                && s.kind == SymKind::Method
+                && (iface.sig_start_byte..iface.end_byte).contains(&s.sig_start_byte)
         })
-        .map(|symbol| {
-            json!({
-                "name": interner.resolve(&symbol.name),
-                "line": symbol.line,
-                "params": symbol.params
-            })
-        })
+        .map(|s| json!({ "name": interner.resolve(&s.name), "line": s.line, "params": s.params }))
         .collect()
+}
+
+fn implementor_json<'a>(
+    view: &impl crate::domain::CorpusView<'a>,
+    s: &crate::domain::Symbol,
+) -> Value {
+    json!({ "name": view.sym_name(s), "kind": s.kind.tag(), "path": view.sym_path(s), "line": s.line })
 }
 
 pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &str) -> Value {
@@ -264,62 +260,34 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
     let view = (ingest, interner);
     let iface_sym = iface_defs.first().copied();
     let iface_path = iface_sym.map_or("", |s| view.sym_path(s));
-    let methods = if iface_sym.is_some_and(|s| s.lang == crate::domain::Lang::Rust) {
-        rust_interface_methods(ingest, interner, iface_sym)
-    } else {
-        collect_interface_methods(
+    let trait_impls = iface_sym.is_some_and(|s| s.lang.semantics().has_trait_impls());
+    let methods = match iface_sym {
+        Some(iface) if trait_impls => span_interface_methods(ingest, interner, iface),
+        _ => collect_interface_methods(
             ingest,
             interner,
             iface_sym.map(|s| s.file_id),
             iface_defs.len() <= 1,
             interface_name,
-        )
+        ),
     };
-    if let [iface] = iface_defs.as_slice()
-        && iface.lang == crate::domain::Lang::Rust
-        && iface.kind == SymKind::Interface
-    {
-        let index = crate::resolve::ResolutionIndex::build(ingest, interner);
-        let implementors = index
-            .rust_implementors(iface.id)
-            .into_iter()
-            .map(|id| {
-                let symbol = &ingest.symbols[id as usize];
-                json!({
-                    "name": view.sym_name(symbol),
-                    "kind": symbol.kind.tag(),
-                    "path": view.sym_path(symbol),
-                    "line": symbol.line
-                })
-            })
-            .collect::<Vec<_>>();
-        return json!({
-            "interface": interface_name,
-            "defined": true,
-            "defs": 1,
-            "path": iface_path,
-            "methods": methods,
-            "count": implementors.len(),
-            "implementors": implementors
-        });
-    }
     let mut implementors = Vec::new();
-    let mut seen_impls = std::collections::HashSet::new();
-    for r in &ingest.references {
-        if r.role == RefRole::Extends
-            && r.lang != crate::domain::Lang::Rust
-            && interner.resolve(&r.callee_name) == interface_name
-            && let Some(src_sym) = resolve_implementor_symbol(ingest, r)
-            && seen_impls.insert(src_sym.id)
-        {
-            let name = view.sym_name(src_sym);
-            let path = view.sym_path(src_sym);
-            implementors.push(json!({
-                "name": name,
-                "kind": src_sym.kind.tag(),
-                "path": path,
-                "line": src_sym.line
-            }));
+    if let (true, [iface]) = (trait_impls, iface_defs.as_slice()) {
+        let index = crate::resolve::ResolutionIndex::build(ingest, interner);
+        for id in index.trait_implementors(iface.id) {
+            implementors.push(implementor_json(&view, &ingest.symbols[id as usize]));
+        }
+    } else {
+        let mut seen_impls = std::collections::HashSet::new();
+        for r in &ingest.references {
+            if r.role == RefRole::Extends
+                && !r.lang.semantics().has_trait_impls()
+                && interner.resolve(&r.callee_name) == interface_name
+                && let Some(src_sym) = resolve_implementor_symbol(ingest, r)
+                && seen_impls.insert(src_sym.id)
+            {
+                implementors.push(implementor_json(&view, src_sym));
+            }
         }
     }
 

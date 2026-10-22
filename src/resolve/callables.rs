@@ -75,12 +75,19 @@ impl CallableIndex {
             return;
         };
         let Some(target) = binding.target else { return };
+        let Some(lang) = lookup
+            .symbols()
+            .get(binding.from_symbol as usize)
+            .map(|symbol| symbol.lang)
+        else {
+            return;
+        };
         let mut reference = Reference::new(
             binding.from_symbol,
             target,
             binding.file_id,
             0,
-            crate::domain::Lang::Rust,
+            lang,
             RefRole::Call,
         );
         reference.qualifier = binding.target_qualifier;
@@ -98,7 +105,7 @@ impl CallableIndex {
         reference: &Reference,
         lookup: &impl ResolutionLookup,
     ) -> Option<&[NodeId]> {
-        if reference.lang != crate::domain::Lang::Rust {
+        if !reference.lang.semantics().has_trait_impls() {
             return None;
         }
         let groups = self.by_field.get(&reference.callee_name)?;

@@ -147,7 +147,7 @@ impl ResolutionIndex {
     }
 
     #[must_use]
-    pub fn rust_implementors(&self, trait_id: NodeId) -> Vec<NodeId> {
+    pub fn trait_implementors(&self, trait_id: NodeId) -> Vec<NodeId> {
         self.traits.implementor_ids(trait_id)
     }
 

@@ -1,5 +1,5 @@
 use super::TraitEnv;
-use crate::domain::{FileInfo, Lang, NodeId, SymKind, Symbol};
+use crate::domain::{FileInfo, NodeId, SymKind, Symbol};
 use lasso::Spur;
 use std::collections::HashMap;
 
@@ -33,7 +33,7 @@ impl RustScopes {
         for symbol in env
             .symbols
             .iter()
-            .filter(|s| s.lang == Lang::Rust && s.kind == SymKind::Section)
+            .filter(|s| s.lang.semantics().has_trait_impls() && s.kind == SymKind::Section)
         {
             index
                 .by_file
@@ -100,7 +100,7 @@ impl RustScopes {
             let Some(file) = files.get(symbol.file_id as usize) else {
                 continue;
             };
-            let Some(target) = Lang::Rust.semantics().resolve_import_target(
+            let Some(target) = symbol.lang.semantics().resolve_import_target(
                 env.interner.resolve(&file.path),
                 &path,
                 &file_index,

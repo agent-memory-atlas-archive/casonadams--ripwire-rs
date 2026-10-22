@@ -1,5 +1,5 @@
 use super::scopes::{RustScopes, Scope};
-use crate::domain::{FileInfo, Implementation, Interner, Lang, NodeId, SymKind, Symbol};
+use crate::domain::{FileInfo, Implementation, Interner, NodeId, SymKind, Symbol};
 use lasso::Spur;
 use std::collections::{HashMap, HashSet};
 
@@ -380,7 +380,7 @@ fn nominals_by_name(symbols: &[Symbol]) -> HashMap<Spur, Vec<NodeId>> {
     let mut map: HashMap<Spur, Vec<NodeId>> = HashMap::new();
     for s in symbols
         .iter()
-        .filter(|s| s.lang == Lang::Rust && s.kind.is_type_container())
+        .filter(|s| s.lang.semantics().has_trait_impls() && s.kind.is_type_container())
     {
         map.entry(s.name).or_default().push(s.id);
     }
@@ -391,7 +391,7 @@ fn methods_by_file(symbols: &[Symbol]) -> MethodsByFile {
     let mut map: MethodsByFile = HashMap::new();
     for s in symbols
         .iter()
-        .filter(|s| s.kind == SymKind::Method && s.lang == Lang::Rust)
+        .filter(|s| s.kind == SymKind::Method && s.lang.semantics().has_trait_impls())
     {
         map.entry(s.file_id).or_default().push(s.id);
     }

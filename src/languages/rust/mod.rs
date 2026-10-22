@@ -291,6 +291,10 @@ impl LanguageSemantics for RustLanguage {
         DialectGroup::Isolated(Lang::Rust)
     }
 
+    fn has_trait_impls(&self) -> bool {
+        true
+    }
+
     fn visibility_mode(&self) -> VisibilityMode {
         VisibilityMode::ExplicitModifier
     }
