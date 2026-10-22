@@ -18,7 +18,7 @@ ensure-grammars:
 	fi
 
 .PHONY: all
-all: clippy complexity quality crap fmt ## Run all checks (clippy, complexity, quality regressions, CRAP/tests, format)
+all: clippy complexity quality crap parity fmt ## Run all checks (clippy, complexity, quality regressions, CRAP/tests, parity, format)
 
 .PHONY: build
 build: ## Build the project in debug mode
