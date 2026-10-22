@@ -3,6 +3,7 @@ use super::token_stream::{
     compute_sketch, scan_body_ids, sketch_matches,
 };
 use crate::domain::{IngestResult, Interner, NodeId, SymKind};
+use crate::serialize::{PageRequest, PageWindow};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -456,7 +457,11 @@ fn compute_clone_components(
     (gids, comp_count, dup_loc, total_loc)
 }
 
-fn select_windowed_clone_indices(groups: &[CloneGroup], cap: usize) -> (usize, usize, Vec<usize>) {
+fn select_windowed_clone_indices(
+    groups: &[CloneGroup],
+    cap: usize,
+    page: PageRequest,
+) -> (usize, usize, Vec<usize>, Option<PageWindow>) {
     let mut exact_idx = Vec::new();
     let mut type3_idx = Vec::new();
     for (idx, g) in groups.iter().enumerate() {
@@ -466,12 +471,19 @@ fn select_windowed_clone_indices(groups: &[CloneGroup], cap: usize) -> (usize, u
             exact_idx.push(idx);
         }
     }
-    let keep12 = exact_idx.len().min(cap);
-    let keep3 = type3_idx.len().min(cap);
+    let (exact, type3) = (exact_idx.len(), type3_idx.len());
+    if page != PageRequest::default() {
+        exact_idx.extend(type3_idx);
+        let window = page.window(exact + type3, cap * 2);
+        let shown = exact_idx[window.begin..window.end].to_vec();
+        return (exact, type3, shown, Some(window));
+    }
+    let keep12 = exact.min(cap);
+    let keep3 = type3.min(cap);
     let mut shown_indices = Vec::with_capacity(keep12 + keep3);
     shown_indices.extend_from_slice(&exact_idx[..keep12]);
     shown_indices.extend_from_slice(&type3_idx[..keep3]);
-    (exact_idx.len(), type3_idx.len(), shown_indices)
+    (exact, type3, shown_indices, None)
 }
 
 fn format_clone_group_xml(
@@ -523,9 +535,11 @@ pub fn render_clones_xml(
     groups: &[CloneGroup],
     ingest: &IngestResult,
     interner: &Interner,
+    page: PageRequest,
 ) -> String {
     let (gids, clone_groups, dup_loc, total_loc) = compute_clone_components(groups, ingest);
-    let (exact_count, type3_count, shown_indices) = select_windowed_clone_indices(groups, 40);
+    let (exact_count, type3_count, shown_indices, window) =
+        select_windowed_clone_indices(groups, 40, page);
     let total = exact_count + type3_count;
     let shown = shown_indices.len();
     let capped = usize::from(shown < total);
@@ -538,8 +552,13 @@ pub fn render_clones_xml(
     } else {
         0.0
     };
-    let page_attrs = format!(
-        " shown=\"{shown}\" capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+    let page_attrs = window.map_or_else(
+        || {
+            format!(
+                " shown=\"{shown}\" capped=\"{capped}\" total=\"{total}\" has_more=\"{capped}\" next_offset=\"{shown}\" offset=\"0\" limit=\"0\""
+            )
+        },
+        |window| window.xml_attrs(),
     );
 
     let mut out = format!(

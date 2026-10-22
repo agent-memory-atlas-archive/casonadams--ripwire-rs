@@ -28,8 +28,12 @@ impl Command for Clones {
 
     fn run(&self, cli: &Cli, root: &str) -> Option<io::Result<()>> {
         let flags = cli.plugins.decode::<CloneFlags>()?;
+        let page = crate::serialize::PageRequest {
+            limit: cli.modifiers.limit,
+            offset: cli.modifiers.offset,
+        };
         flags
             .clones
-            .then(|| crate::clones::execute_clones_command(root, flags.min_tokens))
+            .then(|| crate::clones::execute_clones_command(root, flags.min_tokens, page))
     }
 }

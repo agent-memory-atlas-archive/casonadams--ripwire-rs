@@ -61,8 +61,9 @@ pub fn execute_batch_content<W: Write>(
         commits: None,
         at: Some(&at),
     };
-    let queries = parse_batch_content(content);
-    let results = execute_batch(&context, &queries).map_err(io::Error::other)?;
+    let tools = crate::commands::tools();
+    let queries = parse_batch_content(tools, content);
+    let results = execute_batch(&context, tools, &queries).map_err(io::Error::other)?;
     write_batch_results(root, &results, out)
 }
 

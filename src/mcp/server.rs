@@ -1,5 +1,6 @@
 use super::dispatch::handle_tools_call;
 use super::schema;
+use crate::query::commands::CommandDescriptor;
 use crate::workspace::Workspace;
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
@@ -24,23 +25,27 @@ pub fn handle_initialize(id: &Value) -> Value {
 }
 
 #[must_use]
-pub fn handle_tools_list(id: &Value) -> Value {
+pub fn handle_tools_list(id: &Value, tools: &[&CommandDescriptor]) -> Value {
     json!({
         "jsonrpc": "2.0",
         "id": id,
         "result": {
-            "tools": schema::all_tool_definitions()
+            "tools": schema::all_tool_definitions(tools)
         }
     })
 }
 
 /// Run the stdio JSON-RPC loop for MCP clients.
-pub fn run_mcp_stdio(root: &str) -> io::Result<()> {
-    run_mcp_stdio_with_scip(root, None)
+pub fn run_mcp_stdio(root: &str, tools: &[&CommandDescriptor]) -> io::Result<()> {
+    run_mcp_stdio_with_scip(root, None, tools)
 }
 
 /// Run MCP with a compiler-indexed workspace, failing before serving on index errors.
-pub fn run_mcp_stdio_with_scip(root: &str, scip_index: Option<&std::path::Path>) -> io::Result<()> {
+pub fn run_mcp_stdio_with_scip(
+    root: &str,
+    scip_index: Option<&std::path::Path>,
+    tools: &[&CommandDescriptor],
+) -> io::Result<()> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let loaded = Workspace::load_with_scip(root, scip_index)?;
@@ -50,7 +55,7 @@ pub fn run_mcp_stdio_with_scip(root: &str, scip_index: Option<&std::path::Path>)
         stdout.lock(),
         root,
         &mut state,
-        dispatch_json_rpc,
+        |line, state, default_root| dispatch_json_rpc(line, state, default_root, tools),
     )
 }
 
@@ -60,7 +65,7 @@ pub fn run_json_rpc_stream_with_state<R: BufRead, W: Write>(
     mut writer: W,
     root: &str,
     state: &mut Option<Workspace>,
-    dispatch: fn(&str, &mut Option<Workspace>, &str) -> Option<String>,
+    dispatch: impl Fn(&str, &mut Option<Workspace>, &str) -> Option<String>,
 ) -> io::Result<()> {
     for line_res in reader.lines() {
         let line = line_res?;
@@ -82,14 +87,22 @@ pub fn run_mcp_stream_with_state<R: BufRead, W: Write>(
     writer: W,
     root: &str,
     state: &mut Option<Workspace>,
+    tools: &[&CommandDescriptor],
 ) -> io::Result<()> {
-    run_json_rpc_stream_with_state(reader, writer, root, state, dispatch_json_rpc)
+    run_json_rpc_stream_with_state(reader, writer, root, state, |line, state, default_root| {
+        dispatch_json_rpc(line, state, default_root, tools)
+    })
 }
 
 /// Run MCP JSON-RPC protocol over any Read/Write stream pair.
-pub fn run_mcp_stream<R: BufRead, W: Write>(reader: R, writer: W, root: &str) -> io::Result<()> {
+pub fn run_mcp_stream<R: BufRead, W: Write>(
+    reader: R,
+    writer: W,
+    root: &str,
+    tools: &[&CommandDescriptor],
+) -> io::Result<()> {
     let mut state = Workspace::load(root);
-    run_mcp_stream_with_state(reader, writer, root, &mut state)
+    run_mcp_stream_with_state(reader, writer, root, &mut state, tools)
 }
 
 /// Dispatch a single raw JSON-RPC line. Returns `None` for notifications.
@@ -98,6 +111,7 @@ pub fn dispatch_json_rpc(
     line: &str,
     state: &mut Option<Workspace>,
     default_root: &str,
+    tools: &[&CommandDescriptor],
 ) -> Option<String> {
     let req: Value = match serde_json::from_str(line) {
         Ok(v) => v,
@@ -115,7 +129,7 @@ pub fn dispatch_json_rpc(
 
     let resp = match req["method"].as_str().unwrap_or("") {
         "initialize" => handle_initialize(id),
-        "tools/list" => handle_tools_list(id),
+        "tools/list" => handle_tools_list(id, tools),
         "resources/list" => json!({
             "jsonrpc": "2.0",
             "id": id,
@@ -145,7 +159,7 @@ pub fn dispatch_json_rpc(
         }
         "tools/call" => {
             let params = req.get("params").unwrap_or(&Value::Null);
-            handle_tools_call(id, params, state, default_root)
+            handle_tools_call(id, params, state, default_root, tools)
         }
         method => json!({
             "jsonrpc": "2.0",

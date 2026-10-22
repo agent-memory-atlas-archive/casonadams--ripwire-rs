@@ -11,11 +11,15 @@ use std::path::Path;
 pub const DEFAULT_MIN_CLONE_TOKENS: usize = 40;
 
 /// Execute clone detection on the target repository and print results.
-pub fn execute_clones_command(root: &str, min_tokens: usize) -> io::Result<()> {
+pub fn execute_clones_command(
+    root: &str,
+    min_tokens: usize,
+    page: crate::serialize::PageRequest,
+) -> io::Result<()> {
     let root_path = Path::new(root);
     let (ingest, _graph, _pr, interner) = crate::workspace::load_repo_analysis(root)?;
     let clones = find_clones_in_root(&ingest, &interner, min_tokens, None, Some(root_path));
-    let xml = render_clones_xml(&clones, &ingest, &interner);
+    let xml = render_clones_xml(&clones, &ingest, &interner, page);
     let mut stdout_lock = io::stdout().lock();
     let mut out = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
     out.write_all(xml.as_bytes())?;

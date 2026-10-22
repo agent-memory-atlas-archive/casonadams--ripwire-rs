@@ -24,6 +24,7 @@ pub fn execute_hotspots_with<W: Write>(
     since_str: Option<&str>,
     commits: &[crate::git::history::CommitInfo],
     state: &SafetyContext<'_>,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     let anchor_epoch = commits.first().map(|c| c.timestamp).unwrap_or(0);
@@ -39,7 +40,8 @@ pub fn execute_hotspots_with<W: Write>(
         .map(|(path, fc)| (path, fc.commits))
         .collect();
     let report = crate::metrics::compute_hotspots(state.ingest, state.interner, &counts)
-        .with_root(state.root);
+        .with_root(state.root)
+        .with_page(page);
     report.write_xml(out)
 }
 

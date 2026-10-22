@@ -1,4 +1,4 @@
-use crate::query::commands::all_commands;
+use crate::query::commands::CommandDescriptor;
 use serde_json::{Map, Value, json};
 
 /// Build an MCP tool JSON Schema object from declarative parameter tuples.
@@ -48,9 +48,9 @@ pub fn build_tool_schema_json(
 
 /// Render the shared command catalog as MCP JSON Schema.
 #[must_use]
-pub fn all_tool_definitions() -> Vec<Value> {
-    all_commands()
-        .into_iter()
+pub fn all_tool_definitions(tools: &[&CommandDescriptor]) -> Vec<Value> {
+    tools
+        .iter()
         .map(|command| {
             build_tool_schema_json(
                 command.name,

@@ -1,6 +1,7 @@
 use ripwire_rs::git::cochange::{CoGroup, CoPair, CoPartner};
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::query::safety::*;
+use ripwire_rs::serialize::PageRequest;
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, ToXmlString, ingest_in_memory_files};
 
 #[test]
@@ -179,7 +180,34 @@ fn test_execute_cochange_and_hotspots_with_injected_history() {
         .collect();
 
     let mut out = Vec::new();
-    execute_hotspots_with(Some("2023-01-01"), &commits, &s_ctx, &mut out).unwrap();
+    execute_hotspots_with(
+        Some("2023-01-01"),
+        &commits,
+        &s_ctx,
+        PageRequest::default(),
+        &mut out,
+    )
+    .unwrap();
+    let rows = |bytes: &[u8]| {
+        roxmltree::Document::parse(std::str::from_utf8(bytes).unwrap())
+            .unwrap()
+            .descendants()
+            .filter(|node| node.has_tag_name("f"))
+            .count()
+    };
+    assert_eq!(rows(&out), 2);
+    let mut paged = Vec::new();
+    let page = PageRequest {
+        limit: Some(1),
+        offset: None,
+    };
+    execute_hotspots_with(Some("2023-01-01"), &commits, &s_ctx, page, &mut paged).unwrap();
+    assert_eq!(rows(&paged), 1);
+    let root = roxmltree::Document::parse(std::str::from_utf8(&paged).unwrap()).unwrap();
+    let attrs = root.root_element();
+    assert_eq!(attrs.attribute("shown"), Some("1"));
+    assert_eq!(attrs.attribute("limit"), Some("1"));
+    assert_eq!(attrs.attribute("capped"), Some("1"));
     let text = std::str::from_utf8(&out).unwrap();
     let hotspots = roxmltree::Document::parse(text).unwrap();
     for path in ["src/a.rs", "src/b.rs"] {

@@ -15,6 +15,9 @@ use std::io::{self, Write};
 /// Top-level detail ladder flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
 pub struct DetailArgs {
+    /// Compress output using compact token dialect
+    #[arg(long = "compress", overrides_with = "compress")]
+    pub compress: bool,
     /// Expand full symbol bodies and callee signatures (SYM,SYM...)
     #[arg(long, value_name = "SYMS")]
     pub expand: Option<String>,
@@ -91,7 +94,7 @@ impl CliVerb for DetailArgs {
         ctx: &ExecutionContext<'_>,
         out: &mut crate::serialize::XmlWriter<'_, W>,
     ) -> io::Result<()> {
-        let compress = ctx.cli.modifiers.compress;
+        let compress = self.compress;
         if let Some(syms) = self.expand.as_deref().or(self.outline.as_deref()) {
             ladder::execute_expand_or_outline_compressed(
                 ctx.root,

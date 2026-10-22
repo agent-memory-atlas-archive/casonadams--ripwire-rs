@@ -233,20 +233,6 @@ pub fn with_history(cli: &Cli) -> bool {
         .is_some_and(|args| args.with_history)
 }
 
-/// Whether bare `--refetch` asked to clone the remote URL root fresh.
-#[must_use]
-pub fn refresh_clone_requested(cli: &Cli) -> bool {
-    cli.plugins
-        .decode::<RetrievalArgs>()
-        .is_some_and(|args| args.refetch.as_deref() == Some(""))
-}
-
-/// Reject `--sections` without `--for`, and malformed section lists.
-pub fn validate_modifiers(cli: &Cli) -> io::Result<()> {
-    cli.plugins
-        .decode::<RetrievalArgs>()
-        .map_or(Ok(()), |args| args.validate())
-}
 
 /// `ripwire-rs --orient --for=TASK` bundle, shaped by the `--for` flags on the same command line.
 #[must_use]
@@ -271,6 +257,18 @@ pub static RETRIEVAL: Retrieval = Retrieval;
 impl Command for Retrieval {
     fn augment(&self, cmd: ClapCommand) -> ClapCommand {
         RetrievalArgs::augment_args(cmd)
+    }
+
+    fn validate(&self, cli: &Cli) -> io::Result<()> {
+        cli.plugins
+            .decode::<RetrievalArgs>()
+            .map_or(Ok(()), |args| args.validate())
+    }
+
+    fn refreshes_remote_checkout(&self, cli: &Cli) -> bool {
+        cli.plugins
+            .decode::<RetrievalArgs>()
+            .is_some_and(|args| args.refetch.as_deref() == Some(""))
     }
 
     fn subcommands(&self) -> Vec<ClapCommand> {

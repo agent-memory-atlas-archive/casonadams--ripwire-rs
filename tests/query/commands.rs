@@ -1,8 +1,14 @@
-use ripwire_rs::query::commands::{
-    BatchQuery, QueryContext, dispatch, execute_batch, parse_batch_content,
-};
+use ripwire_rs::query::commands::{BatchQuery, QueryContext, execute_batch, parse_batch_content};
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, PageRankConfig, ingest_in_memory_files};
 use serde_json::json;
+
+fn dispatch(
+    context: &QueryContext<'_>,
+    name: &str,
+    args: &serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    ripwire_rs::query::commands::dispatch(context, ripwire_rs::commands::tools(), name, args)
+}
 
 fn with_context(run: impl FnOnce(&QueryContext<'_>)) {
     let sources = [(
@@ -79,10 +85,12 @@ fn dispatch_rejects_invalid_arguments_and_returns_indexed_symbol() {
 #[test]
 fn batch_retains_successes_and_isolates_rejected_queries() {
     with_context(|context| {
+        let tools = ripwire_rs::commands::tools();
         let queries = parse_batch_content(
+            tools,
             "# indexed reads\nfind_symbol:target\nfind_symbol:{}\nreplace_symbol_body:{\"symbol\":\"target\",\"new_body\":\"fn target() {}\"}\nbatch:{}\nquality_delta:{\"ack_only\":true}\nfind_symbol:caller\n",
         );
-        let results = execute_batch(context, &queries).unwrap();
+        let results = execute_batch(context, tools, &queries).unwrap();
         assert_eq!(results.len(), 6);
         assert!(results[0]["result"].as_str().unwrap().contains("target"));
         for result in &results[1..5] {
@@ -96,18 +104,19 @@ fn batch_retains_successes_and_isolates_rejected_queries() {
 #[test]
 fn batch_enforces_sixteen_query_boundary() {
     with_context(|context| {
+        let tools = ripwire_rs::commands::tools();
         let mut queries: Vec<_> = (0..16)
             .map(|_| BatchQuery {
                 name: "find_symbol".into(),
                 arguments: json!({"symbol": "target"}),
             })
             .collect();
-        assert_eq!(execute_batch(context, &queries).unwrap().len(), 16);
+        assert_eq!(execute_batch(context, tools, &queries).unwrap().len(), 16);
         queries.push(BatchQuery {
             name: "find_symbol".into(),
             arguments: json!({"symbol": "target"}),
         });
-        assert!(execute_batch(context, &queries).is_err());
+        assert!(execute_batch(context, tools, &queries).is_err());
     });
 }
 
@@ -244,8 +253,8 @@ fn catalogue_document_consumers_use_supplied_source_bytes() {
 
 #[test]
 fn whereis_catalogue_advertises_selectors_and_renderer_exposes_refs() {
-    let descriptor = ripwire_rs::query::commands::all_commands()
-        .into_iter()
+    let descriptor = ripwire_rs::commands::tools()
+        .iter()
         .find(|command| command.name == "whereis")
         .unwrap();
     for selector in ["listing", "full_text"] {

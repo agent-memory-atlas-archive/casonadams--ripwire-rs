@@ -697,7 +697,7 @@ fn write_report_modules_and_bridges<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let (comms, _, modules) =
-        crate::commands::architecture::build_ranked_communities(None, ingest, graph, interner);
+        crate::metrics::architecture::build_ranked_communities(None, ingest, graph, interner);
     let shown_mods = modules.len().min(12);
     writeln!(
         out,
@@ -719,7 +719,7 @@ fn write_report_modules_and_bridges<W: Write>(
     }
 
     let bridges: Vec<_> =
-        crate::commands::architecture::collect_community_bridges(&comms, &modules, ingest, graph)
+        crate::metrics::architecture::collect_community_bridges(&comms, &modules, ingest, graph)
             .into_iter()
             .take(8)
             .map(|(_, _, la, lb, w)| (non_empty_or(la, "module"), non_empty_or(lb, "module"), w))
@@ -747,7 +747,7 @@ fn write_report_deps_sections<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<()> {
-    let deps = crate::commands::architecture::compute_deps_report(ingest, graph, interner);
+    let deps = crate::metrics::architecture::compute_deps_report(ingest, graph, interner);
     let mut god: Vec<&crate::serialize::DepsFileRow<'_>> =
         deps.rows.iter().filter(|r| r.afferent > 0).collect();
     god.sort_by(|a, b| b.afferent.cmp(&a.afferent).then_with(|| a.path.cmp(b.path)));

@@ -1,4 +1,5 @@
 pub mod analysis_lenses;
+pub mod architecture;
 pub mod complexity;
 pub mod dmm;
 pub mod eval;

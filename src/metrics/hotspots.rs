@@ -24,6 +24,7 @@ pub struct HotspotsReport {
     pub unranked_no_complexity: usize,
     pub root_path: String,
     pub at_stamp: String,
+    pub page: crate::serialize::PageRequest,
 }
 
 impl HotspotsReport {
@@ -32,6 +33,12 @@ impl HotspotsReport {
         use crate::serialize::GitStampExt;
         self.root_path = root.to_string();
         self.at_stamp = root.git_at_or_head();
+        self
+    }
+
+    #[must_use]
+    pub fn with_page(mut self, page: crate::serialize::PageRequest) -> Self {
+        self.page = page;
         self
     }
 }
@@ -45,8 +52,7 @@ impl crate::serialize::XmlReport for HotspotsReport {
     );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::XmlEscapeExt;
-        let pw =
-            crate::serialize::PageWindow::compute(self.ranked_count, 40, None, None).xml_attrs();
+        let pw = self.page.window(self.ranked_count, 40).xml_attrs();
         write!(
             out,
             " window=\"12mo@HEAD\" files=\"{}\" ranked=\"{}\"{pw} unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\" root=\"{}\" at=\"{}\"",
@@ -59,7 +65,8 @@ impl crate::serialize::XmlReport for HotspotsReport {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for f in self.files.iter().take(40) {
+        let window = self.page.window(self.ranked_count, 40);
+        for f in self.files.iter().skip(window.begin).take(window.shown) {
             writeln!(
                 out,
                 "  <f p=\"{}\" churn=\"{}\" ccx=\"{}\" score=\"{}\" top=\"{}\" top_ccx=\"{}\" top_l=\"{}\"/>",
@@ -154,5 +161,6 @@ pub fn compute_hotspots(
         unranked_no_complexity,
         root_path: ".".to_string(),
         at_stamp: "HEAD".to_string(),
+        page: crate::serialize::PageRequest::default(),
     }
 }

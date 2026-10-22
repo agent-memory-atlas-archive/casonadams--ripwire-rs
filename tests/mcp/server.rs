@@ -1,9 +1,15 @@
 use ripwire_rs::mcp::{
-    dispatch_json_rpc, dispatch_lsp_json_rpc, run_json_rpc_stream_with_state,
-    run_lsp_stream_with_state, run_mcp_stream_with_state,
+    dispatch_lsp_json_rpc, run_json_rpc_stream_with_state, run_lsp_stream_with_state,
+    run_mcp_stream_with_state,
 };
+
 use ripwire_rs::{Interner, Lang, LanguageRegistry, Workspace, ingest_in_memory_files};
 use serde_json::{Value, json};
+
+fn dispatch_json_rpc(line: &str, state: &mut Option<Workspace>, root: &str) -> Option<String> {
+    ripwire_rs::mcp::dispatch_json_rpc(line, state, root, ripwire_rs::commands::tools())
+}
+
 use std::io::Cursor;
 
 fn workspace(files: &[(&str, Lang, &[u8])]) -> Option<Workspace> {
@@ -353,6 +359,7 @@ fn json_rpc_stream_with_state_handles_multiple_frames_headers_and_notifications(
         &mut mcp_output,
         ":memory:",
         &mut mcp_state,
+        ripwire_rs::commands::tools(),
     )
     .unwrap();
 

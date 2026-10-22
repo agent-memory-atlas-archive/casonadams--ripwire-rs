@@ -73,14 +73,6 @@ pub struct CommandDescriptor {
     pub handler: fn(&QueryContext<'_>, &Value) -> Result<Value, String>,
 }
 
-/// Every MCP tool from the command plugins, sorted by name.
-#[must_use]
-pub fn all_commands() -> Vec<&'static CommandDescriptor> {
-    let mut all: Vec<_> = crate::commands::tools().collect();
-    all.sort_by_key(|command| command.name);
-    all
-}
-
 pub fn validate_arguments(command: &CommandDescriptor, args: &Value) -> Result<(), String> {
     let object = args.as_object().ok_or("arguments must be an object")?;
     for required in command.required {
@@ -126,9 +118,15 @@ fn validate_argument_type(name: &str, kind: &str, value: &Value) -> Result<(), S
 }
 
 /// Dispatch a validated command without transport or session state.
-pub fn dispatch(context: &QueryContext<'_>, name: &str, args: &Value) -> Result<Value, String> {
-    let command = all_commands()
-        .into_iter()
+pub fn dispatch(
+    context: &QueryContext<'_>,
+    tools: &[&CommandDescriptor],
+    name: &str,
+    args: &Value,
+) -> Result<Value, String> {
+    let command = tools
+        .iter()
+        .copied()
         .find(|command| command.name == name)
         .ok_or_else(|| format!("unknown query: {name}"))?;
     validate_arguments(command, args)?;
@@ -164,6 +162,7 @@ fn batch_read_only(name: &str, arguments: &Value) -> bool {
 
 pub fn execute_batch(
     context: &QueryContext<'_>,
+    tools: &[&CommandDescriptor],
     queries: &[BatchQuery],
 ) -> Result<Vec<Value>, String> {
     if queries.len() > BATCH_LIMIT {
@@ -171,13 +170,18 @@ pub fn execute_batch(
     }
     Ok(queries
         .iter()
-        .map(|query| execute_batch_item(context, &query.name, &query.arguments))
+        .map(|query| execute_batch_item(context, tools, &query.name, &query.arguments))
         .collect())
 }
 
-pub fn execute_batch_item(context: &QueryContext<'_>, name: &str, arguments: &Value) -> Value {
+pub fn execute_batch_item(
+    context: &QueryContext<'_>,
+    tools: &[&CommandDescriptor],
+    name: &str,
+    arguments: &Value,
+) -> Value {
     let result = if batch_read_only(name, arguments) {
-        dispatch(context, name, arguments)
+        dispatch(context, tools, name, arguments)
     } else {
         Err(format!(
             "batch permits only non-recursive read queries: {name}"
@@ -198,8 +202,36 @@ pub fn execute_batch_item(context: &QueryContext<'_>, name: &str, arguments: &Va
     }
 }
 
+/// The argument a bare `name: text` batch line fills: the command's first required string parameter,
+/// else its first declared string parameter when it has no required parameters, else `symbol`.
+fn batch_key(tools: &[&CommandDescriptor], name: &str) -> &'static str {
+    let Some(command) = tools.iter().copied().find(|command| command.name == name) else {
+        return "symbol";
+    };
+    let is_string = |param: &str| {
+        command
+            .params
+            .iter()
+            .any(|(declared, kind, _)| *declared == param && *kind == "string")
+    };
+    if command.required.is_empty() {
+        command
+            .params
+            .iter()
+            .find(|(_, kind, _)| *kind == "string")
+            .map_or("symbol", |(param, _, _)| *param)
+    } else {
+        command
+            .required
+            .iter()
+            .copied()
+            .find(|required| is_string(required))
+            .unwrap_or("symbol")
+    }
+}
+
 /// Parse the CLI line format, also accepting a JSON argument object after `name:`.
-pub fn parse_batch_content(content: &str) -> Vec<BatchQuery> {
+pub fn parse_batch_content(tools: &[&CommandDescriptor], content: &str) -> Vec<BatchQuery> {
     content
         .lines()
         .map(str::trim)
@@ -212,17 +244,7 @@ pub fn parse_batch_content(content: &str) -> Vec<BatchQuery> {
             let arguments = if text.starts_with('{') {
                 serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.to_string()))
             } else {
-                let key = match name {
-                    "grep" => "pattern",
-                    "for" | "memory_recall" => "task",
-                    "slice" => "target",
-                    "cochange" | "owners" => "path",
-                    "affected" => "files",
-                    "from_trace" => "trace",
-                    "lego" => "interface",
-                    "exemplar" => "role",
-                    _ => "symbol",
-                };
+                let key = batch_key(tools, name);
                 if text.is_empty() {
                     json!({})
                 } else {

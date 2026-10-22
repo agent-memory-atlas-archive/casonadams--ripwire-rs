@@ -108,7 +108,11 @@ fn execute_gate_subcommand(args: &GateArgs, cli: &Cli, default_root: &str) -> io
         return result;
     }
     if args.clones {
-        return crate::clones::execute_clones_command(root, args.min_tokens);
+        let page = crate::serialize::PageRequest {
+            limit: cli.modifiers.limit,
+            offset: cli.modifiers.offset,
+        };
+        return crate::clones::execute_clones_command(root, args.min_tokens, page);
     }
     Ok(())
 }

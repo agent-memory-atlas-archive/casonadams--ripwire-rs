@@ -1,16 +1,17 @@
-use crate::query::commands::dispatch;
+use crate::query::commands::{CommandDescriptor, dispatch};
 use crate::workspace::Workspace;
 use serde_json::{Value, json};
 
 pub fn dispatch_tool_action(
     state: &Workspace,
+    tools: &[&CommandDescriptor],
     tool_name: &str,
     args: &Value,
 ) -> Result<Value, String> {
     let sources = crate::query::FileSources {
         root: std::path::Path::new(&state.root),
     };
-    dispatch(&state.query_context(&sources), tool_name, args)
+    dispatch(&state.query_context(&sources), tools, tool_name, args)
 }
 
 #[must_use]
@@ -19,6 +20,7 @@ pub fn handle_tools_call(
     params: &Value,
     state: &mut Option<Workspace>,
     default_root: &str,
+    tools: &[&CommandDescriptor],
 ) -> Value {
     let Some(tool_name) = params["name"].as_str() else {
         return json!({
@@ -41,7 +43,7 @@ pub fn handle_tools_call(
 
     let empty_args = json!({});
     let args = params.get("arguments").unwrap_or(&empty_args);
-    match dispatch_tool_action(current_state, tool_name, args) {
+    match dispatch_tool_action(current_state, tools, tool_name, args) {
         Ok(val) => {
             let text = match val {
                 Value::String(s) => s,

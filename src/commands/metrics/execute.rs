@@ -59,7 +59,13 @@ pub fn dispatch_git_metrics_with_flags(
             cutoff,
             flags.pretty,
             flags.json_out,
-            |commits, state, out| execute_hotspots_with(flags.since, commits, state, out),
+            |commits, state, out| {
+                let page = crate::serialize::PageRequest {
+                    limit: flags.limit,
+                    offset: flags.offset,
+                };
+                execute_hotspots_with(flags.since, commits, state, page, out)
+            },
         ));
     }
     None
@@ -68,9 +74,10 @@ pub fn execute_hotspots_with<W: Write>(
     since: Option<&str>,
     commits: &[crate::git::history::CommitInfo],
     state: &crate::Workspace,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
-    crate::query::safety::execute_hotspots_with(since, commits, &state.safety_context(), out)
+    crate::query::safety::execute_hotspots_with(since, commits, &state.safety_context(), page, out)
 }
 
 pub fn execute_cochange_with_options<W: Write>(

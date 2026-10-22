@@ -29,9 +29,6 @@ pub struct SafetyArgs {
     /// Show what a test file actually covers: non-test symbols it reaches
     #[arg(long, value_name = "TESTFILE")]
     pub exercises: Option<String>,
-    /// Re-rank map toward git-changed files so recent work floats up
-    #[arg(long = "map-diff")]
-    pub map_diff: bool,
     /// Cross-directory call edges lacking test coverage
     #[arg(long = "seams")]
     pub seams: bool,

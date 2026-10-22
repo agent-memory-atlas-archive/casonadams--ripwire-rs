@@ -110,16 +110,6 @@ pub fn args(cli: &Cli) -> ArchitectureArgs {
     cli.plugins.decode::<ArchitectureArgs>().unwrap_or_default()
 }
 
-/// Reject `--zoom-levels` without `--zoom`.
-pub fn validate_modifiers(cli: &Cli) -> io::Result<()> {
-    let a = args(cli);
-    if a.zoom_levels.is_some() && a.zoom.is_none() {
-        return Err(io::Error::other(
-            "ripwire-rs: --zoom-levels=N modifies --zoom; pass it too (e.g. --zoom --zoom-levels=0 prints every level)",
-        ));
-    }
-    Ok(())
-}
 
 pub struct Architecture;
 
@@ -128,6 +118,16 @@ pub static ARCHITECTURE: Architecture = Architecture;
 impl Command for Architecture {
     fn augment(&self, cmd: ClapCommand) -> ClapCommand {
         ArchitectureArgs::augment_args(cmd)
+    }
+
+    fn validate(&self, cli: &Cli) -> io::Result<()> {
+        let a = args(cli);
+        if a.zoom_levels.is_some() && a.zoom.is_none() {
+            return Err(io::Error::other(
+                "ripwire-rs: --zoom-levels=N modifies --zoom; pass it too (e.g. --zoom --zoom-levels=0 prints every level)",
+            ));
+        }
+        Ok(())
     }
 
     fn run(&self, cli: &Cli, root: &str) -> Option<io::Result<()>> {

@@ -291,7 +291,12 @@ fn call_batch(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
                 {
                     return json!({"tool": name, "error": "batch item contains unknown fields"});
                 }
-                execute_batch_item(state, name, query.get("arguments").unwrap_or(&json!({})))
+                execute_batch_item(
+                    state,
+                    crate::commands::tools(),
+                    name,
+                    query.get("arguments").unwrap_or(&json!({})),
+                )
             })
             .collect(),
     ))

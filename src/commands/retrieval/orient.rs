@@ -1,5 +1,6 @@
 //! `orient` subcommand: repository orientation, optionally ranked for a task.
-use crate::cli::{Cli, dispatch_default_run};
+use crate::cli::Cli;
+use crate::commands::map::dispatch_default_run;
 use crate::commands::context::{OutputDialect, load_repo_analysis_for_cli};
 use clap::Args;
 use std::io;
@@ -19,7 +20,7 @@ pub struct OrientArgs {
 pub fn execute_orient_subcommand(cli: &Cli, args: &OrientArgs, default_root: &str) -> io::Result<()> {
     let root = args.path.as_deref().unwrap_or(default_root);
     let Some(task) = args.for_task.as_deref() else {
-        return dispatch_default_run(cli, root, cli.effective_budget_bytes());
+        return dispatch_default_run(cli, root);
     };
     let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
     let sources = crate::query::FileSources {

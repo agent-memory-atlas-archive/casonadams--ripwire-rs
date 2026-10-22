@@ -55,6 +55,7 @@ impl Command for Mcp {
             return Some(crate::mcp::run_mcp_stdio_with_scip(
                 root,
                 cli.scip.as_deref().map(Path::new),
+                crate::commands::tools(),
             ));
         }
         if flags.lsp {
@@ -77,6 +78,7 @@ impl Command for Mcp {
             crate::mcp::run_mcp_stdio_with_scip(
                 args.path.as_deref().unwrap_or(root),
                 cli.scip.as_deref().map(Path::new),
+                crate::commands::tools(),
             )
         }))
     }

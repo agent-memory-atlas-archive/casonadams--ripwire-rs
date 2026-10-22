@@ -56,9 +56,6 @@ pub struct TopModifierArgs {
     /// Paginate: number of items to skip
     #[arg(long, value_name = "M")]
     pub offset: Option<usize>,
-    /// Emit ordering: important-first (default), important-last, or stable
-    #[arg(long, default_value = "important-first")]
-    pub order: String,
     /// Explicit cache file path
     #[arg(long, value_name = "PATH")]
     pub cache: Option<String>,
@@ -83,21 +80,9 @@ pub struct TopModifierArgs {
     /// Disable secret redaction on emitted snippets
     #[arg(long = "no-redact", overrides_with = "no_redact")]
     pub no_redact: bool,
-    /// Emit deterministic path-ordered map without volatile rank scores
-    #[arg(long = "stable", overrides_with = "stable")]
-    pub stable: bool,
-    /// Disable the stable dependency violation section in --deps
-    #[arg(long = "no-stable", overrides_with = "no_stable")]
-    pub no_stable: bool,
-    /// Drop unranked <inv> file inventory tier from map and metrics output
-    #[arg(long = "no-inventory", overrides_with = "no_inventory")]
-    pub no_inventory: bool,
     /// Explicit RSS memory guard ceiling (e.g. 512M, 2G)
     #[arg(long = "max-memory", value_name = "N[K|M|G]")]
     pub max_memory: Option<String>,
-    /// Compress output using compact token dialect
-    #[arg(long = "compress", overrides_with = "compress")]
-    pub compress: bool,
     /// Export full index to file
     #[arg(long = "export", value_name = "FILE")]
     pub export: Option<String>,

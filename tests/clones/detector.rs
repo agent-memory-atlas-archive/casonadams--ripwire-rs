@@ -1,3 +1,4 @@
+use ripwire_rs::serialize::PageRequest;
 use ripwire_rs::{
     CloneIdiom, CloneType, Interner, Lang, LanguageRegistry, find_clones, ingest_in_memory_files,
     render_clones_xml,
@@ -32,7 +33,7 @@ fn test_clone_type1_and_type2_detection() {
     assert!(!clones.is_empty(), "Should detect clone group");
     assert_eq!(clones[0].members.len(), 3);
     assert_eq!(clones[0].clone_type, CloneType::Type2);
-    let xml = render_clones_xml(&clones, &ingest, &interner);
+    let xml = render_clones_xml(&clones, &ingest, &interner, PageRequest::default());
     assert!(xml.contains("<clones schema=\"ripwire-rs.clones/v1\""));
     assert!(xml.contains("<f n=\"func_one\""));
     assert!(xml.contains("<group type=\"2\""));
@@ -76,4 +77,58 @@ fn test_clone_type3_gapped_detection() {
     let g = t3.unwrap();
     assert_eq!(g.members.len(), 2);
     assert!(g.similarity >= 0.80 && g.similarity < 1.0);
+}
+
+#[test]
+fn clone_report_honors_limit_and_offset() {
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let sum = |name: &str| {
+        format!(
+            "fn {name}(a: i32, b: i32) -> i32 {{\n    let sum = a + b;\n    let prod = a * b;\n    return sum + prod + 100;\n}}\n"
+        )
+    };
+    let sign = |name: &str| {
+        format!(
+            "fn {name}(v: i32) -> i32 {{\n    if v > 0 {{\n        return v * 2;\n    }}\n    return v - 1;\n}}\n"
+        )
+    };
+    let bodies = [sum("one"), sum("two"), sign("pos"), sign("neg")];
+    let paths = ["src/a.rs", "src/b.rs", "src/c.rs", "src/d.rs"];
+    let files: Vec<_> = paths
+        .iter()
+        .zip(&bodies)
+        .map(|(p, b)| (*p, Lang::Rust, b.as_bytes()))
+        .collect();
+    let sources: HashMap<String, Vec<u8>> = paths
+        .iter()
+        .zip(&bodies)
+        .map(|(p, b)| ((*p).into(), b.as_bytes().to_vec()))
+        .collect();
+    let ingest = ingest_in_memory_files(&files, &registry, &interner);
+    let clones = find_clones(&ingest, &interner, 10, Some(&sources));
+    assert_eq!(clones.len(), 2);
+    let report = |limit, offset| {
+        let xml = render_clones_xml(&clones, &ingest, &interner, PageRequest { limit, offset });
+        let doc = roxmltree::Document::parse(&xml).unwrap();
+        let root = doc.root_element();
+        let groups = doc
+            .descendants()
+            .filter(|n| n.has_tag_name("group"))
+            .count();
+        (
+            groups,
+            root.attribute("shown").map(str::to_string),
+            root.attribute("has_more").map(str::to_string),
+        )
+    };
+    assert_eq!(report(None, None).0, 2);
+    assert_eq!(
+        report(Some(1), None),
+        (1, Some("1".into()), Some("1".into()))
+    );
+    assert_eq!(
+        report(Some(1), Some(1)),
+        (1, Some("1".into()), Some("0".into()))
+    );
 }

@@ -35,6 +35,21 @@ pub trait Command: Sync {
     fn tools(&self) -> &'static [&'static CommandDescriptor] {
         &[]
     }
+
+    /// Reject invalid flag combinations before any command runs.
+    fn validate(&self, _cli: &Cli) -> std::io::Result<()> {
+        Ok(())
+    }
+
+    /// Whether this command asks for a fresh clone of a remote checkout (`--refetch`).
+    fn refreshes_remote_checkout(&self, _cli: &Cli) -> bool {
+        false
+    }
+
+    /// The default output, when no plugin claimed the command line; `None` when not the default.
+    fn run_default(&self, _cli: &Cli, _root: &str) -> Option<std::io::Result<()>> {
+        None
+    }
 }
 
 pub mod context;
@@ -57,6 +72,7 @@ register_commands! {
     workspace::WORKSPACE,
     detail::DETAIL,
     safety::SAFETY,
+    map::MAP,
     architecture::ARCHITECTURE,
     metrics::METRICS,
     gate::GATE,
@@ -96,9 +112,39 @@ pub fn decode_subcommand<A: clap::FromArgMatches>(
     A::from_arg_matches(matches).map_err(std::io::Error::other)
 }
 
-/// Every plugin's MCP tools.
-pub fn tools() -> impl Iterator<Item = &'static CommandDescriptor> {
+/// Every plugin's MCP tools, sorted by name.
+pub fn tools() -> &'static [&'static CommandDescriptor] {
+    static TOOLS: std::sync::LazyLock<Vec<&'static CommandDescriptor>> =
+        std::sync::LazyLock::new(|| {
+            let mut all: Vec<_> = REGISTRY
+                .iter()
+                .flat_map(|command| command.tools().iter().copied())
+                .collect();
+            all.sort_by_key(|command| command.name);
+            all
+        });
+    &TOOLS
+}
+
+/// Reject invalid flag combinations from every plugin.
+pub fn validate_all(cli: &Cli) -> std::io::Result<()> {
     REGISTRY
         .iter()
-        .flat_map(|command| command.tools().iter().copied())
+        .try_for_each(|command| command.validate(cli))
+}
+
+/// Whether any plugin asks for a fresh clone of a remote checkout.
+#[must_use]
+pub fn refreshes_remote_checkout(cli: &Cli) -> bool {
+    REGISTRY
+        .iter()
+        .any(|command| command.refreshes_remote_checkout(cli))
+}
+
+/// Run the default output, unless a plugin claims the command line first.
+pub fn run_default(cli: &Cli, root: &str) -> std::io::Result<()> {
+    REGISTRY
+        .iter()
+        .find_map(|command| command.run_default(cli, root))
+        .unwrap_or(Ok(()))
 }
