@@ -1,7 +1,25 @@
-use crate::domain::{IngestResult, Interner};
+use crate::domain::{IngestResult, Interner, NodeId, Symbol};
+use crate::git::history::{
+    CommitInfo, DEFAULT_CHURN_MONTHS, FileChurn, MERGE_BOMB_MAX_FILES, civil_from_days,
+    compute_file_churn, compute_git_at_stamp, resolve_cutoff_timestamp,
+    walk_repository_history_scoped,
+};
 use crate::graph::Graph;
-use crate::serialize::{PageRequest, PageWindow, row_bytes};
+use crate::metrics::lint_naming::{is_short_name, is_wordy_name, words};
+use crate::serialize::{PageRequest, PageWindow, XmlEscapeExt, row_bytes};
+use std::collections::HashMap;
 use std::io::{self, Write};
+
+/// Commits touching one file inside the churn window at which the historical family fires.
+pub const HISTORY_CUT: u32 = 14;
+const SECS_PER_DAY: i64 = 86_400;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FamilyEvidence {
+    pub family: &'static str,
+    /// Pre-rendered measured values, each attribute prefixed with a space.
+    pub attrs: String,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct QualityPanelRow {
@@ -11,6 +29,7 @@ pub struct QualityPanelRow {
     pub fam: usize,
     pub of: usize,
     pub fired: String,
+    pub evidence: Vec<FamilyEvidence>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -30,87 +49,272 @@ pub struct QualityPanelReport {
     pub cells: usize,
     pub tested_scope: usize,
     pub deep_untested: usize,
+    pub enabled: Vec<&'static str>,
+    pub unavailable: Vec<(&'static str, String)>,
+    pub history: Result<PanelHistory, String>,
     pub rows: Vec<QualityPanelRow>,
     pub page: PageRequest,
 }
+
+/// Per-file git churn backing the historical family, over the window that was walked.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PanelHistory {
+    /// Short HEAD stamp (`sha[+dirty]`) the churn was read at.
+    pub at: String,
+    /// Window start (epoch seconds); commits older than this are excluded.
+    pub since: i64,
+    /// Churn indexed by ingest file id.
+    churn: Vec<Option<FileChurn>>,
+}
+
+impl PanelHistory {
+    /// Builds churn from commits, keeping only those at or after `since`.
+    #[must_use]
+    pub fn from_commits(
+        ingest: &IngestResult,
+        interner: &Interner,
+        commits: &[CommitInfo],
+        at: String,
+        since: i64,
+    ) -> Self {
+        let window: Vec<&CommitInfo> = commits.iter().filter(|c| c.timestamp >= since).collect();
+        let head = window.first().map_or(0, |c| c.timestamp);
+        let by_path = compute_file_churn(window, head, MERGE_BOMB_MAX_FILES);
+        let churn = ingest
+            .files
+            .iter()
+            .map(|f| by_path.get(interner.resolve(&f.path)).cloned())
+            .collect();
+        Self { at, since, churn }
+    }
+
+    /// Walks the default churn window ending at HEAD of `root`.
+    /// `Err` names why git history cannot back the historical family.
+    pub fn load(root: &str, ingest: &IngestResult, interner: &Interner) -> Result<Self, String> {
+        let repo = crate::git::repo::discover(root).ok_or("not a git repository")?;
+        if repo.git_dir().join("shallow").exists() {
+            return Err("shallow clone: history is truncated".to_string());
+        }
+        let since = resolve_cutoff_timestamp(None, DEFAULT_CHURN_MONTHS).unwrap_or(0);
+        let commits =
+            walk_repository_history_scoped(root, Some(since)).map_err(|e| e.to_string())?;
+        let at = compute_git_at_stamp(root).ok_or("HEAD has no commit stamp")?;
+        Ok(Self::from_commits(ingest, interner, &commits, at, since))
+    }
+}
+
+pub(crate) fn iso_date(epoch: i64) -> String {
+    let (y, m, d) = civil_from_days(epoch.div_euclid(SECS_PER_DAY));
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Window and HEAD-stamp root attributes; empty when history is unavailable. `window=12mo@DATE`
+/// names the churn window's start date.
+pub(crate) fn history_root_attrs(history: &Result<PanelHistory, String>) -> String {
+    history.as_ref().ok().map_or_else(String::new, |h| {
+        format!(
+            " window=\"12mo@{}\" at=\"{}\"",
+            iso_date(h.since),
+            h.at.as_str().xml_escaped()
+        )
+    })
+}
+
 pub struct QualityFamilyContext<'a> {
     pub graph: &'a Graph,
-    pub state_syms: Option<&'a std::collections::HashSet<crate::domain::NodeId>>,
+    pub interner: &'a Interner,
+    pub state_syms: Option<&'a HashMap<NodeId, StateAccess>>,
+    pub history: Option<&'a PanelHistory>,
+}
+
+impl QualityFamilyContext<'_> {
+    fn file_churn(&self, sym: &Symbol) -> Option<&FileChurn> {
+        self.history
+            .and_then(|h| h.churn.get(sym.file_id as usize))
+            .and_then(Option::as_ref)
+    }
+}
+
+/// Reads and writes of nonlocal state cells made by one function.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct StateAccess {
+    pub reads: usize,
+    pub writes: usize,
 }
 
 /// Trait encapsulating an orthogonal symbol quality evidence family.
 pub trait QualityEvidenceFamily: Sync {
     fn name(&self) -> &'static str;
-    fn fires(&self, sym: &crate::domain::Symbol, ctx: &QualityFamilyContext<'_>) -> bool;
+    /// Whether the family is meaningful for this symbol's language.
+    fn applies(&self, sym: &Symbol) -> bool;
+    fn fires(&self, sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> bool;
+    fn evidence(&self, sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> String;
 }
 
 pub struct QualityFamilySpec {
     pub name: &'static str,
-    pub predicate: fn(&crate::domain::Symbol, &QualityFamilyContext<'_>) -> bool,
+    pub c_only: bool,
+    pub predicate: fn(&Symbol, &QualityFamilyContext<'_>) -> bool,
+    pub measure: fn(&Symbol, &QualityFamilyContext<'_>) -> String,
 }
 
 impl QualityEvidenceFamily for QualityFamilySpec {
     fn name(&self) -> &'static str {
         self.name
     }
-    fn fires(&self, sym: &crate::domain::Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
+    fn applies(&self, sym: &Symbol) -> bool {
+        !self.c_only || sym.lang.semantics().supports_c_layout()
+    }
+    fn fires(&self, sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
         (self.predicate)(sym, ctx)
+    }
+    fn evidence(&self, sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> String {
+        (self.measure)(sym, ctx)
     }
 }
 
-fn is_structural_base(sym: &crate::domain::Symbol) -> bool {
+fn is_structural_base(sym: &Symbol) -> bool {
     sym.ccx > 15 || sym.loc > 60 || sym.max_nest > 4
+}
+
+fn structural_measure(sym: &Symbol, _: &QualityFamilyContext<'_>) -> String {
+    format!(
+        " ccx=\"{}\" loc=\"{}\" nest=\"{}\" params=\"{}\"",
+        sym.ccx, sym.loc, sym.max_nest, sym.params
+    )
+}
+
+fn lexical_fires(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
+    let name = ctx.interner.resolve(&sym.name);
+    is_short_name(name) || is_wordy_name(name)
+}
+
+fn lexical_measure(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> String {
+    let name = ctx.interner.resolve(&sym.name);
+    format!(
+        " name_len=\"{}\" name_words=\"{}\"",
+        name.chars().count(),
+        words(name).len()
+    )
+}
+
+const LEXICAL_FAMILY: QualityFamilySpec = QualityFamilySpec {
+    name: "lexical",
+    c_only: false,
+    predicate: lexical_fires,
+    measure: lexical_measure,
+};
+
+fn confusion_fires(sym: &Symbol, _: &QualityFamilyContext<'_>) -> bool {
+    sym.lang.semantics().supports_c_layout()
+        && (sym.humps > 2 || (sym.max_nest >= 4 && sym.cx >= 12) || sym.ccx > 20)
+}
+
+fn confusion_measure(sym: &Symbol, _: &QualityFamilyContext<'_>) -> String {
+    format!(
+        " humps=\"{}\" nest=\"{}\" cx=\"{}\" ccx=\"{}\"",
+        sym.humps, sym.max_nest, sym.cx, sym.ccx
+    )
+}
+
+const CONFUSION_FAMILY: QualityFamilySpec = QualityFamilySpec {
+    name: "confusion",
+    c_only: true,
+    predicate: confusion_fires,
+    measure: confusion_measure,
+};
+
+fn historical_fires(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> bool {
+    ctx.file_churn(sym)
+        .is_some_and(|c| c.commits >= HISTORY_CUT)
+}
+
+fn historical_measure(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> String {
+    let since = ctx.history.map_or_else(String::new, |h| iso_date(h.since));
+    ctx.file_churn(sym).map_or_else(
+        || " commits=\"0\"".to_string(),
+        |c| {
+            let last = iso_date(c.last_commit_epoch);
+            format!(
+                " commits=\"{}\" last=\"{last}\" window_since=\"{since}\"",
+                c.commits
+            )
+        },
+    )
 }
 
 const HISTORICAL_FAMILY: QualityFamilySpec = QualityFamilySpec {
     name: "historical",
-    predicate: |sym, _| sym.cx > 10 && sym.loc > 40,
+    c_only: false,
+    predicate: historical_fires,
+    measure: historical_measure,
 };
 
-const CONFUSION_FAMILY: QualityFamilySpec = QualityFamilySpec {
-    name: "confusion",
-    predicate: |sym, _| {
-        sym.lang.semantics().supports_c_layout()
-            && (sym.humps > 2 || (sym.max_nest >= 4 && sym.cx >= 12) || sym.ccx > 20)
-    },
+fn colocation_measure(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> String {
+    format!(" out=\"{}\"", ctx.graph.out_degree(sym.id))
+}
+
+const COLOCATION_FAMILY: QualityFamilySpec = QualityFamilySpec {
+    name: "colocation",
+    c_only: false,
+    predicate: |sym, ctx| ctx.graph.out_degree(sym.id) >= 10,
+    measure: colocation_measure,
+};
+
+fn state_access(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> StateAccess {
+    ctx.state_syms
+        .and_then(|m| m.get(&sym.id))
+        .copied()
+        .unwrap_or_default()
+}
+
+fn state_measure(sym: &Symbol, ctx: &QualityFamilyContext<'_>) -> String {
+    let a = state_access(sym, ctx);
+    format!(" reads=\"{}\" writes=\"{}\"", a.reads, a.writes)
+}
+
+const STATE_FAMILY: QualityFamilySpec = QualityFamilySpec {
+    name: "state",
+    c_only: false,
+    predicate: |sym, ctx| ctx.state_syms.is_some_and(|m| m.contains_key(&sym.id)),
+    measure: state_measure,
 };
 
 pub static PANEL_FAMILIES: &[&dyn QualityEvidenceFamily] = &[
     &QualityFamilySpec {
         name: "structural",
+        c_only: false,
         predicate: |sym, _| is_structural_base(sym) || sym.params > 5,
+        measure: structural_measure,
     },
-    &QualityFamilySpec {
-        name: "state",
-        predicate: |sym, ctx| ctx.state_syms.is_some_and(|s| s.contains(&sym.id)),
-    },
-    &QualityFamilySpec {
-        name: "colocation",
-        predicate: |sym, ctx| ctx.graph.out_degree(sym.id) >= 10,
-    },
-    &HISTORICAL_FAMILY,
+    &LEXICAL_FAMILY,
     &CONFUSION_FAMILY,
+    &HISTORICAL_FAMILY,
+    &COLOCATION_FAMILY,
+    &STATE_FAMILY,
 ];
 
 pub static ENSEMBLE_FAMILIES: &[&dyn QualityEvidenceFamily] = &[
     &QualityFamilySpec {
         name: "structural",
+        c_only: false,
         predicate: |sym, _| is_structural_base(sym),
+        measure: structural_measure,
     },
     &QualityFamilySpec {
         name: "colocation",
+        c_only: false,
         predicate: |sym, ctx| ctx.graph.out_degree(sym.id) >= 8,
+        measure: colocation_measure,
     },
     &HISTORICAL_FAMILY,
-    &QualityFamilySpec {
-        name: "lexical",
-        predicate: |sym, _| sym.params > 4,
-    },
+    &LEXICAL_FAMILY,
     &CONFUSION_FAMILY,
 ];
+
 #[must_use]
 pub fn evaluate_quality_families(
-    sym: &crate::domain::Symbol,
+    sym: &Symbol,
     ctx: &QualityFamilyContext<'_>,
     families: &[&dyn QualityEvidenceFamily],
 ) -> Vec<&'static str> {
@@ -121,51 +325,126 @@ pub fn evaluate_quality_families(
         .collect()
 }
 
-fn check_symbol_families(
-    sym: &crate::domain::Symbol,
-    graph: &Graph,
-    state_syms: &std::collections::HashSet<crate::domain::NodeId>,
-) -> (usize, Vec<&'static str>) {
-    let ctx = QualityFamilyContext {
-        graph,
-        state_syms: Some(state_syms),
-    };
-    let fired = evaluate_quality_families(sym, &ctx, PANEL_FAMILIES);
-    (fired.len(), fired)
+/// Families whose analysis is unavailable for this invocation, with the reason.
+pub(crate) fn unavailable_families(
+    cfiles: usize,
+    history: &Result<PanelHistory, String>,
+) -> Vec<(&'static str, String)> {
+    let mut out = Vec::new();
+    if cfiles == 0 {
+        out.push(("confusion", "confusion: C/C++ only".to_string()));
+    }
+    if let Err(why) = history {
+        out.push(("historical", format!("historical: {why}")));
+    }
+    out
+}
+
+/// Families from `all` that are evaluated for this invocation.
+pub(crate) fn enabled_families(
+    all: &[&'static dyn QualityEvidenceFamily],
+    unavailable: &[(&'static str, String)],
+) -> Vec<&'static dyn QualityEvidenceFamily> {
+    all.iter()
+        .copied()
+        .filter(|f| !unavailable.iter().any(|(name, _)| *name == f.name()))
+        .collect()
+}
+
+/// Root `families`/`enabled`/`unavailable` attributes; `total` is the number of families defined.
+pub(crate) fn family_attrs(
+    total: usize,
+    enabled: &[&str],
+    unavailable: &[(&str, String)],
+) -> String {
+    let mut out = format!(
+        " families=\"{total}\" enabled=\"{}\" enabled_n=\"{}\"",
+        enabled.join(","),
+        enabled.len()
+    );
+    if !unavailable.is_empty() {
+        let names: Vec<&str> = unavailable.iter().map(|(n, _)| *n).collect();
+        let why: Vec<&str> = unavailable.iter().map(|(_, w)| w.as_str()).collect();
+        out.push_str(&format!(
+            " unavailable=\"{}\" unavailable_why=\"{}\"",
+            names.join(","),
+            why.join("; ").as_str().xml_escaped()
+        ));
+    }
+    out
 }
 
 fn collect_nonlocal_state_info(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
-) -> (
-    std::collections::HashSet<crate::domain::NodeId>,
-    usize,
-    usize,
-) {
+) -> (HashMap<NodeId, StateAccess>, usize, usize) {
     use crate::domain::CorpusView;
     let view = (ingest, interner);
     let nonlocal = crate::metrics::nonlocal::find_nonlocal_state(ingest, graph, interner);
     let cells = nonlocal.len();
     let mut state_files = std::collections::HashSet::new();
-    let mut state_syms = std::collections::HashSet::new();
+    let mut state_syms: HashMap<NodeId, StateAccess> = HashMap::new();
     for f in &nonlocal {
         state_files.insert(f.path.as_str());
         if let Some(s) = view.find_symbol_with_hint(&f.sym_name, Some(&f.path)) {
-            state_syms.insert(s.id);
+            let acc = state_syms.entry(s.id).or_default();
+            acc.reads += f.reads;
+            acc.writes += f.writes;
         }
     }
     (state_syms, state_files.len(), cells)
+}
+
+/// Inputs beyond the analysis graph: the preset and the git history behind the historical family.
+pub struct PanelInputs<'a> {
+    pub preset: Option<&'a str>,
+    pub history: Result<PanelHistory, String>,
+}
+
+fn panel_row(
+    sym: &Symbol,
+    ingest: &IngestResult,
+    interner: &Interner,
+    enabled: &[&'static dyn QualityEvidenceFamily],
+    ctx: &QualityFamilyContext<'_>,
+    fired: &[&'static str],
+) -> QualityPanelRow {
+    let path = ingest
+        .files
+        .get(sym.file_id as usize)
+        .map(|f| interner.resolve(&f.path))
+        .unwrap_or("");
+    let applicable: Vec<&dyn QualityEvidenceFamily> =
+        enabled.iter().copied().filter(|f| f.applies(sym)).collect();
+    let evidence = applicable
+        .iter()
+        .filter(|f| fired.contains(&f.name()))
+        .map(|f| FamilyEvidence {
+            family: f.name(),
+            attrs: f.evidence(sym, ctx),
+        })
+        .collect();
+    QualityPanelRow {
+        path: path.to_string(),
+        line: sym.line,
+        name: interner.resolve(&sym.name).to_string(),
+        fam: fired.len(),
+        of: applicable.len(),
+        fired: fired.join(","),
+        evidence,
+    }
 }
 
 pub fn compute_quality_panel_report(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
-    preset_opt: Option<&str>,
+    inputs: PanelInputs<'_>,
     page: PageRequest,
 ) -> QualityPanelReport {
-    let preset = preset_opt.unwrap_or("default");
+    let preset = inputs.preset.unwrap_or("default");
+    let history = inputs.history;
     let cut = usize::from(preset != "lenient") + 1;
     let (state_syms, sfiles, cells) = collect_nonlocal_state_info(ingest, graph, interner);
     let sscope = state_syms.len();
@@ -175,6 +454,15 @@ pub fn compute_quality_panel_report(
         .iter()
         .filter(|f| f.lang.semantics().supports_c_layout())
         .count();
+    let unavailable = unavailable_families(cfiles, &history);
+    let enabled = enabled_families(PANEL_FAMILIES, &unavailable);
+    let enabled_names: Vec<&'static str> = enabled.iter().map(|f| f.name()).collect();
+    let ctx = QualityFamilyContext {
+        graph,
+        interner,
+        state_syms: Some(&state_syms),
+        history: history.as_ref().ok(),
+    };
     let mut cscope = 0usize;
     let mut cranked = 0usize;
     let mut hranked = 0usize;
@@ -195,30 +483,17 @@ pub fn compute_quality_panel_report(
         let is_tested = tested_mask.get(sym.id as usize).copied().unwrap_or(false);
         tested_scope += usize::from(is_tested);
         deep_untested += usize::from(!is_tested && sym.ccx > 15);
-        let is_c = sym.lang.semantics().supports_c_layout();
-        cscope += usize::from(is_c);
-        let (fam_count, fired) = check_symbol_families(sym, graph, &state_syms);
+        cscope += usize::from(sym.lang.semantics().supports_c_layout());
+        let fired = evaluate_quality_families(sym, &ctx, &enabled);
         cranked += usize::from(fired.contains(&"confusion"));
         hranked += usize::from(fired.contains(&"historical"));
+        let fam_count = fired.len();
         if fam_count == 0 {
             no_family += 1;
         } else if fam_count < cut {
             below_cut += 1;
         } else {
-            let path = ingest
-                .files
-                .get(sym.file_id as usize)
-                .map(|f| interner.resolve(&f.path))
-                .unwrap_or("");
-            let name = interner.resolve(&sym.name);
-            rows.push(QualityPanelRow {
-                path: path.to_string(),
-                line: sym.line,
-                name: name.to_string(),
-                fam: fam_count,
-                of: 5 + usize::from(is_c),
-                fired: fired.join(","),
-            });
+            rows.push(panel_row(sym, ingest, interner, &enabled, &ctx, &fired));
         }
     }
 
@@ -241,6 +516,9 @@ pub fn compute_quality_panel_report(
         cells,
         tested_scope,
         deep_untested,
+        enabled: enabled_names,
+        unavailable,
+        history,
         rows,
         page,
     }
@@ -270,14 +548,18 @@ fn write_quality_row<W: Write + ?Sized>(
     use crate::serialize::XmlEscapeExt;
     writeln!(
         w,
-        "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"{}\" fired=\"{}\"{unavail_row_attr}/>",
+        "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"{}\" fired=\"{}\"{unavail_row_attr}>",
         r.path.xml_escaped(),
         r.line,
         r.name.xml_escaped(),
         r.fam,
         r.of,
         r.fired
-    )
+    )?;
+    r.evidence
+        .iter()
+        .try_for_each(|e| writeln!(w, "    <e f=\"{}\"{}/>", e.family, e.attrs))?;
+    writeln!(w, "  </s>")
 }
 
 impl crate::serialize::XmlReport for QualityPanelReport {
@@ -290,14 +572,12 @@ impl crate::serialize::XmlReport for QualityPanelReport {
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let pw = self.window();
         let ccut = if self.cfiles > 0 { 40 } else { 0 };
-        let unavail_attrs = if self.cfiles == 0 {
-            " unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\""
-        } else {
-            ""
-        };
+        let history_attrs = history_root_attrs(&self.history);
+        let family = family_attrs(PANEL_FAMILIES.len(), &self.enabled, &self.unavailable);
         write!(
             w,
-            " preset=\"{}\" families=\"6\" enabled=\"structural,lexical,confusion,historical,colocation,state\" enabled_n=\"6\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\"{unavail_attrs} bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"{}\" sscope=\"{}\" cells=\"{}\" tested_scope=\"{}\" deep_untested=\"{}\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\" at=\"HEAD\"",
+            "{} preset=\"{}\" cut=\"{}\" cut_reachable=\"1\" eligible=\"{}\" ranked=\"{}\" below_cut=\"{}\" no_family=\"{}\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"{HISTORY_CUT}\" hranked=\"{}\"{history_attrs} cfiles=\"{}\" cscope=\"{}\" cranked=\"{}\" ccut=\"{ccut}\" lscope=\"{}\" sfiles=\"{}\" sscope=\"{}\" cells=\"{}\" tested_scope=\"{}\" deep_untested=\"{}\" shown=\"{}\" capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
+            family,
             self.preset,
             self.cut,
             self.eligible,

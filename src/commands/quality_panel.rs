@@ -21,12 +21,15 @@ pub fn render<W: Write>(
     args: &QualityPanelArgs,
     out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
-    let preset = args.quality_panel.as_ref().and_then(|p| p.as_deref());
+    let inputs = crate::metrics::PanelInputs {
+        preset: args.quality_panel.as_ref().and_then(|p| p.as_deref()),
+        history: crate::metrics::PanelHistory::load(ctx.root, ctx.ingest, ctx.interner),
+    };
     let rep = crate::metrics::compute_quality_panel_report(
         ctx.ingest,
         ctx.graph,
         ctx.interner,
-        preset,
+        inputs,
         ctx.cli.page_request(),
     );
     ctx.write_report(&rep, out)?;

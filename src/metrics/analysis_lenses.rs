@@ -212,6 +212,7 @@ pub struct EnsembleRow {
     pub line: u32,
     pub name: String,
     pub fam: usize,
+    pub of: usize,
     pub fired: String,
 }
 
@@ -223,33 +224,38 @@ pub struct EnsembleReport {
     pub cfiles: usize,
     pub cscope: usize,
     pub hranked: usize,
+    pub enabled: Vec<&'static str>,
+    pub unavailable: Vec<(&'static str, String)>,
+    pub history: Result<crate::metrics::quality_panel::PanelHistory, String>,
     pub rows: Vec<EnsembleRow>,
     pub page: PageRequest,
-}
-
-fn evaluate_symbol_ensemble(sym: &crate::domain::Symbol, graph: &Graph) -> Vec<&'static str> {
-    let ctx = crate::metrics::quality_panel::QualityFamilyContext {
-        graph,
-        state_syms: None,
-    };
-    crate::metrics::quality_panel::evaluate_quality_families(
-        sym,
-        &ctx,
-        crate::metrics::quality_panel::ENSEMBLE_FAMILIES,
-    )
 }
 
 pub fn compute_ensemble(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
+    history: Result<crate::metrics::quality_panel::PanelHistory, String>,
     page: PageRequest,
 ) -> EnsembleReport {
+    use crate::metrics::quality_panel::{
+        ENSEMBLE_FAMILIES, QualityFamilyContext, enabled_families, evaluate_quality_families,
+        unavailable_families,
+    };
     let cfiles = ingest
         .files
         .iter()
         .filter(|f| f.lang.semantics().supports_c_layout())
         .count();
+    let unavailable = unavailable_families(cfiles, &history);
+    let enabled = enabled_families(ENSEMBLE_FAMILIES, &unavailable);
+    let enabled_names: Vec<&'static str> = enabled.iter().map(|f| f.name()).collect();
+    let ctx = QualityFamilyContext {
+        graph,
+        interner,
+        state_syms: None,
+        history: history.as_ref().ok(),
+    };
     let mut cscope = 0usize;
     let mut hranked = 0usize;
     let mut rows = Vec::new();
@@ -262,7 +268,7 @@ pub fn compute_ensemble(
         }
         eligible += 1;
         cscope += usize::from(sym.lang.semantics().supports_c_layout());
-        let fired = evaluate_symbol_ensemble(sym, graph);
+        let fired = evaluate_quality_families(sym, &ctx, &enabled);
         hranked += usize::from(fired.contains(&"historical"));
         if fired.is_empty() {
             no_family += 1;
@@ -278,6 +284,7 @@ pub fn compute_ensemble(
                 line: sym.line,
                 name: name.to_string(),
                 fam: fired.len(),
+                of: enabled.iter().filter(|f| f.applies(sym)).count(),
                 fired: fired.join(","),
             });
         }
@@ -293,6 +300,9 @@ pub fn compute_ensemble(
         cfiles,
         cscope,
         hranked,
+        enabled: enabled_names,
+        unavailable,
+        history,
         rows,
         page,
     }
@@ -311,11 +321,12 @@ impl EnsembleReport {
 fn write_ensemble_sym_row<W: Write + ?Sized>(r: &EnsembleRow, w: &mut W) -> io::Result<()> {
     writeln!(
         w,
-        "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"3\" fired=\"{}\" unavail=\"confusion\"/>",
+        "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"{}\" fired=\"{}\"/>",
         r.path.xml_escaped(),
         r.line,
         r.name.xml_escaped(),
         r.fam,
+        r.of,
         r.fired
     )
 }
@@ -341,15 +352,20 @@ impl crate::serialize::XmlReport for EnsembleReport {
         comment: "ripwire-rs ensemble schema=ripwire-rs.ensemble/v1: four orthogonal evidence families joined."
     );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        use crate::metrics::quality_panel::{ENSEMBLE_FAMILIES, family_attrs, history_root_attrs};
         let pw = self.window();
         let f_shown = pw.shown;
+        let history_attrs = history_root_attrs(&self.history);
+        let family = family_attrs(ENSEMBLE_FAMILIES.len(), &self.enabled, &self.unavailable);
         write!(
             w,
-            " families=\"4\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\" at=\"HEAD\"",
+            "{} eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"{}\" hranked=\"{}\"{history_attrs} cfiles=\"{}\" cscope=\"{}\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
+            family,
             self.eligible,
             self.ranked,
             self.no_family,
             self.eligible,
+            crate::metrics::quality_panel::HISTORY_CUT,
             self.hranked,
             self.cfiles,
             self.cscope,

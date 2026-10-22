@@ -26,7 +26,9 @@ pub use layout::{
     FieldLayout, StructLayoutDef, StructLayoutReport, compute_layout_report,
     serialize_field_affinity_xml,
 };
-pub use quality_panel::{QualityPanelReport, QualityPanelRow, compute_quality_panel_report};
+pub use quality_panel::{
+    PanelHistory, PanelInputs, QualityPanelReport, QualityPanelRow, compute_quality_panel_report,
+};
 
 pub use complexity::{
     ComplexityMetrics, NESTING_BAR, compute_complexity, compute_complexity_from_node,
