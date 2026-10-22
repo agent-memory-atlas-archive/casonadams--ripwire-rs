@@ -217,8 +217,8 @@ impl LanguageSemantics for CppLanguage {
         DialectGroup::CFamily
     }
 
-    fn supports_c_layout(&self) -> bool {
-        true
+    fn layout_model(&self) -> Option<fn(&str) -> Vec<crate::metrics::FieldLayout>> {
+        Some(super::c::layout::parse_struct_fields)
     }
 
     fn refine_dialect(

@@ -144,8 +144,8 @@ impl LanguageSemantics for ObjCLanguage {
         DialectGroup::CFamily
     }
 
-    fn supports_c_layout(&self) -> bool {
-        true
+    fn layout_model(&self) -> Option<fn(&str) -> Vec<crate::metrics::FieldLayout>> {
+        Some(super::c::layout::parse_struct_fields)
     }
 
     fn is_builtin_keyword(&self, name: &str) -> bool {

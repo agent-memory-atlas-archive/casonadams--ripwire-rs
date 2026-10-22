@@ -249,9 +249,14 @@ pub trait LanguageSemantics: Sync {
         Vec::new()
     }
 
-    /// True if `--layout` C-family byte-layout modeling is supported.
+    /// Parser of this language's aggregate bodies into sized, offset fields for `--layout`; `None` where unmodelled.
+    fn layout_model(&self) -> Option<fn(&str) -> Vec<crate::metrics::FieldLayout>> {
+        None
+    }
+
+    /// True if `--layout` byte-layout modeling is supported.
     fn supports_c_layout(&self) -> bool {
-        false
+        self.layout_model().is_some()
     }
 
     /// True if `--slice` intra-procedural def-use slicing is supported.

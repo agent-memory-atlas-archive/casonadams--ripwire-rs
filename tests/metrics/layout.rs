@@ -1,5 +1,5 @@
 use ripwire_rs::ToXmlString;
-use ripwire_rs::metrics::layout::parse_struct_fields;
+use ripwire_rs::languages::c::layout::parse_struct_fields;
 use ripwire_rs::metrics::{
     FieldLayout, StructLayoutDef, StructLayoutReport, serialize_field_affinity_xml,
 };

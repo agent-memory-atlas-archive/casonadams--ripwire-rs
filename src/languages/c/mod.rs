@@ -1,3 +1,4 @@
+pub mod layout;
 pub mod flags;
 pub(crate) mod lint;
 
@@ -642,8 +643,8 @@ impl LanguageSemantics for CLanguage {
         DialectGroup::CFamily
     }
 
-    fn supports_c_layout(&self) -> bool {
-        true
+    fn layout_model(&self) -> Option<fn(&str) -> Vec<crate::metrics::FieldLayout>> {
+        Some(layout::parse_struct_fields)
     }
 
     fn refine_dialect(
