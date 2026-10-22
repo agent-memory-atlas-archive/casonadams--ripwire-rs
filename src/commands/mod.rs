@@ -190,23 +190,35 @@ pub fn augment(cmd: clap::Command) -> clap::Command {
     })
 }
 
+/// Every registered command plugin, in dispatch order.
+#[must_use]
+pub fn commands() -> &'static [&'static dyn Command] {
+    REGISTRY
+}
+
 /// Run the first plugin whose flags are present; warn when a shared option it does not honor was passed.
 pub fn run(cli: &Cli, root: &str) -> Option<std::io::Result<()>> {
     REGISTRY.iter().find_map(|command| {
         let result = command.run(cli, root)?;
-        warn_unhonored_options(cli, *command);
+        if let Some(warning) = unhonored_option_warning(cli, *command) {
+            eprintln!("{warning}");
+        }
         Some(result)
     })
 }
 
-fn warn_unhonored_options(cli: &Cli, command: &dyn Command) {
+/// The warning for a shared option the command line carries but `command` does not declare.
+#[must_use]
+pub fn unhonored_option_warning(cli: &Cli, command: &dyn Command) -> Option<String> {
     let paged = cli.modifiers.limit.is_some() || cli.modifiers.offset.is_some();
-    if paged && !command.name().is_empty() && !command.options().contains(&SharedOption::Paged) {
-        eprintln!(
-            "ripwire-rs: --limit/--offset are not honored by --{}",
-            command.name()
-        );
-    }
+    (paged && !command.name().is_empty() && !command.options().contains(&SharedOption::Paged)).then(
+        || {
+            format!(
+                "ripwire-rs: --limit/--offset are not honored by --{}",
+                command.name()
+            )
+        },
+    )
 }
 
 /// Run the plugin subcommand the command line selected, if a plugin owns it.

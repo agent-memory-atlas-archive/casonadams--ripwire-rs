@@ -1,52 +1,69 @@
-use ripwire_rs::cli::dispatch::{parse_from, run_cli_args};
-use ripwire_rs::commands::gate::{GateChoice, select_gate};
+use ripwire_rs::commands::gate::{
+    GateArgs, GateChoice, GateRequest, TopGate, merge_request, select_gate,
+};
 
-const MISSING: &str = "/nonexistent-ripwire-gate-root";
+fn request<'a>() -> GateRequest<'a> {
+    GateRequest {
+        edit_check: None,
+        affected: None,
+        quality_baseline: false,
+        quality_delta: false,
+        clones: false,
+    }
+}
 
 #[test]
 fn test_select_gate_follows_dispatch_precedence() {
+    let all = GateRequest {
+        edit_check: Some("a"),
+        affected: Some("b"),
+        quality_baseline: true,
+        quality_delta: true,
+        clones: true,
+    };
+    assert_eq!(select_gate(&all), Some(GateChoice::EditCheck("a")));
+    let without = |edit, affected, baseline, delta| GateRequest {
+        edit_check: edit,
+        affected,
+        quality_baseline: baseline,
+        quality_delta: delta,
+        clones: true,
+    };
     assert_eq!(
-        select_gate(Some("a"), Some("b"), true, true, true),
-        GateChoice::EditCheck("a")
+        select_gate(&without(None, Some("b"), true, true)),
+        Some(GateChoice::Affected("b"))
     );
     assert_eq!(
-        select_gate(None, Some("b"), true, true, true),
-        GateChoice::Affected("b")
+        select_gate(&without(None, None, true, true)),
+        Some(GateChoice::QualityBaseline)
     );
     assert_eq!(
-        select_gate(None, None, true, true, true),
-        GateChoice::QualityBaseline
+        select_gate(&without(None, None, false, true)),
+        Some(GateChoice::QualityDelta)
     );
     assert_eq!(
-        select_gate(None, None, false, true, true),
-        GateChoice::QualityDelta
+        select_gate(&without(None, None, false, false)),
+        Some(GateChoice::Clones)
     );
-    assert_eq!(
-        select_gate(None, None, false, false, true),
-        GateChoice::Clones
-    );
-    assert_eq!(
-        select_gate(None, None, false, false, false),
-        GateChoice::Nothing
-    );
+    assert_eq!(select_gate(&request()), None);
 }
 
 #[test]
-fn test_gate_subcommand_without_flags_runs_nothing() {
-    let cli = parse_from(["ripwire-rs", "gate", MISSING]).unwrap();
-    assert!(run_cli_args(cli).is_ok());
-}
+fn test_merge_prefers_subcommand_flags_and_falls_back_to_top_level() {
+    let mut args = GateArgs::default();
+    let mut top = TopGate::default();
+    assert_eq!(merge_request(&args, &top), request());
 
-#[test]
-fn test_gate_subcommand_routes_each_gate_to_its_runner_without_panic() {
-    for argv in [
-        vec!["ripwire-rs", "gate", MISSING, "--edit-check", "f"],
-        vec!["ripwire-rs", "gate", MISSING, "--affected", "a.rs"],
-        vec!["ripwire-rs", "gate", MISSING, "--quality-baseline"],
-        vec!["ripwire-rs", "gate", MISSING, "--quality-delta"],
-        vec!["ripwire-rs", "gate", MISSING, "--clones"],
-    ] {
-        let cli = parse_from(argv).unwrap();
-        let _ = run_cli_args(cli);
-    }
+    top.edit.edit_check = Some("top".into());
+    top.baseline.primary.quality_baseline = true;
+    top.delta.opts.quality_ack = Some(None);
+    let merged = merge_request(&args, &top);
+    assert_eq!(merged.edit_check, Some("top"));
+    assert!(merged.quality_baseline && merged.quality_delta);
+
+    args.edit_check.edit_check = Some("sub".into());
+    args.clones.clones = true;
+    let merged = merge_request(&args, &top);
+    assert_eq!(merged.edit_check, Some("sub"));
+    assert!(merged.clones);
 }

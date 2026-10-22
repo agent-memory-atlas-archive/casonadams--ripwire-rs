@@ -114,6 +114,23 @@ Shared code receives the tool list as a parameter (`query::commands`, `mcp`), ne
 composition roots pass `crate::commands::tools()`. Metric analysis that a plugin also needs lives in
 `src/metrics/`, so `src/metrics/` never imports `crate::commands`.
 
+### Adding a command
+
+1. Create `src/commands/<name>.rs` with a derive `Args` (the primary flag plus any modifier only this command
+   uses), a handler `fn(&Run, &Args) -> io::Result<()>` and `pub static NAME: Plugin<Args> = Plugin { .. }`.
+2. Add `<name>::NAME,` to `register_commands!` in `src/commands/mod.rs` (position = dispatch precedence).
+3. Use `run.report(|ctx, out| ..)` for the analysis and output dialect (`--json`, `--pretty`, `--legend`) and
+   `run.page()` for the `--limit/--offset` window. Attach MCP tools in `tools:`.
+
+### Shared options (`--limit` as the example)
+
+A shared option reaches a command only through `Run`, and a command receives it only if it declares it in
+`options`. To make a command honor `--limit/--offset`, list `SharedOption::Paged` and window its rows with
+`run.page().window(total, default_cap)`; a command that does not declare it prints a stderr notice when the flag is
+passed (`unhonored_option_warning`). `tests/commands/registry.rs` keeps that contract true for every registered command.
+To add another shared option (for example `--since`): add a variant to `SharedOption`, one field on `TopModifierArgs`,
+and one gated accessor on `Run`; commands then opt in with one `options` entry and never read the flag directly.
+
 ## Lineage & Acknowledgments
 
 This crate is a pure Rust port and rewrite of the groundbreaking [ripwire (C++23)](https://github.com/redhat-et/ripwire) static analysis engine, originally conceived and authored by **David Brewster** at **Red Hat Emerging Technologies**.

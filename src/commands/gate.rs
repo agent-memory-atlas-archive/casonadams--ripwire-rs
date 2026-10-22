@@ -35,6 +35,50 @@ pub struct GateArgs {
     pub clones: CloneArgs,
 }
 
+/// The top-level gate flags, decoded once, that the `gate` subcommand falls back on.
+#[derive(Default)]
+pub struct TopGate {
+    pub edit: EditCheckArgs,
+    pub affected: AffectedArgs,
+    pub baseline: QualityBaselineFlags,
+    pub delta: QualityDeltaFlags,
+}
+
+impl TopGate {
+    fn decode(cli: &Cli) -> Self {
+        Self {
+            edit: cli.plugins.decode().unwrap_or_default(),
+            affected: cli.plugins.decode().unwrap_or_default(),
+            baseline: cli.plugins.decode().unwrap_or_default(),
+            delta: cli.plugins.decode().unwrap_or_default(),
+        }
+    }
+}
+
+/// What the `gate` subcommand was asked for: its own flags merged with the top-level gate flags.
+#[derive(Debug, PartialEq, Eq)]
+pub struct GateRequest<'a> {
+    pub edit_check: Option<&'a str>,
+    pub affected: Option<&'a str>,
+    pub quality_baseline: bool,
+    pub quality_delta: bool,
+    pub clones: bool,
+}
+
+#[must_use]
+pub fn merge_request<'a>(args: &'a GateArgs, top: &'a TopGate) -> GateRequest<'a> {
+    GateRequest {
+        edit_check: args.edit_check.edit_check.as_deref().or(top.edit.edit_check.as_deref()),
+        affected: args.affected.affected.as_deref().or(top.affected.affected.as_deref()),
+        quality_baseline: args.quality_baseline.quality_baseline
+            || top.baseline.primary.quality_baseline,
+        quality_delta: args.quality_delta.quality_delta
+            || top.delta.primary.quality_delta
+            || top.delta.opts.quality_ack.is_some(),
+        clones: args.clones.clones,
+    }
+}
+
 /// The gate the `gate` subcommand runs, in dispatch precedence.
 #[derive(Debug, PartialEq, Eq)]
 pub enum GateChoice<'a> {
@@ -43,78 +87,54 @@ pub enum GateChoice<'a> {
     QualityBaseline,
     QualityDelta,
     Clones,
-    Nothing,
 }
 
 /// Picks the gate: edit-check, affected, quality-baseline, quality-delta, then clones.
 #[must_use]
-pub fn select_gate<'a>(
-    edit_check: Option<&'a str>,
-    affected: Option<&'a str>,
-    quality_baseline: bool,
-    quality_delta: bool,
-    clones: bool,
-) -> GateChoice<'a> {
-    if let Some(symbol) = edit_check {
-        GateChoice::EditCheck(symbol)
-    } else if let Some(specs) = affected {
-        GateChoice::Affected(specs)
-    } else if quality_baseline {
-        GateChoice::QualityBaseline
-    } else if quality_delta {
-        GateChoice::QualityDelta
-    } else if clones {
-        GateChoice::Clones
+pub fn select_gate<'a>(request: &GateRequest<'a>) -> Option<GateChoice<'a>> {
+    if let Some(symbol) = request.edit_check {
+        Some(GateChoice::EditCheck(symbol))
+    } else if let Some(specs) = request.affected {
+        Some(GateChoice::Affected(specs))
+    } else if request.quality_baseline {
+        Some(GateChoice::QualityBaseline)
+    } else if request.quality_delta {
+        Some(GateChoice::QualityDelta)
     } else {
-        GateChoice::Nothing
+        request.clones.then_some(GateChoice::Clones)
+    }
+}
+
+impl GateChoice<'_> {
+    fn run(self, run: &Run<'_>, top: &TopGate, min_tokens: usize) -> io::Result<()> {
+        match self {
+            Self::EditCheck(symbol) => run_edit_check(run, symbol),
+            Self::Affected(specs) => run_affected(run, specs),
+            repo_wide => repo_wide.run_repo_wide(run, top, min_tokens),
+        }
+    }
+
+    fn run_repo_wide(&self, run: &Run<'_>, top: &TopGate, min_tokens: usize) -> io::Result<()> {
+        match self {
+            Self::QualityBaseline => run_quality_baseline(run, top.baseline.opts.allow_dirty),
+            Self::QualityDelta => run_quality_delta(run, &top.delta.opts),
+            _ => crate::clones::execute_clones_command(run.root, min_tokens, run.page()),
+        }
     }
 }
 
 fn execute_gate_subcommand(cli: &Cli, default_root: &str, args: &GateArgs) -> io::Result<()> {
-    let root = args.path.as_deref().unwrap_or(default_root);
-    let top_edit = cli.plugins.decode::<EditCheckArgs>().unwrap_or_default();
-    let top_affected = cli.plugins.decode::<AffectedArgs>().unwrap_or_default();
-    let top_baseline = cli
-        .plugins
-        .decode::<QualityBaselineFlags>()
-        .unwrap_or_default();
-    let top_delta = cli.plugins.decode::<QualityDeltaFlags>().unwrap_or_default();
-
-    let quality_baseline =
-        args.quality_baseline.quality_baseline || top_baseline.primary.quality_baseline;
-    let quality_delta = args.quality_delta.quality_delta
-        || top_delta.primary.quality_delta
-        || top_delta.opts.quality_ack.is_some();
+    let top = TopGate::decode(cli);
+    let request = merge_request(args, &top);
     validate_gate_modifiers(
-        top_baseline.opts.allow_dirty,
-        quality_baseline,
-        top_delta.opts.show_stale,
-        quality_delta,
+        top.baseline.opts.allow_dirty,
+        request.quality_baseline,
+        top.delta.opts.show_stale,
+        request.quality_delta,
     )?;
-
+    let root = args.path.as_deref().unwrap_or(default_root);
     let run = Run::new(cli, root, PAGED);
-    match select_gate(
-        args.edit_check
-            .edit_check
-            .as_deref()
-            .or(top_edit.edit_check.as_deref()),
-        args.affected
-            .affected
-            .as_deref()
-            .or(top_affected.affected.as_deref()),
-        quality_baseline,
-        quality_delta,
-        args.clones.clones,
-    ) {
-        GateChoice::EditCheck(symbol) => run_edit_check(&run, symbol),
-        GateChoice::Affected(specs) => run_affected(&run, specs),
-        GateChoice::QualityBaseline => run_quality_baseline(&run, top_baseline.opts.allow_dirty),
-        GateChoice::QualityDelta => run_quality_delta(&run, &top_delta.opts),
-        GateChoice::Clones => {
-            crate::clones::execute_clones_command(root, args.clones.min_tokens, run.page())
-        }
-        GateChoice::Nothing => Ok(()),
-    }
+    select_gate(&request).map_or(Ok(()), |gate| gate.run(&run, &top, args.clones.min_tokens))
 }
 
 pub struct Gate;
