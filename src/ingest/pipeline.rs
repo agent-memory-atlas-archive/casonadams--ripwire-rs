@@ -342,6 +342,7 @@ pub fn build_file_symbols(
         sym.humps = def.metrics.humps;
         sym.deep = def.metrics.deep;
         sym.ev = def.metrics.ev;
+        sym.immutable = def.immutable;
         file_symbols.push(sym);
     }
     file_symbols

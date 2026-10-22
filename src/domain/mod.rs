@@ -245,6 +245,8 @@ pub struct Symbol {
     pub humps: u16,
     pub deep: u16,
     pub ev: u16,
+    /// Immutable scalar binding (a `const` number, string, or boolean): a read is never mutable state.
+    pub immutable: bool,
 }
 
 impl Symbol {
@@ -277,6 +279,7 @@ impl Symbol {
             humps: 0,
             deep: 0,
             ev: 1,
+            immutable: false,
         }
     }
 

@@ -141,3 +141,61 @@ fn state_accesses_remain_visible_without_call_edges() {
             .all(|cell| cell.path == "src/state.rs" && cell.line == 2)
     );
 }
+
+const RUST_SOURCE: &str = "use std::cell::Cell;\n\
+const LIMIT: i32 = 3;\n\
+static PLAIN: i32 = 4;\n\
+static CELL: Cell<i32> = Cell::new(0);\n\
+static mut RAW: i32 = 0;\n\
+fn read_all() -> i32 {\n\
+    LIMIT + PLAIN + unsafe { RAW } + CELL.get()\n\
+}\n";
+
+fn rust_ingest(source: &str) -> (ripwire_rs::IngestResult, ripwire_rs::Interner) {
+    use ripwire_rs::{Interner, Lang, LanguageRegistry, ingest_in_memory_files};
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[("src/state.rs", Lang::Rust, source.as_bytes())],
+        &registry,
+        &interner,
+    );
+    (ingest, interner)
+}
+
+#[test]
+fn rust_const_and_static_items_classify_by_mutability() {
+    use ripwire_rs::CorpusView;
+    let (ingest, interner) = rust_ingest(RUST_SOURCE);
+    let view = (&ingest, &interner);
+    let immutable = |name: &str| {
+        ingest
+            .symbols
+            .iter()
+            .find(|s| view.sym_name(s) == name)
+            .unwrap()
+            .immutable
+    };
+    assert!(immutable("LIMIT"), "const is never a cell");
+    assert!(
+        immutable("PLAIN"),
+        "plain non-mut static of a plain type is not mutable"
+    );
+    assert!(
+        !immutable("CELL"),
+        "static of an interior-mutability type is a cell"
+    );
+    assert!(!immutable("RAW"), "static mut is a cell");
+}
+
+#[test]
+fn rust_nonlocal_state_counts_only_mutable_statics() {
+    use ripwire_rs::Graph;
+    let (ingest, interner) = rust_ingest(RUST_SOURCE);
+    let graph = Graph::build(&ingest, &interner);
+    let funcs = ripwire_rs::metrics::find_nonlocal_state(&ingest, &graph, &interner);
+    let func = funcs.iter().find(|f| f.sym_name == "read_all").unwrap();
+    let mut names: Vec<&str> = func.cells.iter().map(|c| c.cell_name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["CELL", "RAW"]);
+}

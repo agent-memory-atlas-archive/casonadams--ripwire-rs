@@ -17,6 +17,8 @@ pub struct RawDef {
     pub loc: u32,
     pub params: u16,
     pub metrics: crate::metrics::ComplexityMetrics,
+    /// Set by the language plugin for bindings whose value can never change (see `is_immutable_scalar_binding`).
+    pub immutable: bool,
 }
 
 /// Raw reference extracted before enclosing symbol attribution.
@@ -493,6 +495,7 @@ fn record_def_item(
     let (params, name) =
         lang.semantics()
             .resolve_def_params_and_name(ext.def_node, source_bytes, kind, orig_name);
+    let immutable = kind == SymKind::Var && lang.semantics().is_immutable_scalar_binding(&gate_ctx);
     defs.push(RawDef {
         name,
         scope,
@@ -504,6 +507,7 @@ fn record_def_item(
         loc,
         params,
         metrics,
+        immutable,
     });
 }
 

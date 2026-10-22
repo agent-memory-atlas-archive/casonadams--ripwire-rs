@@ -2,7 +2,8 @@ mod callables;
 mod linkage;
 
 use super::{
-    ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode,
+    ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
+    VisibilityMode,
     normalize_lexical_path, probe_with_suffixes, strip_import_quotes,
 };
 use crate::domain::{Lang, SymKind};
@@ -368,6 +369,46 @@ impl LanguageSemantics for RustLanguage {
         source: &[u8],
     ) -> bool {
         linkage::is_rust_internal_function(root, name_byte, source)
+    }
+
+    fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        ctx.def_node
+            .is_some_and(|def| is_rust_immutable_binding(def, ctx.source_bytes))
+    }
+}
+
+const RUST_INTERIOR_MUTABLE_TYPES: &[&str] = &[
+    "Cell",
+    "RefCell",
+    "UnsafeCell",
+    "OnceCell",
+    "OnceLock",
+    "LazyCell",
+    "LazyLock",
+    "Mutex",
+    "RwLock",
+    "Once",
+];
+
+/// A `const` is never state; a `static` is state only when it is `mut` or its type has interior mutability.
+fn is_rust_immutable_binding(def: tree_sitter::Node<'_>, source: &[u8]) -> bool {
+    match def.kind() {
+        "const_item" => true,
+        "static_item" => {
+            let mut cursor = def.walk();
+            let is_mut = def
+                .children(&mut cursor)
+                .any(|child| child.kind() == "mutable_specifier");
+            let interior = def
+                .child_by_field_name("type")
+                .and_then(|ty| nominal_name(source, ty))
+                .map(|path| path.rsplit("::").next().unwrap_or(path))
+                .is_some_and(|name| {
+                    RUST_INTERIOR_MUTABLE_TYPES.contains(&name) || name.starts_with("Atomic")
+                });
+            !is_mut && !interior
+        }
+        _ => false,
     }
 }
 
