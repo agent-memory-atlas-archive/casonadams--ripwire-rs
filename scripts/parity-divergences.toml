@@ -11,7 +11,7 @@
 # defect_budget must equal the number of defect entries: a new defect fails, a fixed one must lower it.
 # An entry with a [divergence.files] table runs against that fixture (written to a temp dir) instead of the tree.
 
-defect_budget = 24
+defect_budget = 23
 
 [[divergence]]
 id = "partner-unindexed-languages"
@@ -404,14 +404,6 @@ case = ""
 kind = "defect"
 why = "Per-symbol metric rows differ from upstream (c, f, s, entry, ls, inv); cause not traced."
 evidence = "measured on a2e114c: rw <c>=335 rip <c>=392, <ls>=0 rip=88, <entry>=0 rip=7; owner: unassigned"
-
-[[divergence]]
-id = "uses-scoped-call-kind"
-command = "--uses=row_bytes"
-case = ""
-kind = "defect"
-why = "Scoped call sites are emitted as both call and read; fixed on lp/uses."
-evidence = "measured on a2e114c: rw <u>=78 rip <u>=56; owner: lp/uses 9282b04"
 
 [[divergence]]
 id = "grep-cross-dialect-reads"

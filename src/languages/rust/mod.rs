@@ -547,6 +547,13 @@ fn rust_read_position(node: tree_sitter::Node<'_>) -> bool {
     let Some(parent) = node.parent() else {
         return false;
     };
+    if parent.kind() == "scoped_identifier"
+        && parent.parent().is_some_and(|call| {
+            call.kind() == "call_expression" && call.child_by_field_name("function") == Some(parent)
+        })
+    {
+        return false;
+    }
     let expression = matches!(
         parent.kind(),
         "binary_expression"

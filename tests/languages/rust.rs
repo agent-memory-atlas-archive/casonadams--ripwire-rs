@@ -436,3 +436,17 @@ fn test_rust_blanket_impl_fact_records_subject_bound() {
     assert_eq!(imp.subject_bound.as_deref(), Some("Report"));
     assert!(imp.generic_subject);
 }
+
+#[test]
+fn test_rust_scoped_call_site_is_not_also_a_read() {
+    let res = rust_parse(
+        "mod util { pub fn row_bytes(n: u8) -> u8 { n } } fn invoke() -> u8 { crate::util::row_bytes(1) }",
+    );
+    let sites: Vec<_> = res
+        .refs
+        .iter()
+        .filter(|r| r.callee_name == "row_bytes")
+        .map(|r| r.role)
+        .collect();
+    assert_eq!(sites, vec![RefRole::Call]);
+}
