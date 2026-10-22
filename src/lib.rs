@@ -1,6 +1,7 @@
 pub mod cache;
 pub mod cli;
 pub mod clones;
+pub mod commands;
 pub mod crawler;
 pub mod domain;
 pub mod gate;
@@ -18,7 +19,7 @@ pub mod serialize;
 pub mod skills;
 pub mod slice;
 pub mod workspace;
-pub use cli::{Cli, Commands, run_cli, run_cli_args};
+pub use cli::{Cli, Commands, parse_from, run_cli, run_cli_args};
 pub use clones::{
     CloneGroup, CloneIdiom, CloneType, DEFAULT_MIN_CLONE_TOKENS, execute_clones_command,
     find_clones, find_clones_in_root, render_clones_xml,

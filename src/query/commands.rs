@@ -7,7 +7,6 @@ use crate::git::history::CommitInfo;
 use crate::graph::Graph;
 use crate::ingest::LanguageRegistry;
 use crate::query::map::{MapRequest, execute_stream_xml_ranked};
-use crate::query::navigation::{NavContext, NavMode, execute_nav_symbol_query_in_root};
 use crate::query::retrieval;
 use crate::rank::PageRankResult;
 use crate::serialize::JsonValueExt;
@@ -66,43 +65,6 @@ fn safety_context<'a>(state: &QueryContext<'a>) -> crate::query::safety::SafetyC
         graph: state.graph,
         interner: state.interner,
     }
-}
-
-fn call_navigation(state: &QueryContext<'_>, args: &Value, mode: NavMode) -> Result<Value, String> {
-    let symbol = args.req_str("symbol")?;
-    let context = NavContext {
-        ingest: state.ingest,
-        graph: state.graph,
-        ranks: &state.pr.ranks,
-        pr_iters: Some(state.pr.iterations),
-        interner: state.interner,
-        page: crate::serialize::PageRequest {
-            limit: args.opt_usize("limit"),
-            offset: args.opt_usize("offset"),
-        },
-        max_depth: args.opt_usize("max_depth").map(|depth| depth as u32),
-    };
-    render_xml(|out| execute_nav_symbol_query_in_root(state.root, symbol, mode, &context, out))
-}
-
-pub fn call_find_symbol(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
-    call_navigation(state, args, NavMode::FindSymbol)
-}
-
-pub fn call_callers(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
-    call_navigation(state, args, NavMode::Callers)
-}
-
-pub fn call_callees(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
-    call_navigation(state, args, NavMode::Callees)
-}
-
-pub fn call_impact(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
-    call_navigation(state, args, NavMode::Impact)
-}
-
-pub fn call_uses(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
-    call_navigation(state, args, NavMode::Uses)
 }
 
 pub fn call_explore(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
@@ -308,7 +270,6 @@ macro_rules! mcp_tool {
 }
 
 const SYM_PARAM: &[(&str, &str, &str)] = &[("symbol", "string", "Symbol name")];
-const SYM_LOOKUP_PARAM: &[(&str, &str, &str)] = &[("symbol", "string", "Symbol name to look up")];
 const EDIT_INS_PARAMS: &[(&str, &str, &str)] = &[
     ("symbol", "string", "Symbol name"),
     ("text", "string", "Text to insert"),
@@ -457,20 +418,6 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
         call_body
     ),
     mcp_tool!(
-        "find_referencing_symbols",
-        "Direct (1-hop) callers of a symbol",
-        SYM_LOOKUP_PARAM,
-        &["symbol"],
-        call_callers
-    ),
-    mcp_tool!(
-        "find_symbol",
-        "A symbol's 1-hop neighborhood: the symbol plus direct callers and callees",
-        SYM_LOOKUP_PARAM,
-        &["symbol"],
-        call_find_symbol
-    ),
-    mcp_tool!(
         "flags",
         "WHAT IS BUILT BUT DARK: harvests ifndef header gates, CMake options, env reads",
         &[],
@@ -537,20 +484,6 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
             let val = retrieval::call_grep(s.ingest, s.interner, &req);
             render_xml(|out| crate::serialize::serialize_grep_xml(&val, out))
         }
-    ),
-    mcp_tool!(
-        "impact",
-        "Transitive blast radius of a symbol via calls, ranked by PageRank",
-        &[
-            (
-                "symbol",
-                "string",
-                "Symbol name to analyze blast radius for"
-            ),
-            ("max_depth", "integer", "Maximum hop depth"),
-        ],
-        &["symbol"],
-        call_impact
     ),
     mcp_tool!(
         "insert_after_symbol",
@@ -749,13 +682,6 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
         }
     ),
     mcp_tool!(
-        "uses",
-        "All statically resolvable use-sites of a symbol: call, read, write, import, extends",
-        SYM_PARAM,
-        &["symbol"],
-        call_uses
-    ),
-    mcp_tool!(
         "whereis",
         "WHERE DOES THIS CONTENT LIVE: which file/branch defines or mentions a symbol",
         SYM_PARAM,
@@ -777,21 +703,19 @@ pub static COMMANDS: &[&CommandDescriptor] = &[
             render_query_value(value, a, crate::serialize::serialize_whereis_xml)
         }
     ),
-    mcp_tool!(
-        "callers",
-        "Direct (1-hop) callers of a symbol (alias for find_referencing_symbols)",
-        SYM_LOOKUP_PARAM,
-        &["symbol"],
-        call_callers
-    ),
-    mcp_tool!(
-        "callees",
-        "Direct (1-hop) callees of a symbol",
-        SYM_LOOKUP_PARAM,
-        &["symbol"],
-        call_callees
-    ),
 ];
+
+/// Every MCP tool: commands not yet owned by a plugin plus every plugin's, sorted by name.
+#[must_use]
+pub fn all_commands() -> Vec<&'static CommandDescriptor> {
+    let mut all: Vec<_> = COMMANDS
+        .iter()
+        .copied()
+        .chain(crate::commands::tools())
+        .collect();
+    all.sort_by_key(|command| command.name);
+    all
+}
 
 pub fn call_body(context: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
     let request = super::detail::BodyRequest {
@@ -825,13 +749,6 @@ impl CommandDescriptor {
 
 fn extra_parameters(name: &str) -> &'static [(&'static str, &'static str, &'static str)] {
     match name {
-        "find_symbol" | "find_referencing_symbols" | "callers" | "callees" | "uses" | "impact" => {
-            &[
-                ("limit", "integer", "Maximum report items"),
-                ("offset", "integer", "Report item offset"),
-                ("max_depth", "integer", "Maximum traversal depth"),
-            ]
-        }
         "analyze" | "explore" | "rank_by" => &[
             (
                 "rank_by",
@@ -932,8 +849,8 @@ fn validate_argument_type(name: &str, kind: &str, value: &Value) -> Result<(), S
 
 /// Dispatch a validated command without transport or session state.
 pub fn dispatch(context: &QueryContext<'_>, name: &str, args: &Value) -> Result<Value, String> {
-    let command = COMMANDS
-        .iter()
+    let command = all_commands()
+        .into_iter()
         .find(|command| command.name == name)
         .ok_or_else(|| format!("unknown query: {name}"))?;
     validate_arguments(command, args)?;

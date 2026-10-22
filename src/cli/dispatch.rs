@@ -8,7 +8,7 @@ use crate::query::map::*;
 use crate::query::navigation::{NavContext, NavMode, execute_nav_symbol_query_in_root};
 use crate::rank::PageRankResult;
 use crate::workspace::{load_repo_analysis, load_repo_analysis_with_options};
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 use std::io::{self, Write};
 use std::path::Path;
 pub fn execute_navigate_with<W: Write>(
@@ -48,7 +48,7 @@ pub fn execute_navigate(cli: &Cli, args: &NavigateArgs, default_root: &str) -> i
             limit: cli.modifiers.limit,
             offset: cli.modifiers.offset,
         },
-        max_depth: cli.nav.impact_depth,
+        max_depth: crate::commands::nav::impact_depth(cli),
     };
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
@@ -136,29 +136,6 @@ pub fn compute_effective_budget(
         .map(crate::query::map::token_budget_bytes)
         .or(pack_budget)
         .or(Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES))
-}
-
-pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
-    let (sym, mode) = cli.nav.active_query()?;
-    Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
-        let mut stdout_lock = io::stdout().lock();
-        let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
-        let nav_ctx = NavContext {
-            ingest: &ingest,
-            graph: &graph,
-            ranks: &pr.ranks,
-            pr_iters: Some(pr.iterations),
-            interner: &interner,
-            page: crate::serialize::PageRequest {
-                limit: cli.modifiers.limit,
-                offset: cli.modifiers.offset,
-            },
-            max_depth: cli.nav.impact_depth,
-        };
-        execute_nav_symbol_query_in_root(root, sym, mode, &nav_ctx, &mut stdout)?;
-        stdout.finish()
-    })())
 }
 
 /// Shared execution context bundling CLI options, repository root, and indexed analysis state.
@@ -771,7 +748,7 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
             stdout.finish()
         })());
     }
-    dispatch_top_nav(cli, root)
+    crate::commands::run(cli, root)
         .or_else(|| run_cli_verb(&cli.retrieval, cli, root))
         .or_else(|| run_cli_verb(&cli.workspace, cli, root))
         .or_else(|| run_cli_verb(&cli.detail, cli, root))
@@ -1078,9 +1055,21 @@ pub fn run_cli_args(mut cli: Cli) -> io::Result<()> {
     }
 }
 
+/// Parse the command line, including every command plugin's flags.
+pub fn parse_from<I, T>(args: I) -> Result<Cli, clap::Error>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let matches = crate::commands::augment(Cli::command()).try_get_matches_from(args)?;
+    let mut cli = Cli::from_arg_matches(&matches)?;
+    cli.plugins = PluginArgs::new(matches);
+    Ok(cli)
+}
+
 /// Main CLI entry point.
 pub fn run_cli() -> io::Result<()> {
     let args = std::env::args().map(|a| if a == "-v" { "-V".to_string() } else { a });
-    let cli = Cli::parse_from(args);
+    let cli = parse_from(args).unwrap_or_else(|error| error.exit());
     run_cli_args(cli)
 }

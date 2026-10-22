@@ -78,9 +78,9 @@ pub struct Cli {
     #[arg(long = "scip", global = true, value_name = "FILE")]
     pub scip: Option<String>,
 
-    /// Top-level symbol navigation flags
-    #[command(flatten)]
-    pub nav: TopNavArgs,
+    /// Parsed values of command-plugin flags
+    #[arg(skip)]
+    pub plugins: PluginArgs,
     /// Top-level retrieval and architecture flags
     #[command(flatten)]
     pub retrieval: TopRetrievalArgs,
@@ -112,29 +112,6 @@ pub struct Cli {
     /// Workflow subcommand group
     #[command(subcommand)]
     pub command: Option<Commands>,
-}
-
-/// Top-level symbol navigation flags.
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct TopNavArgs {
-    /// Query 1-hop callers of a symbol
-    #[arg(long, value_name = "SYM")]
-    pub callers: Option<String>,
-    /// Query 1-hop callees of a symbol
-    #[arg(long, value_name = "SYM")]
-    pub callees: Option<String>,
-    /// Query transitive impact blast radius of a symbol
-    #[arg(long, value_name = "SYM")]
-    pub impact: Option<String>,
-    /// Limit transitive impact traversal to N call hops
-    #[arg(long = "impact-depth", global = true, value_name = "N")]
-    pub impact_depth: Option<u32>,
-    /// Query all static use-sites of a symbol
-    #[arg(long, value_name = "SYM")]
-    pub uses: Option<String>,
-    /// Query 1-hop callers and callees of a symbol
-    #[arg(long = "find-symbol", value_name = "SYM")]
-    pub find_symbol: Option<String>,
 }
 
 /// Top-level detail ladder flags.
@@ -940,35 +917,33 @@ impl OutputDialect for Cli {
     }
 }
 
-/// Trait implemented by each CLI argument group (`TopNavArgs`, `TopRetrievalArgs`, etc.).
+/// Matches for the flags command plugins own; plugins decode their own typed `Args` from it.
+#[derive(Debug, Clone, Default)]
+pub struct PluginArgs(Option<clap::ArgMatches>);
+
+impl PartialEq for PluginArgs {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl PluginArgs {
+    #[must_use]
+    pub fn new(matches: clap::ArgMatches) -> Self {
+        Self(Some(matches))
+    }
+
+    /// The plugin's parsed flags, `None` when the command line was not parsed with that plugin.
+    #[must_use]
+    pub fn decode<A: clap::FromArgMatches>(&self) -> Option<A> {
+        A::from_arg_matches(self.0.as_ref()?).ok()
+    }
+}
+
+/// Trait implemented by each CLI argument group (`TopRetrievalArgs`, etc.).
 pub trait VerbGroup {
     fn is_group_active(&self) -> bool;
 }
-
-impl TopNavArgs {
-    #[must_use]
-    pub fn active_query(&self) -> Option<(&str, crate::query::navigation::NavMode)> {
-        use crate::query::navigation::NavMode;
-        self.callers
-            .as_deref()
-            .map(|s| (s, NavMode::Callers))
-            .or_else(|| self.callees.as_deref().map(|s| (s, NavMode::Callees)))
-            .or_else(|| self.impact.as_deref().map(|s| (s, NavMode::Impact)))
-            .or_else(|| self.uses.as_deref().map(|s| (s, NavMode::Uses)))
-            .or_else(|| {
-                self.find_symbol
-                    .as_deref()
-                    .map(|s| (s, NavMode::FindSymbol))
-            })
-    }
-}
-
-impl VerbGroup for TopNavArgs {
-    fn is_group_active(&self) -> bool {
-        self.active_query().is_some()
-    }
-}
-
 macro_rules! impl_verb_group {
     ($ty:ty, opts: [$($opt:ident),* $(,)?], flags: [$($flag:ident),* $(,)?] $(, extra: $extra:ident)?) => {
         impl $ty {
