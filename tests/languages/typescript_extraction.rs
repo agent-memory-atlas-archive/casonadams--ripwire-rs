@@ -22,10 +22,14 @@ fn fluent_builder_handler_is_a_module_function() {
           .handler(async ({ data }) => data);\n\
         export const getThing = createServerFn({ method: \"GET\" }).handler(function () {\n\
           return 1;\n\
-        });\n";
+        });\n\
+        export const chained = createServerFn({ method: \"PUT\" })\n\
+          .inputValidator((d: unknown) => d)\n\
+          .handler(async ({ data }) => data);\n";
     let symbols = symbols_of(source);
     assert!(symbols.contains(&("resumeSession".to_string(), SymKind::Function)));
     assert!(symbols.contains(&("getThing".to_string(), SymKind::Function)));
+    assert!(symbols.contains(&("chained".to_string(), SymKind::Function)));
 }
 
 #[test]

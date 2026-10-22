@@ -89,15 +89,20 @@
              (satisfies_expression (parenthesized_expression [ (arrow_function) (function_expression) ])) ])) @definition.function
 
 ; ---- fluent builders ending in a callable: `export const getX = createServerFn({..}).handler(async () => {..})` ----
-; The const's value is the function the builder returns. Only a factory call (a bare call whose result
-; receives a member call with the function as its last argument) counts, so `list.filter(f).map(g)` and
-; ordinary locals stay out. Module scope only, like the constant patterns above.
+; The const's value is the function the builder returns. The receiver of the final member call must be a
+; factory call, optionally behind one or two more member calls (`createX().inputValidator(v).handler(f)`).
+; Plain data chains (`list.filter(f).map(g)`) have a non-call root and stay out; standard members such as
+; `then`/`map` on a factory call are rejected by is_def_capture_allowed. Module scope only.
 (program
   (lexical_declaration
     (variable_declarator
       name: (identifier) @name
       value: (call_expression
-        function: (member_expression object: (call_expression function: (identifier)))
+        function: (member_expression object: [
+          (call_expression function: (identifier))
+          (call_expression function: (member_expression object: (call_expression function: (identifier))))
+          (call_expression function: (member_expression object: (call_expression function: (member_expression object: (call_expression function: (identifier))))))
+        ])
         arguments: (arguments [ (arrow_function) (function_expression) ] .)))) @definition.function)
 
 (export_statement
@@ -105,7 +110,11 @@
     (variable_declarator
       name: (identifier) @name
       value: (call_expression
-        function: (member_expression object: (call_expression function: (identifier)))
+        function: (member_expression object: [
+          (call_expression function: (identifier))
+          (call_expression function: (member_expression object: (call_expression function: (identifier))))
+          (call_expression function: (member_expression object: (call_expression function: (member_expression object: (call_expression function: (identifier))))))
+        ])
         arguments: (arguments [ (arrow_function) (function_expression) ] .)))) @definition.function)
 
 ; ---- module-level settings constants (r3 q10 — bench/headtohead/r3-headroom-2026-08-03) ----
