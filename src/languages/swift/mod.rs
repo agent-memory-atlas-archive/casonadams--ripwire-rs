@@ -118,8 +118,9 @@ impl LanguageSemantics for SwiftLanguage {
         "swift"
     }
 
-    fn color(&self) -> Option<&'static str> {
-        Some("#f05138")
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::DoWhile, G::Naming]
     }
     super::impl_grammar_method!(crate tree_sitter_swift::LANGUAGE, "tags.scm");
 

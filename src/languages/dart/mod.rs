@@ -248,6 +248,10 @@ impl LanguageSemantics for DartLanguage {
     fn tag(&self) -> &'static str {
         "dart"
     }
+
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        &[crate::languages::LintGroup::Naming]
+    }
     super::impl_grammar_method!(ffi tree_sitter_dart, include_str!("tags.scm"));
 
     fn lint_extra_rules(&self) -> &'static [&'static str] {

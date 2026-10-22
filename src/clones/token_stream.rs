@@ -53,83 +53,6 @@ pub fn sketch_matches(a: &[u8; SKETCH_HASHES], b: &[u8; SKETCH_HASHES]) -> u32 {
     matches
 }
 
-#[must_use]
-pub fn is_keyword_bytes(w: &[u8]) -> bool {
-    matches!(
-        w,
-        b"if"
-            | b"else"
-            | b"for"
-            | b"while"
-            | b"do"
-            | b"switch"
-            | b"case"
-            | b"default"
-            | b"break"
-            | b"continue"
-            | b"return"
-            | b"goto"
-            | b"struct"
-            | b"class"
-            | b"enum"
-            | b"union"
-            | b"namespace"
-            | b"template"
-            | b"typename"
-            | b"typedef"
-            | b"using"
-            | b"public"
-            | b"private"
-            | b"protected"
-            | b"virtual"
-            | b"override"
-            | b"final"
-            | b"const"
-            | b"constexpr"
-            | b"static"
-            | b"inline"
-            | b"extern"
-            | b"volatile"
-            | b"mut"
-            | b"fn"
-            | b"def"
-            | b"func"
-            | b"function"
-            | b"let"
-            | b"var"
-            | b"val"
-            | b"impl"
-            | b"trait"
-            | b"type"
-            | b"interface"
-            | b"package"
-            | b"import"
-            | b"export"
-            | b"from"
-            | b"as"
-            | b"match"
-            | b"loop"
-            | b"try"
-            | b"catch"
-            | b"throw"
-            | b"raise"
-            | b"except"
-            | b"finally"
-            | b"with"
-            | b"yield"
-            | b"async"
-            | b"await"
-            | b"true"
-            | b"false"
-            | b"null"
-            | b"nil"
-            | b"None"
-            | b"self"
-            | b"this"
-            | b"super"
-    )
-}
-
 pub(crate) fn skip_whitespace(bytes: &[u8], i: &mut usize) {
     while *i < bytes.len() && bytes[*i].is_ascii_whitespace() {
         *i += 1;
@@ -226,7 +149,7 @@ pub(crate) fn scan_operator_slice<'a>(bytes: &'a [u8], i: &mut usize) -> &'a [u8
     &bytes[start..*i]
 }
 
-fn next_token_slices<'a>(bytes: &'a [u8], i: &mut usize) -> (&'a [u8], &'a [u8]) {
+fn next_token_slices<'a>(bytes: &'a [u8], i: &mut usize, lang: Lang) -> (&'a [u8], &'a [u8]) {
     let b = bytes[*i];
     if b == b'"' || b == b'\'' || b == b'`' {
         let raw = scan_string_slice(bytes, i);
@@ -236,7 +159,11 @@ fn next_token_slices<'a>(bytes: &'a [u8], i: &mut usize) -> (&'a [u8], &'a [u8])
         (raw, b"$N")
     } else if b.is_ascii_alphabetic() || b == b'_' {
         let raw = scan_ident_slice(bytes, i);
-        let norm = if is_keyword_bytes(raw) { raw } else { b"$I" };
+        let norm = if lang.semantics().is_keyword(raw) {
+            raw
+        } else {
+            b"$I"
+        };
         (raw, norm)
     } else {
         let start = *i;
@@ -266,7 +193,7 @@ fn for_each_body_token<'a>(bytes: &'a [u8], lang: Lang, mut visit: impl FnMut(&'
         if skip_comment(bytes, &mut i, hash_comments) {
             continue;
         }
-        let (raw_slice, norm_slice) = next_token_slices(bytes, &mut i);
+        let (raw_slice, norm_slice) = next_token_slices(bytes, &mut i, lang);
         visit(raw_slice, norm_slice);
     }
 }

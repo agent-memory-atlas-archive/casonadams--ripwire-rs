@@ -619,8 +619,9 @@ impl LanguageSemantics for CLanguage {
         "c"
     }
 
-    fn color(&self) -> Option<&'static str> {
-        Some("#555")
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::Cast, G::Goto, G::DoWhile, G::Insecure, G::Parens, G::CFamily, G::SelfAssign, G::NativeOnly, G::Unreachable, G::Naming]
     }
     super::impl_grammar_method!(crate tree_sitter_c::LANGUAGE, "tags.scm");
 

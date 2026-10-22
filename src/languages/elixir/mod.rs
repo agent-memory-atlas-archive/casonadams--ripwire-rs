@@ -273,6 +273,10 @@ impl LanguageSemantics for ElixirLanguage {
     fn tag(&self) -> &'static str {
         "ex"
     }
+
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        &[crate::languages::LintGroup::Naming]
+    }
     super::impl_grammar_method!(crate tree_sitter_elixir::LANGUAGE, "tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {

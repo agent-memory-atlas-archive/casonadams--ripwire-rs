@@ -138,8 +138,9 @@ impl LanguageSemantics for TypeScriptLanguage {
         "ts"
     }
 
-    fn color(&self) -> Option<&'static str> {
-        Some("#3178c6")
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::DoWhile, G::Insecure, G::Parens, G::SelfAssign, G::Unreachable, G::Naming]
     }
     super::impl_grammar_method!(crate tree_sitter_typescript::LANGUAGE_TYPESCRIPT, "tags.scm");
 

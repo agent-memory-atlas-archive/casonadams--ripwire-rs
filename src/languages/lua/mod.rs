@@ -73,6 +73,10 @@ impl LanguageSemantics for LuaLanguage {
     fn tag(&self) -> &'static str {
         "lua"
     }
+
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        &[crate::languages::LintGroup::Naming]
+    }
     super::impl_grammar_method!(crate tree_sitter_lua::LANGUAGE, "tags.scm");
 
     fn display_color(&self) -> &'static str {

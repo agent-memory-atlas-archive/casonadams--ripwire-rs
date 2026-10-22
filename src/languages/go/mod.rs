@@ -98,8 +98,9 @@ impl LanguageSemantics for GoLanguage {
         "go"
     }
 
-    fn color(&self) -> Option<&'static str> {
-        Some("#00add8")
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::Goto, G::Insecure, G::Parens, G::Unreachable, G::Naming]
     }
 
     fn type_declaration_keywords(&self) -> &'static [&'static str] {

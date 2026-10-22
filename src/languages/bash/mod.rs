@@ -43,6 +43,10 @@ impl LanguageSemantics for BashLanguage {
     fn tag(&self) -> &'static str {
         "sh"
     }
+
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        &[crate::languages::LintGroup::Naming]
+    }
     super::impl_grammar_method!(crate tree_sitter_bash::LANGUAGE, "tags.scm");
 
     fn extensions(&self) -> &'static [&'static str] {

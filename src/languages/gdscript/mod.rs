@@ -68,6 +68,10 @@ impl LanguageSemantics for GDScriptLanguage {
     fn tag(&self) -> &'static str {
         "gd"
     }
+
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        &[crate::languages::LintGroup::Naming]
+    }
     super::impl_grammar_method!(ffi tree_sitter_gdscript, include_str!("tags.scm"));
 
     fn display_color(&self) -> &'static str {

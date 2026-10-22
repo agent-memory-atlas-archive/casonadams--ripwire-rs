@@ -97,6 +97,10 @@ impl LanguageSemantics for PhpLanguage {
     fn tag(&self) -> &'static str {
         "php"
     }
+
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        &[crate::languages::LintGroup::Naming]
+    }
     super::impl_grammar_method!(ffi tree_sitter_php, include_str!("tags.scm"));
 
     fn lint_extra_rules(&self) -> &'static [&'static str] {

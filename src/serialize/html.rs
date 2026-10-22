@@ -219,7 +219,7 @@ pub fn generate_call_graph_html(
     const HTML_VIS_JS: &str = include_str!("html_vis.js");
     let lang_colors = crate::languages::ALL_LANGS
         .iter()
-        .filter_map(|lang| Some(format!("{:?}: {:?}", lang.tag(), lang.semantics().color()?)))
+        .map(|lang| format!("{:?}: {:?}", lang.tag(), lang.semantics().display_color()))
         .collect::<Vec<_>>()
         .join(", ");
     format!(

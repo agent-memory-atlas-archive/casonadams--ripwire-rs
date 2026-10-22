@@ -32,7 +32,7 @@ macro_rules! impl_grammar_method {
 pub(crate) use impl_grammar_method;
 
 pub mod kit;
-pub use kit::{ComplexityKinds, ForeignExport, SyntaxKinds, flags, reads, source};
+pub use kit::{ComplexityKinds, ForeignExport, LintGroup, SyntaxKinds, flags, reads, source};
 pub(crate) use kit::{lint, lint_hooks};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,11 +96,6 @@ pub struct DefCaptureGateContext<'a> {
 pub trait LanguageSemantics: Sync {
     /// Short canonical tag used in XML output (`"rs"`, `"ts"`, etc.).
     fn tag(&self) -> &'static str;
-
-    /// Hex color of this language in graph visualizations.
-    fn color(&self) -> Option<&'static str> {
-        None
-    }
 
     /// Grammar node kinds the language-neutral extraction, slicing, and contract passes use.
     fn syntax_kinds(&self) -> &'static SyntaxKinds;
@@ -557,9 +552,14 @@ pub trait LanguageSemantics: Sync {
         resolve_relative_or_exact(importer_path, clean, file_index, &[])
     }
 
-    /// Tag this language carries in the `--lint-catalog` `lang=` lists.
-    fn lint_tag(&self) -> &'static str {
-        self.tag()
+    /// Lint rule families this language opts into.
+    fn lint_groups(&self) -> &'static [LintGroup] {
+        &[]
+    }
+
+    /// True if `word` is a keyword of this language (operator, not operand, in readability and clone tokens).
+    fn is_keyword(&self, word: &[u8]) -> bool {
+        kit::keywords::common(word)
     }
 
     /// Path-sensitive grammar shared by source analyses.

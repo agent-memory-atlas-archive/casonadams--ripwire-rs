@@ -145,8 +145,9 @@ impl LanguageSemantics for CSharpLanguage {
         "cs"
     }
 
-    fn color(&self) -> Option<&'static str> {
-        Some("#178600")
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::Cast, G::Goto, G::DoWhile, G::Parens, G::SelfAssign, G::Unreachable, G::Naming]
     }
     super::impl_grammar_method!(crate tree_sitter_c_sharp::LANGUAGE, "tags.scm");
 

@@ -1,4 +1,4 @@
-use ripwire_rs::{compute_readability, posnett_score};
+use ripwire_rs::{Lang, compute_readability, posnett_score};
 
 #[test]
 fn test_posnett_score_calculation() {
@@ -17,7 +17,7 @@ pub fn fibonacci(n: u32) -> u32 {
     }
 }
 "#;
-    let r = compute_readability(code);
+    let r = compute_readability(code, Lang::Rust);
     assert!(r.token_count > 10);
     assert!(r.operator_count > 0);
     assert!(r.operand_count > 0);

@@ -237,8 +237,9 @@ impl LanguageSemantics for PythonLanguage {
         "py"
     }
 
-    fn color(&self) -> Option<&'static str> {
-        Some("#3572a5")
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::Parens, G::Unreachable, G::Naming]
     }
 
     fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {

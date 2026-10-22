@@ -1,7 +1,7 @@
 use crate::clones::token_stream::{
-    is_keyword_bytes, scan_ident_slice, scan_number_slice, scan_operator_slice, scan_string_slice,
-    skip_whitespace,
+    scan_ident_slice, scan_number_slice, scan_operator_slice, scan_string_slice, skip_whitespace,
 };
+use crate::domain::Lang;
 use std::collections::HashMap;
 pub const POSNETT_INTERCEPT: f64 = 8.87;
 pub const POSNETT_VOLUME: f64 = -0.033;
@@ -39,7 +39,7 @@ enum TokenKind {
     Operand,
 }
 
-fn tokenize_code(code: &str) -> Vec<(&[u8], TokenKind)> {
+fn tokenize_code(code: &str, lang: Lang) -> Vec<(&[u8], TokenKind)> {
     let bytes = code.as_bytes();
     let mut tokens = Vec::new();
     let mut i = 0;
@@ -52,7 +52,7 @@ fn tokenize_code(code: &str) -> Vec<(&[u8], TokenKind)> {
             tokens.push((lit, TokenKind::Operand));
         } else if b.is_ascii_alphabetic() || b == b'_' {
             let word = scan_ident_slice(bytes, &mut i);
-            let kind = if is_keyword_bytes(word) {
+            let kind = if lang.semantics().is_keyword(word) {
                 TokenKind::Operator
             } else {
                 TokenKind::Operand
@@ -85,8 +85,8 @@ fn calculate_entropy(frequencies: &[u32], total: f64) -> f64 {
 
 /// Compute Halstead Volume, Token Entropy, and Posnett Readability score.
 #[must_use]
-pub fn compute_readability(code: &str) -> ReadabilityMetrics {
-    let tokens = tokenize_code(code);
+pub fn compute_readability(code: &str, lang: Lang) -> ReadabilityMetrics {
+    let tokens = tokenize_code(code, lang);
     let token_count = tokens.len() as u32;
     let lines = (code.lines().count() as u32).max(1);
 

@@ -227,8 +227,9 @@ impl LanguageSemantics for RustLanguage {
         "rs"
     }
 
-    fn color(&self) -> Option<&'static str> {
-        Some("#dea584")
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::Insecure, G::Parens, G::SelfAssign, G::Naming]
     }
 
     fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {

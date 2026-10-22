@@ -123,6 +123,10 @@ impl LanguageSemantics for RubyLanguage {
         "rb"
     }
 
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        &[crate::languages::LintGroup::Naming]
+    }
+
     fn display_color(&self) -> &'static str {
         "#701516"
     }

@@ -148,8 +148,9 @@ impl LanguageSemantics for JavaLanguage {
         "java"
     }
 
-    fn color(&self) -> Option<&'static str> {
-        Some("#b07219")
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::Cast, G::DoWhile, G::Parens, G::SelfAssign, G::Unreachable, G::Naming]
     }
     super::impl_grammar_method!(crate tree_sitter_java::LANGUAGE, "tags.scm");
 

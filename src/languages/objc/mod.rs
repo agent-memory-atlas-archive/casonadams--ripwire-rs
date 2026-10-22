@@ -123,8 +123,9 @@ impl LanguageSemantics for ObjCLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_objc::LANGUAGE, "tags.scm");
 
-    fn lint_tag(&self) -> &'static str {
-        "objc"
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::Cast, G::Goto, G::DoWhile, G::Insecure, G::Parens, G::CFamily, G::SelfAssign, G::Unreachable, G::Naming]
     }
 
     fn lint_return_type<'a>(&self, sig: &'a str, name: &str) -> Option<&'a str> {

@@ -379,8 +379,9 @@ impl LanguageSemantics for JavaScriptLanguage {
         "js"
     }
 
-    fn color(&self) -> Option<&'static str> {
-        Some("#f1e05a")
+    fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
+        use crate::languages::LintGroup as G;
+        &[G::DoWhile, G::Insecure, G::Parens, G::SelfAssign, G::Unreachable, G::Naming]
     }
 
     fn is_generated_file_name(&self, file_name: &str) -> bool {

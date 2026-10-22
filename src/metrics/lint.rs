@@ -2,6 +2,7 @@ use super::lint_naming;
 pub use super::lint_report::{serialize_lint_sarif, serialize_lint_xml};
 use super::lint_rules::{FileLintContext, Sink, large_function, symbols_in_file};
 use crate::domain::{IngestResult, Interner, Lang};
+use crate::languages::LintGroup;
 use crate::languages::lint::{
     atoms as lint_atoms, cache as lint_cache, flow as lint_flow, text as lint_text,
 };
@@ -22,7 +23,7 @@ pub struct LintRuleDesc {
     pub name: &'static str,
     pub severity: &'static str,
     pub category: &'static str,
-    pub langs: &'static str,
+    pub group: LintGroup,
     pub since: &'static str,
     pub description: &'static str,
 }
@@ -35,18 +36,14 @@ pub struct LintRule {
     pub check: CheckFn,
 }
 
-const C_FAMILY: &str = "cpp,c,objc";
-const NAMING_LANGS: &str =
-    "cpp,c,objc,py,ts,js,go,rs,swift,java,cs,rb,sh,php,lua,ex,dart,kt,gd,clj";
-
 macro_rules! rule {
-    ($name:literal, $sev:literal, $cat:literal, $langs:expr, $since:literal, $desc:literal, $check:path) => {
+    ($name:literal, $sev:literal, $cat:literal, $group:expr, $since:literal, $desc:literal, $check:path) => {
         LintRule {
             desc: LintRuleDesc {
                 name: $name,
                 severity: $sev,
                 category: $cat,
-                langs: $langs,
+                group: $group,
                 since: $since,
                 description: $desc,
             },
@@ -60,7 +57,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "c-style-cast",
         "warn",
         "style",
-        "cpp,c,objc,java,cs",
+        LintGroup::Cast,
         "v0.1.0",
         "a C-style cast — cppcoreguidelines-pro-type-cstyle-cast prefers the explicit static_cast/const_cast/reinterpret_cast",
         lint_text::c_style_cast
@@ -69,7 +66,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "goto",
         "warn",
         "control-flow",
-        "cpp,c,objc,go,cs",
+        LintGroup::Goto,
         "v0.1.0",
         "a goto statement — cppcoreguidelines-avoid-goto",
         lint_flow::goto
@@ -78,7 +75,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "do-while",
         "info",
         "style",
-        "cpp,c,objc,ts,js,swift,java,cs",
+        LintGroup::DoWhile,
         "v0.1.0",
         "a do/while loop shape (on Swift, its do/catch block shares the same grammar node and also matches)",
         lint_flow::do_while
@@ -87,7 +84,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "unsafe-c-fn",
         "error",
         "security",
-        "cpp,c,objc,ts,js,go,rs",
+        LintGroup::Insecure,
         "v0.1.0",
         "a call to an unbounded C string function (strcpy/strcat/sprintf/gets)",
         lint_text::unsafe_c_fn
@@ -96,7 +93,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "weak-crypto",
         "error",
         "security",
-        "cpp,c,objc,ts,js,go,rs",
+        LintGroup::Insecure,
         "v0.1.0",
         "a call to a broken hash or cipher (MD5/SHA1/MD4/RC4)",
         lint_text::weak_crypto
@@ -105,7 +102,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "redundant-parens",
         "info",
         "style",
-        "cpp,c,objc,py,ts,js,go,rs,java,cs",
+        LintGroup::Parens,
         "v0.1.0",
         "a doubly-parenthesized expression — readability-redundant-parentheses",
         lint_text::redundant_parens
@@ -114,7 +111,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "suspicious-semicolon",
         "warn",
         "correctness",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.1.0",
         "an if-body that is just `;` — bugprone-suspicious-semicolon",
         lint_flow::suspicious_semicolon
@@ -123,7 +120,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "typedef-over-using",
         "info",
         "style",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.1.0",
         "a C-style typedef struct/union where `using` is preferred",
         lint_text::typedef_over_using
@@ -132,7 +129,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "magic-number",
         "info",
         "maintainability",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.1.0",
         "a non-trivial numeric literal inside a function body, outside a const/constexpr init",
         lint_atoms::magic_number
@@ -141,7 +138,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "empty-catch",
         "warn",
         "error-masking",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.1.0",
         "a catch block with an empty body",
         lint_flow::empty_catch
@@ -150,7 +147,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "self-assign",
         "warn",
         "correctness",
-        "cpp,c,objc,ts,js,rs,java,cs",
+        LintGroup::SelfAssign,
         "v0.1.0",
         "x = x — almost always a copy-paste bug",
         lint_text::self_assign
@@ -159,7 +156,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "large-function",
         "info",
         "maintainability",
-        "cpp,c",
+        LintGroup::NativeOnly,
         "v0.1.0",
         "a function body over 80 lines",
         large_function
@@ -168,7 +165,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "deep-nesting",
         "info",
         "maintainability",
-        "cpp,c",
+        LintGroup::NativeOnly,
         "v0.1.0",
         "brace nesting depth over 4 inside a function body",
         lint_flow::deep_nesting
@@ -177,7 +174,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "inconsistent-return",
         "info",
         "maintainability",
-        "cpp,c",
+        LintGroup::NativeOnly,
         "v0.1.0",
         "a bare `return;` mixed with a value-returning return in the same function",
         lint_flow::inconsistent_return
@@ -186,7 +183,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "unreachable-code",
         "warn",
         "correctness",
-        "cpp,c,objc,py,ts,js,go,java,cs",
+        LintGroup::Unreachable,
         "v0.1.0",
         "a statement after an unconditional return/break/continue/throw/raise in the same block",
         lint_flow::unreachable_code
@@ -195,7 +192,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "naming-short",
         "info",
         "naming",
-        NAMING_LANGS,
+        LintGroup::Naming,
         "v0.2.2",
         "a 1-2 letter Function/Method/Var name — visible far beyond any tiny scope [Beniamini/Hofmeister]",
         lint_naming::short
@@ -204,7 +201,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "naming-wordy",
         "info",
         "naming",
-        NAMING_LANGS,
+        LintGroup::Naming,
         "v0.2.2",
         "more than 5 split tokens in one name [Butler; AlSuhaibani]",
         lint_naming::wordy
@@ -213,7 +210,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "naming-series",
         "info",
         "naming",
-        NAMING_LANGS,
+        LintGroup::Naming,
         "v0.2.2",
         "foo1/foo2/... digit-suffix siblings sharing a base name in one scope [Butler]",
         lint_naming::series
@@ -222,7 +219,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "naming-underscore",
         "info",
         "naming",
-        NAMING_LANGS,
+        LintGroup::Naming,
         "v0.2.2",
         "internal consecutive underscores, or a C-family reserved __x/_X form [Butler]",
         lint_naming::underscore
@@ -231,7 +228,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "naming-case",
         "info",
         "naming",
-        NAMING_LANGS,
+        LintGroup::Naming,
         "v0.2.2",
         "snake_case and camelCase mixed inside one name [Butler]",
         lint_naming::mixed_case
@@ -240,7 +237,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "naming-predicate",
         "info",
         "naming",
-        NAMING_LANGS,
+        LintGroup::Naming,
         "v0.2.2",
         "an is/has/can/should/was-prefixed name whose KNOWN return type is not bool-like [LAPD A2]",
         lint_naming::predicate
@@ -249,7 +246,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "naming-setter",
         "info",
         "naming",
-        NAMING_LANGS,
+        LintGroup::Naming,
         "v0.2.2",
         "a set-prefixed name whose KNOWN return type is not void-like [LAPD A3]",
         lint_naming::setter
@@ -258,7 +255,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "naming-confusable",
         "info",
         "naming",
-        NAMING_LANGS,
+        LintGroup::Naming,
         "v0.2.2",
         "a co-visible pair within edit distance <=2, reordered tokens, or a bare/digit-suffixed twin [Namesake]",
         lint_naming::confusable
@@ -267,7 +264,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "naming-uninformative",
         "info",
         "naming",
-        NAMING_LANGS,
+        LintGroup::Naming,
         "v0.2.2",
         "every split subtoken is corpus-ubiquitous (BM25 idf) on a body past the size floor — fires only at the low end [Sparck Jones 1972]",
         lint_naming::uninformative
@@ -276,7 +273,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "atom-comma-operator",
         "info",
         "readability",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "the comma operator inside an expression (never a for-header comma) [Gopstein FSE 2017]",
         lint_atoms::comma_operator
@@ -285,7 +282,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "atom-embedded-crement",
         "info",
         "readability",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "++/-- evaluated inside a larger expression (never a whole statement) [Gopstein FSE 2017]",
         lint_atoms::embedded_crement
@@ -294,7 +291,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "atom-assign-as-value",
         "info",
         "readability",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "an assignment whose VALUE is consumed (a condition, an argument, ...) [Gopstein FSE 2017]",
         lint_atoms::assign_as_value
@@ -303,7 +300,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "atom-nested-ternary",
         "info",
         "readability",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "a conditional expression inside a conditional expression [Gopstein FSE 2017]",
         lint_atoms::nested_ternary
@@ -312,7 +309,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "atom-implicit-predicate",
         "info",
         "readability",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "arithmetic (or a non-0/1 integer literal) used where a truth value is expected [Gopstein FSE 2017]",
         lint_atoms::implicit_predicate
@@ -321,7 +318,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "atom-octal-literal",
         "info",
         "readability",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "a leading-zero integer literal — 0755 is 493, not 755 [Gopstein FSE 2017]",
         lint_atoms::octal_literal
@@ -330,7 +327,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "atom-reversed-subscript",
         "info",
         "readability",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "1[arr] — legal C, almost never intended [Gopstein FSE 2017]",
         lint_atoms::reversed_subscript
@@ -339,7 +336,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "cache-node-container",
         "info",
         "performance",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "a node-based std container (map/list/set/...) — one heap node per element, a dependent pointer chase per traversal step",
         lint_cache::node_container
@@ -348,7 +345,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "cache-vector-of-raw-ptr",
         "info",
         "performance",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "vector<T*> — contiguous handles, scattered payloads",
         lint_cache::vector_of_raw_ptr
@@ -357,7 +354,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "cache-vector-of-indirect",
         "info",
         "performance",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "vector<unique_ptr/shared_ptr/vector<...>> — an indirection per element",
         lint_cache::vector_of_indirect
@@ -366,7 +363,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "cache-heap-alloc-in-loop",
         "info",
         "performance",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "new/malloc/calloc/realloc/strdup inside a loop body — per-iteration allocation scatters the loop's output across the heap",
         lint_cache::heap_alloc_in_loop
@@ -375,7 +372,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "cache-pointer-chase-loop",
         "info",
         "performance",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "p = p->next inside a loop — a serial dependent-load chain the prefetcher cannot predict",
         lint_cache::pointer_chase_loop
@@ -384,7 +381,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "cache-gather-subscript",
         "info",
         "performance",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "a[b[i]] inside a loop — gather/scatter, random access by construction",
         lint_cache::gather_subscript
@@ -393,7 +390,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "cache-shared-ptr-by-value",
         "info",
         "performance",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "a by-value shared_ptr parameter — atomic refcount traffic per call",
         lint_cache::shared_ptr_by_value
@@ -402,7 +399,7 @@ pub static LINT_RULES: &[LintRule] = &[
         "cache-manual-prefetch",
         "info",
         "performance",
-        C_FAMILY,
+        LintGroup::CFamily,
         "v0.2.2",
         "an existing _mm_prefetch/__builtin_prefetch call, flagged for re-measurement (2007-era wins are often a wash today)",
         lint_cache::manual_prefetch
@@ -446,8 +443,7 @@ pub struct LintScan {
 #[must_use]
 pub fn rule_applies(rule: &LintRuleDesc, lang: Lang) -> bool {
     let sem = lang.semantics();
-    rule.langs.split(',').any(|t| t == sem.lint_tag())
-        || sem.lint_extra_rules().contains(&rule.name)
+    sem.lint_groups().contains(&rule.group) || sem.lint_extra_rules().contains(&rule.name)
 }
 
 fn matching_rules(prefixes: &[String], flag: &str) -> Result<Vec<&'static str>, String> {
@@ -577,13 +573,19 @@ pub fn serialize_lint_catalog<W: Write>(out: &mut W) -> io::Result<()> {
         LINT_RULES.len()
     )?;
     for r in LINT_RULES.iter().map(|r| &r.desc) {
+        let langs = crate::languages::ALL_LANGS
+            .iter()
+            .filter(|&&lang| rule_applies(r, lang))
+            .map(|lang| lang.tag())
+            .collect::<Vec<_>>()
+            .join(",");
         writeln!(
             out,
             "  <rule name=\"{}\" sev=\"{}\" cat=\"{}\" lang=\"{}\" since=\"{}\">{}</rule>",
             r.name,
             r.severity,
             r.category,
-            r.langs,
+            langs,
             r.since,
             crate::serialize::XmlEscaped(r.description)
         )?;
