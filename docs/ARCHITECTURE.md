@@ -105,8 +105,10 @@ A command is one module, `src/commands/<name>.rs`, that holds everything specifi
 flag and only the modifier flags it uses), its handler, and its MCP tool descriptors. The module exports one
 `pub static` `Plugin<Args>` (`name`, `options`, `selected`, `run`, `check`, `tools`). `SharedOption::Paged` is declared
 only by commands whose output honors `--limit/--offset`. Helpers shared by several commands live in
-`src/commands/common/<topic>.rs`, which is not registered. A flag used by several commands is declared once, on its
-owning module as a `pub` `Args` field; other plugins read it with `cli.plugins.decode::<OwnerArgs>()`. The subcommands
+`src/commands/common/<topic>.rs`, which is not registered. A flag that several commands read is declared once on
+`TopModifierArgs` (`src/cli/args.rs`) and read through `cli.modifiers`; a flag only one command reads stays on its
+owning module as a `pub` `Args` field. A plugin does not decode another plugin's `Args`; the few exceptions still in the
+code are named in the commit that introduced this rule. The subcommands
 `gate`, `metrics`, and `slice` are their own modules and flatten the owning `Args` structs. The CLI and MCP layers only
 see the `Command` trait, so shared code never names a command. Plugin-specific rules live behind `Command` hooks:
 `validate` (flag combinations), `refreshes_remote_checkout` and `run_default` (the default output, such as the `map`

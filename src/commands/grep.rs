@@ -1,5 +1,5 @@
 //! `--grep PAT`: literal trigram search, with the modifiers that refine its hits.
-use super::common::grep::{GrepModifiers, execute};
+use super::common::grep::execute;
 use super::common::mcp::mcp_tool;
 use super::{Plugin, Run, SharedOption};
 use crate::query::commands::{QueryContext, render_xml};
@@ -13,8 +13,6 @@ pub struct GrepArgs {
     /// Literal trigram text search
     #[arg(long, value_name = "PAT")]
     pub grep: Option<String>,
-    #[command(flatten)]
-    pub modifiers: GrepModifiers,
 }
 
 fn run(run: &Run<'_>, args: &GrepArgs) -> std::io::Result<()> {
@@ -26,7 +24,7 @@ fn run(run: &Run<'_>, args: &GrepArgs) -> std::io::Result<()> {
             pat,
             run.page(),
             run.cli.modifiers.in_scope.as_deref(),
-            &args.modifiers,
+            &run.cli.modifiers,
             out,
         )
     })

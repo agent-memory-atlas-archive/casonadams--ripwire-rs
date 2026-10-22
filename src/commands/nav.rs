@@ -40,7 +40,7 @@ pub fn run_nav(run: &Run<'_>, symbol: &str, mode: NavMode) -> io::Result<()> {
             pr_iters: Some(ctx.pr.iterations),
             interner: ctx.interner,
             page: run.page(),
-            max_depth: super::impact::depth(run.cli),
+            max_depth: run.cli.modifiers.impact_depth,
         };
         execute_nav_symbol_query_in_root(run.root, symbol, mode, &context, out)
     })
@@ -148,7 +148,7 @@ pub fn execute_navigate(cli: &Cli, args: &NavigateArgs, default_root: &str) -> i
         pr_iters: Some(pr.iterations),
         interner: &interner,
         page: cli.page_request(),
-        max_depth: super::impact::depth(cli),
+        max_depth: cli.modifiers.impact_depth,
     };
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);

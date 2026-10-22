@@ -113,6 +113,36 @@ pub struct TopModifierArgs {
     /// Pretty-print indented XML (default is minified token-optimized XML)
     #[arg(long = "pretty")]
     pub pretty: bool,
+    /// Limit transitive impact traversal to N call hops
+    #[arg(long = "impact-depth", global = true, value_name = "N")]
+    pub impact_depth: Option<u32>,
+    /// Compress output using compact token dialect
+    #[arg(long = "compress", overrides_with = "compress")]
+    pub compress: bool,
+    /// Goal or task description for --plan-lanes
+    #[arg(long = "task", value_name = "GOAL")]
+    pub task: Option<String>,
+    /// Span tier a --grep hit must sit in: code (default) or any
+    #[arg(long = "grep-in", value_name = "code|any")]
+    pub grep_in: Option<String>,
+    /// Where --and/--not terms must appear: line (default) or file
+    #[arg(long = "grep-scope", value_name = "line|file")]
+    pub grep_scope: Option<String>,
+    /// Keep only --grep hits where PAT is also present (repeatable)
+    #[arg(long = "and", value_name = "PAT")]
+    pub and_pat: Vec<String>,
+    /// Drop --grep hits where PAT is present (repeatable)
+    #[arg(long = "not", value_name = "PAT")]
+    pub not_pat: Vec<String>,
+    /// Lines before grep hit
+    #[arg(long = "grep-before", value_name = "N")]
+    pub grep_before: Option<usize>,
+    /// Lines after grep hit
+    #[arg(long = "grep-after", value_name = "N")]
+    pub grep_after: Option<usize>,
+    /// Lines around grep hit
+    #[arg(long = "grep-context", value_name = "N")]
+    pub grep_context: Option<usize>,
 }
 impl TopModifierArgs {
     pub fn is_pretty(&self) -> bool {

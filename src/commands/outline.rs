@@ -2,7 +2,6 @@
 use super::plugin::report_command;
 use crate::commands::common::ladder::execute_expand_or_outline_compressed;
 use crate::commands::context::ExecutionContext;
-use crate::commands::expand;
 use crate::serialize::XmlWriter;
 use std::io::{self, Write};
 
@@ -24,7 +23,7 @@ pub fn render<W: Write>(
         ctx.root,
         args.outline.as_deref().unwrap_or_default(),
         true,
-        expand::compress(ctx.cli),
+        ctx.cli.modifiers.compress,
         ctx.ingest,
         ctx.interner,
         out,

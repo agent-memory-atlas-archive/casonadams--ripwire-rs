@@ -10,14 +10,11 @@ pub struct PartitionArgs {
     /// Partition codebase into cohesive modules
     #[arg(long = "partition", value_name = "K")]
     pub partition: Option<Option<usize>>,
-    /// Goal or task description for --plan-lanes
-    #[arg(long = "task", value_name = "GOAL")]
-    pub task: Option<String>,
 }
 
 fn run(run: &Run<'_>, args: &PartitionArgs) -> io::Result<()> {
     let k = args.partition.flatten().unwrap_or(2);
-    let task = args.task.clone();
+    let task = run.cli.modifiers.task.clone();
     run.report(|ctx, out| {
         let safety = SafetyContext {
             root: ctx.root,

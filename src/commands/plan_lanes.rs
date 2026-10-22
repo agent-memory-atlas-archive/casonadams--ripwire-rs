@@ -1,7 +1,6 @@
 //! `--plan-lanes [N]`: plans parallel worktree lanes before code (split across N worktrees).
 use super::common::safety::context_of;
 use super::common::safety_queries::compute_plan_lanes_from_facts;
-use super::partition::PartitionArgs;
 use super::{Plugin, Run};
 use clap::Args;
 use std::io::Write;
@@ -21,10 +20,9 @@ fn run(run: &Run<'_>, args: &PlanLanesArgs) -> io::Result<()> {
     let requested = args.plan_lanes.flatten().unwrap_or(2);
     let task = run
         .cli
-        .plugins
-        .decode::<PartitionArgs>()
-        .unwrap_or_default()
+        .modifiers
         .task
+        .clone()
         .unwrap_or_else(|| "general refactoring".to_string());
     let brief_lines = args
         .brief

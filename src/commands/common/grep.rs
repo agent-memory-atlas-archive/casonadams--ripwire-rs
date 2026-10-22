@@ -1,36 +1,10 @@
 //! Corpus search shared by `--grep` and `--regex`, plus the modifiers they take; `--pattern` and `--match` reuse
 //! [`write_hits`] for their paged hit lists.
+use crate::cli::TopModifierArgs;
 use crate::commands::context::ExecutionContext;
 use crate::serialize::PageRequest;
-use clap::Args;
 use serde_json::Value;
 use std::io::{self, Write};
-
-/// Modifiers of `--grep` / `--regex`: span tier, scope, extra terms and context lines.
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct GrepModifiers {
-    /// Span tier a --grep hit must sit in: code (default) or any
-    #[arg(long = "grep-in", value_name = "code|any")]
-    pub grep_in: Option<String>,
-    /// Where --and/--not terms must appear: line (default) or file
-    #[arg(long = "grep-scope", value_name = "line|file")]
-    pub grep_scope: Option<String>,
-    /// Keep only --grep hits where PAT is also present (repeatable)
-    #[arg(long = "and", value_name = "PAT")]
-    pub and_pat: Vec<String>,
-    /// Drop --grep hits where PAT is present (repeatable)
-    #[arg(long = "not", value_name = "PAT")]
-    pub not_pat: Vec<String>,
-    /// Lines before grep hit
-    #[arg(long = "grep-before", value_name = "N")]
-    pub grep_before: Option<usize>,
-    /// Lines after grep hit
-    #[arg(long = "grep-after", value_name = "N")]
-    pub grep_after: Option<usize>,
-    /// Lines around grep hit
-    #[arg(long = "grep-context", value_name = "N")]
-    pub grep_context: Option<usize>,
-}
 
 /// Searches the corpus for `pat` as `verb` (`grep` or `regex`) and writes the hits windowed by `page`.
 pub fn execute<W: Write>(
@@ -39,7 +13,7 @@ pub fn execute<W: Write>(
     pat: &str,
     page: PageRequest,
     in_scope: Option<&str>,
-    modifiers: &GrepModifiers,
+    modifiers: &TopModifierArgs,
     out: &mut W,
 ) -> io::Result<()> {
     let sources = crate::query::FileSources {

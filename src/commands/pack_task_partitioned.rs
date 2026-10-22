@@ -7,13 +7,23 @@ use super::{Command, Run};
 use crate::cli::Cli;
 use std::io;
 
+/// The two owners' flags, read together; it adds no clap flags of its own.
+#[derive(clap::Args, Debug, Default)]
+struct PartitionedPackArgs {
+    #[command(flatten)]
+    pack: PackTaskArgs,
+    #[command(flatten)]
+    partition: PartitionArgs,
+}
+
 pub struct PackTaskPartitioned;
 pub static PACK_TASK_PARTITIONED: PackTaskPartitioned = PackTaskPartitioned;
 
 impl Command for PackTaskPartitioned {
     fn run(&self, cli: &Cli, root: &str) -> Option<io::Result<()>> {
-        let task = cli.plugins.decode::<PackTaskArgs>()?.pack_task?;
-        let partition = cli.plugins.decode::<PartitionArgs>()?.partition?;
+        let args = cli.plugins.decode::<PartitionedPackArgs>()?;
+        let task = args.pack.pack_task?;
+        let partition = args.partition.partition?;
         Some(report_query(&Run::new(cli, root, &[]), |query, out| {
             crate::navigate::execute_pack_task_partitioned(
                 &task,

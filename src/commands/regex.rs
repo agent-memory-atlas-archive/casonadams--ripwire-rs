@@ -1,5 +1,5 @@
 //! `--regex PAT`: regular-expression search over the corpus, sharing the `--grep` modifiers.
-use super::common::grep::{GrepModifiers, execute};
+use super::common::grep::execute;
 use super::{Plugin, Run, SharedOption};
 use clap::Args;
 
@@ -12,7 +12,6 @@ pub struct RegexArgs {
 
 fn run(run: &Run<'_>, args: &RegexArgs) -> std::io::Result<()> {
     let pat = args.regex.as_deref().unwrap_or_default();
-    let modifiers = run.cli.plugins.decode::<GrepModifiers>().unwrap_or_default();
     run.report(|ctx, out| {
         execute(
             ctx,
@@ -20,7 +19,7 @@ fn run(run: &Run<'_>, args: &RegexArgs) -> std::io::Result<()> {
             pat,
             run.page(),
             run.cli.modifiers.in_scope.as_deref(),
-            &modifiers,
+            &run.cli.modifiers,
             out,
         )
     })
