@@ -34,6 +34,45 @@ fn test_serialize_nonlocal_state_rows_and_cells() {
 }
 
 #[test]
+fn nonlocal_state_report_honors_limit_and_offset() {
+    use ripwire_rs::metrics::nonlocal::NonlocalStateReport;
+    use ripwire_rs::serialize::{GraphGauges, PageRequest, XmlReport};
+    let func = |name: &str| NonlocalFunction {
+        sym_name: name.to_string(),
+        path: "src/state.rs".to_string(),
+        line: 1,
+        writes: 0,
+        reads: 1,
+        cells: vec![StateCellAccess {
+            cell_name: "CONFIG".to_string(),
+            path: "src/state.rs".to_string(),
+            line: 2,
+            is_write: false,
+        }],
+    };
+    let funcs = vec![func("a"), func("b"), func("c")];
+    let render = |limit, offset| {
+        let report = NonlocalStateReport {
+            funcs: &funcs,
+            gauges: GraphGauges::default(),
+            page: PageRequest { limit, offset },
+        };
+        let mut out = Vec::new();
+        report.write_xml_report(".", &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    };
+    let all = render(None, None);
+    assert!(all.contains("shown=\"3\" capped=\"0\"") && all.matches("<fn ").count() == 3);
+    let page = render(Some(1), Some(1));
+    assert_eq!(page.matches("<fn ").count(), 1);
+    assert!(
+        page.contains(" n=\"b\" ")
+            && page.contains("shown=\"1\"")
+            && page.contains("has_more=\"1\"")
+    );
+}
+
+#[test]
 fn state_accesses_remain_visible_without_call_edges() {
     use ripwire_rs::{
         FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,

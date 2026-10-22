@@ -125,6 +125,7 @@ pub fn find_nonlocal_state(
 pub struct NonlocalStateReport<'a> {
     pub funcs: &'a [NonlocalFunction],
     pub gauges: crate::serialize::GraphGauges,
+    pub page: crate::serialize::PageRequest,
 }
 
 impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
@@ -138,15 +139,18 @@ impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
         Some(self.gauges)
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let count = self.funcs.len();
+        let window = self.page.window(self.funcs.len(), 0);
         let cells_count: usize = self.funcs.iter().map(|f| f.cells.len()).sum();
         write!(
             out,
-            " cells=\"{cells_count}\" functions=\"{count}\" shown=\"{count}\" capped=\"0\" unanalyzed_langs=\"\" unanalyzed_files=\"0\""
+            " cells=\"{cells_count}\" functions=\"{}\"{} unanalyzed_langs=\"\" unanalyzed_files=\"0\"",
+            self.funcs.len(),
+            window.xml_attrs()
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for f in self.funcs {
+        let window = self.page.window(self.funcs.len(), 0);
+        for f in &self.funcs[window.begin..window.end] {
             write_nonlocal_fn_row(f, out)?;
         }
         Ok(())
@@ -190,6 +194,7 @@ pub fn serialize_nonlocal_state_xml<W: Write>(
     NonlocalStateReport {
         funcs,
         gauges: crate::serialize::GraphGauges::default(),
+        page: crate::serialize::PageRequest::default(),
     }
     .write_xml_report(root, out)
 }
@@ -198,8 +203,14 @@ pub fn serialize_nonlocal_state_with_gauge_xml<W: Write>(
     root: &str,
     funcs: &[NonlocalFunction],
     gauges: crate::serialize::GraphGauges,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
-    NonlocalStateReport { funcs, gauges }.write_xml_report(root, out)
+    NonlocalStateReport {
+        funcs,
+        gauges,
+        page,
+    }
+    .write_xml_report(root, out)
 }

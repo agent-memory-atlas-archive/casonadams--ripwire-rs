@@ -1,5 +1,5 @@
 //! `--nonlocal-state`: reachable nonlocal mutable state read or written per function.
-use super::{Plugin, Run};
+use super::{Plugin, Run, SharedOption};
 use crate::commands::context::ExecutionContext;
 use crate::serialize::XmlWriter;
 use clap::Args;
@@ -12,23 +12,28 @@ pub struct NonlocalStateArgs {
     pub nonlocal_state: bool,
 }
 
-pub fn render(ctx: &ExecutionContext<'_>, out: &mut XmlWriter<'_, impl Write>) -> io::Result<()> {
+pub fn render(
+    ctx: &ExecutionContext<'_>,
+    page: crate::serialize::PageRequest,
+    out: &mut XmlWriter<'_, impl Write>,
+) -> io::Result<()> {
     let funcs = crate::metrics::nonlocal::find_nonlocal_state(ctx.ingest, ctx.graph, ctx.interner);
     crate::metrics::nonlocal::serialize_nonlocal_state_with_gauge_xml(
         ctx.root,
         &funcs,
         ctx.graph.gauges(),
+        page,
         out,
     )
 }
 
 fn run(run: &Run<'_>, _args: &NonlocalStateArgs) -> io::Result<()> {
-    run.report(render)
+    run.report(|ctx, out| render(ctx, run.page(), out))
 }
 
 pub static NONLOCAL_STATE: Plugin<NonlocalStateArgs> = Plugin {
     name: "nonlocal-state",
-    options: &[],
+    options: &[SharedOption::Paged],
     selected: |args| args.nonlocal_state,
     run,
     check: None,
