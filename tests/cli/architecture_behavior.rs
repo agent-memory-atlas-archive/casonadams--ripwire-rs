@@ -1,7 +1,7 @@
-use ripwire_rs::cli::{NavigateArgs, execute_navigate_with};
 use ripwire_rs::commands::architecture::{
     build_community_module, compute_deps_report, execute_external_surface_query,
 };
+use ripwire_rs::commands::nav::{NavigateArgs, execute_navigate_with};
 use ripwire_rs::query::map::{MapRequest, execute_stream_xml_ranked};
 use ripwire_rs::query::navigation::NavContext;
 use ripwire_rs::{

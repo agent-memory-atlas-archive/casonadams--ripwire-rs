@@ -1,3 +1,4 @@
+use ripwire_rs::commands::gate::{GateDispatchArgs, validate_gate_modifiers};
 use ripwire_rs::commands::safety::*;
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::query::safety::SafetyContext;

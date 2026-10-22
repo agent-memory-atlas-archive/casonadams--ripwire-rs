@@ -5,8 +5,9 @@ mod ladder;
 pub use ladder::execute_expand_or_outline_query;
 
 use super::Command;
-use crate::cli::{
-    Cli, CliVerb, ExecutionContext, Paginated, VerbGroup, run_cli_verb, split_csv_patterns,
+use crate::cli::Cli;
+use crate::commands::context::{
+    CliVerb, ExecutionContext, Paginated, VerbGroup, run_cli_verb, split_csv_patterns,
 };
 use clap::{Args, Command as ClapCommand};
 use std::io::{self, Write};

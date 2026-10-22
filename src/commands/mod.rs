@@ -37,6 +37,7 @@ pub trait Command: Sync {
     }
 }
 
+pub mod context;
 /// One line per command plugin; order is CLI dispatch precedence.
 macro_rules! register_commands {
     ($($module:ident :: $instance:ident,)*) => {
@@ -47,6 +48,10 @@ macro_rules! register_commands {
 }
 
 register_commands! {
+    mcp::MCP,
+    skills::SKILLS,
+    eval::EVAL,
+    batch::BATCH,
     nav::NAV,
     retrieval::RETRIEVAL,
     workspace::WORKSPACE,

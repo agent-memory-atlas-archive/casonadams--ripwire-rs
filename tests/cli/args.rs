@@ -1,6 +1,6 @@
 use ripwire_rs::DEFAULT_PACK_BUDGET_BYTES;
 use ripwire_rs::cli::compute_effective_budget;
-use ripwire_rs::commands::safety::{GateDispatchArgs, validate_gate_modifiers};
+use ripwire_rs::commands::gate::{GateDispatchArgs, validate_gate_modifiers};
 use ripwire_rs::query::graph::split_endpoint_pair;
 
 #[test]

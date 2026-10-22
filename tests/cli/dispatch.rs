@@ -1,4 +1,4 @@
-use ripwire_rs::cli::execute_batch_content;
+use ripwire_rs::commands::batch::execute_batch_content;
 use ripwire_rs::query::graph::execute_path_query;
 use ripwire_rs::{
     Graph, IngestResult, Interner, Lang, LanguageRegistry, PageRankConfig, ingest_in_memory_files,

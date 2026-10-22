@@ -2,10 +2,13 @@
 //! analyses live with the safety group.
 
 use super::{Command, decode_subcommand};
-use crate::cli::{Cli, OutputDialect, Paginated};
-use crate::commands::safety::{GitMetricsFlags, dispatch_git_metrics_with_flags};
+use crate::cli::Cli;
+use crate::commands::context::{OutputDialect, Paginated};
 use clap::{Args, Command as ClapCommand};
 use std::io;
+
+mod execute;
+pub use execute::*;
 
 /// Top-level git history metric flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]

@@ -9,7 +9,8 @@ mod tools;
 pub use execute::*;
 
 use super::Command;
-use crate::cli::{Cli, CliVerb, ExecutionContext, Paginated, VerbGroup, run_cli_verb};
+use crate::cli::Cli;
+use crate::commands::context::{CliVerb, ExecutionContext, Paginated, VerbGroup, run_cli_verb};
 use crate::query::commands::CommandDescriptor;
 use clap::{Args, Command as ClapCommand};
 use std::io::{self, Write};

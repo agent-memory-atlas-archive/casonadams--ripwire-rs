@@ -1,5 +1,5 @@
 use super::ArchitectureArgs;
-use crate::cli::ExecutionContext;
+use crate::commands::context::ExecutionContext;
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
 use std::io::{self, Write};
@@ -36,7 +36,7 @@ pub struct DeadCodeContext<'a> {
     pub ingest: &'a IngestResult,
     pub graph: &'a Graph,
     pub interner: &'a Interner,
-    pub page: &'a dyn crate::cli::Paginated,
+    pub page: &'a dyn crate::commands::context::Paginated,
 }
 
 pub fn execute_dead_code_query_paged<W: Write>(
@@ -714,7 +714,7 @@ pub fn execute_deps_query_paged<W: Write>(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
-    page: &dyn crate::cli::Paginated,
+    page: &dyn crate::commands::context::Paginated,
     out: &mut W,
 ) -> io::Result<()> {
     let mut rep = compute_deps_report(ingest, graph, interner);

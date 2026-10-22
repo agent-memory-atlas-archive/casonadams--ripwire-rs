@@ -1,4 +1,4 @@
-use ripwire_rs::cli::VerbGroup;
+use ripwire_rs::commands::context::VerbGroup;
 use ripwire_rs::commands::retrieval::{RetrievalArgs, execute_retrieval_dispatch};
 use ripwire_rs::query::commands::QueryContext;
 use ripwire_rs::{

@@ -1,5 +1,5 @@
-use ripwire_rs::cli::{CliVerb, ExecutionContext, VerbGroup};
 use ripwire_rs::commands::architecture::ArchitectureArgs;
+use ripwire_rs::commands::context::{CliVerb, ExecutionContext, VerbGroup};
 use ripwire_rs::commands::detail::DetailArgs;
 use ripwire_rs::serialize::XmlWriter;
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, PageRankConfig, ingest_in_memory_files};

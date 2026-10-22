@@ -1,5 +1,6 @@
 use super::WorkspaceArgs;
-use crate::cli::{Paginated, TopModifierArgs};
+use crate::cli::TopModifierArgs;
+use crate::commands::context::Paginated;
 use crate::domain::{IngestResult, Interner};
 use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};

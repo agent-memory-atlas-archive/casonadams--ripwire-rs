@@ -1,7 +1,8 @@
 //! Slice group: `--slice`, `--slice-flow`, `--slice-depth` and the `slice` subcommand.
 
 use super::{Command, decode_subcommand};
-use crate::cli::{Cli, OutputDialect, load_repo_analysis_for_cli};
+use crate::cli::Cli;
+use crate::commands::context::{OutputDialect, load_repo_analysis_for_cli};
 use clap::{Args, Command as ClapCommand};
 use std::io::{self, Write};
 use std::path::Path;

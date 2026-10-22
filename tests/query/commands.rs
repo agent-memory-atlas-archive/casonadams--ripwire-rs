@@ -146,7 +146,7 @@ fn batch_xml_escapes_text_and_json_without_escaping_xml_reports() {
         json!({"tool": "unknown", "error": "unknown & rejected"}),
     ];
     let mut output = Vec::new();
-    ripwire_rs::cli::queries::write_batch_results(":memory:", &results, &mut output).unwrap();
+    ripwire_rs::commands::batch::write_batch_results(":memory:", &results, &mut output).unwrap();
     let xml = String::from_utf8(output).unwrap();
     assert!(xml.contains("A &amp; B &lt;example/&gt;"));
     assert!(xml.contains("&lt;&amp;"));
@@ -156,12 +156,13 @@ fn batch_xml_escapes_text_and_json_without_escaping_xml_reports() {
     let bad_xml = [json!({"tool": "bad", "kind": "xml", "result": 123})];
     let mut bad_out = Vec::new();
     assert!(
-        ripwire_rs::cli::queries::write_batch_results(":memory:", &bad_xml, &mut bad_out).is_err()
+        ripwire_rs::commands::batch::write_batch_results(":memory:", &bad_xml, &mut bad_out)
+            .is_err()
     );
 
     let mut esc_out = Vec::new();
     let sample = [json!({"tool": "find_symbol", "kind": "xml", "result": "<symbols/>"})];
-    ripwire_rs::cli::queries::write_batch_results("root&path", &sample, &mut esc_out).unwrap();
+    ripwire_rs::commands::batch::write_batch_results("root&path", &sample, &mut esc_out).unwrap();
     assert!(
         String::from_utf8(esc_out)
             .unwrap()

@@ -67,6 +67,16 @@ impl Workspace {
             at: self.at.as_deref(),
         }
     }
+
+    #[must_use]
+    pub fn safety_context(&self) -> crate::query::safety::SafetyContext<'_> {
+        crate::query::safety::SafetyContext {
+            root: &self.root,
+            ingest: &self.ingest,
+            graph: &self.graph,
+            interner: &self.interner,
+        }
+    }
     #[must_use]
     pub fn from_ingest(root: &str, ingest: IngestResult, interner: Interner) -> Self {
         let (ingest, graph, pr, interner) =

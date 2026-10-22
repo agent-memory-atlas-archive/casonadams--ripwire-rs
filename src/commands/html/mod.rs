@@ -1,7 +1,8 @@
 //! Html group: `--html [FILE]` and `--color-by`, which write the interactive call-graph page.
 
 use super::Command;
-use crate::cli::{Cli, load_repo_analysis_for_cli};
+use crate::cli::Cli;
+use crate::commands::context::load_repo_analysis_for_cli;
 use clap::{Args, Command as ClapCommand};
 use std::io;
 

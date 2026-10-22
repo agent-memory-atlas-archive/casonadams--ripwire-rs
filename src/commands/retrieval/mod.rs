@@ -3,11 +3,14 @@
 //! `--help-task`, `--refetch` and their MCP tools.
 mod execute;
 mod tools;
+mod orient;
 
 pub use execute::execute_retrieval_dispatch;
+pub use orient::OrientArgs;
 
-use super::Command;
-use crate::cli::{Cli, CliVerb, ExecutionContext, VerbGroup, run_cli_verb};
+use super::{Command, decode_subcommand};
+use crate::cli::Cli;
+use crate::commands::context::{CliVerb, ExecutionContext, VerbGroup, run_cli_verb};
 use crate::query::commands::{CommandDescriptor, QueryContext};
 use clap::{Args, Command as ClapCommand};
 use std::io::{self, Write};
@@ -270,9 +273,32 @@ impl Command for Retrieval {
         RetrievalArgs::augment_args(cmd)
     }
 
+    fn subcommands(&self) -> Vec<ClapCommand> {
+        vec![
+            OrientArgs::augment_args(ClapCommand::new("orient"))
+                .about("Exploration and task-based context orientation"),
+        ]
+    }
+
     fn run(&self, cli: &Cli, root: &str) -> Option<io::Result<()>> {
         let args = cli.plugins.decode::<RetrievalArgs>()?;
         run_cli_verb(&args, cli, root)
+    }
+
+    fn run_subcommand(
+        &self,
+        cli: &Cli,
+        name: &str,
+        matches: &clap::ArgMatches,
+        root: &str,
+    ) -> Option<io::Result<()>> {
+        if name != "orient" {
+            return None;
+        }
+        Some(
+            decode_subcommand::<OrientArgs>(matches)
+                .and_then(|args| orient::execute_orient_subcommand(cli, &args, root)),
+        )
     }
 
     fn tools(&self) -> &'static [&'static CommandDescriptor] {

@@ -1,5 +1,5 @@
 use super::RetrievalArgs;
-use crate::cli::ExecutionContext;
+use crate::commands::context::ExecutionContext;
 use crate::domain::{IngestResult, Interner};
 use crate::query::commands::QueryContext;
 use crate::query::graph::{execute_connect_query_with_radius, execute_path_query};

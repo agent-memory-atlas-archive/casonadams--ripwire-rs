@@ -2,10 +2,14 @@
 //! subcommand. The gate handlers themselves live with the safety group.
 
 use super::{Command, decode_subcommand};
-use crate::cli::{Cli, Paginated};
-use crate::commands::safety::{GateDispatchArgs, SafetyArgs, dispatch_gate_command};
+use crate::cli::Cli;
+use crate::commands::context::Paginated;
+use crate::commands::safety::SafetyArgs;
 use clap::{Args, Command as ClapCommand};
 use std::io;
+
+mod execute;
+pub use execute::*;
 
 /// Top-level pre-commit verification flags.
 #[derive(Args, Debug, Clone, Default, PartialEq)]
