@@ -105,7 +105,7 @@ upstream-parity: build-release ## Run upstream regression.sh against target/rele
 REPO ?= .
 
 .PHONY: parity
-parity: build-release ## Validate upstream parity on REPO; quiet on success, GitHub error annotations on failure (default: REPO=.)
+parity: build-release ## Validate upstream parity on REPO: prints ledger measurements; fails on unrecorded, stale, or invalid entries in scripts/parity-divergences.toml (default: REPO=.)
 	@./scripts/validate-parity.sh "$(REPO)"
 
 .PHONY: validate

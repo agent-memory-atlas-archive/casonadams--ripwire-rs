@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import collections
 import json
 import os
 import re
@@ -6,7 +7,21 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
+import tomllib
 import xml.etree.ElementTree as ET
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+LEDGER = ROOT / "scripts" / "parity-divergences.toml"
+KINDS = ("smaller", "richer", "fixes-upstream-defect", "defect")
+LEDGER_FIELDS = ("id", "command", "case", "kind", "why", "evidence")
+EVIDENCE_RE = re.compile(r"(tests/[A-Za-z0-9_/]+\.rs)::([A-Za-z_][A-Za-z0-9_]*)")
+PAGING_ATTRS = ("total", "has_more", "next_offset", "capped")
+ROW_KEYS = ("p", "n", "path", "name")
+FULL_ROWS_FLAG = "--limit=100000"
+FULL_TIMEOUT = 60
+WARNINGS = []
 
 OPTIONAL_ATTRS = {
     "shown",
@@ -193,6 +208,19 @@ def discover_repo_targets(rw_bin, repo_dir):
     return target_file, target_sym, second_sym
 
 
+# Synthetic changed sets: existing files passed as CLI args, so the tree is never written.
+CHANGED_SETS = (
+    "src/gate/affected.rs,src/serialize/arch_xml.rs",
+    "src/commands/test_gate.rs,src/commands/gate.rs",
+    "src/commands/situ.rs,src/commands/edit_check.rs,src/commands/safe_delete.rs",
+)
+# --edit-check and --safe-delete take one symbol each, so each symbol is its own run.
+GATE_SYMBOLS = ("resolve_changed_or_spec_files", "build_handoff_verified_rows", "execute_test_gate_query_paged")
+# Ranked lists: rows are compared by position, so a shape mismatch at any rank fails.
+# Row identity order is not gated here; ranking differs from upstream and is reported, not ledgered.
+RANKED_FLAGS = ("", "--top-k", "--max-tokens", "--rank-by", "--biggest-first", "--hotspots", "--affected")
+
+
 def build_command_list(merge_ref, target_file, target_sym, second_sym):
     return [
         ("", "Default ranked map"),
@@ -261,6 +289,11 @@ def build_command_list(merge_ref, target_file, target_sym, second_sym):
         ("--lego=NonExistentTrait999", "Interface implementor lookup"),
         (f"--edit-check={target_sym}", "Post-edit contract check"),
         (f"--safe-delete={target_sym}", "Safe deletion pre-check"),
+        *[(f"--affected={files}", "Test reachability on a changed set") for files in CHANGED_SETS],
+        *[(f"--test-gate={files}", "Test obligations on a changed set") for files in CHANGED_SETS],
+        *[(f"--situ={files}", "Situational awareness on a changed set") for files in CHANGED_SETS],
+        *[(f"--edit-check={sym}", "Contract check for one symbol") for sym in GATE_SYMBOLS],
+        *[(f"--safe-delete={sym}", "Safe-delete check for one symbol") for sym in GATE_SYMBOLS],
     ]
 
 
@@ -274,17 +307,25 @@ def parse_xml_dom(raw_text):
         return None, f"XML parse error: {exc}"
 
 
-def compare_xml_children(root_rw, root_rip):
-    set_rw = {ch.tag for ch in root_rw}
-    set_rip = {ch.tag for ch in root_rip}
-    for tag in sorted(set_rip & set_rw):
-        ch_rw = next(ch for ch in root_rw if ch.tag == tag)
-        ch_rip = next(ch for ch in root_rip if ch.tag == tag)
-        req_rip = set(ch_rip.attrib.keys()) - OPTIONAL_ATTRS
-        req_rw = set(ch_rw.attrib.keys()) - OPTIONAL_ATTRS
-        missing_attrs = sorted(req_rip - req_rw)
-        if missing_attrs:
-            return f"child <{tag}> missing required attrs {missing_attrs}"
+def required_attrs(el):
+    return set(el.attrib) - OPTIONAL_ATTRS
+
+
+def compare_xml_children(root_rw, root_rip, ranked):
+    for tag in sorted({ch.tag for ch in root_rip} & {ch.tag for ch in root_rw}):
+        rip_rows = [ch for ch in root_rip if ch.tag == tag]
+        rw_rows = [ch for ch in root_rw if ch.tag == tag]
+        if ranked:
+            for ch_rip, ch_rw in zip(rip_rows, rw_rows):
+                missing = required_attrs(ch_rip) - set(ch_rw.attrib)
+                if missing:
+                    return f"ranked <{tag}> row missing required attrs {sorted(missing)}"
+            continue
+        rw_attrs = [set(ch.attrib) for ch in rw_rows]
+        for ch_rip in rip_rows:
+            need = required_attrs(ch_rip)
+            if not any(need <= have for have in rw_attrs):
+                return f"child <{tag}> has no row with required attrs {sorted(need)}"
     return None
 
 
@@ -361,7 +402,7 @@ def check_xml_parity(cmd, out_rw, out_rip):
     if "--max-tokens=2000" in cmd and len(out_rw) > max(len(out_rip) * 3, 10000):
         return f"budget overrun: rw={len(out_rw)}B vs rip={len(out_rip)}B"
     inv_err = check_xml_data_invariants(cmd, root_rw, root_rip)
-    return inv_err if inv_err else compare_xml_children(root_rw, root_rip)
+    return inv_err if inv_err else compare_xml_children(root_rw, root_rip, is_ranked(cmd))
 
 
 def check_plan_lanes_json(out_rw, out_rip):
@@ -402,14 +443,31 @@ def check_non_xml_parity(cmd, out_rw, out_rip):
     return "unhandled text command"
 
 
-def check_xml_timeout(cmd, output):
-    if cmd == "--situ":
+def is_text_cmd(cmd):
+    base = cmd.split("=", 1)[0]
+    return cmd == "-v" or base in ("--mermaid", "--html", "--situ") or "--plan-lanes" in cmd
+
+
+def is_ranked(cmd):
+    return cmd.split("=", 1)[0] in RANKED_FLAGS
+
+
+def check_text_timeout(cmd, output):
+    if cmd.split("=", 1)[0] == "--situ":
         return check_situ_xml(output)
+    return None if output.strip() else "empty text output"
+
+
+def check_xml_timeout(output):
     root, error = parse_xml_dom(output)
     return error if error else (None if root.attrib.get("schema") else "missing schema")
 
 
+Outcome = collections.namedtuple("Outcome", "reason rw rip text")
+
+
 def run_one_check(rw_bin, rip_bin, repo, cmd):
+    text = is_text_cmd(cmd)
     if cmd == "-v":
         c_rw, c_rip = [rw_bin, "-v"], [rip_bin, "-v"]
     else:
@@ -419,10 +477,9 @@ def run_one_check(rw_bin, rip_bin, repo, cmd):
     try:
         p_rip = subprocess.run(c_rip, capture_output=True, text=True, timeout=4)
     except subprocess.TimeoutExpired:
-        is_text = cmd in ("-v", "--mermaid", "--html") or "--plan-lanes" in cmd
-        if is_text:
-            return None if p_rw.stdout.strip() else "empty text output"
-        return check_xml_timeout(cmd, p_rw.stdout)
+        if text:
+            return Outcome(check_text_timeout(cmd, p_rw.stdout), None, None, text)
+        return Outcome(check_xml_timeout(p_rw.stdout), None, None, text)
     if p_rw.returncode != p_rip.returncode:
         if (
             (p_rw.returncode != 0 and p_rip.returncode != 0)
@@ -432,15 +489,243 @@ def run_one_check(rw_bin, rip_bin, repo, cmd):
             or (repo != "." and any(k in cmd for k in ("--slice=", "--edit-check=", "--at=", "--doctor")))
         ):
             if not p_rw.stdout.strip() or not p_rip.stdout.strip():
-                return None
+                return Outcome(None, None, None, text)
         else:
-            return f"exit code mismatch: rw={p_rw.returncode} vs rip={p_rip.returncode}"
+            return Outcome(f"exit code mismatch: rw={p_rw.returncode} vs rip={p_rip.returncode}", p_rw.stdout, p_rip.stdout, text)
     if p_rw.returncode != 0 and not p_rip.stdout.strip():
+        return Outcome(None, None, None, text)
+    if text:
+        reason = check_non_xml_parity(cmd, p_rw.stdout, p_rip.stdout)
+    else:
+        reason = check_xml_parity(cmd, p_rw.stdout, p_rip.stdout)
+    return Outcome(reason, p_rw.stdout, p_rip.stdout, text)
+
+
+def tag_counts(root):
+    return collections.Counter(el.tag for el in root.iter() if el is not root)
+
+
+def tag_divergence(root_rw, root_rip):
+    c_rw, c_rip = tag_counts(root_rw), tag_counts(root_rip)
+    return {t: (c_rw[t], c_rip[t]) for t in set(c_rw) | set(c_rip) if c_rw[t] != c_rip[t]}
+
+
+def facts(root):
+    return sum(1 + len(el.attrib) for el in root.iter())
+
+
+def divergence_roots(outcome):
+    if outcome.text or outcome.rw is None:
         return None
-    is_text = cmd in ("-v", "--mermaid", "--html", "--situ") or "--plan-lanes" in cmd
-    if is_text:
-        return check_non_xml_parity(cmd, p_rw.stdout, p_rip.stdout)
-    return check_xml_parity(cmd, p_rw.stdout, p_rip.stdout)
+    root_rw, err_rw = parse_xml_dom(outcome.rw)
+    root_rip, err_rip = parse_xml_dom(outcome.rip)
+    if err_rw or err_rip:
+        return None
+    return root_rw, root_rip
+
+
+def entry_key(entry):
+    case = entry["case"]
+    if isinstance(case, list):
+        case = ",".join(case)
+    return f"{entry['command']}={case}" if case else entry["command"]
+
+
+def load_ledger():
+    with LEDGER.open("rb") as fh:
+        data = tomllib.load(fh)
+    entries = data.get("divergence", [])
+    errors, ids, keys = [], set(), set()
+    if not isinstance(data.get("defect_budget"), int):
+        errors.append("ledger header must set defect_budget to the number of defect entries")
+    for entry in entries:
+        ident = entry.get("id", "?")
+        missing = [f for f in LEDGER_FIELDS if f not in entry]
+        if missing:
+            errors.append(f"ledger entry {ident} missing {missing}")
+            continue
+        if entry["kind"] not in KINDS:
+            errors.append(f"ledger entry {ident} has unknown kind {entry['kind']!r}")
+        if ident in ids:
+            errors.append(f"duplicate ledger id {ident}")
+        ids.add(ident)
+        if "files" not in entry:
+            key = entry_key(entry)
+            if key in keys:
+                errors.append(f"duplicate ledger command {key}")
+            keys.add(key)
+    return entries, data.get("defect_budget", 0), errors
+
+
+def materialize_fixture(files):
+    root = Path(tempfile.mkdtemp(prefix="ripwire-parity-")).resolve()
+    try:
+        for rel, content in files.items():
+            target = (root / rel).resolve()
+            if root not in target.parents:
+                raise ValueError(f"fixture path escapes its root: {rel}")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        git = ["git", "-C", str(root), "-c", "user.name=parity", "-c", "user.email=parity@localhost"]
+        subprocess.run(["git", "-C", str(root), "init", "-q"], check=True)
+        subprocess.run(git + ["add", "-A"], check=True)
+        subprocess.run(git + ["commit", "-q", "-m", "fixture"], check=True)
+    except Exception:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
+    return str(root)
+
+
+def check_defect_evidence(evidence):
+    match = EVIDENCE_RE.fullmatch(evidence)
+    if match is None:
+        return f"fixes-upstream-defect evidence must be tests/<mod>/<file>.rs::test_name, got {evidence!r}"
+    rel, name = match.group(1), match.group(2)
+    path = ROOT / rel
+    if not path.is_file():
+        return f"regression test file {rel} does not exist"
+    if not re.search(rf"fn\s+{re.escape(name)}\s*\(", path.read_text(encoding="utf-8")):
+        return f"fn {name} not found in {rel}"
+    return None
+
+
+def measured_verdict(entry, b_rw, b_rip, f_rw, f_rip):
+    d_rw, d_rip = f_rw / max(b_rw, 1), f_rip / max(b_rip, 1)
+    print(
+        f"ledger {entry['id']} [{entry['kind']}]: bytes rw={b_rw} rip={b_rip}; "
+        f"facts rw={f_rw} rip={f_rip}; density rw={d_rw:.5f} rip={d_rip:.5f}"
+    )
+    kind = entry["kind"]
+    if kind == "smaller":
+        return None if b_rw <= b_rip else f"smaller: rw bytes {b_rw} exceed rip bytes {b_rip}"
+    if kind == "richer":
+        ok = f_rw > f_rip and d_rw >= d_rip
+        return None if ok else "richer: needs more facts and at least equal facts-per-byte than upstream"
+    return check_defect_evidence(entry["evidence"])
+
+
+def check_entry(entry, outcome):
+    root_rw, root_rip = divergence_roots(outcome)
+    return measured_verdict(
+        entry, len(outcome.rw.encode()), len(outcome.rip.encode()), facts(root_rw), facts(root_rip)
+    )
+
+
+def xml_facts(text):
+    root, err = parse_xml_dom(text)
+    return 0 if err else facts(root)
+
+
+def check_exit_entry(entry, outcome):
+    return measured_verdict(
+        entry, len(outcome.rw.encode()), len(outcome.rip.encode()), xml_facts(outcome.rw), xml_facts(outcome.rip)
+    )
+
+
+def describe_divergence(diff):
+    return ", ".join(f"<{t}> rw={a} rip={b}" for t, (a, b) in sorted(diff.items()))
+
+
+def is_paged(root):
+    return any(attr in root.attrib for attr in PAGING_ATTRS)
+
+
+def row_value(key, value):
+    return re.sub(r":\d+$", "", value) if key == "p" else value
+
+
+def row_groups(root):
+    groups = collections.defaultdict(list)
+    for el in root.iter():
+        if el is not root and any(k in el.attrib for k in ROW_KEYS):
+            groups[el.tag].append(tuple((k, row_value(k, el.attrib[k])) for k in ROW_KEYS if k in el.attrib))
+    return groups
+
+
+def size_verdict(out_rw, out_rip, root_rw, root_rip):
+    b_rw, b_rip = len(out_rw.encode()), len(out_rip.encode())
+    if b_rw <= b_rip:
+        return None
+    f_rw, f_rip = facts(root_rw), facts(root_rip)
+    if f_rw > f_rip and f_rw / b_rw >= f_rip / b_rip:
+        return None
+    return f"paged output {b_rw}B exceeds upstream {b_rip}B without richer density (facts {f_rw} vs {f_rip})"
+
+
+def is_subsequence(part, whole):
+    it = iter(whole)
+    return all(any(x == y for y in it) for x in part)
+
+
+def paged_verdict(rw_bin, rip_bin, repo, cmd, out_rw, out_rip, root_rw, root_rip):
+    try:
+        full_rw = subprocess.run(
+            [rw_bin, repo] + shlex.split(cmd) + [FULL_ROWS_FLAG], capture_output=True, text=True, timeout=20
+        )
+        full_rip = subprocess.run(
+            [rip_bin, repo] + shlex.split(cmd) + [FULL_ROWS_FLAG], capture_output=True, text=True, timeout=FULL_TIMEOUT
+        )
+    except subprocess.TimeoutExpired:
+        return "paged list: full row set timed out"
+    root_full_rw, err_rw = parse_xml_dom(full_rw.stdout)
+    root_full_rip, err_rip = parse_xml_dom(full_rip.stdout)
+    if err_rw or err_rip:
+        return "paged list: full row set not comparable"
+    rows_full_rw, rows_full_rip = row_groups(root_full_rw), row_groups(root_full_rip)
+    for tag, keys in sorted(row_groups(root_rw).items()):
+        if not is_subsequence(keys, rows_full_rw.get(tag, [])):
+            return f"paged <{tag}> rows are out of our ranking order"
+        extra = sorted(set(keys) - set(rows_full_rip.get(tag, [])))
+        if extra:
+            return f"paged <{tag}> row absent from upstream's full set: {extra[0]}"
+    for attr in ("total", "count"):
+        if attr in root_rw.attrib and attr in root_rip.attrib and root_rw.attrib[attr] != root_rip.attrib[attr]:
+            return f"paged {attr} mismatch: rw={root_rw.attrib[attr]} vs rip={root_rip.attrib[attr]}"
+    if "next_offset" in root_rw.attrib and "shown" in root_rw.attrib:
+        expected = int(root_rw.attrib.get("offset", "0")) + int(root_rw.attrib["shown"])
+        if int(root_rw.attrib["next_offset"]) != expected:
+            return "paged next_offset does not follow the shown rows"
+    return size_verdict(out_rw, out_rip, root_rw, root_rip)
+
+
+def judge(rw_bin, rip_bin, repo, cmd, outcome, entry):
+    roots = divergence_roots(outcome)
+    diff = tag_divergence(*roots) if roots else {}
+    ident = entry["id"] if entry else None
+    if entry is not None and entry["kind"] == "defect":
+        if outcome.reason or diff:
+            return None, f"{ident}: {entry['why']}"
+        return f"ledger entry {ident} no longer diverges; remove it", None
+    if outcome.reason and entry is None:
+        return outcome.reason, None
+    if outcome.reason and outcome.reason.startswith("exit code mismatch"):
+        return check_exit_entry(entry, outcome), None
+    if outcome.reason:
+        return outcome.reason, None
+    if roots is None:
+        return (f"ledger entry {ident} cannot be measured: output not comparable" if entry else None), None
+    if not diff:
+        return (f"ledger entry {ident} no longer diverges; remove it" if entry else None), None
+    if is_paged(roots[0]):
+        reason = paged_verdict(rw_bin, rip_bin, repo, cmd, outcome.rw, outcome.rip, *roots)
+        if reason is None:
+            return (f"ledger entry {ident} is covered by the generic paged-list rule; remove it" if entry else None), None
+        if entry is None:
+            return reason, None
+    if entry is None:
+        return f"unrecorded difference {describe_divergence(diff)}; record it in scripts/parity-divergences.toml", None
+    return check_entry(entry, outcome), None
+
+
+def check_one(rw_bin, rip_bin, where, cmd, desc, entry):
+    reason, warning = judge(rw_bin, rip_bin, where, cmd, run_one_check(rw_bin, rip_bin, where, cmd), entry)
+    if warning is not None:
+        WARNINGS.append(warning)
+        print(f"::warning::{warning} ({cmd or '(default)'})", file=sys.stderr)
+    if reason is None:
+        return 0
+    report_error(f"Parity failed on {where}: {cmd or '(default)'} - {desc} ({reason})")
+    return 1
 
 
 def main():
@@ -448,20 +733,35 @@ def main():
     if not os.path.exists(repo):
         report_error(f"Repository path '{repo}' does not exist")
         sys.exit(1)
+    entries, budget, errors = load_ledger()
+    defects = [e for e in entries if e["kind"] == "defect"]
+    if len(defects) != budget:
+        errors.append(f"ledger has {len(defects)} defect entries but defect_budget is {budget}; set defect_budget to the entry count, and review any increase")
+    if errors:
+        for err in errors:
+            report_error(err)
+        sys.exit(1)
     rw_bin, rip_bin = find_binaries()
     merge_ref = detect_merge_ref(repo)
     target_file, target_sym, second_sym = discover_repo_targets(rw_bin, repo)
     commands = build_command_list(merge_ref, target_file, target_sym, second_sym)
+    builtin = {cmd for cmd, _ in commands}
+    tree_entries = {entry_key(e): e for e in entries if "files" not in e}
+    fixture_entries = [e for e in entries if "files" in e]
     failures = 0
     for cmd, desc in commands:
-        reason = run_one_check(rw_bin, rip_bin, repo, cmd)
-        if reason is not None:
-            failures += 1
-            label = cmd if cmd else "(default)"
-            report_error(f"Parity failed on {repo}: {label} - {desc} ({reason})")
-    if failures == 0:
-        sys.exit(0)
-    sys.exit(1)
+        failures += check_one(rw_bin, rip_bin, repo, cmd, desc, tree_entries.get(cmd))
+    for key, entry in tree_entries.items():
+        if key not in builtin:
+            failures += check_one(rw_bin, rip_bin, repo, key, f"ledger {entry['id']}", entry)
+    for entry in fixture_entries:
+        fixture = materialize_fixture(entry["files"])
+        try:
+            failures += check_one(rw_bin, rip_bin, fixture, entry_key(entry), f"ledger {entry['id']}", entry)
+        finally:
+            shutil.rmtree(fixture, ignore_errors=True)
+    print(f"parity: {len(WARNINGS)} defect warnings, {len(defects)} defect entries (budget {budget})")
+    sys.exit(0 if failures == 0 else 1)
 
 
 if __name__ == "__main__":

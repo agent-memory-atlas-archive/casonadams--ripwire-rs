@@ -170,3 +170,9 @@ ripwire-rs . --arch=rules.txt
 ## 10. Situational Awareness (`--situ`)
 
 Emits canonical `ripwire-rs.situ/v1` XML summarizing a working tree diff: blast radius, tests to run, forgotten co-change partners, maintenance hotspots touched, and modules modified. The MCP `situational_awareness` tool returns the same report in `result.content[0].text`.
+
+---
+
+## 11. Parity Ledger (`make parity`)
+
+`scripts/validate-parity.py` compares every command, and the gate runs on explicit changed sets, against upstream ripwire. A child-tag count difference or a structural mismatch is a divergence and must be recorded in `scripts/parity-divergences.toml`, except paged row lists: a root carrying `total`, `has_more`, or `next_offset` follows one generic rule with no entry. That rule requires the same schema, `total`/`count` equal to upstream's, every shown row (keys `p`/`n`) present in upstream's full `--limit` run, rows in our ranking order, and bytes at or below upstream's or richer by density. An entry whose run no longer diverges is stale and fails. Kinds: `smaller` (our bytes <= upstream), `richer` (our facts > upstream and facts-per-byte >= upstream), `fixes-upstream-defect` (evidence names an existing regression test), `defect` (our known defect: printed as a warning and counted; `defect_budget` in the ledger header must equal the count). Fixture entries run in a temp directory outside the tree.
