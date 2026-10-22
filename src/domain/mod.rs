@@ -223,6 +223,19 @@ impl std::fmt::Display for Lang {
     }
 }
 
+/// What a `Var` binding permits. Only `Mutable` bindings are state on their own; a `Const` binding is
+/// state only when something in the indexed files mutates its contents; a `Frozen` binding is never state.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Binding {
+    /// Reassignable (`let`, `var`, or any binding the language cannot prove constant).
+    #[default]
+    Mutable,
+    /// Not reassignable, but its value may be a mutable object or array.
+    Const,
+    /// Not reassignable and holds an immutable value (a literal, a pure expression over scalars).
+    Frozen,
+}
+
 /// Indexed definition in the symbol table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Symbol {
@@ -247,8 +260,8 @@ pub struct Symbol {
     pub humps: u16,
     pub deep: u16,
     pub ev: u16,
-    /// Immutable scalar binding (a `const` number, string, or boolean): a read is never mutable state.
-    pub immutable: bool,
+    /// How the binding may change: a `Frozen` or unmutated `Const` read is not mutable state.
+    pub binding: Binding,
     /// A bodyless interface member typed as a function (`f: () => T`): reached by typed dispatch and
     /// conformance, never by a by-name call (its name is not evidence of the callee).
     pub contract_member: bool,
@@ -285,7 +298,7 @@ impl Symbol {
             humps: 0,
             deep: 0,
             ev: 1,
-            immutable: false,
+            binding: Binding::Mutable,
             contract_member: false,
         }
     }

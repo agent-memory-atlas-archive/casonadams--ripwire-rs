@@ -341,7 +341,7 @@ impl LanguageSemantics for PythonLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_python::LANGUAGE, "tags.scm");
 
-    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>) -> bool {
+    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>, _source: &[u8]) -> bool {
         python_read_position(node)
     }
 
@@ -360,8 +360,12 @@ impl LanguageSemantics for PythonLanguage {
         })
     }
 
-    fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
-        is_py_immutable_binding(ctx)
+    fn var_binding(&self, ctx: &DefCaptureGateContext<'_>) -> crate::domain::Binding {
+        if is_py_immutable_binding(ctx) {
+            crate::domain::Binding::Frozen
+        } else {
+            crate::domain::Binding::Mutable
+        }
     }
 
     fn extensions(&self) -> &'static [&'static str] {

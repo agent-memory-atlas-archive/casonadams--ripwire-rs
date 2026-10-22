@@ -5,6 +5,7 @@ use ripwire_rs::metrics::nonlocal::{
 #[test]
 fn test_serialize_nonlocal_state_rows_and_cells() {
     let funcs = vec![NonlocalFunction {
+        sym: 1,
         sym_name: "mutate_global".to_string(),
         path: "src/state.rs".to_string(),
         line: 10,
@@ -38,6 +39,7 @@ fn nonlocal_state_report_honors_limit_and_offset() {
     use ripwire_rs::metrics::nonlocal::NonlocalStateReport;
     use ripwire_rs::serialize::{GraphGauges, PageRequest, XmlReport};
     let func = |name: &str| NonlocalFunction {
+        sym: 1,
         sym_name: name.to_string(),
         path: "src/state.rs".to_string(),
         line: 1,
@@ -180,7 +182,8 @@ fn rust_const_and_static_items_classify_by_mutability() {
             .iter()
             .find(|s| view.sym_name(s) == name)
             .unwrap()
-            .immutable
+            .binding
+            == ripwire_rs::domain::Binding::Frozen
     };
     assert!(immutable("LIMIT"), "const is never a cell");
     assert!(

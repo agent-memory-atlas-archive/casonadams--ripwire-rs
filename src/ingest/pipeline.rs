@@ -343,7 +343,7 @@ pub fn build_file_symbols(
         sym.humps = def.metrics.humps;
         sym.deep = def.metrics.deep;
         sym.ev = def.metrics.ev;
-        sym.immutable = def.immutable;
+        sym.binding = def.binding;
         sym.contract_member = def.contract_member;
         file_symbols.push(sym);
     }

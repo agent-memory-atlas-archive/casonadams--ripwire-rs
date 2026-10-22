@@ -1,3 +1,4 @@
+use ripwire_rs::domain::Binding;
 use ripwire_rs::metrics::nonlocal::{NonlocalFunction, find_nonlocal_state};
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
 
@@ -194,8 +195,230 @@ fn const_bound_to_environment_scalar_is_not_mutable_state() {
         "env-derived scalar consts are immutable: {:?}",
         function(&report, "owner").map(|f| &f.cells)
     );
-    let limit = function(&report, "limit").expect("const object contents stay state reads");
-    assert_eq!((limit.reads, limit.writes), (1, 0));
+    assert!(
+        function(&report, "limit").is_none(),
+        "an unmutated const object is configuration, not state"
+    );
     let bump = function(&report, "bump").expect("genuine let write stays state");
     assert_eq!((bump.reads, bump.writes), (0, 1));
+}
+
+fn analysis(files: &[(&str, &str)], lang: Lang) -> Vec<NonlocalFunction> {
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let sources: Vec<(&str, Lang, &[u8])> = files
+        .iter()
+        .map(|(path, src)| (*path, lang, src.as_bytes()))
+        .collect();
+    let ingest = ingest_in_memory_files(&sources, &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    find_nonlocal_state(&ingest, &graph, &interner)
+}
+
+fn binding_of(files: &[(&str, &str)], name: &str) -> Binding {
+    use ripwire_rs::CorpusView;
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let sources: Vec<(&str, Lang, &[u8])> = files
+        .iter()
+        .map(|(path, src)| (*path, Lang::TypeScript, src.as_bytes()))
+        .collect();
+    let ingest = ingest_in_memory_files(&sources, &registry, &interner);
+    let view = (&ingest, &interner);
+    ingest
+        .symbols
+        .iter()
+        .find(|s| view.sym_name(s) == name)
+        .unwrap()
+        .binding
+}
+
+const CONSTANTS: &str = "export const TTL = 24 * 60 * 60 * 1000;
+export const NAME = \"x\" + TTL;
+export const ALIAS = TTL as const;
+export const FROM_ENV = process.env.HOST ?? \"localhost\";
+export const PAIR = { ttl: TTL };
+export const SLOTS = [1, 2];
+export const FETCHED = loadSomething();
+let depth = 0;
+";
+
+#[test]
+fn const_initializers_classify_by_provable_scalarity() {
+    let files = [(CONFIG, CONSTANTS)];
+    for name in ["TTL", "NAME", "ALIAS", "FROM_ENV"] {
+        assert_eq!(
+            binding_of(&files, name),
+            Binding::Frozen,
+            "{name} is a provable scalar"
+        );
+    }
+    for name in ["PAIR", "SLOTS", "FETCHED"] {
+        assert_eq!(
+            binding_of(&files, name),
+            Binding::Const,
+            "{name} may hold a mutable value"
+        );
+    }
+    assert_eq!(binding_of(&files, "depth"), Binding::Mutable);
+}
+
+const MUTATION_CONFIG: &str = "export const CACHE = { hits: 0 };
+export const LIST: number[] = [];
+export const ITEMS = [1, 2];
+export const TTL = 24 * 60 * 60 * 1000;
+";
+
+const MUTATION_USE: &str = "import { CACHE, LIST, ITEMS, TTL } from \"./config\";
+export function touch(): void {
+  CACHE.hits = 1;
+}
+export function push(value: number): void {
+  LIST.push(value);
+}
+export function forget(): void {
+  delete CACHE.hits;
+}
+export function total(): number {
+  return ITEMS.length + TTL;
+}
+export function peek(): number {
+  return CACHE.hits + LIST.length;
+}
+";
+
+#[test]
+fn constant_objects_are_state_only_where_the_corpus_mutates_them() {
+    let state = analysis(
+        &[(CONFIG, MUTATION_CONFIG), ("src/use.ts", MUTATION_USE)],
+        Lang::TypeScript,
+    );
+    let touch = function(&state, "touch").expect("property write is state");
+    assert_eq!((touch.reads, touch.writes), (0, 1));
+    let push = function(&state, "push").expect("in-place method call is a write");
+    assert_eq!((push.reads, push.writes), (0, 1));
+    assert_eq!(push.cells[0].cell_name, "LIST");
+    let forget = function(&state, "forget").expect("delete is a write");
+    assert_eq!((forget.reads, forget.writes), (0, 1));
+    let peek = function(&state, "peek").expect("reads of mutated objects are state");
+    assert_eq!((peek.reads, peek.writes), (2, 0));
+    assert!(
+        function(&state, "total").is_none(),
+        "reads of unmutated constants are configuration"
+    );
+}
+
+const LIST_LET: &str = "export let items: number[] = [];\n";
+
+const LIST_USE: &str = "import { items } from \"./config\";
+export function size(): number {
+  return items.length + items.map((x) => x).length;
+}
+export function add(value: number): void {
+  items.push(value);
+}
+";
+
+#[test]
+fn non_mutating_calls_on_mutable_bindings_are_reads() {
+    let report = state_report(&[(CONFIG, LIST_LET), ("src/use.ts", LIST_USE)]);
+    let size = function(&report, "size").expect("reads of a let are state");
+    assert_eq!((size.reads, size.writes), (1, 0));
+    let add = function(&report, "add").expect("push on a let mutates its contents");
+    assert_eq!((add.reads, add.writes), (0, 1));
+}
+
+const PARAM_USE: &str = "import { depth } from \"./config\";
+export function reassigned(depth: number): number {
+  depth = depth + 1;
+  return depth;
+}
+export function mapped(): number[] {
+  return [1].map(() => depth);
+}
+";
+
+#[test]
+fn parameter_reassignment_is_local_and_expression_bodied_arrows_read_state() {
+    let report = state_report(&[(CONFIG, MODULE_LET), ("src/use.ts", PARAM_USE)]);
+    assert!(
+        function(&report, "reassigned").is_none(),
+        "a parameter shadowing a module let is not module state"
+    );
+    let mapped = function(&report, "mapped").expect("a read in an arrow body is state");
+    assert_eq!((mapped.reads, mapped.writes), (1, 0));
+}
+
+const VIEW_JS: &str = "export let depth = 0;
+export const view = () => <div>{depth}</div>;
+";
+
+#[test]
+fn jsx_expression_reads_are_state() {
+    let report = analysis(&[("src/view.js", VIEW_JS)], Lang::JavaScript);
+    let view = function(&report, "view").expect("JSX interpolation reads a let");
+    assert_eq!((view.reads, view.writes), (1, 0));
+}
+
+const LOWER_CONFIG: &str = "const cache = new Map<string, number>();
+export const registry: Record<string, number> = {};
+export const table = { a: 1 };
+export function remember(k: string, v: number): void {
+  cache.set(k, v);
+}
+export function register(k: string, v: number): void {
+  registry[k] = v;
+}
+export function lookup(k: string): number | undefined {
+  return cache.get(k);
+}
+export function readTable(): number {
+  return table.a;
+}
+";
+
+#[test]
+fn lowercase_module_containers_are_state_only_where_mutated() {
+    let report = state_report(&[(CONFIG, LOWER_CONFIG)]);
+    let remember = function(&report, "remember").expect("Map.set on a module const is a write");
+    assert_eq!((remember.reads, remember.writes), (0, 1));
+    assert_eq!(remember.cells[0].cell_name, "cache");
+    let register = function(&report, "register").expect("indexed write through a module const");
+    assert_eq!((register.reads, register.writes), (0, 1));
+    let lookup = function(&report, "lookup").expect("reads of a mutated Map are state");
+    assert_eq!((lookup.reads, lookup.writes), (1, 0));
+    assert!(
+        function(&report, "readTable").is_none(),
+        "an unmutated lowercase object is configuration"
+    );
+}
+
+const SHADOW_CONFIG: &str = "const cache = new Map<string, number>();
+export function peek(): number {
+  return cache.size;
+}
+";
+
+const SHADOW_USE: &str = "export function shadowed(): number {
+  const cache = new Map<string, number>();
+  cache.set(\"x\", 1);
+  return cache.size;
+}
+";
+
+#[test]
+fn function_local_shadow_is_not_evidence_for_a_module_container() {
+    let report = state_report(&[(CONFIG, SHADOW_CONFIG), ("src/use.ts", SHADOW_USE)]);
+    assert!(
+        function(&report, "shadowed").is_none(),
+        "a local Map mutated inside a function is not the module const"
+    );
+    assert!(
+        function(&report, "peek").is_none(),
+        "no mutation of the module const exists, so its reads are configuration"
+    );
+    assert_eq!(
+        binding_of(&[(CONFIG, SHADOW_CONFIG)], "cache"),
+        Binding::Const
+    );
 }

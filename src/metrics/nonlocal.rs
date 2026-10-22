@@ -1,10 +1,10 @@
-use crate::domain::{IngestResult, Interner, NodeId, RefRole, Reference, SymKind};
+use crate::domain::{Binding, IngestResult, Interner, NodeId, RefRole, Reference, SymKind};
 use crate::graph::Graph;
 use crate::resolve::{RefOutcome, ResolutionContext, ResolutionIndex, ResolutionLookup};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 
-/// An accessed nonlocal state cell (global or static variable).
+/// An accessed nonlocal state cell: a mutable global, or a constant whose contents the corpus mutates.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StateCellAccess {
     pub cell_name: String,
@@ -16,6 +16,7 @@ pub struct StateCellAccess {
 /// Function with nonlocal state accesses.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NonlocalFunction {
+    pub sym: NodeId,
     pub sym_name: String,
     pub path: String,
     pub line: u32,
@@ -30,9 +31,19 @@ struct StateContext<'a> {
     graph: &'a Graph,
     lookup: ResolutionContext<'a>,
     references: HashMap<NodeId, Vec<&'a Reference>>,
+    mutated: HashSet<NodeId>,
 }
 
 impl StateContext<'_> {
+    /// Whether a binding's reads and writes are state. A `const` is state only when its contents are mutated.
+    fn holds_state(&self, id: NodeId, binding: Binding) -> bool {
+        match binding {
+            Binding::Mutable => true,
+            Binding::Const => self.mutated.contains(&id),
+            Binding::Frozen => false,
+        }
+    }
+
     fn cells(&self, sym_id: NodeId) -> Vec<StateCellAccess> {
         use crate::domain::CorpusView;
         let view = (self.ingest, self.interner);
@@ -60,7 +71,7 @@ impl StateContext<'_> {
             .filter_map(|(id, is_write)| {
                 let target = self.ingest.sym(id)?;
                 let is_cell = matches!(target.kind, SymKind::Var | SymKind::Field)
-                    && (!target.immutable || is_write);
+                    && self.holds_state(id, target.binding);
                 is_cell.then(|| StateCellAccess {
                     cell_name: view.sym_name(target).to_string(),
                     path: view.sym_path(target).to_string(),
@@ -87,6 +98,21 @@ fn data_references(ingest: &IngestResult) -> HashMap<NodeId, Vec<&Reference>> {
     by_owner
 }
 
+/// Constant bindings the indexed files mutate: a write reference that resolves to one, which is a property
+/// assignment, a `delete`, or an in-place method call on it. A passed-out object is not counted as mutated.
+fn mutated_bindings(ingest: &IngestResult, lookup: &ResolutionContext<'_>) -> HashSet<NodeId> {
+    ingest
+        .references
+        .iter()
+        .filter(|r| r.role == RefRole::Write)
+        .filter_map(|reference| match lookup.classify_target(reference) {
+            RefOutcome::Resolved(resolved) if !resolved.is_ambiguous() => Some(resolved.targets),
+            _ => None,
+        })
+        .flatten()
+        .collect()
+}
+
 pub fn find_nonlocal_state(
     ingest: &IngestResult,
     graph: &Graph,
@@ -95,12 +121,15 @@ pub fn find_nonlocal_state(
     use crate::domain::CorpusView;
     let view = (ingest, interner);
     let index = ResolutionIndex::build(ingest, interner);
+    let lookup = index.context(ingest, interner);
+    let mutated = mutated_bindings(ingest, &lookup);
     let context = StateContext {
         ingest,
         interner,
         graph,
-        lookup: index.context(ingest, interner),
+        lookup,
         references: data_references(ingest),
+        mutated,
     };
     let mut out = Vec::new();
     for sym in &ingest.symbols {
@@ -112,6 +141,7 @@ pub fn find_nonlocal_state(
         let writes = cells.iter().filter(|cell| cell.is_write).count();
         if !cells.is_empty() {
             out.push(NonlocalFunction {
+                sym: sym.id,
                 sym_name: view.sym_name(sym).to_string(),
                 path: p.to_string(),
                 line: sym.line,
@@ -143,7 +173,7 @@ impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
         "nonlocal_state",
         "ripwire-rs.nonlocal-state/v1",
         root: true,
-        comment: "ripwire-rs nonlocal-state schema=ripwire-rs.nonlocal-state/v1: per function, the non-local MUTABLE state it reaches."
+        comment: "ripwire-rs nonlocal-state schema=ripwire-rs.nonlocal-state/v1: per function, the non-local state it reaches: mutable bindings, and constants the indexed files mutate."
     );
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
         Some(self.gauges)

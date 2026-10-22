@@ -234,7 +234,12 @@ pub trait LanguageSemantics: Sync {
     }
 
     /// Reject declaration targets, labels, types and callees from broad read captures.
-    fn is_read_capture_allowed(&self, _node: tree_sitter::Node<'_>) -> bool {
+    fn is_read_capture_allowed(&self, _node: tree_sitter::Node<'_>, _source: &[u8]) -> bool {
+        true
+    }
+
+    /// Reject write captures whose identifier is not a real write target (a method call that does not mutate).
+    fn is_write_capture_allowed(&self, _node: tree_sitter::Node<'_>, _source: &[u8]) -> bool {
         true
     }
 
@@ -492,9 +497,10 @@ pub trait LanguageSemantics: Sync {
         true
     }
 
-    /// True if a captured `Var` binding holds an immutable scalar, so reading it is not mutable state.
-    fn is_immutable_scalar_binding(&self, _ctx: &DefCaptureGateContext<'_>) -> bool {
-        false
+    /// How a captured `Var` binding may change. Only `Frozen` (an immutable value) and `Const` (a binding
+    /// whose object contents are mutable only as evidenced by writes) differ from the reassignable default.
+    fn var_binding(&self, _ctx: &DefCaptureGateContext<'_>) -> crate::domain::Binding {
+        crate::domain::Binding::Mutable
     }
 
     /// True if a captured definition is a bodyless member an interface declares by contract (a

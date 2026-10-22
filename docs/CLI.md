@@ -213,7 +213,7 @@ ripwire-rs . --zoom --zoom-levels=0
 # Rank functions by readability volume and size, largest first
 ripwire-rs . --biggest-first
 
-# Detect functions accessing reachable global / file-static mutable state
+# Detect functions accessing reachable global / file-static mutable state (constants count only when mutated)
 ripwire-rs . --nonlocal-state
 
 # Scan codebase for AST code smells (XML or SARIF 2.1.0 JSON output)

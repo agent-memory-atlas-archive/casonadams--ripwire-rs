@@ -184,7 +184,7 @@ fn assemble_defs(headings: &[HeadingEntry], rel_path: &str, source_len: usize) -
         loc: 1,
         params: 0,
         metrics: crate::metrics::ComplexityMetrics::default(),
-        immutable: false,
+        binding: crate::domain::Binding::Mutable,
         contract_member: false,
     });
 
@@ -217,7 +217,7 @@ fn assemble_defs(headings: &[HeadingEntry], rel_path: &str, source_len: usize) -
             loc: 1,
             params: 0,
             metrics: crate::metrics::ComplexityMetrics::default(),
-            immutable: false,
+            binding: crate::domain::Binding::Mutable,
             contract_member: false,
         });
     }

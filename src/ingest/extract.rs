@@ -19,8 +19,8 @@ pub struct RawDef {
     pub loc: u32,
     pub params: u16,
     pub metrics: crate::metrics::ComplexityMetrics,
-    /// Set by the language plugin for bindings whose value can never change (see `is_immutable_scalar_binding`).
-    pub immutable: bool,
+    /// Set by the language plugin for `Var` bindings (see `var_binding`); other kinds are `Mutable`.
+    pub binding: crate::domain::Binding,
     /// Set by the language plugin for bodyless members reached only by typed dispatch (see `is_contract_member`).
     pub contract_member: bool,
 }
@@ -551,7 +551,11 @@ fn record_def_item(
     let (params, name) =
         lang.semantics()
             .resolve_def_params_and_name(ext.def_node, source_bytes, kind, orig_name);
-    let immutable = kind == SymKind::Var && lang.semantics().is_immutable_scalar_binding(&gate_ctx);
+    let binding = if kind == SymKind::Var {
+        lang.semantics().var_binding(&gate_ctx)
+    } else {
+        crate::domain::Binding::Mutable
+    };
     let contract_member = lang.semantics().is_contract_member(&gate_ctx);
     let (decl_start, doc_start) = ext.def_node.map_or((start, start), |n| {
         lang.semantics().resolve_def_span_start(n, source_bytes)
@@ -568,12 +572,18 @@ fn record_def_item(
         loc,
         params,
         metrics,
-        immutable,
+        binding,
         contract_member,
     });
 }
 
-fn ref_is_skipped(ext: &MatchExtract<'_>, name: &str, role: RefRole, lang: Lang) -> bool {
+fn ref_is_skipped(
+    ext: &MatchExtract<'_>,
+    name: &str,
+    role: RefRole,
+    lang: Lang,
+    source_bytes: &[u8],
+) -> bool {
     let is_pkg_prefix_extends = role == RefRole::Extends
         && ext
             .name_node
@@ -585,7 +595,13 @@ fn ref_is_skipped(ext: &MatchExtract<'_>, name: &str, role: RefRole, lang: Lang)
         || (role == RefRole::Read
             && ext
                 .name_node
-                .is_some_and(|node| !lang.semantics().is_read_capture_allowed(node)))
+                .is_some_and(|node| !lang.semantics().is_read_capture_allowed(node, source_bytes)))
+        || (role == RefRole::Write
+            && ext.name_node.is_some_and(|node| {
+                !lang
+                    .semantics()
+                    .is_write_capture_allowed(node, source_bytes)
+            }))
 }
 
 fn ref_qualifiers(
@@ -646,7 +662,7 @@ fn record_ref_item(
     } else {
         split_top_level_qualified(raw_name)
     };
-    if ref_is_skipped(ext, name, role, lang) {
+    if ref_is_skipped(ext, name, role, lang, source_bytes) {
         return;
     }
     let (qualifier, receiver_type) = ref_qualifiers(ext, inline_qual, role, lang, source_bytes);

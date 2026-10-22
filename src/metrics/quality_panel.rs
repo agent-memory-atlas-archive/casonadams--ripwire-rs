@@ -379,19 +379,15 @@ fn collect_nonlocal_state_info(
     graph: &Graph,
     interner: &Interner,
 ) -> (HashMap<NodeId, StateAccess>, usize, usize) {
-    use crate::domain::CorpusView;
-    let view = (ingest, interner);
-    let nonlocal = crate::metrics::nonlocal::find_nonlocal_state(ingest, graph, interner);
-    let cells = nonlocal.len();
+    let funcs = crate::metrics::nonlocal::find_nonlocal_state(ingest, graph, interner);
+    let cells = funcs.iter().map(|f| f.cells.len()).sum();
     let mut state_files = std::collections::HashSet::new();
     let mut state_syms: HashMap<NodeId, StateAccess> = HashMap::new();
-    for f in &nonlocal {
+    for f in &funcs {
         state_files.insert(f.path.as_str());
-        if let Some(s) = view.find_symbol_with_hint(&f.sym_name, Some(&f.path)) {
-            let acc = state_syms.entry(s.id).or_default();
-            acc.reads += f.reads;
-            acc.writes += f.writes;
-        }
+        let acc = state_syms.entry(f.sym).or_default();
+        acc.reads += f.reads;
+        acc.writes += f.writes;
     }
     (state_syms, state_files.len(), cells)
 }

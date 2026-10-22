@@ -325,5 +325,17 @@
   argument: [ (member_expression object: (identifier) @name)
               (subscript_expression object: (identifier) @name) ]) @reference.write
 
+; A method call on a binding (`LIST.push(v)`) and `delete CACHE.p` may mutate the object the binding holds; the
+; language gate keeps only the in-place methods and deletes.
+(call_expression
+  function: (member_expression object: (identifier) @name)) @reference.write
+
+(call_expression
+  function: (member_expression object: (member_expression object: (identifier) @name))) @reference.write
+
+(unary_expression
+  argument: [ (member_expression object: (identifier) @name)
+              (subscript_expression object: (identifier) @name) ]) @reference.write
+
 ; JavaScript value semantics also apply to TypeScript expressions.
 [(identifier) (shorthand_property_identifier)] @name @reference.read

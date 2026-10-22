@@ -230,5 +230,17 @@
   argument: [ (member_expression object: (identifier) @name)
               (subscript_expression object: (identifier) @name) ]) @reference.write
 
+; A method call on a binding (`LIST.push(v)`, `CACHE.inner.set(k, v)`) and `delete CACHE.p` may mutate the object the
+; binding holds. The language gate keeps only the in-place methods and deletes; other calls stay reads.
+(call_expression
+  function: (member_expression object: (identifier) @name)) @reference.write
+
+(call_expression
+  function: (member_expression object: (member_expression object: (identifier) @name))) @reference.write
+
+(unary_expression
+  argument: [ (member_expression object: (identifier) @name)
+              (subscript_expression object: (identifier) @name) ]) @reference.write
+
 ; Value-position and lexical-binding rules live in languages/javascript.rs.
 [(identifier) (shorthand_property_identifier)] @name @reference.read

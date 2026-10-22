@@ -1,8 +1,8 @@
 use super::javascript::{
-    JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_const_scalar_binding,
-    is_assertion_script, is_jsx_intrinsic_tag_call, is_std_member_call_value,
-    js_definition_span_start, js_test_partner_subject, parse_tsconfig_paths,
-    resolve_web_import_target,
+    JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_assertion_script,
+    is_container_const, is_jsx_intrinsic_tag_call, is_std_member_call_value, js_definition_span_start,
+    js_test_partner_subject, js_var_binding, parse_tsconfig_paths, resolve_web_import_target,
+    is_write_target_root, javascript_read_position,
 };
 use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
@@ -156,8 +156,12 @@ impl LanguageSemantics for TypeScriptLanguage {
     }
     super::impl_grammar_method!(crate tree_sitter_typescript::LANGUAGE_TYPESCRIPT, "tags.scm");
 
-    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>) -> bool {
-        super::javascript::javascript_read_position(node)
+    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>, source: &[u8]) -> bool {
+        javascript_read_position(node, source)
+    }
+
+    fn is_write_capture_allowed(&self, node: tree_sitter::Node<'_>, source: &[u8]) -> bool {
+        is_write_target_root(node, source)
     }
 
     fn read_bindings<'a>(
@@ -246,14 +250,14 @@ impl LanguageSemantics for TypeScriptLanguage {
 
     fn is_def_capture_allowed(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
         match ctx.sub {
-            Some("constant") => super::is_screaming_snake(ctx.name),
+            Some("constant") => super::is_screaming_snake(ctx.name) || is_container_const(ctx),
             None => ctx.kind != crate::domain::SymKind::Function || !is_std_member_call_value(ctx),
             _ => true,
         }
     }
 
-    fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
-        is_const_scalar_binding(ctx)
+    fn var_binding(&self, ctx: &DefCaptureGateContext<'_>) -> crate::domain::Binding {
+        js_var_binding(ctx)
     }
 
     fn resolve_def_span_start(

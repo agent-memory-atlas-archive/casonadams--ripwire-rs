@@ -232,7 +232,7 @@ pub const LEGEND_DICT_ENTRIES: &[(&str, &str, &str)] = &[
     (
         "schema",
         "ripwire-rs.nonlocal-state/v1",
-        "Functions reading or writing nonlocal mutable state",
+        "Functions reading or writing nonlocal state: mutable bindings, and constants the indexed files mutate",
     ),
     (
         "schema",

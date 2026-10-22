@@ -250,7 +250,7 @@ With \fB\-\-zoom\fR, print \fIN\fR levels from the top (\fB0\fR = every level). 
 Rank functions by readability volume and physical size, largest first.
 .TP
 .B \-\-nonlocal\-state
-Detect functions reading or mutating reachable global or file-static state.
+Detect functions reading or mutating reachable global or file-static state. Immutable scalar constants are not state; a constant object or array is state only when the indexed files mutate it (property write, delete, or an in-place method such as push).
 .TP
 .B \-\-lint
 Scan codebase for AST code smells (complexity spikes, deep nesting, dead functions).

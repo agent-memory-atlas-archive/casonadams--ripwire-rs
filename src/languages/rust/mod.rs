@@ -253,7 +253,7 @@ impl LanguageSemantics for RustLanguage {
 
     super::impl_grammar_method!(crate tree_sitter_rust::LANGUAGE, "tags.scm");
 
-    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>) -> bool {
+    fn is_read_capture_allowed(&self, node: tree_sitter::Node<'_>, _source: &[u8]) -> bool {
         rust_read_position(node)
     }
 
@@ -390,9 +390,15 @@ impl LanguageSemantics for RustLanguage {
         linkage::for_each_rust_identifier(root, source, visit);
     }
 
-    fn is_immutable_scalar_binding(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
-        ctx.def_node
+    fn var_binding(&self, ctx: &DefCaptureGateContext<'_>) -> crate::domain::Binding {
+        if ctx
+            .def_node
             .is_some_and(|def| is_rust_immutable_binding(def, ctx.source_bytes))
+        {
+            crate::domain::Binding::Frozen
+        } else {
+            crate::domain::Binding::Mutable
+        }
     }
 }
 
