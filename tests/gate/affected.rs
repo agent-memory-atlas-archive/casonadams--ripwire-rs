@@ -584,3 +584,19 @@ fn test_pack_task_seeds_follow_ranked_symbols_not_their_whole_file() {
         ["tests/alpha/uses_ranked.rs", "tests/beta/uses_helper.rs"]
     );
 }
+
+#[test]
+fn test_affected_runnerless_partner_siblings_fold_with_partner_count() {
+    let (ingest, interner) =
+        partner_fixture(&["a/widget.py", "a/test_widget.py", "a/widget_test.py"]);
+    let graph = Graph::build(&ingest, &interner);
+    let report = find_affected_tests(&["a/widget.py"], &ingest, &graph, &interner);
+    let xml = report.to_xml_string();
+    assert!(xml.contains(" partners=\"2\""), "{xml}");
+    assert!(
+        xml.contains(
+            "<g partner=\"1\" n=\"2\" p=\"a/test_widget.py,a/widget_test.py\" run_unknown=\"1\"/>"
+        ),
+        "{xml}"
+    );
+}

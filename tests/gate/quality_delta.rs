@@ -547,6 +547,72 @@ fn test_assemble_quality_delta_report_from_facts() {
 }
 
 #[test]
+fn test_churn_regression_reports_every_preexisting_callable_in_file() {
+    let interner = Interner::new();
+    let mut ingest = IngestResult::new();
+    ingest.files.push(FileInfo {
+        id: 0,
+        path: interner.intern("src/calc.rs"),
+        lang: Lang::Rust,
+        line_count: 50,
+        byte_size: 1000,
+    });
+    for (id, name, line) in [(0, "evaluate", 10), (1, "combine", 22)] {
+        let name = interner.intern(name);
+        let mut sym = Symbol::new(id, name, name, SymKind::Function, Lang::Rust, 0, line);
+        sym.ccx = 10;
+        sym.loc = 25;
+        ingest.symbols.push(sym);
+    }
+    let graph = Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&ripwire_rs::PageRankConfig::default());
+    let calc_code = b"pub fn evaluate() {}\npub fn combine() {}\n".as_slice();
+    let sources = [("src/calc.rs", calc_code)];
+    let commit = ripwire_rs::git::history::CommitInfo {
+        id: "c1".to_string(),
+        author: "test".to_string(),
+        timestamp: 1000,
+        changed_files: vec!["src/calc.rs".to_string()],
+    };
+    let commits = vec![commit.clone(), commit];
+    let qc = QueryContext {
+        root: ".",
+        ingest: &ingest,
+        graph: &graph,
+        pr: &pr,
+        interner: &interner,
+        commits: Some(&commits),
+        sources: &sources,
+        at: None,
+    };
+    let snap = compute_snapshot(&ingest, &graph, &interner, "HEAD");
+    let mut baseline = snap.clone();
+    for ccx in baseline.ccx_by_sym.values_mut() {
+        *ccx += 1;
+    }
+    let changed_files = vec!["src/calc.rs".to_string()];
+    let facts = QualityDeltaFacts {
+        working: &snap,
+        baseline: &baseline,
+        source_name: "git-HEAD",
+        head_basis: Some("identity"),
+        at_stamp: "abc1234",
+        changed_files: &changed_files,
+        acks: None,
+        clones: &[],
+    };
+    let report = assemble_quality_delta_report(&qc, &facts);
+    let mut churned: Vec<&str> = report
+        .regressions
+        .iter()
+        .filter(|r| r.kind == "short-horizon-churn")
+        .map(|r| r.sym_name.as_str())
+        .collect();
+    churned.sort_unstable();
+    assert_eq!(churned, ["combine", "evaluate"]);
+}
+
+#[test]
 fn quality_report_preserves_borrowed_type_names_and_quoted_paths() {
     let key = "src/a&\"b.rs::&View<T>::item";
     let mut baseline = QualitySnapshot::default();

@@ -452,11 +452,9 @@ fn measure_comment_coherence_row(
     file_bytes: Option<&[u8]>,
 ) -> Option<CommentCoherenceRow> {
     let ident_terms = split_identifier_subtokens(name);
-    let comment_words = match file_bytes {
-        Some(bytes) => extract_preceding_doc_words(bytes, sym.sig_start_byte),
-        None if sym.loc > 5 => ident_terms.iter().cloned().collect(),
-        None => Vec::new(),
-    };
+    let comment_words = file_bytes
+        .map(|bytes| extract_preceding_doc_words(bytes, sym.sig_start_byte))
+        .unwrap_or_default();
     let words = comment_words.len();
     if words < 2 {
         return None;

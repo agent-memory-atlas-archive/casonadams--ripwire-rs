@@ -252,3 +252,26 @@ fn test_compute_comment_coherence_with_sources() {
     assert_eq!(c_row.restate, 2);
     assert!((c_row.c_coeff - (2.0 / 3.0)).abs() < 1e-4);
 }
+
+#[test]
+fn test_comment_coherence_without_source_bytes_has_no_row() {
+    let interner = Interner::new();
+    let mut ingest = IngestResult::new();
+    ingest.files.push(FileInfo {
+        id: 0,
+        path: interner.intern("src/users.rs"),
+        lang: Lang::Rust,
+        line_count: 20,
+        byte_size: 200,
+    });
+    let name = interner.intern("load_user_account");
+    let mut sym = Symbol::new(0, name, name, SymKind::Function, Lang::Rust, 0, 10);
+    sym.loc = 10;
+    ingest.symbols.push(sym);
+    let sources: &[(&str, &[u8])] = &[];
+    let report =
+        compute_comment_coherence_with_sources(sources, &ingest, &interner, PageRequest::default());
+    assert_eq!(report.documented, 0);
+    assert_eq!(report.no_comment, 1);
+    assert!(report.rows.is_empty());
+}

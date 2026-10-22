@@ -59,9 +59,10 @@ pub struct AffectedReport {
 impl crate::serialize::XmlReport for AffectedReport {
     crate::xml_report_meta!("affected", "ripwire-rs.affected/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let partners = self.tests.iter().filter(|t| t.is_partner).count();
         write!(
             out,
-            " files=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\"",
+            " files=\"{}\" seeds=\"{}\" seed_test_files=\"{}\" tests=\"{}\" reached=\"{}\" partners=\"{partners}\"",
             self.changed_spec,
             self.seed_count,
             self.seed_test_files.len(),
@@ -70,34 +71,40 @@ impl crate::serialize::XmlReport for AffectedReport {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        self.tests.iter().try_for_each(|t| t.write_row(out))
+        crate::serialize::arch_xml::write_test_rows(
+            &self.tests,
+            affected_flags,
+            AffectedTest::write_row,
+            out,
+        )
     }
 }
 
 impl AffectedTest {
     fn write_row<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let partner = if self.is_partner {
-            " partner=\"1\""
-        } else {
-            ""
-        };
-        let hops = if !self.is_partner || self.hops > 0 {
-            format!(" hops=\"{}\"", self.hops)
-        } else {
-            String::new()
-        };
-        let direct = if self.is_direct_change {
-            " direct=\"1\""
-        } else {
-            ""
-        };
-        let run = self.run_attr();
-        writeln!(
+        write!(
             out,
-            "  <test p=\"{}\"{partner}{hops}{direct}{run}/>",
-            self.path.xml_escaped()
+            "<test p=\"{}\"{}{}/>",
+            self.path.xml_escaped(),
+            affected_flags(self),
+            self.run_attr()
         )
     }
+}
+
+fn affected_flags(t: &AffectedTest) -> String {
+    let partner = if t.is_partner { " partner=\"1\"" } else { "" };
+    let hops = if !t.is_partner || t.hops > 0 {
+        format!(" hops=\"{}\"", t.hops)
+    } else {
+        String::new()
+    };
+    let direct = if t.is_direct_change {
+        " direct=\"1\""
+    } else {
+        ""
+    };
+    format!("{partner}{hops}{direct}")
 }
 
 /// Check if a path corresponds to a test file by directory convention or filename.

@@ -1,4 +1,8 @@
-use ripwire_rs::{Lang, compute_readability, posnett_score};
+use ripwire_rs::metrics::execute_biggest_first_query;
+use ripwire_rs::serialize::PageRequest;
+use ripwire_rs::{
+    FileInfo, IngestResult, Interner, Lang, SymKind, Symbol, compute_readability, posnett_score,
+};
 
 #[test]
 fn test_posnett_score_calculation() {
@@ -29,4 +33,34 @@ pub fn fibonacci(n: u32) -> u32 {
 
     let expected = posnett_score(r.volume, r.lines as f64, r.entropy);
     assert!((r.posnett - expected).abs() < 1e-6);
+}
+
+#[test]
+fn test_biggest_first_without_source_reports_no_fabricated_halstead() {
+    let interner = Interner::new();
+    let mut ingest = IngestResult::new();
+    ingest.files.push(FileInfo {
+        id: 0,
+        path: interner.intern("src/long.rs"),
+        lang: Lang::Rust,
+        line_count: 10,
+        byte_size: 100,
+    });
+    let name = interner.intern("long_fn");
+    let mut sym = Symbol::new(0, name, name, SymKind::Function, Lang::Rust, 0, 10);
+    sym.loc = 10;
+    ingest.symbols.push(sym);
+    let mut buf = Vec::new();
+    execute_biggest_first_query(
+        "/nonexistent/ripwire-readability-root",
+        &ingest,
+        &interner,
+        PageRequest::default(),
+        &mut buf,
+    )
+    .unwrap();
+    let xml = String::from_utf8(buf).unwrap();
+    assert!(xml.contains("toks=\"0\""), "{xml}");
+    assert!(xml.contains("ent=\"0.00\""), "{xml}");
+    assert!(!xml.contains("ent=\"4.20\""), "{xml}");
 }

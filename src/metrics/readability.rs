@@ -138,34 +138,44 @@ pub fn compute_readability(code: &str, lang: Lang) -> ReadabilityMetrics {
     }
 }
 
+pub struct ReadabilityRow<'a> {
+    pub sym: &'a crate::domain::Symbol,
+    pub path: &'a str,
+    pub name: &'a str,
+    pub metrics: ReadabilityMetrics,
+}
+
 pub struct ReadabilityReport<'a> {
-    pub functions: Vec<(&'a crate::domain::Symbol, &'a str, &'a str)>,
+    pub functions: Vec<ReadabilityRow<'a>>,
     pub page: crate::serialize::PageRequest,
 }
 
 impl ReadabilityReport<'_> {
     fn window(&self) -> crate::serialize::PageWindow {
         self.page.window_fit(self.functions.len(), |i| {
-            crate::serialize::row_bytes(|w| write_readability_row(self.functions[i], w))
+            crate::serialize::row_bytes(|w| write_readability_row(&self.functions[i], w))
         })
     }
 }
 
 fn write_readability_row<W: std::io::Write + ?Sized>(
-    (sym, p, n): (&crate::domain::Symbol, &str, &str),
+    row: &ReadabilityRow<'_>,
     out: &mut W,
 ) -> std::io::Result<()> {
-    let lines = sym.loc.max(1);
-    let toks = lines * 8;
-    let ops = lines * 5;
-    let vocab = (lines * 2).clamp(4, 280);
-    let vol = (toks as f64) * (vocab as f64).log2();
-    let ent = 4.20;
-    let posnett = posnett_score(vol, lines as f64, ent);
+    let lines = row.sym.loc.max(1);
+    let m = &row.metrics;
+    let posnett = posnett_score(m.volume, lines as f64, m.entropy);
     writeln!(
         out,
-        "  <fn p=\"{p}:{}\" n=\"{n}\" lines=\"{lines}\" toks=\"{toks}\" ops=\"{ops}\" vocab=\"{vocab}\" vol=\"{vol:.0}\" ent=\"{ent:.2}\" posnett=\"{posnett:.2}\"/>",
-        sym.line
+        "  <fn p=\"{}:{}\" n=\"{}\" lines=\"{lines}\" toks=\"{}\" ops=\"{}\" vocab=\"{}\" vol=\"{:.0}\" ent=\"{:.2}\" posnett=\"{posnett:.2}\"/>",
+        row.path,
+        row.sym.line,
+        row.name,
+        m.token_count,
+        m.operator_count,
+        m.vocabulary_count,
+        m.volume,
+        m.entropy
     )
 }
 
@@ -184,7 +194,7 @@ impl crate::serialize::XmlReport for ReadabilityReport<'_> {
     }
     fn write_body<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
         let pw = self.window();
-        for &entry in &self.functions[pw.begin..pw.end] {
+        for entry in &self.functions[pw.begin..pw.end] {
             write_readability_row(entry, out)?;
         }
         Ok(())
@@ -200,9 +210,14 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
     out: &mut W,
 ) -> std::io::Result<()> {
     use crate::domain::CorpusView;
+    use crate::query::SourceReader;
     use crate::serialize::XmlReport;
     let view = (ingest, interner);
-    let mut functions: Vec<(&crate::domain::Symbol, &str, &str)> = ingest
+    let sources = crate::query::FileSources {
+        root: std::path::Path::new(root),
+    };
+    let mut files: HashMap<&str, Vec<u8>> = HashMap::new();
+    let mut functions: Vec<ReadabilityRow<'_>> = ingest
         .symbols
         .iter()
         .filter(|sym| {
@@ -211,8 +226,30 @@ pub fn execute_biggest_first_query<W: std::io::Write>(
                 crate::domain::SymKind::Function | crate::domain::SymKind::Method
             )
         })
-        .map(|sym| (sym, view.sym_path(sym), view.sym_name(sym)))
+        .map(|sym| {
+            let path = view.sym_path(sym);
+            let source = files.entry(path).or_insert_with(|| {
+                sources
+                    .read(path)
+                    .map(std::borrow::Cow::into_owned)
+                    .unwrap_or_default()
+            });
+            let body = source
+                .get(sym.sig_start_byte as usize..sym.end_byte as usize)
+                .unwrap_or_default();
+            ReadabilityRow {
+                sym,
+                path,
+                name: view.sym_name(sym),
+                metrics: compute_readability(&String::from_utf8_lossy(body), sym.lang),
+            }
+        })
         .collect();
-    functions.sort_by(|a, b| b.0.loc.cmp(&a.0.loc).then_with(|| b.0.ccx.cmp(&a.0.ccx)));
+    functions.sort_by(|a, b| {
+        b.sym
+            .loc
+            .cmp(&a.sym.loc)
+            .then_with(|| b.sym.ccx.cmp(&a.sym.ccx))
+    });
     ReadabilityReport { functions, page }.write_xml_report(root, out)
 }

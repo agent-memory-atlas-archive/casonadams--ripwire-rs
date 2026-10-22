@@ -87,8 +87,10 @@ fn write_test_gate_row<W: Write>(
 
 /// Upstream folds runner-less rows that agree on every flag into one `<g n= p=>` row, listing
 /// their paths in order at the first member's position. A path holding ',' never folds.
-fn write_test_rows<W: Write>(
+pub fn write_test_rows<W: Write>(
     rows: &[crate::gate::affected::AffectedTest],
+    flags_of: impl Fn(&crate::gate::affected::AffectedTest) -> String,
+    write_one: impl Fn(&crate::gate::affected::AffectedTest, &mut W) -> io::Result<()>,
     out: &mut W,
 ) -> io::Result<()> {
     let foldable =
@@ -100,19 +102,19 @@ fn write_test_rows<W: Write>(
         }
         taken[i] = true;
         if !foldable(t) {
-            write_test_gate_row(t, out)?;
+            write_one(t, out)?;
             continue;
         }
-        let flags = test_row_flags(t);
+        let flags = flags_of(t);
         let mut paths = vec![t.path.as_str()];
         for (j, u) in rows.iter().enumerate().skip(i + 1) {
-            if !taken[j] && foldable(u) && test_row_flags(u) == flags {
+            if !taken[j] && foldable(u) && flags_of(u) == flags {
                 taken[j] = true;
                 paths.push(u.path.as_str());
             }
         }
         if paths.len() == 1 {
-            write_test_gate_row(t, out)?;
+            write_one(t, out)?;
         } else {
             write!(
                 out,
@@ -180,7 +182,12 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        write_test_rows(self.tests_page().rows(), out)?;
+        write_test_rows(
+            self.tests_page().rows(),
+            test_row_flags,
+            write_test_gate_row,
+            out,
+        )?;
         for u in self.untested_page().rows() {
             write_untested_row(u, out)?;
         }

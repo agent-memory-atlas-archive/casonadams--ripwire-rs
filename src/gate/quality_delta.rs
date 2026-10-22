@@ -686,21 +686,24 @@ pub fn symbol_matches_and_changed(
     }
 }
 
-fn find_preexisting_callable_in_file<'a>(
+fn find_preexisting_callables_in_file<'a>(
     file_path: &str,
     state: &'a QueryContext<'_>,
     baseline: &QualitySnapshot,
-) -> Option<(&'a crate::domain::Symbol, String, String)> {
-    for sym in &state.ingest.symbols {
-        if (sym.kind == crate::domain::SymKind::Function
-            || sym.kind == crate::domain::SymKind::Method)
-            && let Some((sym_name, sym_file)) =
-                symbol_matches_and_changed(sym, file_path, state.ingest, state.interner, baseline)
-        {
-            return Some((sym, sym_name, sym_file));
-        }
-    }
-    None
+) -> Vec<(&'a crate::domain::Symbol, String, String)> {
+    state
+        .ingest
+        .symbols
+        .iter()
+        .filter(|sym| {
+            sym.kind == crate::domain::SymKind::Function
+                || sym.kind == crate::domain::SymKind::Method
+        })
+        .filter_map(|sym| {
+            symbol_matches_and_changed(sym, file_path, state.ingest, state.interner, baseline)
+                .map(|(sym_name, sym_file)| (sym, sym_name, sym_file))
+        })
+        .collect()
 }
 
 fn check_churn_regressions(
@@ -721,10 +724,10 @@ fn check_churn_regressions(
             .iter()
             .filter(|c| c.changed_files.iter().any(|cf| cf == f || cf.ends_with(f)))
             .count();
-        if commit_count >= 2
-            && let Some((sym, sym_name, sym_file)) =
-                find_preexisting_callable_in_file(f, state, baseline)
-        {
+        if commit_count < 2 {
+            continue;
+        }
+        for (sym, sym_name, sym_file) in find_preexisting_callables_in_file(f, state, baseline) {
             regressions.push(QualityRegression {
                 kind: "short-horizon-churn".to_string(),
                 sym_name,
