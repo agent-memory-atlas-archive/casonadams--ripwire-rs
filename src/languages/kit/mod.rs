@@ -4,6 +4,7 @@ mod complexity_kinds;
 mod foreign;
 pub mod keywords;
 mod syntax_kinds;
+pub mod util;
 pub use complexity_kinds::ComplexityKinds;
 pub use foreign::ForeignExport;
 pub use syntax_kinds::SyntaxKinds;

@@ -187,7 +187,7 @@ impl LanguageSemantics for TypeScriptLanguage {
     }
 
     fn test_run_command(&self, path: &str, source: &str, manifest: Option<&str>) -> Option<String> {
-        super::js_test_run_command(path, source, manifest, false)
+        super::javascript::js_test_run_command(path, source, manifest, false)
     }
 
     fn display_color(&self) -> &'static str {

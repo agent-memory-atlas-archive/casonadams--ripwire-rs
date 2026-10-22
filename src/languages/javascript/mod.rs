@@ -225,7 +225,9 @@ pub(super) fn resolve_web_import_target(
 ) -> Option<u32> {
     let clean = strip_import_quotes(raw_target);
     if clean.starts_with('.') {
-        return resolve_relative_or_exact(importer_path, clean, file_index, WEB_SUFFIXES);
+        let resolve = |target| resolve_relative_or_exact(importer_path, target, file_index, WEB_SUFFIXES);
+        let esm_stem = [".js", ".jsx", ".mjs"].iter().find_map(|ext| clean.strip_suffix(ext));
+        return resolve(clean).or_else(|| esm_stem.and_then(resolve));
     }
     if clean.starts_with('@') {
         return resolve_workspace_package(clean, file_index);
@@ -412,7 +414,7 @@ impl LanguageSemantics for JavaScriptLanguage {
     }
 
     fn test_run_command(&self, path: &str, source: &str, manifest: Option<&str>) -> Option<String> {
-        super::js_test_run_command(path, source, manifest, true)
+        js_test_run_command(path, source, manifest, true)
     }
 
     fn display_color(&self) -> &'static str {
@@ -613,3 +615,21 @@ pub(super) fn javascript_read_position(node: tree_sitter::Node<'_>) -> bool {
     );
     expression && super::reads::value_position(node, javascript_non_value, javascript_scope)
 }
+/// JS-family runner: the nearest manifest's vitest/jest, else `require('node:test')` when `node_test` applies.
+#[must_use]
+pub(crate) fn js_test_run_command(
+    path: &str,
+    source: &str,
+    manifest: Option<&str>,
+    node_test: bool,
+) -> Option<String> {
+    match manifest {
+        Some(m) if m.contains("vitest") => Some(format!("npx vitest run {path}")),
+        Some(m) if m.contains("jest") => Some(format!("npx jest {path}")),
+        _ => (node_test
+            && (source.contains("require('node:test')")
+                || source.contains("require(\"node:test\")")))
+        .then(|| format!("node --test {path}")),
+    }
+}
+
