@@ -1,3 +1,4 @@
+use ripwire_rs::cli::VerbGroup;
 use ripwire_rs::commands::retrieval::{RetrievalArgs, execute_retrieval_dispatch};
 use ripwire_rs::query::commands::QueryContext;
 use ripwire_rs::{
@@ -308,4 +309,40 @@ fn advanced_retrieval_and_pattern_search_execute_over_context_sources() {
         .map(|node| (node.attribute("n"), node.attribute("l")))
         .collect();
     assert_eq!(callees, [(Some("bridge"), Some("2"))]);
+}
+
+#[test]
+fn retrieval_group_is_active_only_for_its_primary_flags() {
+    let active = |flag: &str| {
+        let cli = ripwire_rs::parse_from(["rw", flag]).unwrap();
+        cli.plugins
+            .decode::<RetrievalArgs>()
+            .unwrap()
+            .is_group_active()
+    };
+    for flag in [
+        "--for=a",
+        "--grep=a",
+        "--connect=a,b",
+        "--path-between=a,b",
+        "--exemplar=a",
+        "--lego=a",
+        "--recall=a",
+        "--from-trace=a",
+        "--at=a",
+        "--verify=a",
+        "--pack-task=a",
+        "--graph-query=a",
+        "--match=a",
+        "--pattern=a",
+        "--regex=a",
+        "--help-task=a",
+        "--refetch=a",
+        "--pack-signatures",
+    ] {
+        assert!(active(flag), "{flag}");
+    }
+    for flag in ["--adaptive", "--no-route", "--refetch="] {
+        assert!(!active(flag), "{flag}");
+    }
 }

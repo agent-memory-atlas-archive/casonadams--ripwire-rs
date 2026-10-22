@@ -1,6 +1,6 @@
 use super::SourceReader;
-use super::edit::{self, EditOp};
 use super::doc_tools;
+use super::edit::{self, EditOp};
 use crate::ToXmlString;
 use crate::domain::{IngestResult, Interner};
 use crate::git::history::CommitInfo;
