@@ -48,7 +48,13 @@ fn test_serialize_layout_and_affinity() {
     );
 
     let mut buf2 = Vec::new();
-    serialize_field_affinity_xml(&rep, ".", &mut buf2).unwrap();
+    serialize_field_affinity_xml(
+        &rep,
+        ".",
+        ripwire_rs::serialize::PageRequest::default(),
+        &mut buf2,
+    )
+    .unwrap();
     assert!(
         String::from_utf8(buf2)
             .unwrap()

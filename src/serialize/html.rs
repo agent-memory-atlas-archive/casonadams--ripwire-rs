@@ -1,5 +1,6 @@
 use crate::domain::{IngestResult, Interner, Lang, NodeId};
 use crate::graph::Graph;
+use crate::serialize::{PageRequest, Paged, text_bytes};
 use std::collections::HashMap;
 use std::io::{self, Write};
 
@@ -104,7 +105,7 @@ fn build_html_nodes(
     ranks: &[f64],
     interner: &Interner,
     comms: &crate::graph::community::Communities,
-    top_k: Option<usize>,
+    page: PageRequest,
 ) -> (Vec<HtmlNodeData>, HashMap<NodeId, usize>) {
     let mut indices: Vec<usize> = (0..ingest.symbols.len()).collect();
     indices.sort_by(|&a, &b| {
@@ -113,12 +114,15 @@ fn build_html_nodes(
         rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let limit = top_k.unwrap_or(60).min(indices.len());
-
-    let mut nodes = Vec::with_capacity(limit);
+    let shown = Paged::new(&indices, page, |&idx| {
+        ingest.symbols.get(idx).map_or(0, |sym| {
+            text_bytes(&[interner.resolve(&sym.name), sym.lang.tag()])
+        })
+    });
+    let mut nodes = Vec::with_capacity(shown.rows().len());
     let mut id_to_slot = HashMap::new();
 
-    for (slot, &idx) in indices[..limit].iter().enumerate() {
+    for (slot, &idx) in shown.rows().iter().enumerate() {
         if let Some(sym) = ingest.symbols.get(idx) {
             let id = sym.id;
             let name = interner.resolve(&sym.name).to_string();
@@ -149,10 +153,10 @@ pub fn generate_call_graph_html(
     ranks: &[f64],
     interner: &Interner,
     initial_color_by: ColorBy,
-    top_k: Option<usize>,
+    page: PageRequest,
 ) -> String {
     let comms = graph.communities();
-    let (nodes, id_to_slot) = build_html_nodes(ingest, ranks, interner, &comms, top_k);
+    let (nodes, id_to_slot) = build_html_nodes(ingest, ranks, interner, &comms, page);
     let mut files_json = String::from("const FILES = [\n");
     for (i, f) in ingest.files.iter().enumerate() {
         let p = interner.resolve(&f.path);
@@ -207,10 +211,13 @@ pub fn generate_call_graph_html(
     comm_list.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
     for (disp, (comm_id, members)) in comm_list.iter().enumerate() {
         let first_file = members.first().map(|&idx| nodes[idx].file_id).unwrap_or(0);
-        let top_m = &members[..members.len().min(5)];
+        let top_m = Paged::new(members, page.nested(), |&idx| {
+            let slot = idx.to_string();
+            text_bytes(&[slot.as_str()])
+        });
         modules_json.push_str(&format!(
             "  {{\"id\":{},\"name\":{:?},\"symCount\":{},\"fileCount\":1,\"files\":[{}],\"members\":{:?},\"top\":{:?},\"inCross\":0,\"outCross\":0,\"neigh\":[]}}{}\n",
-            disp, format!("module_{}", comm_id), members.len(), first_file, members, top_m,
+            disp, format!("module_{}", comm_id), members.len(), first_file, members, top_m.rows(),
             if disp + 1 < comm_list.len() { "," } else { "" }
         ));
     }
@@ -282,7 +289,7 @@ const HAS_CHURN = false;
 </script>
 </body>
 </html>"##,
-        top_k.unwrap_or(5000),
+        nodes.len(),
         nodes.len(),
         edges.len(),
         nodes.len(),
@@ -304,8 +311,8 @@ pub fn write_call_graph_html<W: Write>(
     ranks: &[f64],
     interner: &Interner,
     color_by: ColorBy,
-    top_k: Option<usize>,
+    page: PageRequest,
 ) -> io::Result<()> {
-    let html = generate_call_graph_html(ingest, graph, ranks, interner, color_by, top_k);
+    let html = generate_call_graph_html(ingest, graph, ranks, interner, color_by, page);
     out.write_all(html.as_bytes())
 }

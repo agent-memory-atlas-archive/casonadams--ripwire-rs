@@ -120,7 +120,12 @@ fn test_cochange_printers_and_formatting() {
             dep_capable: true,
         },
     ];
-    print_cochange_pairs_paged("root", &pairs, Some(1), Some(0), &mut out).unwrap();
+    let limited = PageRequest {
+        limit: Some(1),
+        offset: Some(0),
+        budget: None,
+    };
+    print_cochange_pairs_paged("root", &pairs, limited, &mut out).unwrap();
     let text = std::str::from_utf8(&out).unwrap();
     assert!(text.contains("<cochange schema=\"ripwire-rs.cochange/v1\" pairs=\"2\""));
     assert!(text.contains("<pair a=\"src/one.rs\" b=\"src/two.rs\" together=\"7\" deg=\"0.90\" conf_ab=\"0.80\" conf_ba=\"0.70\" driver=\"a\" recur=\"3\" surprising=\"0\"/>"));
@@ -133,7 +138,7 @@ fn test_cochange_printers_and_formatting() {
         max_together: 4,
         max_deg: 0.75,
     }];
-    print_cochange_groups_paged("root", &groups, None, None, &mut out).unwrap();
+    print_cochange_groups_paged("root", &groups, PageRequest::default(), &mut out).unwrap();
     let text = std::str::from_utf8(&out).unwrap();
     assert!(
         text.contains("<cochange-groups schema=\"ripwire-rs.cochange-groups/v1\" groups=\"1\"")
@@ -200,6 +205,7 @@ fn test_execute_cochange_and_hotspots_with_injected_history() {
     let page = PageRequest {
         limit: Some(1),
         offset: None,
+        budget: None,
     };
     execute_hotspots_with(Some("2023-01-01"), &commits, &s_ctx, page, &mut paged).unwrap();
     assert_eq!(rows(&paged), 1);
@@ -305,6 +311,7 @@ fn test_situational_report_consumer_facts() {
         files: &changed_files,
         commits: None,
         context: s_ctx,
+        page: PageRequest::default(),
     };
 
     let mut out = Vec::new();
@@ -313,4 +320,44 @@ fn test_situational_report_consumer_facts() {
     assert!(xml.contains("<situ schema=\"ripwire-rs.situ/v1\""));
     assert!(xml.contains("<summary files=\"1\""));
     assert!(xml.contains("<changed path=\"src/lib.rs\"/>"));
+}
+
+fn cochange_pair(a: &str) -> CoPair {
+    CoPair {
+        file_a: a.to_string(),
+        file_b: "src/other.rs".to_string(),
+        together: 3,
+        deg: 0.5,
+        conf_ab: 0.4,
+        conf_ba: 0.3,
+        driver: "a",
+        recur: 1,
+        surprising: false,
+        dep_capable: true,
+    }
+}
+
+#[test]
+fn cochange_pairs_budget_fits_rows() {
+    let pairs = [cochange_pair("src/one.rs"), cochange_pair("src/two.rs")];
+    let render = |page: PageRequest| {
+        let mut out = Vec::new();
+        print_cochange_pairs_paged("root", &pairs, page, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    };
+    let roomy = render(PageRequest {
+        limit: None,
+        offset: None,
+        budget: Some(usize::MAX),
+    });
+    assert!(roomy.contains("shown=\"2\""));
+    assert!(roomy.contains("src/two.rs"));
+    let tight = render(PageRequest {
+        limit: None,
+        offset: None,
+        budget: Some(1),
+    });
+    assert!(tight.contains("shown=\"1\""));
+    assert!(tight.contains("has_more=\"1\""));
+    assert!(!tight.contains("src/two.rs"));
 }

@@ -30,7 +30,7 @@ fn biggest_first(page: PageRequest) -> String {
 fn biggest_first_honors_limit_and_offset() {
     let first = biggest_first(PageRequest {
         limit: Some(1),
-        offset: None,
+        ..PageRequest::default()
     });
     assert!(first.contains("big_fn"));
     assert!(!first.contains("mid_fn"));
@@ -39,6 +39,7 @@ fn biggest_first_honors_limit_and_offset() {
     let second = biggest_first(PageRequest {
         limit: Some(1),
         offset: Some(1),
+        ..PageRequest::default()
     });
     assert!(second.contains("mid_fn"));
     assert!(!second.contains("big_fn"));
@@ -60,6 +61,7 @@ fn external_surface_honors_limit_and_offset() {
     let page = PageRequest {
         limit: Some(1),
         offset: Some(1),
+        ..PageRequest::default()
     };
     serialize_external_surface_xml(".", &externals, page, &mut buf).unwrap();
     let out = String::from_utf8(buf).unwrap();
@@ -90,10 +92,36 @@ fn communities_honor_limit() {
     let mut buf = Vec::new();
     let page = PageRequest {
         limit: Some(1),
-        offset: None,
+        ..PageRequest::default()
     };
     serialize_communities_with_summary_xml(".", &modules, &summary, page, &mut buf).unwrap();
     let out = String::from_utf8(buf).unwrap();
     assert!(out.contains("alpha_mod"));
     assert!(!out.contains("beta_mod"));
+}
+
+#[test]
+fn biggest_first_fits_rows_to_output_budget() {
+    let tiny = biggest_first(PageRequest {
+        budget: Some(1),
+        ..PageRequest::default()
+    });
+    assert!(tiny.contains("big_fn"));
+    assert!(!tiny.contains("mid_fn"));
+    assert!(tiny.contains("has_more=\"1\""));
+
+    let roomy = biggest_first(PageRequest {
+        budget: Some(usize::MAX),
+        ..PageRequest::default()
+    });
+    assert!(roomy.contains("small_fn"));
+    assert!(roomy.contains("capped=\"0\""));
+
+    let limited = biggest_first(PageRequest {
+        limit: Some(2),
+        budget: Some(1),
+        ..PageRequest::default()
+    });
+    assert!(limited.contains("big_fn") && limited.contains("mid_fn"));
+    assert!(!limited.contains("small_fn"));
 }

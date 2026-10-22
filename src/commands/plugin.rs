@@ -32,13 +32,15 @@ impl<'a> Run<'a> {
         Self { cli, root, options }
     }
 
-    /// The `--limit` / `--offset` window; empty unless the command declared [`SharedOption::Paged`].
+    /// The window request. `--limit/--offset` apply only when the command declared [`SharedOption::Paged`];
+    /// the output budget that default caps are computed from always applies.
     #[must_use]
     pub fn page(&self) -> PageRequest {
+        let page = self.cli.page_request();
         if self.options.contains(&SharedOption::Paged) {
-            self.cli.page_request()
+            page
         } else {
-            PageRequest::default()
+            PageRequest::default().with_budget(page.budget)
         }
     }
 

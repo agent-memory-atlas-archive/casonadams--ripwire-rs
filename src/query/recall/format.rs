@@ -1,6 +1,5 @@
 use serde_json::Value;
 
-const CSV_SAMPLE_ROWS: usize = 3;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocFormat {
     Markdown,
@@ -157,14 +156,14 @@ fn collapse_whitespace(s: &str) -> String {
     out
 }
 
-/// Column header, row count, then the first few rows, fields space-joined.
+/// Column header, row count, then every row, fields space-joined; the recall budget cuts the served body.
 #[must_use]
 pub fn csv_to_text(raw: &str) -> String {
     let mut records = parse_csv(raw).into_iter();
     let header = records.next().unwrap_or_default();
     let rows: Vec<Vec<String>> = records.collect();
     let mut out = format!("CSV columns: {}\nrows: {}\n", header.join(" "), rows.len());
-    for row in rows.iter().take(CSV_SAMPLE_ROWS) {
+    for row in &rows {
         out.push_str(&row.join(" "));
         out.push('\n');
     }

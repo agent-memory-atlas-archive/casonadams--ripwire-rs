@@ -106,6 +106,7 @@ pub fn execute_situ_from_facts<W: Write>(
     ctx: &SafetyContext<'_>,
     files: &[String],
     commits: Option<&[crate::git::history::CommitInfo]>,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     crate::query::safety::SituationalReport {
@@ -113,37 +114,34 @@ pub fn execute_situ_from_facts<W: Write>(
         files,
         commits,
         context: *ctx,
+        page,
     }
     .write_xml(out)
 }
 
 pub fn execute_situ_query<W: Write>(
-    root: &str,
+    ctx: &SafetyContext<'_>,
     files_spec: Option<&str>,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
-    let files = resolve_changed_or_spec_files(root, files_spec);
-    let commits = crate::git::history::walk_repository_history(root).ok();
-    let ctx = SafetyContext {
+    let files = resolve_changed_or_spec_files(ctx.root, files_spec);
+    let commits = crate::git::history::walk_repository_history(ctx.root).ok();
+    execute_situ_from_facts(ctx, &files, commits.as_deref(), page, out)
+}
+
+pub fn execute_safe_delete_query<W: Write>(
+    facts: &SafetyContext<'_>,
+    sym_name: &str,
+    page: crate::serialize::PageRequest,
+    out: &mut W,
+) -> io::Result<()> {
+    let SafetyContext {
         root,
         ingest,
         graph,
         interner,
-    };
-    execute_situ_from_facts(&ctx, &files, commits.as_deref(), out)
-}
-
-pub fn execute_safe_delete_query<W: Write>(
-    root: &str,
-    sym_name: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<()> {
+    } = *facts;
     use crate::domain::CorpusView;
     use crate::navigate::SymbolLookup;
     let view = (ingest, interner);
@@ -174,6 +172,7 @@ pub fn execute_safe_delete_query<W: Write>(
         callers: &callers,
         blast_radius,
         gauge_attrs: &gauge_attrs,
+        page,
     }
     .render_envelope(out)
 }
@@ -266,28 +265,22 @@ pub fn execute_pr_context_from_facts<W: Write>(
 }
 
 pub fn execute_pr_context_dispatch<W: Write>(
-    root: &str,
+    facts: &SafetyContext<'_>,
     ref_opt: Option<&str>,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
+    let SafetyContext { root, .. } = *facts;
     let base_ref = ref_opt.filter(|s| !s.is_empty()).unwrap_or("working-tree");
     let changed = get_working_tree_changed_files(root);
     let commits = crate::git::history::walk_repository_history(root).unwrap_or_default();
-    let ctx = SafetyContext {
-        root,
-        ingest,
-        graph,
-        interner,
-    };
     let req = crate::gate::pr_context::PrContextRequest {
         changed_files: &changed,
         base_ref,
         commits: &commits,
+        page,
     };
-    execute_pr_context_from_facts(&ctx, &req, out)?;
+    execute_pr_context_from_facts(facts, &req, out)?;
     Ok(())
 }
 
@@ -360,6 +353,7 @@ pub fn execute_partition_from_facts<W: Write>(
     ctx: &SafetyContext<'_>,
     partition_k: usize,
     task: Option<&str>,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     if let Some(task) = task {
@@ -380,7 +374,7 @@ pub fn execute_partition_from_facts<W: Write>(
             ctx.ingest,
             ctx.graph,
             ctx.interner,
-            crate::serialize::PageRequest::default(),
+            page,
             &mut stdout_buf,
         )?;
         out.write_all(&stdout_buf)
@@ -438,35 +432,24 @@ pub fn execute_dmm_query<W: Write>(
     Ok(0)
 }
 
-pub fn compute_plan_lanes_from_facts<W: Write>(
+pub fn compute_plan_lanes_from_facts(
     ctx: &SafetyContext<'_>,
     requested: usize,
     task: &str,
     brief_lines: Option<&[String]>,
-    out: &mut W,
-) -> io::Result<serde_json::Value> {
+    page: crate::serialize::PageRequest,
+) -> serde_json::Value {
     let pr = ctx.graph.page_rank(&crate::rank::PageRankConfig::default());
-    let val = if let Some(lines) = brief_lines {
-        crate::gate::lanes::compute_plan_lanes_with_brief(
-            ctx.root,
-            lines,
-            ctx.ingest,
-            ctx.graph,
-            &pr,
-            ctx.interner,
-        )
-    } else {
-        crate::gate::lanes::compute_plan_lanes(
-            ctx.root,
-            requested,
-            task,
-            ctx.ingest,
-            ctx.graph,
-            &pr,
-            ctx.interner,
-        )
+    let corpus = crate::gate::lanes::LaneCorpus {
+        root: ctx.root,
+        ingest: ctx.ingest,
+        graph: ctx.graph,
+        pr: &pr,
+        interner: ctx.interner,
     };
-    serde_json::to_writer(&mut *out, &val)?;
-    writeln!(out)?;
-    Ok(val)
+    if let Some(lines) = brief_lines {
+        crate::gate::lanes::compute_plan_lanes_with_brief(corpus, lines, page)
+    } else {
+        crate::gate::lanes::compute_plan_lanes(corpus, requested, task, page)
+    }
 }

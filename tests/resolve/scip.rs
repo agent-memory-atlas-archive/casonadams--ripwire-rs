@@ -195,6 +195,7 @@ fn shared_navigation_reports_keep_scip_groups_and_unbound_sites_with_paging() {
         page: ripwire_rs::serialize::PageRequest {
             limit: Some(1),
             offset: Some(0),
+            budget: None,
         },
         max_depth: None,
         pr_iters: None,

@@ -17,8 +17,7 @@ pub struct CochangeOptions<'a> {
     pub since: Option<&'a str>,
     pub cochange_recur: Option<u32>,
     pub cochange_groups: bool,
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
+    pub page: crate::serialize::PageRequest,
 }
 pub fn execute_hotspots_with<W: Write>(
     since_str: Option<&str>,
@@ -88,24 +87,41 @@ fn format_copair_row(p: &crate::git::cochange::CoPair) -> String {
     row
 }
 
+fn format_cogroup_row(g: &crate::git::cochange::CoGroup) -> String {
+    let partners_joined = g
+        .partners
+        .iter()
+        .map(|p| p.xml_escaped().to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "  <group core=\"{}\" partners=\"{partners_joined}\" size=\"{}\" together=\"{}\" deg=\"{:.2}\"/>",
+        g.core.xml_escaped(),
+        g.partners.len() + 1,
+        g.max_together,
+        g.max_deg
+    )
+}
+
 pub fn print_cochange_pairs_paged<W: Write>(
     root: &str,
     pairs: &[crate::git::cochange::CoPair],
-    limit: Option<usize>,
-    offset: Option<usize>,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
-    use crate::serialize::{GitStampExt, PaginateSlice};
+    use crate::serialize::{GitStampExt, Paged};
     let at_attr = root.git_at_xml_attr();
     let total = pairs.len();
-    let (pw, page) = pairs.paginate(30, limit, offset);
+    let rows: Vec<String> = pairs.iter().map(format_copair_row).collect();
+    let paged = Paged::new(&rows, page, |row| row.len());
+    let pw = paged.window;
     let page_attrs = pw.xml_attrs();
     writeln!(
         out,
         "<cochange schema=\"ripwire-rs.cochange/v1\" pairs=\"{total}\" window=\"18mo@HEAD\" sub_windows=\"3\"{page_attrs} root=\"{root}\"{at_attr}>",
     )?;
-    for p in page {
-        writeln!(out, "{}", format_copair_row(p))?;
+    for row in paged.rows() {
+        writeln!(out, "{row}")?;
     }
     writeln!(out, "</cochange>")
 }
@@ -113,34 +129,22 @@ pub fn print_cochange_pairs_paged<W: Write>(
 pub fn print_cochange_groups_paged<W: Write>(
     root: &str,
     groups: &[crate::git::cochange::CoGroup],
-    limit: Option<usize>,
-    offset: Option<usize>,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
-    use crate::serialize::{GitStampExt, PaginateSlice};
+    use crate::serialize::{GitStampExt, Paged};
     let at_attr = root.git_at_xml_attr();
     let total = groups.len();
-    let (pw, page) = groups.paginate(30, limit, offset);
+    let rows: Vec<String> = groups.iter().map(format_cogroup_row).collect();
+    let paged = Paged::new(&rows, page, |row| row.len());
+    let pw = paged.window;
     let page_attrs = pw.xml_attrs();
     writeln!(
         out,
         "<cochange-groups schema=\"ripwire-rs.cochange-groups/v1\" groups=\"{total}\" window=\"18mo@HEAD\"{page_attrs} root=\"{root}\"{at_attr}>",
     )?;
-    for g in page {
-        let partners_joined = g
-            .partners
-            .iter()
-            .map(|p| p.xml_escaped().to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        writeln!(
-            out,
-            "  <group core=\"{}\" partners=\"{partners_joined}\" size=\"{}\" together=\"{}\" deg=\"{:.2}\"/>",
-            g.core.xml_escaped(),
-            g.partners.len() + 1,
-            g.max_together,
-            g.max_deg
-        )?;
+    for row in paged.rows() {
+        writeln!(out, "{row}")?;
     }
     writeln!(out, "</cochange-groups>")
 }
@@ -218,9 +222,9 @@ pub fn execute_cochange_with_options<W: Write>(
         }
         if flags.cochange_groups {
             let groups = crate::git::cochange::cluster_cochange_groups(&pairs);
-            print_cochange_groups_paged(state.root, &groups, flags.limit, flags.offset, out)
+            print_cochange_groups_paged(state.root, &groups, flags.page, out)
         } else {
-            print_cochange_pairs_paged(state.root, &pairs, flags.limit, flags.offset, out)
+            print_cochange_pairs_paged(state.root, &pairs, flags.page, out)
         }
     }
 }
@@ -437,6 +441,7 @@ pub struct SituationalReport<'a> {
     pub root: &'a str,
     pub files: &'a [String],
     pub commits: Option<&'a [crate::git::history::CommitInfo]>,
+    pub page: crate::serialize::PageRequest,
     pub context: SafetyContext<'a>,
 }
 
@@ -447,11 +452,10 @@ impl crate::serialize::XmlReport for SituationalReport<'_> {
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let facts = crate::query::graph::call_situational_awareness(
-            self.context.ingest,
-            self.context.graph,
-            self.context.interner,
+            &self.context,
             self.files,
             self.commits,
+            self.page,
         );
         writeln!(
             out,

@@ -143,6 +143,32 @@ pub struct ReadabilityReport<'a> {
     pub page: crate::serialize::PageRequest,
 }
 
+impl ReadabilityReport<'_> {
+    fn window(&self) -> crate::serialize::PageWindow {
+        self.page.window_fit(self.functions.len(), |i| {
+            crate::serialize::row_bytes(|w| write_readability_row(self.functions[i], w))
+        })
+    }
+}
+
+fn write_readability_row<W: std::io::Write + ?Sized>(
+    (sym, p, n): (&crate::domain::Symbol, &str, &str),
+    out: &mut W,
+) -> std::io::Result<()> {
+    let lines = sym.loc.max(1);
+    let toks = lines * 8;
+    let ops = lines * 5;
+    let vocab = (lines * 2).clamp(4, 280);
+    let vol = (toks as f64) * (vocab as f64).log2();
+    let ent = 4.20;
+    let posnett = posnett_score(vol, lines as f64, ent);
+    writeln!(
+        out,
+        "  <fn p=\"{p}:{}\" n=\"{n}\" lines=\"{lines}\" toks=\"{toks}\" ops=\"{ops}\" vocab=\"{vocab}\" vol=\"{vol:.0}\" ent=\"{ent:.2}\" posnett=\"{posnett:.2}\"/>",
+        sym.line
+    )
+}
+
 impl crate::serialize::XmlReport for ReadabilityReport<'_> {
     crate::xml_report_meta!(
         "readability",
@@ -151,26 +177,15 @@ impl crate::serialize::XmlReport for ReadabilityReport<'_> {
         comment: "ripwire-rs readability schema=ripwire-rs.readability/v1: Posnett/Hindle/Devanbu lens, largest Halstead volume first: <fn p= n= lines= toks= ops= vocab= vol= ent= posnett=>."
     );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
-        Some(self.page.window(self.functions.len(), 40))
+        Some(self.window())
     }
     fn write_extra_attrs<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
         write!(out, " functions=\"{}\"", self.functions.len())
     }
     fn write_body<W: std::io::Write>(&self, out: &mut W) -> std::io::Result<()> {
-        let pw = self.page.window(self.functions.len(), 40);
-        for (sym, p, n) in &self.functions[pw.begin..pw.end] {
-            let lines = sym.loc.max(1);
-            let toks = lines * 8;
-            let ops = lines * 5;
-            let vocab = (lines * 2).clamp(4, 280);
-            let vol = (toks as f64) * (vocab as f64).log2();
-            let ent = 4.20;
-            let posnett = posnett_score(vol, lines as f64, ent);
-            writeln!(
-                out,
-                "  <fn p=\"{p}:{}\" n=\"{n}\" lines=\"{lines}\" toks=\"{toks}\" ops=\"{ops}\" vocab=\"{vocab}\" vol=\"{vol:.0}\" ent=\"{ent:.2}\" posnett=\"{posnett:.2}\"/>",
-                sym.line
-            )?;
+        let pw = self.window();
+        for &entry in &self.functions[pw.begin..pw.end] {
+            write_readability_row(entry, out)?;
         }
         Ok(())
     }

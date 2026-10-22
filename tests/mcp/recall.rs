@@ -100,7 +100,7 @@ fn test_html_and_csv_rendering() {
     let csv = "name,\"note, quoted\",count\nx,1,2\ny,,4\nz,5,6\nw,7,8\n";
     assert_eq!(
         csv_to_text(csv),
-        "CSV columns: name note, quoted count\nrows: 4\nx 1 2\ny  4\nz 5 6\n"
+        "CSV columns: name note, quoted count\nrows: 4\nx 1 2\ny  4\nz 5 6\nw 7 8\n"
     );
 }
 
@@ -165,7 +165,7 @@ fn test_budget_truncates_headless_doc_front_first() {
     let body = numbered_lines(40);
     let inputs = vec![md("one.md", &body)];
     let opts = RecallOptions {
-        top_k: 8,
+        top_k: Some(8),
         max_tokens: 300,
     };
     let out = recall(&inputs, "zebra", opts);
@@ -188,7 +188,7 @@ fn test_budget_drops_lower_ranked_sections() {
         format!("# One zebra\n{filler}## Two zebra zebra\n{filler}## Three\nzebra\n{filler}");
     let inputs = vec![md("s.md", &text)];
     let opts = RecallOptions {
-        top_k: 8,
+        top_k: Some(8),
         max_tokens: 300,
     };
     let out = recall(&inputs, "zebra", opts);
@@ -206,7 +206,7 @@ fn test_budget_omits_docs_that_cannot_get_a_slice() {
     let big = numbered_lines(60);
     let inputs = vec![md("a.md", &big), md("b.md", &big)];
     let opts = RecallOptions {
-        top_k: 8,
+        top_k: Some(8),
         max_tokens: 150,
     };
     let out = recall(&inputs, "zebra", opts);
@@ -226,7 +226,7 @@ fn test_top_k_cap_and_header_shape() {
         md("c.md", "zebra three words\n"),
     ];
     let opts = RecallOptions {
-        top_k: 1,
+        top_k: Some(1),
         max_tokens: 8000,
     };
     let text = render(&inputs, "zebra", opts);
@@ -234,7 +234,7 @@ fn test_top_k_cap_and_header_shape() {
         "ripwire-rs recall — \"zebra\" — 3 relevant of 3 document files, best-first — total=3 shown=1 capped=1 max_tokens=8000 est_tokens="
     ));
     assert!(text.contains("\n\n━━ a.md  (relevance "));
-    assert!(text.contains(") ━━\nzebra\n\n\n(capped: 2 of 3 relevant document files omitted — raise --top-k/top_k (default 8) for 2 more)\n"));
+    assert!(text.contains(") ━━\nzebra\n\n\n(capped: 2 of 3 relevant document files omitted — raise --top-k/top_k for 2 more)\n"));
     let est: usize = text
         .split("est_tokens=")
         .nth(1)
@@ -242,6 +242,15 @@ fn test_top_k_cap_and_header_shape() {
         .and_then(|s| s.parse().ok())
         .unwrap();
     assert_eq!(est, (text.len() * 2).div_ceil(5));
+}
+
+#[test]
+fn test_default_top_k_is_decided_by_budget() {
+    let inputs: Vec<RecallInput> = (0..10)
+        .map(|i| md(&format!("d{i}.md"), "zebra\n"))
+        .collect();
+    let text = render(&inputs, "zebra", RecallOptions::default());
+    assert!(text.contains("shown=10 capped=0"), "{text}");
 }
 
 #[test]

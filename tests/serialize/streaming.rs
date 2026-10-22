@@ -331,6 +331,7 @@ fn test_query_xml_detail_ladder() {
         page: ripwire_rs::serialize::PageRequest {
             limit: Some(1),
             offset: Some(1),
+            budget: None,
         },
     }
     .render_envelope(&mut buf)
@@ -362,7 +363,17 @@ fn test_query_xml_safety_family() {
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.test-gate/v1\""));
     buf.clear();
 
-    serialize_safe_delete_xml(".", "sym", &[("src/lib.rs", "caller")], 3, &mut buf).unwrap();
+    let report = ripwire_rs::serialize::arch_xml::SafeDeleteReport {
+        root: ".",
+        sym_name: "sym",
+        kind_tag: "fn",
+        def_loc: "src/lib.rs:1",
+        callers: &[("src/lib.rs", "caller")],
+        blast_radius: 3,
+        page: ripwire_rs::serialize::PageRequest::default(),
+        gauge_attrs: ripwire_rs::serialize::GraphGauges::ZERO_XML_ATTRS,
+    };
+    serialize_safe_delete_xml(&report, &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("schema=\"ripwire-rs.safe-delete/v1\""));
     buf.clear();
 
@@ -441,14 +452,51 @@ fn test_query_xml_architecture_family() {
         ],
         cycles: vec![vec!["src/a.rs", "src/b.rs"]],
         violations: vec![("src/a.rs", "src/b.rs", 0.25)],
-        limit: None,
-        offset: None,
+        page: ripwire_rs::serialize::PageRequest::default(),
     };
     ripwire_rs::serialize::serialize_deps_report_xml(".", &deps_rep, &mut buf).unwrap();
     let deps_xml = String::from_utf8_lossy(&buf);
-    assert!(deps_xml.contains("<cycles>"));
+    assert!(deps_xml.contains("<cycles total=\"1\" shown=\"1\" capped=\"0\">"));
     assert!(deps_xml.contains("<cycle size=\"2\" cost=\"4\""));
     assert!(deps_xml.contains("<inc t=\"./b.rs\"/>"));
+}
+
+#[test]
+fn dead_code_list_follows_output_budget() {
+    use ripwire_rs::serialize::{
+        GraphGauges, PageRequest, arch_xml::serialize_dead_code_paged_xml,
+    };
+    let items: Vec<(&str, &'static str, &str, u32)> =
+        (0..5).map(|i| ("unused", "fn", "src/lib.rs", i)).collect();
+    let render = |page: PageRequest| {
+        let mut buf = Vec::new();
+        serialize_dead_code_paged_xml(".", &items, GraphGauges::default(), page, &mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    };
+
+    let tiny = render(PageRequest {
+        budget: Some(1),
+        ..PageRequest::default()
+    });
+    assert_eq!(tiny.matches("<d n=\"").count(), 1, "{tiny}");
+    assert!(
+        tiny.contains("shown=\"1\" capped=\"1\" total=\"5\" has_more=\"1\""),
+        "{tiny}"
+    );
+
+    let all = render(PageRequest {
+        budget: Some(1 << 20),
+        ..PageRequest::default()
+    });
+    assert_eq!(all.matches("<d n=\"").count(), 5, "{all}");
+    assert!(all.contains("capped=\"0\""), "{all}");
+
+    let limited = render(PageRequest {
+        limit: Some(3),
+        budget: Some(1),
+        ..PageRequest::default()
+    });
+    assert_eq!(limited.matches("<d n=\"").count(), 3, "{limited}");
 }
 
 #[test]
@@ -564,7 +612,13 @@ fn test_page_window_and_xml_report_trait() {
     }
 
     let items = vec!["a", "b", "c", "d", "e"];
-    let pw = PageWindow::compute(items.len(), 2, None, None);
+    let budget = ripwire_rs::serialize::PageRequest {
+        budget: Some(4),
+        ..Default::default()
+    };
+    let pw = budget.window_fit(items.len(), |i| {
+        ripwire_rs::serialize::text_bytes(&[items[i]])
+    });
     assert_eq!(pw.shown, 2);
     assert!(pw.capped);
     assert!(pw.has_more);
@@ -627,6 +681,7 @@ fn test_page_window_and_xml_report_trait() {
         changed_files: &[],
         base_ref: "HEAD",
         commits: &[],
+        page: ripwire_rs::serialize::PageRequest::default(),
     };
     let pr_ctx = ripwire_rs::gate::pr_context::compute_pr_context_from_facts(
         &pr_req, &ingest, &graph, &interner,

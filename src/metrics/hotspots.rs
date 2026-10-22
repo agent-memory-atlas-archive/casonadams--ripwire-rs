@@ -1,4 +1,5 @@
 use crate::domain::{IngestResult, Interner};
+use crate::serialize::{PageWindow, row_bytes};
 use std::collections::HashMap;
 use std::io::{self, Write};
 
@@ -41,6 +42,20 @@ impl HotspotsReport {
         self.page = page;
         self
     }
+
+    fn window(&self) -> PageWindow {
+        self.page.window_fit(self.files.len(), |i| {
+            row_bytes(|w| write_hotspot_row(&self.files[i], w))
+        })
+    }
+}
+
+fn write_hotspot_row<W: Write + ?Sized>(f: &HotspotFile, out: &mut W) -> io::Result<()> {
+    writeln!(
+        out,
+        "  <f p=\"{}\" churn=\"{}\" ccx=\"{}\" score=\"{}\" top=\"{}\" top_ccx=\"{}\" top_l=\"{}\"/>",
+        f.file_path, f.churn, f.ccx_sum, f.score, f.top_fn_name, f.top_fn_ccx, f.top_fn_line
+    )
 }
 
 impl crate::serialize::XmlReport for HotspotsReport {
@@ -52,7 +67,7 @@ impl crate::serialize::XmlReport for HotspotsReport {
     );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::XmlEscapeExt;
-        let pw = self.page.window(self.ranked_count, 40).xml_attrs();
+        let pw = self.window().xml_attrs();
         write!(
             out,
             " window=\"12mo@HEAD\" files=\"{}\" ranked=\"{}\"{pw} unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\" root=\"{}\" at=\"{}\"",
@@ -65,19 +80,9 @@ impl crate::serialize::XmlReport for HotspotsReport {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let window = self.page.window(self.ranked_count, 40);
-        for f in self.files.iter().skip(window.begin).take(window.shown) {
-            writeln!(
-                out,
-                "  <f p=\"{}\" churn=\"{}\" ccx=\"{}\" score=\"{}\" top=\"{}\" top_ccx=\"{}\" top_l=\"{}\"/>",
-                f.file_path,
-                f.churn,
-                f.ccx_sum,
-                f.score,
-                f.top_fn_name,
-                f.top_fn_ccx,
-                f.top_fn_line
-            )?;
+        let window = self.window();
+        for f in &self.files[window.begin..window.end] {
+            write_hotspot_row(f, out)?;
         }
         Ok(())
     }

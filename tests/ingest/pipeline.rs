@@ -263,12 +263,16 @@ class WorkerService {
     );
 
     let mut sd_buf = Vec::new();
+    let facts = ripwire_rs::query::safety::SafetyContext {
+        root: ".",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
     execute_safe_delete_query(
-        ".",
+        &facts,
         "normalizeInput",
-        &ingest,
-        &graph,
-        &interner,
+        ripwire_rs::serialize::PageRequest::default(),
         &mut sd_buf,
     )
     .unwrap();

@@ -31,17 +31,102 @@ pub use xml::{
     write_root_open_with_rank_by, write_symbol_row,
 };
 
-/// A caller's `--limit` / `--offset` request, before it meets a result size.
+/// Bytes per token: converts a byte budget into the `budget_tokens=` disclosure (same 4-bytes-per-token rule as `est_tokens=`).
+pub const BYTES_PER_TOKEN: usize = 4;
+
+/// A caller's `--limit` / `--offset` request and the output budget every default cap is computed from.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct PageRequest {
     pub limit: Option<usize>,
     pub offset: Option<usize>,
+    /// Byte budget for one list of rows; `None` means [`DEFAULT_PACK_BUDGET_BYTES`].
+    pub budget: Option<usize>,
 }
 
 impl PageRequest {
     #[must_use]
-    pub fn window(self, total: usize, default_cap: usize) -> PageWindow {
-        PageWindow::compute(total, default_cap, self.limit, self.offset)
+    pub fn with_budget(self, budget: Option<usize>) -> Self {
+        Self { budget, ..self }
+    }
+
+    /// The same byte budget with no `--limit` / `--offset`, for a secondary list inside a report.
+    #[must_use]
+    pub fn nested(self) -> Self {
+        Self {
+            limit: None,
+            offset: None,
+            ..self
+        }
+    }
+
+    /// The window over `total` rows. An explicit `--limit` wins; otherwise the cap is however many rows,
+    /// starting at the offset, fit the byte budget when each row costs `row_bytes(index)` (always at least one).
+    #[must_use]
+    pub fn window_fit(self, total: usize, row_bytes: impl Fn(usize) -> usize) -> PageWindow {
+        let begin = self.offset.unwrap_or(0).min(total);
+        let cap = match self.limit {
+            Some(limit) if limit > 0 => limit,
+            _ => fit_rows(
+                (begin..total).map(row_bytes),
+                self.budget.unwrap_or(DEFAULT_PACK_BUDGET_BYTES),
+            ),
+        };
+        PageWindow::compute(total, cap, self.limit, self.offset)
+    }
+}
+
+/// How many leading rows fit `budget` bytes (at least one when any row exists).
+fn fit_rows(sizes: impl Iterator<Item = usize>, budget: usize) -> usize {
+    let mut used = 0usize;
+    let mut fitted = 0usize;
+    for size in sizes {
+        used = used.saturating_add(size);
+        if used > budget && fitted > 0 {
+            break;
+        }
+        fitted += 1;
+    }
+    fitted.max(1)
+}
+
+/// Bytes `write` emits; the measure a row costs against the output budget.
+#[must_use]
+pub fn row_bytes(write: impl FnOnce(&mut dyn std::io::Write) -> std::io::Result<()>) -> usize {
+    let mut counter = CountingWriter::new(std::io::sink());
+    let _ = write(&mut counter);
+    counter.count
+}
+
+/// Bytes a row costs when its cost is the text of its parts (names, paths, numbers).
+#[must_use]
+pub fn text_bytes(parts: &[&str]) -> usize {
+    parts.iter().map(|part| part.len() + 1).sum()
+}
+
+/// One list of rows, windowed once: the single place its cap, disclosure attributes and shown rows come from.
+pub struct Paged<'a, T> {
+    all: &'a [T],
+    pub window: PageWindow,
+}
+
+impl<'a, T> Paged<'a, T> {
+    /// Window `all` under `page`; `cost` is the bytes one row adds to the output.
+    #[must_use]
+    pub fn new(all: &'a [T], page: PageRequest, cost: impl Fn(&T) -> usize) -> Self {
+        let window = page.window_fit(all.len(), |i| cost(&all[i]));
+        Self { all, window }
+    }
+
+    /// The rows inside the window.
+    #[must_use]
+    pub fn rows(&self) -> &'a [T] {
+        &self.all[self.window.begin..self.window.end]
+    }
+
+    /// `shown= capped= total= has_more= next_offset= offset= limit=` for the list's root element.
+    #[must_use]
+    pub fn attrs(&self) -> String {
+        self.window.xml_attrs()
     }
 }
 
@@ -60,23 +145,12 @@ pub struct PageWindow {
 }
 
 impl PageWindow {
-    /// Compute a pagination window over `total` items given a `default_cap` and optional `limit` / `offset`.
-    #[must_use]
-    pub fn compute(
-        total: usize,
-        default_cap: usize,
-        limit: Option<usize>,
-        offset: Option<usize>,
-    ) -> Self {
+    /// The window of `cap` rows from `offset` over `total`; `limit` and `offset` are recorded for disclosure.
+    fn compute(total: usize, cap: usize, limit: Option<usize>, offset: Option<usize>) -> Self {
         let off = offset.unwrap_or(0);
         let lim = limit.unwrap_or(0);
-        let eff_cap = if lim > 0 { lim } else { default_cap };
         let begin = off.min(total);
-        let end = if eff_cap > 0 {
-            (begin + eff_cap).min(total)
-        } else {
-            total
-        };
+        let end = begin.saturating_add(cap).min(total);
         let shown = end.saturating_sub(begin);
         let has_more = end < total;
         let capped = shown < total;
@@ -106,29 +180,6 @@ impl PageWindow {
         } else {
             format!(" shown=\"{}\" capped=\"0\"", self.shown)
         }
-    }
-}
-
-/// Extension trait for slicing collections with `PageWindow` disclosure metadata.
-pub trait PaginateSlice<T> {
-    fn paginate(
-        &self,
-        default_cap: usize,
-        limit: Option<usize>,
-        offset: Option<usize>,
-    ) -> (PageWindow, &[T]);
-}
-
-impl<T> PaginateSlice<T> for [T] {
-    #[inline]
-    fn paginate(
-        &self,
-        default_cap: usize,
-        limit: Option<usize>,
-        offset: Option<usize>,
-    ) -> (PageWindow, &[T]) {
-        let pw = PageWindow::compute(self.len(), default_cap, limit, offset);
-        (pw, &self[pw.begin..pw.end])
     }
 }
 
@@ -399,12 +450,13 @@ pub trait JsonValueExt {
 
     fn attach_gauges<G: GraphGaugeProvider>(&mut self, source: &G);
     fn xml_opt_gauge_attrs(&self) -> String;
-    fn paginate_items<'a, T>(&self, items: &'a [T], default_cap: usize) -> (PageWindow, &'a [T]) {
-        items.paginate(
-            default_cap,
-            self.opt_usize("limit"),
-            self.opt_usize("offset"),
-        )
+    /// `limit` / `offset` / `budget` keys carried by a JSON report value.
+    fn page_request(&self) -> PageRequest {
+        PageRequest {
+            limit: self.opt_usize("limit"),
+            offset: self.opt_usize("offset"),
+            budget: self.opt_usize("budget"),
+        }
     }
 }
 

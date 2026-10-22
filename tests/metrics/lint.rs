@@ -376,6 +376,7 @@ fn explicit_window_reports_rows_without_claiming_count_truncation() {
         PageRequest {
             limit: Some(1),
             offset: Some(1),
+            ..PageRequest::default()
         },
     );
     assert!(report.contains("shown=\"1\" capped=\"1\" total=\"2\" has_more=\"0\" next_offset=\"2\" offset=\"1\" limit=\"1\""));

@@ -1,7 +1,6 @@
+use crate::serialize::Paged;
 use crate::serialize::escape::XmlEscapeExt;
 use std::io::{self, Write};
-
-const DEFAULT_UNTESTED_CAP: usize = 25;
 
 /// One untested impacted symbol row (`<u sym= p= l= ccx=/>`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,9 +28,28 @@ pub struct TestGateReport<'a> {
 }
 
 impl TestGateReport<'_> {
-    fn untested_window(&self) -> crate::serialize::PageWindow {
-        self.page.window(self.untested.len(), DEFAULT_UNTESTED_CAP)
+    fn untested_page(&self) -> Paged<'_, UntestedSymbol<'_>> {
+        Paged::new(self.untested, self.page, |u| {
+            crate::serialize::row_bytes(|mut w| write_untested_row(u, &mut w))
+        })
     }
+
+    fn tests_page(&self) -> Paged<'_, crate::gate::affected::AffectedTest> {
+        Paged::new(self.tests, self.page.nested(), |t| {
+            crate::serialize::row_bytes(|mut w| write_test_gate_row(t, &mut w))
+        })
+    }
+}
+
+fn write_untested_row<W: Write>(u: &UntestedSymbol<'_>, out: &mut W) -> io::Result<()> {
+    write!(
+        out,
+        "<u sym=\"{}\" p=\"{}\" l=\"{}\" ccx=\"{}\"/>",
+        u.name.xml_escaped(),
+        u.path.xml_escaped(),
+        u.line,
+        u.ccx
+    )
 }
 
 fn write_test_gate_row<W: Write>(
@@ -72,7 +90,8 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let t_len = self.tests.len();
         let u_len = self.untested.len();
-        let win = self.untested_window();
+        let tests = self.tests_page();
+        let win = self.untested_page().window;
         let run_first = if self.run_first > 0 {
             format!(" run_first=\"{}\"", self.run_first)
         } else {
@@ -96,10 +115,12 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
             .unwrap_or("--situ");
         write!(
             out,
-            " changed=\"{}\" impacted=\"{}\" tests=\"{t_len}\" untested=\"{u_len}\" untested_modscope=\"{}\" shown_tests=\"{t_len}\" tests_capped=\"0\" shown_untested=\"{}\" untested_capped=\"{}\" script_gates_unmodelled=\"{}\" script_gates_registered=\"{}\" script_gates_mapped=\"{}\" script_gates_unresolved_dynamic=\"{}\" ccx_bar=\"15\"{run_first} {}{window_attrs} at=\"{}\" root=\"{}\" next=\"{}\"",
+            " changed=\"{}\" impacted=\"{}\" tests=\"{t_len}\" untested=\"{u_len}\" untested_modscope=\"{}\" shown_tests=\"{}\" tests_capped=\"{}\" shown_untested=\"{}\" untested_capped=\"{}\" script_gates_unmodelled=\"{}\" script_gates_registered=\"{}\" script_gates_mapped=\"{}\" script_gates_unresolved_dynamic=\"{}\" ccx_bar=\"15\"{run_first} {}{window_attrs} at=\"{}\" root=\"{}\" next=\"{}\"",
             self.changed,
             self.impacted,
             self.untested_modscope,
+            tests.window.shown,
+            usize::from(tests.window.capped),
             win.shown,
             usize::from(win.capped),
             self.script_gates_unmodelled,
@@ -113,19 +134,11 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for t in self.tests {
+        for t in self.tests_page().rows() {
             write_test_gate_row(t, out)?;
         }
-        let win = self.untested_window();
-        for u in self.untested.iter().skip(win.begin).take(win.shown) {
-            write!(
-                out,
-                "<u sym=\"{}\" p=\"{}\" l=\"{}\" ccx=\"{}\"/>",
-                u.name.xml_escaped(),
-                u.path.xml_escaped(),
-                u.line,
-                u.ccx
-            )?;
+        for u in self.untested_page().rows() {
+            write_untested_row(u, out)?;
         }
         Ok(())
     }
@@ -165,6 +178,15 @@ pub struct SafeDeleteReport<'a> {
     pub callers: &'a [(&'a str, &'a str)],
     pub blast_radius: usize,
     pub gauge_attrs: &'a str,
+    pub page: crate::serialize::PageRequest,
+}
+
+impl SafeDeleteReport<'_> {
+    fn callers_page(&self) -> Paged<'_, (&str, &str)> {
+        Paged::new(self.callers, self.page, |&(p, n)| {
+            crate::serialize::text_bytes(&[p, n])
+        })
+    }
 }
 
 impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
@@ -181,8 +203,9 @@ impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
             "uses-exist"
         };
         let c_len = self.callers.len();
-        let shown = c_len.min(40);
-        let capped = usize::from(shown < c_len);
+        let paged = self.callers_page();
+        let shown = paged.window.shown;
+        let capped = usize::from(paged.window.capped);
         let dead_cand = usize::from(c_len == 0 && self.blast_radius == 0);
         write!(
             out,
@@ -197,7 +220,7 @@ impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        for &(p, n) in self.callers.iter().take(40) {
+        for &(p, n) in self.callers_page().rows() {
             writeln!(
                 out,
                 "  <c n=\"{}\" p=\"{}\"/>",
@@ -211,43 +234,11 @@ impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
 
 /// Serialize `--safe-delete` to Ripwire XML.
 pub fn serialize_safe_delete_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    callers: &[(&str, &str)],
-    blast_radius: usize,
-    out: &mut W,
-) -> io::Result<()> {
-    serialize_safe_delete_at_xml(
-        root,
-        sym_name,
-        "fn",
-        "src/lib.rs:1",
-        callers,
-        blast_radius,
-        out,
-    )
-}
-
-pub fn serialize_safe_delete_at_xml<W: Write>(
-    root: &str,
-    sym_name: &str,
-    kind_tag: &str,
-    def_loc: &str,
-    callers: &[(&str, &str)],
-    blast_radius: usize,
+    report: &SafeDeleteReport<'_>,
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
-    SafeDeleteReport {
-        root,
-        sym_name,
-        kind_tag,
-        def_loc,
-        callers,
-        blast_radius,
-        gauge_attrs: crate::serialize::GraphGauges::ZERO_XML_ATTRS,
-    }
-    .render_envelope(out)
+    report.render_envelope(out)
 }
 
 pub struct ExercisesReport<'a> {
@@ -315,8 +306,24 @@ pub struct CommunitySummary<'a> {
 pub struct DeadCodeReport<'a> {
     pub items: &'a [(&'a str, &'static str, &'a str, u32)],
     pub gauges: crate::serialize::GraphGauges,
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
+    pub page: crate::serialize::PageRequest,
+}
+
+impl DeadCodeReport<'_> {
+    fn paged(&self) -> Paged<'_, (&str, &'static str, &str, u32)> {
+        Paged::new(self.items, self.page, |&(n, t, p, l)| {
+            crate::serialize::row_bytes(|mut w| write_dead_row(n, t, p, l, &mut w))
+        })
+    }
+}
+
+fn write_dead_row<W: Write>(n: &str, t: &str, p: &str, l: u32, out: &mut W) -> io::Result<()> {
+    writeln!(
+        out,
+        "  <d n=\"{}\" t=\"{t}\" p=\"{}\" l=\"{l}\"/>",
+        n.xml_escaped(),
+        p.xml_escaped()
+    )
 }
 
 impl crate::serialize::XmlReport for DeadCodeReport<'_> {
@@ -327,8 +334,7 @@ impl crate::serialize::XmlReport for DeadCodeReport<'_> {
         comment: "ripwire-rs dead-code schema=ripwire-rs.dead-code/v1: internal-linkage functions with no caller found in the index: <d n= t= p= l=>."
     );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
-        use crate::serialize::PaginateSlice;
-        Some(self.items.paginate(40, self.limit, self.offset).0)
+        Some(self.paged().window)
     }
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
         Some(self.gauges)
@@ -341,15 +347,8 @@ impl crate::serialize::XmlReport for DeadCodeReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::PaginateSlice;
-        let (_, page) = self.items.paginate(40, self.limit, self.offset);
-        for (n, t, p, l) in page {
-            writeln!(
-                out,
-                "  <d n=\"{}\" t=\"{t}\" p=\"{}\" l=\"{l}\"/>",
-                n.xml_escaped(),
-                p.xml_escaped()
-            )?;
+        for &(n, t, p, l) in self.paged().rows() {
+            write_dead_row(n, t, p, l, out)?;
         }
         Ok(())
     }
@@ -365,8 +364,7 @@ pub fn serialize_dead_code_xml<W: Write>(
         root,
         items,
         crate::serialize::GraphGauges::default(),
-        None,
-        None,
+        crate::serialize::PageRequest::default(),
         out,
     )
 }
@@ -375,16 +373,14 @@ pub fn serialize_dead_code_paged_xml<W: Write>(
     root: &str,
     items: &[(&str, &'static str, &str, u32)],
     gauges: crate::serialize::GraphGauges,
-    limit: Option<usize>,
-    offset: Option<usize>,
+    page: crate::serialize::PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
     DeadCodeReport {
         items,
         gauges,
-        limit,
-        offset,
+        page,
     }
     .write_xml_report(root, out)
 }
@@ -393,6 +389,71 @@ pub struct CommunitiesReport<'a> {
     pub modules: &'a [CommunityModule<'a>],
     pub summary: &'a CommunitySummary<'a>,
     pub page: crate::serialize::PageRequest,
+}
+
+impl CommunitiesReport<'_> {
+    fn modules_page(&self) -> Paged<'_, CommunityModule<'_>> {
+        Paged::new(self.modules, self.page, |m| {
+            crate::serialize::row_bytes(|mut w| write_community(&mut w, m, self.page.nested()))
+        })
+    }
+
+    fn bridges_page(&self) -> Paged<'_, (u32, u32, &str, &str, usize)> {
+        Paged::new(
+            &self.summary.bridges[..],
+            self.page.nested(),
+            |&(a, b, la, lb, edges)| {
+                crate::serialize::row_bytes(|mut w| write_bridge(&mut w, a, b, la, lb, edges))
+            },
+        )
+    }
+}
+
+fn write_community<W: Write>(
+    out: &mut W,
+    m: &CommunityModule<'_>,
+    members_page: crate::serialize::PageRequest,
+) -> io::Result<()> {
+    let members = Paged::new(
+        &m.members[..],
+        members_page,
+        |&(kind, name, path, _line)| crate::serialize::text_bytes(&[kind, name, path]),
+    );
+    let top_n = members.window.shown;
+    let m_capped = usize::from(top_n < m.size);
+    writeln!(
+        out,
+        "  <community id=\"{}\" size=\"{}\" dir=\"{}\" label=\"{}\" shown=\"{top_n}\" capped=\"{m_capped}\">",
+        m.id,
+        m.size,
+        m.dir.xml_escaped(),
+        m.label.xml_escaped()
+    )?;
+    for &(kind, name, path, line) in members.rows() {
+        writeln!(
+            out,
+            "    <member t=\"{kind}\" n=\"{}\" p=\"{}:{line}\"/>",
+            name.xml_escaped(),
+            path.xml_escaped()
+        )?;
+    }
+    writeln!(out, "  </community>")
+}
+
+fn write_bridge<W: Write>(
+    out: &mut W,
+    a: u32,
+    b: u32,
+    la: &str,
+    lb: &str,
+    edges: usize,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "  <bridge a=\"{a}\" b=\"{b}\" from_label=\"{}\" to_label=\"{}\" edges=\"{edges}\"/>",
+        la.xml_escaped(),
+        lb.xml_escaped()
+    )
 }
 
 impl crate::serialize::XmlReport for CommunitiesReport<'_> {
@@ -409,10 +470,11 @@ impl crate::serialize::XmlReport for CommunitiesReport<'_> {
         Some(self.summary.gauges)
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let pw = self.page.window(self.modules.len(), 30);
+        let pw = self.modules_page().window;
         let total_bridges = self.summary.bridges.len();
-        let shown_bridges = total_bridges.min(12);
-        let bridges_capped = usize::from(shown_bridges < total_bridges);
+        let bridges = self.bridges_page();
+        let shown_bridges = bridges.window.shown;
+        let bridges_capped = usize::from(bridges.window.capped);
         let page_attrs = if pw.capped {
             format!(
                 " total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\"",
@@ -441,36 +503,11 @@ impl crate::serialize::XmlReport for CommunitiesReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let pw = self.page.window(self.modules.len(), 30);
-        let shown_bridges = self.summary.bridges.len().min(12);
-        for m in &self.modules[pw.begin..pw.end] {
-            let top_n = m.members.len().min(5);
-            let m_capped = usize::from(top_n < m.size);
-            writeln!(
-                out,
-                "  <community id=\"{}\" size=\"{}\" dir=\"{}\" label=\"{}\" shown=\"{top_n}\" capped=\"{m_capped}\">",
-                m.id,
-                m.size,
-                m.dir.xml_escaped(),
-                m.label.xml_escaped()
-            )?;
-            for &(kind, name, path, line) in m.members.iter().take(top_n) {
-                writeln!(
-                    out,
-                    "    <member t=\"{kind}\" n=\"{}\" p=\"{}:{line}\"/>",
-                    name.xml_escaped(),
-                    path.xml_escaped()
-                )?;
-            }
-            writeln!(out, "  </community>")?;
+        for m in self.modules_page().rows() {
+            write_community(out, m, self.page.nested())?;
         }
-        for &(a, b, la, lb, edges) in self.summary.bridges.iter().take(shown_bridges) {
-            writeln!(
-                out,
-                "  <bridge a=\"{a}\" b=\"{b}\" from_label=\"{}\" to_label=\"{}\" edges=\"{edges}\"/>",
-                la.xml_escaped(),
-                lb.xml_escaped()
-            )?;
+        for &(a, b, la, lb, edges) in self.bridges_page().rows() {
+            write_bridge(out, a, b, la, lb, edges)?;
         }
         Ok(())
     }
@@ -635,6 +672,14 @@ pub struct ExternalSurfaceReport<'a> {
     pub page: crate::serialize::PageRequest,
 }
 
+impl ExternalSurfaceReport<'_> {
+    fn externals_page(&self) -> Paged<'_, (&str, &str, usize)> {
+        Paged::new(self.externals, self.page, |&(name, lang, _)| {
+            crate::serialize::text_bytes(&[name, lang])
+        })
+    }
+}
+
 impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
     crate::xml_report_meta!(
         "external-surface",
@@ -644,7 +689,7 @@ impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
     );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let total = self.externals.len();
-        let pw = self.page.window(total, 100);
+        let pw = self.externals_page().window;
         let page_attrs = if pw.capped {
             format!(
                 "{} next=\"--external-surface --offset={}\"",
@@ -660,8 +705,7 @@ impl crate::serialize::XmlReport for ExternalSurfaceReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let pw = self.page.window(self.externals.len(), 100);
-        for (name, lang, refs) in &self.externals[pw.begin..pw.end] {
+        for (name, lang, refs) in self.externals_page().rows() {
             writeln!(
                 out,
                 "  <x n=\"{}\" lang=\"{lang}\" refs=\"{refs}\" calls=\"{refs}\"/>",
@@ -702,61 +746,98 @@ pub struct DepsReport<'a> {
     pub rows: Vec<DepsFileRow<'a>>,
     pub cycles: Vec<Vec<&'a str>>,
     pub violations: Vec<(&'a str, &'a str, f64)>,
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
+    pub page: crate::serialize::PageRequest,
 }
 
-fn write_deps_godfiles<W: Write>(out: &mut W, active: &[&DepsFileRow<'_>]) -> io::Result<()> {
-    let mut god: Vec<&&DepsFileRow<'_>> = active.iter().filter(|d| d.afferent > 0).collect();
+fn write_godfile<W: Write>(out: &mut W, g: &DepsFileRow<'_>) -> io::Result<()> {
+    use crate::serialize::PathLayerExt;
+    write!(
+        out,
+        "    <f p=\"{}\" afferent=\"{}\"",
+        g.path.xml_escaped(),
+        g.afferent
+    )?;
+    g.path.write_layer_attr(out)?;
+    writeln!(out, "/>")
+}
+
+fn write_deps_godfiles<W: Write>(
+    out: &mut W,
+    active: &[&DepsFileRow<'_>],
+    page: crate::serialize::PageRequest,
+) -> io::Result<()> {
+    let mut god: Vec<&DepsFileRow<'_>> =
+        active.iter().copied().filter(|d| d.afferent > 0).collect();
     god.sort_by(|a, b| b.afferent.cmp(&a.afferent).then_with(|| a.path.cmp(b.path)));
-    let god_total = god.len();
-    let god_shown = god_total.min(12);
-    let god_capped = usize::from(god_shown < god_total);
+    let godfiles = Paged::new(&god[..], page.nested(), |g| {
+        crate::serialize::row_bytes(|mut w| write_godfile(&mut w, g))
+    });
     writeln!(
         out,
-        "  <godfiles total=\"{god_total}\" shown=\"{god_shown}\" capped=\"{god_capped}\">"
+        "  <godfiles total=\"{}\" shown=\"{}\" capped=\"{}\">",
+        godfiles.window.total,
+        godfiles.window.shown,
+        usize::from(godfiles.window.capped)
     )?;
-    for g in god.iter().take(god_shown) {
-        use crate::serialize::PathLayerExt;
-        write!(
-            out,
-            "    <f p=\"{}\" afferent=\"{}\"",
-            g.path.xml_escaped(),
-            g.afferent
-        )?;
-        g.path.write_layer_attr(out)?;
-        writeln!(out, "/>")?;
+    for g in godfiles.rows() {
+        write_godfile(out, g)?;
     }
     writeln!(out, "  </godfiles>")
 }
 
-fn write_deps_cycles<W: Write>(out: &mut W, cycles: &[Vec<&str>]) -> io::Result<()> {
+fn write_deps_cycle<W: Write>(
+    out: &mut W,
+    cyc: &[&str],
+    members: crate::serialize::PageRequest,
+) -> io::Result<()> {
+    let sz = cyc.len();
+    let cost = sz * sz;
+    let cut_attr = if let (Some(&first), Some(&second)) = (cyc.first(), cyc.get(1)) {
+        format!(
+            " cut=\"{} -&gt; {}\" cutrefs=\"1\"",
+            first.xml_escaped(),
+            second.xml_escaped()
+        )
+    } else {
+        String::new()
+    };
+    write!(out, "    <cycle size=\"{sz}\" cost=\"{cost}\"{cut_attr}>")?;
+    let kept = Paged::new(cyc, members, |p| crate::serialize::text_bytes(&[*p]));
+    for &p in kept.rows() {
+        write!(out, "<f p=\"{}\"/>", p.xml_escaped())?;
+    }
+    writeln!(out, "</cycle>")
+}
+
+fn write_deps_cycles<W: Write>(
+    out: &mut W,
+    cycles: &[Vec<&str>],
+    page: crate::serialize::PageRequest,
+) -> io::Result<()> {
     if cycles.is_empty() {
         return Ok(());
     }
-    writeln!(out, "  <cycles>")?;
-    for cyc in cycles.iter().take(20) {
-        let sz = cyc.len();
-        let cost = sz * sz;
-        let cut_attr = if let (Some(&first), Some(&second)) = (cyc.first(), cyc.get(1)) {
-            format!(
-                " cut=\"{} -&gt; {}\" cutrefs=\"1\"",
-                first.xml_escaped(),
-                second.xml_escaped()
-            )
-        } else {
-            String::new()
-        };
-        write!(out, "    <cycle size=\"{sz}\" cost=\"{cost}\"{cut_attr}>")?;
-        for &p in cyc.iter().take(12) {
-            write!(out, "<f p=\"{}\"/>", p.xml_escaped())?;
-        }
-        writeln!(out, "</cycle>")?;
+    let shown = Paged::new(cycles, page.nested(), |cyc| {
+        crate::serialize::row_bytes(|mut w| write_deps_cycle(&mut w, cyc, page.nested()))
+    });
+    writeln!(
+        out,
+        "  <cycles total=\"{}\" shown=\"{}\" capped=\"{}\">",
+        cycles.len(),
+        shown.window.shown,
+        usize::from(shown.window.capped)
+    )?;
+    for cyc in shown.rows() {
+        write_deps_cycle(out, cyc, page.nested())?;
     }
     writeln!(out, "  </cycles>")
 }
 
-fn write_deps_file_row<W: Write>(out: &mut W, row: &DepsFileRow<'_>) -> io::Result<()> {
+fn write_deps_file_row<W: Write>(
+    out: &mut W,
+    row: &DepsFileRow<'_>,
+    page: crate::serialize::PageRequest,
+) -> io::Result<()> {
     let p_esc = row.path.xml_escaped();
     let denom = row.efferent + row.afferent;
     let instab = if denom > 0 {
@@ -776,11 +857,18 @@ fn write_deps_file_row<W: Write>(out: &mut W, row: &DepsFileRow<'_>) -> io::Resu
             "  <f p=\"{p_esc}\" includes=\"{}\" afferent=\"{}\" instab=\"{instab:.2}\" transitive=\"{}\">",
             row.includes, row.afferent, row.transitive
         )?;
-        for &t in row.inc_targets.iter().take(40) {
+        let targets = Paged::new(&row.inc_targets[..], page, |t| {
+            crate::serialize::text_bytes(&[*t])
+        });
+        for &t in targets.rows() {
             write!(out, "<inc t=\"{}\"/>", t.xml_escaped())?;
         }
         writeln!(out, "</f>")
     }
+}
+
+fn deps_row_bytes(row: &DepsFileRow<'_>, page: crate::serialize::PageRequest) -> usize {
+    crate::serialize::row_bytes(|mut w| write_deps_file_row(&mut w, row, page.nested()))
 }
 
 impl<'a> DepsReport<'a> {
@@ -799,12 +887,8 @@ impl crate::serialize::XmlReport for DepsReport<'_> {
         comment: "ripwire-rs deps schema=ripwire-rs.deps/v1: file-to-file include/import view, heaviest cone first: <f p= afferent= includes= instab= transitive=>, <health>, <godfiles>, <cycles>."
     );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
-        Some(crate::serialize::PageWindow::compute(
-            self.active_rows().count(),
-            40,
-            self.limit,
-            self.offset,
-        ))
+        let active: Vec<&DepsFileRow<'_>> = self.active_rows().collect();
+        Some(Paged::new(&active[..], self.page, |row| deps_row_bytes(row, self.page)).window)
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         write!(out, " files=\"{}\"", self.active_rows().count())
@@ -823,14 +907,21 @@ impl crate::serialize::XmlReport for DepsReport<'_> {
             "  <health files=\"{}\" dep_files=\"{}\" ccd=\"{}\" acd=\"{:.1}\" nccd=\"{:.2}\" shape=\"{shape}\" dep_langs=\"cpp,py,ts,go,rs,swift,objc,js,sh,java,rb,cs,c,php,lua,ex,kt\"/>",
             self.corpus_files, self.dep_files, self.ccd, self.acd, self.nccd
         )?;
-        write_deps_godfiles(out, &active)?;
+        write_deps_godfiles(out, &active, self.page)?;
+        let violations = Paged::new(
+            &self.violations[..],
+            self.page.nested(),
+            |&(from, to, _)| crate::serialize::text_bytes(&[from, to]),
+        );
         if !self.violations.is_empty() {
             writeln!(
                 out,
-                "  <stabledeps violations=\"{}\">",
-                self.violations.len()
+                "  <stabledeps violations=\"{}\" shown=\"{}\" capped=\"{}\">",
+                self.violations.len(),
+                violations.window.shown,
+                usize::from(violations.window.capped)
             )?;
-            for &(from, to, gap) in self.violations.iter().take(12) {
+            for &(from, to, gap) in violations.rows() {
                 writeln!(
                     out,
                     "    <v from=\"{}\" to=\"{}\" gap=\"{gap:.2}\"/>",
@@ -840,11 +931,10 @@ impl crate::serialize::XmlReport for DepsReport<'_> {
             }
             writeln!(out, "  </stabledeps>")?;
         }
-        write_deps_cycles(out, &self.cycles)?;
-        use crate::serialize::PaginateSlice;
-        let (_, page) = active.paginate(40, self.limit, self.offset);
-        for row in page {
-            write_deps_file_row(out, row)?;
+        write_deps_cycles(out, &self.cycles, self.page)?;
+        let rows = Paged::new(&active[..], self.page, |row| deps_row_bytes(row, self.page));
+        for row in rows.rows() {
+            write_deps_file_row(out, row, self.page.nested())?;
         }
         Ok(())
     }
@@ -900,8 +990,7 @@ pub fn serialize_deps_xml<W: Write>(
         rows,
         cycles: Vec::new(),
         violations: Vec::new(),
-        limit: None,
-        offset: None,
+        page: crate::serialize::PageRequest::default(),
     };
     serialize_deps_report_xml(root, &rep, out)
 }

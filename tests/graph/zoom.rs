@@ -1,7 +1,5 @@
-use ripwire_rs::graph::zoom::{
-    ZOOM_TOP_MODULE_CAP, build_zoom_tree, resolve_levels_shown, serialize_zoom_xml,
-};
-use ripwire_rs::serialize::{GraphGauges, PageWindow};
+use ripwire_rs::graph::zoom::{build_zoom_tree, resolve_levels_shown, serialize_zoom_xml};
+use ripwire_rs::serialize::{GraphGauges, PageRequest};
 
 fn three_level_fixture() -> (Vec<Vec<u32>>, Vec<&'static str>) {
     let l0 = vec![0, 0, 1, 1, 2, 2, 3, 3, 4];
@@ -51,7 +49,7 @@ fn test_zoom_tree_nests_to_the_cut_and_counts_unprinted_children() {
 fn test_zoom_xml_reports_computed_levels_and_window() {
     let (hier, dirs) = three_level_fixture();
     let tree = build_zoom_tree(&hier, &dirs, None);
-    let window = PageWindow::compute(tree.top.len(), ZOOM_TOP_MODULE_CAP, None, None);
+    let window = PageRequest::default().window_fit(tree.top.len(), |_| 1);
     let mut out = Vec::new();
     serialize_zoom_xml(&tree, &window, 7, GraphGauges::default(), &mut out).unwrap();
     let xml = String::from_utf8(out).unwrap();

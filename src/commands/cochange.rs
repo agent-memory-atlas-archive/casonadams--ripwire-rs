@@ -62,8 +62,7 @@ pub fn execute_cochange(root: &str, query: CochangeQuery<'_>) -> io::Result<()> 
                 since: query.since,
                 cochange_recur: query.recur,
                 cochange_groups: query.groups,
-                limit: query.page.limit,
-                offset: query.page.offset,
+                page: query.page,
             };
             crate::query::safety::execute_cochange_with_options(
                 query.file,
@@ -98,8 +97,11 @@ fn call_cochange(state: &QueryContext<'_>, args: &Value) -> Result<Value, String
         since: args.opt_str("since"),
         cochange_recur: args.opt_usize("recur").map(|value| value as u32),
         cochange_groups: args.bool_or("groups", false),
-        limit: args.opt_usize("limit"),
-        offset: args.opt_usize("offset"),
+        page: crate::serialize::PageRequest {
+            limit: args.opt_usize("limit"),
+            offset: args.opt_usize("offset"),
+            ..crate::serialize::PageRequest::default()
+        },
     };
     render_xml(|out| {
         crate::query::safety::execute_cochange_with_options(

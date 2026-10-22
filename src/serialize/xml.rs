@@ -2,6 +2,7 @@ use crate::domain::{CorpusView, IngestResult, Interner, NodeId, Symbol};
 use crate::graph::Graph;
 use crate::rank::PageRankResult;
 use crate::serialize::escape::{XmlEscapeExt, escape_xml_write};
+use crate::serialize::{PageRequest, Paged, row_bytes};
 use std::io::{self, BufWriter, Write};
 
 pub const DEFAULT_STREAM_BUFFER_CAPACITY: usize = 64 * 1024;
@@ -414,33 +415,52 @@ fn is_inv_code_file(lang: crate::domain::Lang, path: &str) -> bool {
     path.is_inventory_code_file(lang)
 }
 
-fn write_inv_entries<W: Write>(w: &mut W, ctx: &StreamXmlContext<'_>) -> io::Result<()> {
+fn inv_entry_symbols<'a>(ctx: &StreamXmlContext<'a>) -> Vec<&'a Symbol> {
     use crate::domain::CorpusView;
-    let mut emitted = 0usize;
-    for sym in &ctx.ingest.symbols {
-        if emitted >= 24 {
-            break;
-        }
-        let name = ctx.sym_name(sym);
-        let scope = ctx.sym_scope(sym);
-        let path = ctx.sym_path(sym);
-        if !sym
-            .lang
-            .semantics()
-            .is_entrypoint_symbol(name, scope, sym.kind, path)
-        {
-            continue;
-        }
-        write!(
-            w,
-            "<entry p=\"{}\" n=\"{}\">",
-            path.xml_escaped(),
-            name.xml_escaped()
-        )?;
-        let callees: Vec<crate::graph::CalleeEdge> = ctx.graph.callee_edges(sym.id).collect();
-        write_callees_tags(w, &callees, ctx.interner, &ctx.ingest.symbols)?;
-        w.write_all(b"</entry>")?;
-        emitted += 1;
+    ctx.ingest
+        .symbols
+        .iter()
+        .filter(|sym| {
+            let name = ctx.sym_name(sym);
+            let scope = ctx.sym_scope(sym);
+            let path = ctx.sym_path(sym);
+            sym.lang
+                .semantics()
+                .is_entrypoint_symbol(name, scope, sym.kind, path)
+        })
+        .collect()
+}
+
+fn write_inv_entry<W: Write>(
+    w: &mut W,
+    ctx: &StreamXmlContext<'_>,
+    sym: &Symbol,
+) -> io::Result<()> {
+    use crate::domain::CorpusView;
+    let name = ctx.sym_name(sym);
+    let path = ctx.sym_path(sym);
+    write!(
+        w,
+        "<entry p=\"{}\" n=\"{}\">",
+        path.xml_escaped(),
+        name.xml_escaped()
+    )?;
+    let callees: Vec<crate::graph::CalleeEdge> = ctx.graph.callee_edges(sym.id).collect();
+    write_callees_tags(w, &callees, ctx.interner, &ctx.ingest.symbols)?;
+    w.write_all(b"</entry>")
+}
+
+fn write_inv_entries<W: Write>(
+    w: &mut W,
+    ctx: &StreamXmlContext<'_>,
+    page: PageRequest,
+) -> io::Result<()> {
+    let entries = inv_entry_symbols(ctx);
+    let shown = Paged::new(&entries, page, |sym| {
+        row_bytes(|mut w| write_inv_entry(&mut w, ctx, sym))
+    });
+    for sym in shown.rows() {
+        write_inv_entry(w, ctx, sym)?;
     }
     Ok(())
 }
@@ -473,10 +493,30 @@ fn collect_inv_dir_map<'a>(
     (dir_map, names_total)
 }
 
+fn write_inv_dir<W: Write>(
+    w: &mut W,
+    dir: &str,
+    cnt: usize,
+    code_files: &[&str],
+) -> io::Result<()> {
+    if code_files.is_empty() {
+        write!(w, "<ls p=\"{}\" n=\"{cnt}\"/>", dir.xml_escaped())
+    } else {
+        let f_list = code_files.join(",");
+        write!(
+            w,
+            "<ls p=\"{}\" n=\"{cnt}\" f=\"{}\"/>",
+            dir.xml_escaped(),
+            f_list.xml_escaped()
+        )
+    }
+}
+
 fn write_inv_section<W: Write>(
     w: &mut W,
     ctx: &StreamXmlContext<'_>,
     listed_files: &[bool],
+    page: PageRequest,
 ) -> io::Result<()> {
     let listed = listed_files.iter().filter(|&&b| b).count();
     let unlisted = ctx.ingest.files.len().saturating_sub(listed);
@@ -493,19 +533,13 @@ fn write_inv_section<W: Write>(
     } else {
         write!(w, "<inv listed=\"{listed}\" unlisted=\"{unlisted}\">")?;
     }
-    write_inv_entries(w, ctx)?;
-    for (dir, (cnt, code_files)) in dir_map.into_iter().take(60) {
-        if code_files.is_empty() {
-            write!(w, "<ls p=\"{}\" n=\"{cnt}\"/>", dir.xml_escaped())?;
-        } else {
-            let f_list = code_files.join(",");
-            write!(
-                w,
-                "<ls p=\"{}\" n=\"{cnt}\" f=\"{}\"/>",
-                dir.xml_escaped(),
-                f_list.xml_escaped()
-            )?;
-        }
+    write_inv_entries(w, ctx, page)?;
+    let dirs: Vec<_> = dir_map.into_iter().collect();
+    let shown = Paged::new(&dirs, page, |(dir, (cnt, files))| {
+        row_bytes(|mut w| write_inv_dir(&mut w, dir, *cnt, files))
+    });
+    for (dir, (cnt, files)) in shown.rows() {
+        write_inv_dir(w, dir, *cnt, files)?;
     }
     w.write_all(b"</inv>")
 }
@@ -522,20 +556,31 @@ fn resolve_cli_map_schema(options: &SerializeOptions) -> &'static str {
 }
 
 fn should_emit_data_sections_cut(options: &SerializeOptions, data_sections_cut: usize) -> bool {
-    let k_lim = options.top_k.unwrap_or(200);
     data_sections_cut > 0
         && options.map_diff_at.is_none()
-        && k_lim >= 100
+        && options.top_k.is_none_or(|k| k >= 100)
         && options.has_full_pack_budget()
+}
+
+/// Per-report counts the map root element discloses.
+struct CliRootCounts {
+    pr_iters: u32,
+    est_tokens: usize,
+    data_sections_cut: usize,
+    page_size: usize,
 }
 
 fn write_cli_root_open<W: Write>(
     w: &mut W,
     options: &SerializeOptions,
-    pr_iters: u32,
-    est_tokens: usize,
-    data_sections_cut: usize,
+    counts: CliRootCounts,
 ) -> io::Result<()> {
+    let CliRootCounts {
+        pr_iters,
+        est_tokens,
+        data_sections_cut,
+        page_size,
+    } = counts;
     w.write_all(b"<r")?;
     if !options.legend_full {
         let schema = resolve_cli_map_schema(options);
@@ -552,7 +597,7 @@ fn write_cli_root_open<W: Write>(
     }
     write!(w, " est_tokens=\"{est_tokens}\" pr_iters=\"{pr_iters}\"")?;
     if should_emit_data_sections_cut(options, data_sections_cut) {
-        let k_lim = options.top_k.unwrap_or(200);
+        let k_lim = options.top_k.unwrap_or(page_size);
         write!(
             w,
             " data_sections_cut=\"{data_sections_cut}\" next=\"--graph-query=&apos;kind(all,sec)&apos; --offset=0 --limit={k_lim}\""
@@ -697,9 +742,12 @@ pub fn serialize_xml_with_ranks<W: Write>(
         write_cli_root_open(
             &mut counter,
             options,
-            ctx.pr_iters,
-            est_tokens,
-            data_sections_cut,
+            CliRootCounts {
+                pr_iters: ctx.pr_iters,
+                est_tokens,
+                data_sections_cut,
+                page_size: symbols_shown,
+            },
         )?;
     } else {
         let root_ctx = RootElementContext {
@@ -719,7 +767,8 @@ pub fn serialize_xml_with_ranks<W: Write>(
     }
     counter.write_all(&body_buf)?;
     if options.allows_inventory_tier() {
-        write_inv_section(&mut counter, ctx, &listed_files)?;
+        let page = PageRequest::default().with_budget(options.pack_budget_bytes);
+        write_inv_section(&mut counter, ctx, &listed_files, page)?;
     }
     counter.write_all(b"</r>\n")?;
     counter.flush()

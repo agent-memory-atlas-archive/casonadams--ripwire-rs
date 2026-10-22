@@ -64,6 +64,7 @@ fn pattern_and_ast_match_shrink_output_under_page_limit() {
     let limited = PageRequest {
         limit: Some(1),
         offset: None,
+        budget: None,
     };
     let one = run_with(|q, out| pattern::execute(q, "bridge", None, limited, out)).unwrap();
     assert!(one.contains("shown=\"1\""), "{one}");
@@ -145,7 +146,8 @@ fn call_claims_report_transitive_witnesses_without_claiming_absence_proves_non_c
         ("calls(leaf,entry)", "not-established"),
         ("calls(absent,leaf)", "not-established"),
     ] {
-        let xml = run_with(|q, out| verify::execute(q, claim, out)).unwrap();
+        let xml =
+            run_with(|q, out| verify::execute(q, claim, PageRequest::default(), out)).unwrap();
         assert!(xml.contains(&format!("verdict=\"{verdict}\"")), "{xml}");
     }
 }

@@ -7,24 +7,22 @@ use crate::workspace::load_repo_analysis_with_options;
 use std::io::{self, Write};
 use std::path::Path;
 
-/// Capability trait for extracting pagination windows (`--limit`, `--offset`) from CLI modifiers.
+/// Capability trait for extracting pagination windows (`--limit`, `--offset`) and the output budget.
 pub trait Paginated {
     fn limit_opt(&self) -> Option<usize>;
     fn offset_opt(&self) -> Option<usize>;
+
+    /// The byte budget default row caps are computed from (`--token-budget`, `--pack-budget`, `--max-tokens`).
+    fn budget_opt(&self) -> Option<usize> {
+        None
+    }
 
     fn page_request(&self) -> crate::serialize::PageRequest {
         crate::serialize::PageRequest {
             limit: self.limit_opt(),
             offset: self.offset_opt(),
+            budget: self.budget_opt(),
         }
-    }
-    fn page_window(&self, total: usize, default_cap: usize) -> crate::serialize::PageWindow {
-        crate::serialize::PageWindow::compute(
-            total,
-            default_cap,
-            self.limit_opt(),
-            self.offset_opt(),
-        )
     }
 
     fn apply_pagination_to_json(&self, val: &mut serde_json::Value) {
@@ -33,6 +31,9 @@ pub trait Paginated {
         }
         if let Some(off) = self.offset_opt() {
             val["offset"] = serde_json::Value::from(off as u64);
+        }
+        if let Some(budget) = self.budget_opt() {
+            val["budget"] = serde_json::Value::from(budget as u64);
         }
     }
 }
@@ -71,6 +72,9 @@ impl Paginated for Cli {
     }
     fn offset_opt(&self) -> Option<usize> {
         self.modifiers.offset
+    }
+    fn budget_opt(&self) -> Option<usize> {
+        self.effective_budget_bytes()
     }
 }
 
@@ -152,6 +156,11 @@ impl Paginated for ExecutionContext<'_> {
     #[inline]
     fn offset_opt(&self) -> Option<usize> {
         self.cli.offset_opt()
+    }
+
+    #[inline]
+    fn budget_opt(&self) -> Option<usize> {
+        self.cli.budget_opt()
     }
 }
 

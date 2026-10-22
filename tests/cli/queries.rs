@@ -60,9 +60,19 @@ fn test_handoff_xml_branches() {
     let interner = Interner::new();
     let fixtures: &[(&str, Lang, &[u8])] = &[("src/lib.rs", Lang::Rust, b"pub fn overview() {}\n")];
     let ingest = ingest_in_memory_files(fixtures, &reg, &interner);
-    let empty_rows = build_handoff_verified_rows(&[], &ingest, &interner);
+    let empty_rows = build_handoff_verified_rows(
+        &[],
+        &ingest,
+        &interner,
+        ripwire_rs::serialize::PageRequest::default(),
+    );
     assert!(empty_rows.contains("src/lib.rs"));
-    let ch_rows = build_handoff_verified_rows(&["src/lib.rs".to_string()], &ingest, &interner);
+    let ch_rows = build_handoff_verified_rows(
+        &["src/lib.rs".to_string()],
+        &ingest,
+        &interner,
+        ripwire_rs::serialize::PageRequest::default(),
+    );
     assert!(ch_rows.contains("overview"));
 }
 
@@ -198,6 +208,7 @@ fn test_render_skipped_census_xml_honors_page_window() {
     let page = PageRequest {
         limit: Some(1),
         offset: Some(1),
+        budget: None,
     };
     let mut buf = Vec::new();
     render_skipped_census_xml(".", &census, &opts, &ingest, page, &mut buf).unwrap();

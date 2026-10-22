@@ -136,7 +136,11 @@ fn community_summary_partitions_isolated_documents_declarations_and_bodies() {
         interner: &interner,
     };
     ripwire_rs::commands::common::safety_queries::execute_partition_from_facts(
-        &ctx, 2, None, &mut out,
+        &ctx,
+        2,
+        None,
+        ripwire_rs::serialize::PageRequest::default(),
+        &mut out,
     )
     .unwrap();
     let xml = String::from_utf8(out).unwrap();

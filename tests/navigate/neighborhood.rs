@@ -138,7 +138,7 @@ fn test_callers_page_advances_and_points_at_uses() {
             prov: ripwire_rs::resolve::EdgeProv::Local,
         })
         .collect();
-    let render = |offset| {
+    let render = |page: PageRequest| {
         let mut out = Vec::new();
         NavItemsReport {
             dir: NavDir::Callers,
@@ -149,27 +149,45 @@ fn test_callers_page_advances_and_points_at_uses() {
             items: &callers,
             declined: &[],
             gauge_attrs: GraphGauges::ZERO_XML_ATTRS,
-            page: PageRequest {
-                limit: None,
-                offset,
-            },
+            page,
         }
         .render_envelope(&mut out)
         .unwrap();
         String::from_utf8(out).unwrap()
     };
-    let first = render(None);
-    assert!(first.contains(" defs=\"2\" count=\"45\""), "{first}");
+    let all = render(PageRequest::default());
+    assert!(all.contains(" defs=\"2\" count=\"45\""), "{all}");
+    assert_eq!(all.matches("<s t=").count(), 45, "{all}");
+    assert!(all.contains(" next=\"--uses=target\""), "{all}");
+
+    let first = render(PageRequest {
+        limit: Some(40),
+        ..PageRequest::default()
+    });
+    assert_eq!(first.matches("<s t=").count(), 40, "{first}");
     assert!(
         first.contains(" next=\"--callers=target --offset=40\" uses_next=\"--uses=target\""),
         "{first}"
     );
-    assert_eq!(first.matches("<s t=").count(), 40);
-    let last = render(Some(40));
-    assert_eq!(last.matches("<s t=").count(), 5);
+
+    let last = render(PageRequest {
+        offset: Some(40),
+        ..PageRequest::default()
+    });
+    assert_eq!(last.matches("<s t=").count(), 5, "{last}");
     assert!(
         last.contains("n=\"caller_40\"") && !last.contains("n=\"caller_39\""),
         "{last}"
     );
     assert!(last.contains(" next=\"--uses=target\""), "{last}");
+
+    let tiny = render(PageRequest {
+        budget: Some(1),
+        ..PageRequest::default()
+    });
+    assert_eq!(tiny.matches("<s t=").count(), 1, "{tiny}");
+    assert!(
+        tiny.contains(" next=\"--callers=target --offset=1\""),
+        "{tiny}"
+    );
 }

@@ -1,6 +1,7 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::{Graph, community::Communities};
 use crate::rank::PageRankResult;
+use crate::serialize::{PageRequest, Paged, text_bytes};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -306,6 +307,7 @@ struct LaneBuildEnv<'a> {
     ranks: &'a [f64],
     interner: &'a Interner,
     tested_mask: &'a [bool],
+    page: PageRequest,
 }
 
 fn build_lane_claims_and_files(
@@ -411,7 +413,10 @@ fn build_single_lane(
     );
     let blast_ids: BTreeSet<NodeId> = impact.iter().map(|n| n.id).collect();
     let blast_files_set: BTreeSet<String> = impact.iter().map(|n| n.path.clone()).collect();
-    let blast_files: Vec<String> = blast_files_set.iter().take(40).cloned().collect();
+    let blast_all: Vec<&String> = blast_files_set.iter().collect();
+    let blast = Paged::new(&blast_all, env.page, |p| text_bytes(&[p.as_str()]));
+    let blast_win = blast.window;
+    let blast_files: Vec<String> = blast.rows().iter().map(|path| (*path).clone()).collect();
     let changed_paths: Vec<&str> = file_counts.keys().map(String::as_str).collect();
     let aff = crate::gate::affected::find_affected_tests(
         &changed_paths,
@@ -419,7 +424,9 @@ fn build_single_lane(
         env.graph,
         env.interner,
     );
-    let tests_to_run: Vec<String> = aff.tests.iter().take(40).map(|t| t.path.clone()).collect();
+    let tests = Paged::new(&aff.tests, env.page, |t| text_bytes(&[t.path.as_str()]));
+    let tests_win = tests.window;
+    let tests_to_run: Vec<String> = tests.rows().iter().map(|t| t.path.clone()).collect();
     let model = if max_ccx >= 15 || impact.len() > 20 {
         "frontier"
     } else {
@@ -439,12 +446,12 @@ fn build_single_lane(
         "blast_radius": {
             "reaches": impact.len(),
             "files_total": blast_files_set.len(),
-            "capped": blast_files_set.len() > 40,
+            "capped": blast_win.capped,
             "files": blast_files,
         },
         "tests_to_run": tests_to_run,
         "tests_total": aff.tests.len(),
-        "tests_capped": aff.tests.len() > 40,
+        "tests_capped": tests_win.capped,
         "tests_granularity": "claimed-symbols",
         "untested": untested,
         "module_span": module_span.max(1),
@@ -467,8 +474,8 @@ fn build_single_lane(
                 "conflicts": 0,
                 "untested": untested,
                 "tests_total": aff.tests.len(),
-                "blast_capped": blast_files_set.len() > 40,
-                "tests_capped": aff.tests.len() > 40,
+                "blast_capped": blast_win.capped,
+                "tests_capped": tests_win.capped,
             },
             "caveats": [],
         }
@@ -647,15 +654,29 @@ fn attach_corpus_stats(mut val: Value, ingest: &IngestResult, graph: &Graph) -> 
     val
 }
 
+/// The indexed corpus a plan-lanes run reads: the repository root for the envelope, the index, and PageRank ranks.
+#[derive(Clone, Copy)]
+pub struct LaneCorpus<'a> {
+    pub root: &'a str,
+    pub ingest: &'a IngestResult,
+    pub graph: &'a Graph,
+    pub pr: &'a PageRankResult,
+    pub interner: &'a Interner,
+}
+
 #[must_use]
 pub fn compute_plan_lanes_with_brief(
-    root: &str,
+    corpus: LaneCorpus<'_>,
     brief_lines: &[String],
-    ingest: &IngestResult,
-    graph: &Graph,
-    pr: &PageRankResult,
-    interner: &Interner,
+    page: PageRequest,
 ) -> Value {
+    let LaneCorpus {
+        root,
+        ingest,
+        graph,
+        pr,
+        interner,
+    } = corpus;
     let tested_mask = crate::navigate::compute_tested_node_mask(ingest, graph, interner);
     let env = LaneBuildEnv {
         ingest,
@@ -663,6 +684,7 @@ pub fn compute_plan_lanes_with_brief(
         ranks: &pr.ranks,
         interner,
         tested_mask: &tested_mask,
+        page,
     };
     let non_blank: Vec<&str> = brief_lines
         .iter()
@@ -689,14 +711,18 @@ pub fn compute_plan_lanes_with_brief(
 
 #[must_use]
 pub fn compute_plan_lanes(
-    root: &str,
+    corpus: LaneCorpus<'_>,
     requested: usize,
     task: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    pr: &PageRankResult,
-    interner: &Interner,
+    page: PageRequest,
 ) -> Value {
+    let LaneCorpus {
+        root,
+        ingest,
+        graph,
+        pr,
+        interner,
+    } = corpus;
     let tested_mask = crate::navigate::compute_tested_node_mask(ingest, graph, interner);
     let env = LaneBuildEnv {
         ingest,
@@ -704,6 +730,7 @@ pub fn compute_plan_lanes(
         ranks: &pr.ranks,
         interner,
         tested_mask: &tested_mask,
+        page,
     };
     let n = requested.clamp(1, 16);
     let plan = plan_task_partition(task, n, ingest, graph, &pr.ranks, interner);

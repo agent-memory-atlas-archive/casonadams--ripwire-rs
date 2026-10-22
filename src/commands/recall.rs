@@ -50,7 +50,7 @@ static TOOLS: &[&CommandDescriptor] = &[mcp_tool!(
         (
             "top_k",
             "integer",
-            "Maximum number of documents (default 8)"
+            "Maximum number of documents (default: the token budget decides)"
         ),
         (
             "budget_tokens",

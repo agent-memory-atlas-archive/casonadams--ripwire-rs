@@ -1,7 +1,7 @@
 //! `--skipped`: list files skipped due to size limits, unsupported extensions, or unindexed extensions.
 use super::{Plugin, Run, SharedOption};
 use crate::domain::IngestResult;
-use crate::serialize::{PageRequest, XmlEscapeExt};
+use crate::serialize::{PageRequest, Paged, XmlEscapeExt, row_bytes};
 use clap::Args;
 use std::io::{self, Write};
 
@@ -51,27 +51,23 @@ pub fn render_skipped_census_xml<W: Write>(
         crate::crawler::DEFAULT_JSON_CEILING,
         crate::crawler::DEFAULT_YAML_CEILING
     )?;
-    let oversize = page.window(census.oversize.len(), 40);
-    for (p, bytes, ext) in &census.oversize[oversize.begin..oversize.end] {
-        writeln!(
-            out,
-            "  <f p=\"{}\" why=\"oversize\" bytes=\"{bytes}\" ext=\"{}\"/>",
-            p.xml_escaped(),
-            ext.xml_escaped()
-        )?;
+    let oversize = Paged::new(&census.oversize, page, |(p, bytes, ext)| {
+        row_bytes(|w| write_skipped_file_row(w, p, "oversize", bytes, ext))
+    });
+    for (p, bytes, ext) in oversize.rows() {
+        write_skipped_file_row(out, p, "oversize", bytes, ext)?;
     }
-    let unsupported = page.window(census.unsupported.len(), 40);
-    for (p, bytes, ext) in &census.unsupported[unsupported.begin..unsupported.end] {
-        writeln!(
-            out,
-            "  <f p=\"{}\" why=\"unsupported-ext\" bytes=\"{bytes}\" ext=\"{}\"/>",
-            p.xml_escaped(),
-            ext.xml_escaped()
-        )?;
+    let unsupported = Paged::new(&census.unsupported, page, |(p, bytes, ext)| {
+        row_bytes(|w| write_skipped_file_row(w, p, "unsupported-ext", bytes, ext))
+    });
+    for (p, bytes, ext) in unsupported.rows() {
+        write_skipped_file_row(out, p, "unsupported-ext", bytes, ext)?;
     }
-    let unindexed = page.window(census.unindexed_exts.len(), 30);
-    for (ext, files) in &census.unindexed_exts[unindexed.begin..unindexed.end] {
-        writeln!(out, "  <e x=\"{}\" files=\"{files}\"/>", ext.xml_escaped())?;
+    let unindexed = Paged::new(&census.unindexed_exts, page, |(ext, files)| {
+        row_bytes(|w| write_unindexed_row(w, ext, files))
+    });
+    for (ext, files) in unindexed.rows() {
+        write_unindexed_row(out, ext, files)?;
     }
     let mut lang_files: std::collections::BTreeMap<&'static str, (usize, usize)> =
         std::collections::BTreeMap::new();
@@ -88,4 +84,27 @@ pub fn render_skipped_census_xml<W: Write>(
         )?;
     }
     writeln!(out, "</skipped></ctx>")
+}
+
+fn write_skipped_file_row<W: Write + ?Sized>(
+    out: &mut W,
+    p: &str,
+    why: &str,
+    bytes: impl std::fmt::Display,
+    ext: &str,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "  <f p=\"{}\" why=\"{why}\" bytes=\"{bytes}\" ext=\"{}\"/>",
+        p.xml_escaped(),
+        ext.xml_escaped()
+    )
+}
+
+fn write_unindexed_row<W: Write + ?Sized>(
+    out: &mut W,
+    ext: &str,
+    files: impl std::fmt::Display,
+) -> io::Result<()> {
+    writeln!(out, "  <e x=\"{}\" files=\"{files}\"/>", ext.xml_escaped())
 }

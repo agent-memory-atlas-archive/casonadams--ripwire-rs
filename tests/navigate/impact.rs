@@ -41,7 +41,11 @@ fn two_defs_fixture() -> Vec<(&'static str, Lang, &'static [u8])> {
 }
 
 fn page(limit: Option<usize>, offset: Option<usize>) -> PageRequest {
-    PageRequest { limit, offset }
+    PageRequest {
+        limit,
+        offset,
+        budget: None,
+    }
 }
 
 #[test]
@@ -69,35 +73,30 @@ fn impact_lists_declined_call_sites_file_first() {
 }
 
 #[test]
-fn impact_declined_rows_follow_the_limit_and_point_at_every_site() {
-    let xml = render(
-        &two_defs_fixture(),
-        NavMode::Impact,
-        "process",
-        page(Some(1), Some(1)),
-    );
+fn impact_declined_rows_follow_the_budget_and_point_at_every_site() {
+    let tiny = PageRequest {
+        budget: Some(1),
+        ..page(Some(1), Some(1))
+    };
+    let xml = render(&two_defs_fixture(), NavMode::Impact, "process", tiny);
     assert!(
-        xml.contains(" declined_calls=\"4\" dc_shown=\"1\" dc_next=\"--impact=process --limit=4\""),
+        xml.contains(" declined_calls=\"4\" dc_shown=\"1\" root="),
         "{xml}"
     );
     assert_eq!(xml.matches(DC_ROW).count(), 1, "{xml}");
 }
 
 #[test]
-fn impact_caps_declined_rows_at_sixteen_by_default() {
+fn impact_declined_rows_fit_the_default_byte_budget() {
     let many: String = (0..20).fold(String::from("def many():\n"), |acc, i| {
         acc + &format!("    process({i})\n")
     });
     let mut files = two_defs_fixture();
     files.push(("omega/m.py", Lang::Python, many.as_bytes()));
     let xml = render(&files, NavMode::Impact, "process", PageRequest::default());
-    assert!(
-        xml.contains(
-            " declined_calls=\"24\" dc_shown=\"16\" dc_next=\"--impact=process --limit=40\""
-        ),
-        "{xml}"
-    );
-    assert_eq!(xml.matches(DC_ROW).count(), 16, "{xml}");
+    assert!(xml.contains(" declined_calls=\"24\" root="), "{xml}");
+    assert!(!xml.contains(" dc_shown=\""), "{xml}");
+    assert_eq!(xml.matches(DC_ROW).count(), 24, "{xml}");
 }
 
 const CHAIN: &[u8] = b"def base():\n    return 1\n\ndef mid_a():\n    return base()\n\ndef mid_b():\n    return base()\n\ndef top():\n    return mid_a()\n";
@@ -213,7 +212,7 @@ fn impact_declined_calls_exclude_ambiguous_table_reads() {
 }
 
 #[test]
-fn impact_importer_sample_is_independent_of_reach_offset() {
+fn impact_importers_are_listed_whatever_the_reach_page() {
     let files = [
         (
             "core.py",
@@ -224,10 +223,17 @@ fn impact_importer_sample_is_independent_of_reach_offset() {
         ("b.py", Lang::Python, b"from core import process\n"),
         ("c.py", Lang::Python, b"from core import process\n"),
     ];
-    let middle = render(&files, NavMode::Impact, "process", page(Some(1), Some(1)));
-    assert!(middle.contains("<f via=\"import\" p=\"a.py\""), "{middle}");
-    assert!(!middle.contains("<f via=\"import\" p=\"b.py\""), "{middle}");
-    assert!(middle.contains(" shown_importers=\"1\""), "{middle}");
+    let paged = render(&files, NavMode::Impact, "process", page(Some(1), Some(1)));
+    assert!(
+        paged.contains(" importers=\"3\" shown_importers=\"3\""),
+        "{paged}"
+    );
+    for importer in ["a.py", "b.py", "c.py"] {
+        assert!(
+            paged.contains(&format!("<f via=\"import\" p=\"{importer}\"")),
+            "{paged}"
+        );
+    }
 }
 
 #[test]

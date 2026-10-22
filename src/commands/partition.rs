@@ -25,7 +25,7 @@ fn run(run: &Run<'_>, args: &PartitionArgs) -> io::Result<()> {
             graph: ctx.graph,
             interner: ctx.interner,
         };
-        execute_partition_from_facts(&safety, k, task.as_deref(), out)
+        execute_partition_from_facts(&safety, k, task.as_deref(), run.page(), out)
     })
 }
 

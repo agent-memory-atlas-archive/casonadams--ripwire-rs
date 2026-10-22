@@ -1,5 +1,6 @@
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
+use crate::query::safety::SafetyContext;
 use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
 use std::io::{self, Write};
@@ -531,12 +532,17 @@ fn call_connect_with_radius(
 
 /// Execute `situational_awareness` tool.
 fn collect_ranked_cochange_partners(
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+    facts: &SafetyContext<'_>,
     changed_files: &[String],
     commits: Option<&[crate::git::history::CommitInfo]>,
+    page: crate::serialize::PageRequest,
 ) -> Vec<String> {
+    let SafetyContext {
+        ingest,
+        graph,
+        interner,
+        ..
+    } = *facts;
     let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, Some(graph));
     let opts = crate::git::cochange::CochangeOptions::default();
     let commits_empty = Vec::new();
@@ -565,10 +571,18 @@ fn collect_ranked_cochange_partners(
             .unwrap_or(std::cmp::Ordering::Equal)
             .then_with(|| a.0.cmp(&b.0))
     });
-    ranked
+    let labels: Vec<String> = ranked
         .into_iter()
-        .take(20)
         .map(|(path, deg)| format!("{path} ({:.0}%)", (deg * 100.0).round()))
+        .collect();
+    let window = crate::serialize::Paged::new(&labels, page, |l| {
+        crate::serialize::text_bytes(&[l.as_str()])
+    })
+    .window;
+    labels
+        .into_iter()
+        .skip(window.begin)
+        .take(window.shown)
         .collect()
 }
 
@@ -587,12 +601,17 @@ fn format_affected_test_label(t: &crate::gate::affected::AffectedTest) -> String
 
 /// Execute `situational_awareness` tool.
 pub fn call_situational_awareness(
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+    facts: &SafetyContext<'_>,
     changed_files: &[String],
     commits: Option<&[crate::git::history::CommitInfo]>,
+    page: crate::serialize::PageRequest,
 ) -> Value {
+    let SafetyContext {
+        ingest,
+        graph,
+        interner,
+        ..
+    } = *facts;
     let specs: Vec<&str> = changed_files.iter().map(|s| s.as_str()).collect();
     let (affected_tests, blast_radius) = if specs.is_empty() {
         (Vec::new(), 0)
@@ -605,8 +624,7 @@ pub fn call_situational_awareness(
             .collect();
         (tests, report.reached_symbols)
     };
-    let cochange_partners =
-        collect_ranked_cochange_partners(ingest, graph, interner, changed_files, commits);
+    let cochange_partners = collect_ranked_cochange_partners(facts, changed_files, commits, page);
 
     json!({
         "files_touched": changed_files,

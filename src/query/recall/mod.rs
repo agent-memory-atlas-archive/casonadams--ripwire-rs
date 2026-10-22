@@ -10,7 +10,6 @@ use score::{TermStats, average_len, bm25, idf_weights, unit_stats};
 use serde_json::{Value, json};
 use std::cmp::Ordering;
 
-pub const DEFAULT_TOP_K: usize = 8;
 pub const DEFAULT_MAX_TOKENS: usize = 8000;
 /// Upstream's body ceiling: 2.5 bytes/token less a 15.1% reserve for headers and notes.
 const BODY_BYTES_PER_TOKEN: f64 = 2.1225;
@@ -27,14 +26,14 @@ pub struct RecallInput {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecallOptions {
-    pub top_k: usize,
+    pub top_k: Option<usize>,
     pub max_tokens: usize,
 }
 
 impl Default for RecallOptions {
     fn default() -> Self {
         Self {
-            top_k: DEFAULT_TOP_K,
+            top_k: None,
             max_tokens: DEFAULT_MAX_TOKENS,
         }
     }
@@ -77,7 +76,7 @@ pub struct RecallOutcome {
     pub generated_demoted: usize,
     pub omitted_top_k: usize,
     pub omitted_budget: usize,
-    pub top_k: usize,
+    pub top_k: Option<usize>,
     pub max_tokens: usize,
     pub budget_bytes: usize,
     pub share_bytes: Option<usize>,
@@ -99,7 +98,6 @@ impl RecallOutcome {
             "relevant": self.relevant,
             "shown": self.docs.len(),
             "top_k": self.top_k,
-            "default_top_k": DEFAULT_TOP_K,
             "max_tokens": self.max_tokens,
             "budget_bytes": self.budget_bytes,
             "generated_demoted": self.generated_demoted,
@@ -389,7 +387,8 @@ pub fn recall(inputs: &[RecallInput], query: &str, opts: RecallOptions) -> Recal
         ranked_candidates(inputs, &terms)
     };
     let budget_bytes = body_budget_bytes(opts.max_tokens);
-    let candidates = &ranked[..ranked.len().min(opts.top_k)];
+    let take = opts.top_k.unwrap_or(ranked.len()).min(ranked.len());
+    let candidates = &ranked[..take];
     let payloads: Vec<usize> = candidates.iter().map(Candidate::payload).collect();
     let (admitted, level) = admit(&payloads, budget_bytes);
     let docs: Vec<ServedDoc> = candidates[..admitted]

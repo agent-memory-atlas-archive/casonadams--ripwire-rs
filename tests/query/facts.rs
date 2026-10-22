@@ -201,6 +201,7 @@ mod history_tests {
             files: &["src/a.rs".to_string()],
             commits: Some(&commits),
             context,
+            page: ripwire_rs::serialize::PageRequest::default(),
         };
         let situ_xml = situ.to_xml_string();
         let situ_doc = roxmltree::Document::parse(&situ_xml).unwrap();

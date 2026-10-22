@@ -126,6 +126,7 @@ fn test_execute_pr_context_from_facts() {
         changed_files: &changed,
         base_ref: "main",
         commits: &commits,
+        page: ripwire_rs::serialize::PageRequest::default(),
     };
     let rep = execute_pr_context_from_facts(&ctx, &pr_req, &mut out).unwrap();
     assert_eq!(rep.base_ref, "main");
@@ -177,7 +178,7 @@ fn test_execute_test_gate_and_situ_from_facts() {
         author: "Dev".to_string(),
         changed_files: vec!["src/lib.rs".to_string()],
     }];
-    execute_situ_from_facts(&ctx, &changed, Some(&commits), &mut out).unwrap();
+    execute_situ_from_facts(&ctx, &changed, Some(&commits), Default::default(), &mut out).unwrap();
     let situ_xml = String::from_utf8(out).unwrap();
     assert!(situ_xml.contains("<situ schema=\"ripwire-rs.situ/v1\""));
     assert!(situ_xml.contains("<changed path=\"src/lib.rs\"/>"));

@@ -2,8 +2,8 @@ pub use super::arch_xml::*;
 pub use super::legend::*;
 pub use super::workspace_xml::*;
 
-use crate::serialize::JsonValueExt;
 use crate::serialize::escape::{XmlEscapeExt, escape_xml_str};
+use crate::serialize::{JsonValueExt, PageRequest, Paged, row_bytes};
 use serde_json::Value;
 use std::io::{self, Write};
 fn write_for_sig_metrics<W: Write>(out: &mut W, it: &Value) -> io::Result<()> {
@@ -62,45 +62,38 @@ fn write_for_inner_body<W: Write>(
     task: &str,
     raw_task: &str,
 ) -> io::Result<()> {
-    let items = val["symbols"].as_array();
-    let sig_cnt = items.map_or(0, Vec::len);
-    if sig_cnt >= 25 {
-        write!(
-            out,
-            "<sigs shown=\"{sig_cnt}\" total=\"{sig_cnt}\" capped=\"1\" next=\"--for={task} --limit=40\">"
-        )?;
+    let page = val.page_request();
+    let items: Vec<(usize, &Value)> = val["symbols"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .enumerate()
+        .collect();
+    let sigs = Paged::new(&items, page, |(idx, it)| {
+        row_bytes(|mut w| write_for_sig_row(&mut w, *idx, it))
+    });
+    if sigs.window.capped {
+        let next = if sigs.window.has_more {
+            format!(
+                " next=\"--for={task} --offset={}\"",
+                sigs.window.next_offset
+            )
+        } else {
+            String::new()
+        };
+        write!(out, "<sigs{}{next}>", sigs.attrs())?;
     } else {
         write!(out, "<sigs>")?;
     }
-    if let Some(items) = items {
-        for (idx, it) in items.iter().enumerate() {
-            write_for_sig_row(out, idx, it)?;
-        }
+    for &(idx, it) in sigs.rows() {
+        write_for_sig_row(out, idx, it)?;
     }
     write!(out, "</sigs>")?;
     write_for_lego_section(out, val, raw_task)?;
     write_for_compose_section(out, val, raw_task)?;
     write_for_tree_and_docs(out, val)?;
-    write_for_hops_section(out, val)?;
-    let n = items.map_or(0, |items| {
-        items.iter().filter(|item| item["body"].is_string()).count()
-    });
-    write!(out, "<bodies shown=\"{n}\" total=\"{n}\" capped=\"0\">")?;
-    for item in items.into_iter().flatten() {
-        if let Some(body) = item["body"].as_str() {
-            write!(
-                out,
-                "<b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\">",
-                item.str_or("kind", "fn").xml_escaped(),
-                item.u64_or("line", 0),
-                item.str_or("path", "").xml_escaped(),
-                item.str_or("name", "").xml_escaped()
-            )?;
-            crate::serialize::write_cdata(out, body)?;
-            write!(out, "</b>")?;
-        }
-    }
-    writeln!(out, "</bodies>")
+    write_for_hops_section(out, val, page.nested())?;
+    write_for_bodies(out, val, page.nested())
 }
 
 pub struct ForReport<'a> {
@@ -243,37 +236,74 @@ fn write_for_compose_section<W: Write>(out: &mut W, val: &Value, raw_task: &str)
     write!(out, "</compose>")
 }
 
-fn write_for_hops_section<W: Write>(out: &mut W, val: &Value) -> io::Result<()> {
+fn write_for_hop_row<W: Write>(out: &mut W, h: &Value) -> io::Result<()> {
+    let l = h.u64_or("line", 0);
+    let p = h.str_or("path", "").xml_escaped();
+    let name = h.str_or("name", "").xml_escaped();
+    let total = h.u64_or("total", 0);
+    write!(
+        out,
+        "<h l=\"{l}\" p=\"{p}\" n=\"{name}\"><calls total=\"{total}\">"
+    )?;
+    if let Some(calls) = h["calls"].as_array() {
+        for c in calls {
+            write!(
+                out,
+                "<c n=\"{}\" l=\"{}\"/>",
+                c.str_or("name", "").xml_escaped(),
+                c.u64_or("line", 0)
+            )?;
+        }
+    }
+    write!(out, "</calls></h>")
+}
+
+fn write_for_hops_section<W: Write>(out: &mut W, val: &Value, page: PageRequest) -> io::Result<()> {
     let Some(hops) = val["hops"].as_array().filter(|a| !a.is_empty()) else {
         return Ok(());
     };
-    let n = hops.len();
-    write!(out, "<hops shown=\"{n}\" total=\"{n}\" capped=\"0\">")?;
-    for h in hops {
-        let l = h.u64_or("line", 0);
-        let p = h.str_or("path", "").xml_escaped();
-        let name = h.str_or("name", "").xml_escaped();
-        let total = h.u64_or("total", 0);
-        write!(
-            out,
-            "<h l=\"{l}\" p=\"{p}\" n=\"{name}\"><calls total=\"{total}\">"
-        )?;
-        if let Some(calls) = h["calls"].as_array() {
-            for c in calls {
-                write!(
-                    out,
-                    "<c n=\"{}\" l=\"{}\"/>",
-                    c.str_or("name", "").xml_escaped(),
-                    c.u64_or("line", 0)
-                )?;
-            }
-        }
-        write!(out, "</calls></h>")?;
+    let hops = Paged::new(hops, page, |h| {
+        row_bytes(|mut w| write_for_hop_row(&mut w, h))
+    });
+    write!(out, "<hops{}>", hops.attrs())?;
+    for h in hops.rows() {
+        write_for_hop_row(out, h)?;
     }
     write!(out, "</hops>")
 }
 
-const GREP_DEFAULT_CAP: usize = 100;
+fn write_for_body_row<W: Write>(out: &mut W, item: &Value) -> io::Result<()> {
+    let Some(body) = item["body"].as_str() else {
+        return Ok(());
+    };
+    write!(
+        out,
+        "<b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\">",
+        item.str_or("kind", "fn").xml_escaped(),
+        item.u64_or("line", 0),
+        item.str_or("path", "").xml_escaped(),
+        item.str_or("name", "").xml_escaped()
+    )?;
+    crate::serialize::write_cdata(out, body)?;
+    write!(out, "</b>")
+}
+
+fn write_for_bodies<W: Write>(out: &mut W, val: &Value, page: PageRequest) -> io::Result<()> {
+    let items: Vec<&Value> = val["symbols"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice)
+        .iter()
+        .filter(|item| item["body"].is_string())
+        .collect();
+    let bodies = Paged::new(&items, page, |item| {
+        row_bytes(|mut w| write_for_body_row(&mut w, item))
+    });
+    write!(out, "<bodies{}>", bodies.attrs())?;
+    for item in bodies.rows() {
+        write_for_body_row(out, item)?;
+    }
+    writeln!(out, "</bodies>")
+}
 
 fn write_grep_context<W: Write>(
     out: &mut W,
@@ -421,21 +451,27 @@ impl GrepReport<'_> {
         self.val["unindexed"].as_array().map_or(&[], Vec::as_slice)
     }
 
-    fn window(&self, total: usize) -> crate::serialize::PageWindow {
-        let limit = self.val["limit"].as_u64().map(|v| v as usize);
-        let offset = self.val["offset"].as_u64().map(|v| v as usize);
-        crate::serialize::PageWindow::compute(total, GREP_DEFAULT_CAP, limit, offset)
+    fn hit_page(&self) -> Paged<'_, Value> {
+        Paged::new(self.hits(), self.val.page_request(), |h| {
+            row_bytes(|mut w| write_grep_hit(&mut w, &[h]))
+        })
+    }
+
+    fn unindexed_page(&self) -> Paged<'_, Value> {
+        Paged::new(self.unindexed(), self.val.page_request().nested(), |r| {
+            row_bytes(|mut w| write_grep_rows(&mut w, std::slice::from_ref(r), false))
+        })
     }
 
     fn shown(&self) -> &[Value] {
-        let w = self.window(self.hits().len());
-        &self.hits()[w.begin..w.end]
+        self.hit_page().rows()
     }
 
     fn next_hint(&self) -> String {
         let pat = self.val.str_or("pattern", "");
-        let w = self.window(self.hits().len());
-        let shown = self.shown();
+        let page = self.hit_page();
+        let w = page.window;
+        let shown = page.rows();
         if w.has_more {
             let verb = self.val.str_or("verb", "grep");
             format!("--{verb}={pat} --offset={} --legend=compact", w.next_offset)
@@ -460,7 +496,7 @@ impl GrepReport<'_> {
         }
         let suppressed = self.val.get("suppressed_comment").is_some()
             || self.val.get("suppressed_string").is_some();
-        let w = self.window(self.hits().len());
+        let w = self.hit_page().window;
         if self.val["literal"].as_bool() == Some(true) && !suppressed && !w.capped {
             out.write_all(b" complete=\"1\"")?;
         }
@@ -494,7 +530,8 @@ impl GrepReport<'_> {
         if rows.is_empty() {
             return Ok(());
         }
-        let w = self.window(rows.len());
+        let page = self.unindexed_page();
+        let w = page.window;
         writeln!(
             out,
             "<unindexed count=\"{}\" shown=\"{}\" capped=\"{}\">",
@@ -502,7 +539,7 @@ impl GrepReport<'_> {
             w.shown,
             u8::from(w.capped)
         )?;
-        write_grep_rows(out, &rows[w.begin..w.end], self.merges())?;
+        write_grep_rows(out, page.rows(), self.merges())?;
         writeln!(out, "</unindexed>")
     }
 
@@ -522,13 +559,15 @@ impl crate::serialize::XmlReport for GrepReport<'_> {
             .map(|h| h.str_any(&["file", "path"], ""))
             .collect::<std::collections::BTreeSet<_>>()
             .len();
+        let page = self.hit_page();
         write!(
             out,
-            " pattern=\"{}\" root=\"{}\" files=\"{files}\" hits=\"{}\"{} hits_capped=\"0\"",
+            " pattern=\"{}\" root=\"{}\" files=\"{files}\" hits=\"{}\"{} hits_capped=\"{}\"",
             escape_xml_str(self.val.str_or("pattern", "")),
             escape_xml_str(self.val.str_or("root", ".")),
             hits.len(),
-            self.window(hits.len()).xml_attrs(),
+            page.attrs(),
+            u8::from(page.window.capped),
         )?;
         self.write_tier_attrs(out)?;
         write!(out, " next=\"{}\"", escape_xml_str(&self.next_hint()))
@@ -804,10 +843,7 @@ fn push_recall_footer(buf: &mut String, val: &Value) {
     let by_budget = val.u64_or("omitted_budget", 0);
     let mut parts = Vec::new();
     if by_k > 0 {
-        let default_k = val.u64_or("default_top_k", 8);
-        parts.push(format!(
-            "raise --top-k/top_k (default {default_k}) for {by_k} more"
-        ));
+        parts.push(format!("raise --top-k/top_k for {by_k} more"));
     }
     if by_budget > 0 {
         let budget = val.u64_or("budget_bytes", 0);

@@ -128,6 +128,14 @@ pub struct NonlocalStateReport<'a> {
     pub page: crate::serialize::PageRequest,
 }
 
+impl NonlocalStateReport<'_> {
+    fn window(&self) -> crate::serialize::PageWindow {
+        self.page.window_fit(self.funcs.len(), |i| {
+            crate::serialize::row_bytes(|w| write_nonlocal_fn_row(&self.funcs[i], w))
+        })
+    }
+}
+
 impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
     crate::xml_report_meta!(
         "nonlocal_state",
@@ -139,7 +147,7 @@ impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
         Some(self.gauges)
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let window = self.page.window(self.funcs.len(), 0);
+        let window = self.window();
         let cells_count: usize = self.funcs.iter().map(|f| f.cells.len()).sum();
         write!(
             out,
@@ -149,7 +157,7 @@ impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let window = self.page.window(self.funcs.len(), 0);
+        let window = self.window();
         for f in &self.funcs[window.begin..window.end] {
             write_nonlocal_fn_row(f, out)?;
         }
@@ -157,7 +165,7 @@ impl crate::serialize::XmlReport for NonlocalStateReport<'_> {
     }
 }
 
-fn write_nonlocal_fn_row<W: Write>(f: &NonlocalFunction, out: &mut W) -> io::Result<()> {
+fn write_nonlocal_fn_row<W: Write + ?Sized>(f: &NonlocalFunction, out: &mut W) -> io::Result<()> {
     use crate::serialize::XmlEscapeExt;
     writeln!(
         out,

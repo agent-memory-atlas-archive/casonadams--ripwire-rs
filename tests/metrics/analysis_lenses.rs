@@ -100,7 +100,13 @@ fn test_naming_and_executive_report() {
         .unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("ripwire-rs.naming-calibration/v1"));
     buf.clear();
-    serialize_executive_report_md(".", &ingest, &graph, &[1.0], &interner, &mut buf).unwrap();
+    let facts = ripwire_rs::query::safety::SafetyContext {
+        root: ".",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
+    serialize_executive_report_md(&facts, &[1.0], PageRequest::default(), &mut buf).unwrap();
     assert!(String::from_utf8_lossy(&buf).contains("# Architecture & Quality Report"));
 }
 

@@ -258,9 +258,7 @@ fn task_detail_preserves_all_acquired_bodies_in_canonical_xml() {
         assert!(xml.contains("task=\"parse\""));
         assert!(!xml.contains(" at=\""));
         assert!(xml.contains(&format!("bodies=\"{detail}\"")));
-        assert!(xml.contains(&format!(
-            "<bodies shown=\"{detail}\" total=\"{detail}\" capped=\"0\">"
-        )));
+        assert!(xml.contains(&format!("<bodies shown=\"{detail}\" capped=\"0\">")));
         assert_eq!(xml.matches("<b t=").count(), detail);
         if detail == 2 {
             assert!(xml.contains("let alpha_marker = 1;"));

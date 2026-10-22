@@ -338,7 +338,7 @@ pub fn call_memory_recall(
 ) -> Value {
     let defaults = super::recall::RecallOptions::default();
     let opts = super::recall::RecallOptions {
-        top_k: top_k.unwrap_or(defaults.top_k),
+        top_k,
         max_tokens: max_tokens.unwrap_or(defaults.max_tokens),
     };
     super::recall::recall(inputs, task, opts).to_json(task)

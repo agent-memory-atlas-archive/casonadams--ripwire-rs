@@ -1,7 +1,7 @@
 //! `--handoff`: continuation packet for interrupted agent sessions.
 use super::{Plugin, Run};
 use crate::domain::{IngestResult, Interner};
-use crate::serialize::XmlEscapeExt;
+use crate::serialize::{PageRequest, Paged, XmlEscapeExt, text_bytes};
 use clap::Args;
 use std::io::{self, Write};
 use std::path::Path;
@@ -23,7 +23,7 @@ pub static HANDOFF: Plugin<HandoffArgs> = Plugin {
 };
 
 fn run(run: &Run<'_>, _: &HandoffArgs) -> io::Result<()> {
-    run.report(|ctx, out| writeln!(out, "{}", build_handoff_xml(ctx.root, ctx.ingest, ctx.interner)))
+    run.report(|ctx, out| writeln!(out, "{}", build_handoff_xml(ctx.root, ctx.ingest, ctx.interner, run.page())))
 }
 pub fn resolve_git_branch_and_subject(root: &str) -> (String, String, bool) {
     let Ok(repo) = gix::open(root) else {
@@ -53,6 +53,7 @@ pub fn build_handoff_verified_rows(
     changed: &[String],
     ingest: &IngestResult,
     interner: &Interner,
+    page: PageRequest,
 ) -> String {
     let mut rows = String::new();
     if changed.is_empty() {
@@ -64,7 +65,8 @@ pub fn build_handoff_verified_rows(
         rows.push_str("<tests n=\"0\"/>");
         return rows;
     }
-    for cf in changed.iter().take(12) {
+    let shown = Paged::new(changed, page, |cf| text_bytes(&[cf.as_str()]));
+    for cf in shown.rows() {
         let sym = ingest
             .symbols
             .iter()
@@ -104,13 +106,13 @@ fn build_handoff_doc_rows(root: &str, query: &str) -> (String, usize) {
     (rows, cnt)
 }
 
-pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner) -> String {
+pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner, page: PageRequest) -> String {
     use crate::serialize::GitStampExt;
     let at_stamp = root.git_at_or_head();
     let (branch, subject, detached) = resolve_git_branch_and_subject(root);
     let detached_attr = if detached { " detached=\"1\"" } else { "" };
     let changed = crate::commands::common::changes::get_working_tree_changed_files(root);
-    let verified_rows = build_handoff_verified_rows(&changed, ingest, interner);
+    let verified_rows = build_handoff_verified_rows(&changed, ingest, interner, page);
     let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, None);
     let probe_path = changed.first().map(String::as_str).unwrap_or_else(|| {
         ingest
@@ -121,7 +123,9 @@ pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner)
     let partners = coupling.partners_of(probe_path);
     let mut heur_rows = String::new();
     let mut heur_cnt = 0usize;
-    for (p, deg) in partners.iter().take(4) {
+    let partners_shown = Paged::new(&partners, page, |(p, _)| text_bytes(&[p.as_str()]));
+    let partners_capped = usize::from(partners_shown.window.capped);
+    for (p, deg) in partners_shown.rows() {
         let score = (*deg).min(1.0);
         heur_rows.push_str(&format!(
             "<f p=\"{}\" score=\"{score:.2}\" why=\"cochange\"/>",
@@ -148,7 +152,7 @@ pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner)
     let candidates = (partners.len() + doc_cnt).max(heur_cnt);
     let est_tokens = (verified_rows.len() + heur_rows.len() + 240) / 4;
     format!(
-        "<!-- ripwire-rs handoff schema=ripwire-rs.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire-rs.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{}\"{detached_attr} subject=\"{}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{candidates}\" capped=\"0\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
+        "<!-- ripwire-rs handoff schema=ripwire-rs.handoff/v1: session handoff bundle. -->\n<handoff schema=\"ripwire-rs.handoff/v1\" at=\"{at_stamp}\" root=\"{root}\" branch=\"{}\"{detached_attr} subject=\"{}\" gitok=\"1\" est_tokens=\"{est_tokens}\"><verified changed=\"{ch_cnt}\" blast_files=\"{ch_cnt}\">{verified_rows}</verified><heuristic n=\"{heur_cnt}\" candidates=\"{candidates}\" capped=\"{partners_capped}\" cochange_window=\"18mo@HEAD\" cochange_commits=\"1\">{heur_rows}</heuristic></handoff>",
         branch.xml_escaped(),
         subject.xml_escaped(),
     )

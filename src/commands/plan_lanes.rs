@@ -4,6 +4,7 @@ use super::common::safety_queries::compute_plan_lanes_from_facts;
 use super::partition::PartitionArgs;
 use super::{Plugin, Run};
 use clap::Args;
+use std::io::Write;
 use std::io;
 
 #[derive(Args, Debug, Clone, Default, PartialEq)]
@@ -33,8 +34,9 @@ fn run(run: &Run<'_>, args: &PlanLanesArgs) -> io::Result<()> {
         .map(|c| c.lines().map(str::to_string).collect::<Vec<_>>());
     run.report(|ctx, out| {
         let safety = context_of(ctx);
-        compute_plan_lanes_from_facts(&safety, requested, &task, brief_lines.as_deref(), out)
-            .map(|_| ())
+        let val = compute_plan_lanes_from_facts(&safety, requested, &task, brief_lines.as_deref(), run.page());
+        serde_json::to_writer(&mut *out, &val)?;
+        writeln!(out)
     })
 }
 

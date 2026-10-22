@@ -69,7 +69,7 @@ fn test_for_sections_expand_available_results() {
     });
     let cstub = render(&cval);
     assert!(cstub.contains("<compose total=\"1\" shown=\"0\" capped=\"1\""));
-    assert!(cstub.contains("<hops shown=\"1\" total=\"1\" capped=\"0\"><h l=\"10\" p=\"src/main.rs\" n=\"run\"><calls total=\"1\"><c n=\"init\" l=\"2\"/></calls></h></hops>"));
+    assert!(cstub.contains("<hops shown=\"1\" capped=\"0\"><h l=\"10\" p=\"src/main.rs\" n=\"run\"><calls total=\"1\"><c n=\"init\" l=\"2\"/></calls></h></hops>"));
     cval["sections"] = json!(["compose"]);
     let cfull = render(&cval);
     assert!(

@@ -1,5 +1,7 @@
 //! `--report`: executive markdown architecture report (always plain markdown).
+use super::common::safety::context_of;
 use super::{Plugin, Run};
+use crate::commands::context::Paginated;
 use crate::commands::context::ExecutionContext;
 use crate::serialize::XmlWriter;
 use clap::Args;
@@ -14,11 +16,9 @@ pub struct ReportArgs {
 
 pub fn render(ctx: &ExecutionContext<'_>, out: &mut XmlWriter<'_, impl Write>) -> io::Result<()> {
     crate::metrics::serialize_executive_report_md(
-        ctx.root,
-        ctx.ingest,
-        ctx.graph,
+        &context_of(ctx),
         &ctx.pr.ranks,
-        ctx.interner,
+        ctx.cli.page_request(),
         out,
     )
 }

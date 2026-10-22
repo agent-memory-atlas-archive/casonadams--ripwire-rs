@@ -42,7 +42,7 @@ ripwire-rs . --html=callgraph.html --color-by=community
 
 `--uses` lists all indexed sites by default; use `--limit=N --offset=M` and
 `next_offset` to page them. `--impact` keeps unbound candidate calls in `<dc>`
-rows outside the graph; `dc_next` expands a capped candidate sample.
+rows outside the graph; `dc_shown` of `declined_calls` says how many a capped sample holds, and `--token-budget` widens it.
 `--whereis` scans distinct Git blobs up to 2 MiB once, including unindexed HEAD
 files, and replaces changed paths with worktree rows.
 `--lint` compares all distinct naming subjects within each namespace through

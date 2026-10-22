@@ -2,6 +2,7 @@
 use super::common::retrieval::report_query;
 use super::{Plugin, Run};
 use crate::query::commands::QueryContext;
+use crate::serialize::PageRequest;
 use clap::Args;
 use std::io::{self, Write};
 
@@ -13,14 +14,14 @@ pub struct VerifyArgs {
     pub verify: Option<String>,
 }
 
-pub fn execute<W: Write>(query: &QueryContext<'_>, claim: &str, out: &mut W) -> io::Result<()> {
+pub fn execute<W: Write>(query: &QueryContext<'_>, claim: &str, page: PageRequest, out: &mut W) -> io::Result<()> {
     let v_ctx = crate::navigate::VerifyContext::from(query);
-    crate::navigate::evaluate_verify_claim(claim, &v_ctx, out)
+    crate::navigate::evaluate_verify_claim(claim, &v_ctx, page, out)
 }
 
 fn run(run: &Run<'_>, args: &VerifyArgs) -> io::Result<()> {
     let claim = args.verify.as_deref().unwrap_or_default();
-    report_query(run, |query, out| execute(query, claim, out))
+    report_query(run, |query, out| execute(query, claim, run.page(), out))
 }
 
 pub static VERIFY: Plugin<VerifyArgs> = Plugin {

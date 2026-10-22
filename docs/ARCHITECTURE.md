@@ -64,6 +64,11 @@
    - Keyword pairs classify table accesses into typed reference roles (`RefRole::Read` and `RefRole::Write`).
    - The reference resolution ladder binds these table accesses directly to `.sql` DDL definitions (`CREATE TABLE ...`), unifying database entities into the same CSR in-edge graph as application functions and methods.
 
+5. **Budget-Derived Output Caps**:
+   - Every default row cap is computed from the output budget (`PageRequest.budget`, default 64 KB, or `--token-budget` / `--max-tokens`) through `Paged` / `PageRequest::window_fit`, never a literal count.
+   - An explicit shared `--limit` overrides the computed cap; `--offset` moves the window.
+   - A command needs only `Paged::new(rows, run.page(), cost)`, where `cost` is the row's bytes (`row_bytes` for serialized rows, `text_bytes` for plain text parts).
+
 CLI and MCP adapters share transport-neutral `query::*` implementations and
 canonical reports. The root-exported `Workspace` lives in `src/workspace.rs`
 and loads shared SCIP-aware analysis; ranking is held in `Workspace.pr.ranks`.
@@ -126,7 +131,7 @@ composition roots pass `crate::commands::tools()`. Metric analysis that a plugin
 
 A shared option reaches a command only through `Run`, and a command receives it only if it declares it in
 `options`. To make a command honor `--limit/--offset`, list `SharedOption::Paged` and window its rows with
-`run.page().window(total, default_cap)`; a command that does not declare it prints a stderr notice when the flag is
+`Paged::new(rows, run.page(), cost)`, which derives the cap from the output budget unless `--limit` overrides it. A command that does not declare it prints a stderr notice when the flag is
 passed (`unhonored_option_warning`). `tests/commands/registry.rs` keeps that contract true for every registered command.
 To add another shared option (for example `--since`): add a variant to `SharedOption`, one field on `TopModifierArgs`,
 and one gated accessor on `Run`; commands then opt in with one `options` entry and never read the flag directly.

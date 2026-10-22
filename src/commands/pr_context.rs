@@ -1,4 +1,5 @@
 //! `--pr-context [REF]`: review bundle per changed file vs base (symbols, callers, blast radius, tests).
+use super::common::safety::context_of;
 use super::common::safety_queries::execute_pr_context_dispatch;
 use super::{Plugin, Run};
 use clap::Args;
@@ -14,14 +15,7 @@ pub struct PrContextArgs {
 fn run(run: &Run<'_>, args: &PrContextArgs) -> io::Result<()> {
     let reference = args.pr_context.clone().flatten();
     run.report(|ctx, out| {
-        execute_pr_context_dispatch(
-            ctx.root,
-            reference.as_deref(),
-            ctx.ingest,
-            ctx.graph,
-            ctx.interner,
-            out,
-        )
+        execute_pr_context_dispatch(&context_of(ctx), reference.as_deref(), run.page(), out)
     })
 }
 

@@ -1,5 +1,5 @@
 use ripwire_rs::gate::lanes::{
-    compute_plan_lanes, compute_plan_lanes_with_brief, measure_partition_overlap,
+    LaneCorpus, compute_plan_lanes, compute_plan_lanes_with_brief, measure_partition_overlap,
     plan_task_partition,
 };
 use ripwire_rs::{
@@ -14,13 +14,16 @@ fn test_plan_lanes_partition_and_brief() {
     let empty_graph = Graph::build(&empty_ingest, &empty_interner);
     let empty_pr = empty_graph.page_rank(&PageRankConfig::default());
     let empty_val = compute_plan_lanes(
-        ".",
+        LaneCorpus {
+            root: ".",
+            ingest: &empty_ingest,
+            graph: &empty_graph,
+            pr: &empty_pr,
+            interner: &empty_interner,
+        },
         2,
         "refactor parser",
-        &empty_ingest,
-        &empty_graph,
-        &empty_pr,
-        &empty_interner,
+        Default::default(),
     );
     assert_eq!(empty_val["verb"], "plan-lanes");
     assert_eq!(empty_val["requested"], 2);
@@ -60,13 +63,16 @@ fn test_plan_lanes_partition_and_brief() {
     assert!(!plan.groups.is_empty());
 
     let val = compute_plan_lanes(
-        ".",
+        LaneCorpus {
+            root: ".",
+            ingest: &ingest,
+            graph: &graph,
+            pr: &pr,
+            interner: &interner,
+        },
         2,
         "login verify charge",
-        &ingest,
-        &graph,
-        &pr,
-        &interner,
+        Default::default(),
     );
     assert_eq!(val["source"], "partition");
     assert_eq!(val["carve"]["strategy"], "louvain-community");
@@ -81,8 +87,17 @@ fn test_plan_lanes_partition_and_brief() {
         "login_user verify_token".to_string(),
         "verify_token charge_card".to_string(),
     ];
-    let brief_val =
-        compute_plan_lanes_with_brief(".", &brief_lines, &ingest, &graph, &pr, &interner);
+    let brief_val = compute_plan_lanes_with_brief(
+        LaneCorpus {
+            root: ".",
+            ingest: &ingest,
+            graph: &graph,
+            pr: &pr,
+            interner: &interner,
+        },
+        &brief_lines,
+        Default::default(),
+    );
     assert_eq!(brief_val["source"], "brief");
     assert_eq!(brief_val["lane_count"], 2);
     assert_eq!(brief_val["pairs"].as_array().map(Vec::len), Some(1));

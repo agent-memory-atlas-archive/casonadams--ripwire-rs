@@ -1,6 +1,6 @@
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
-use crate::serialize::PageRequest;
+use crate::serialize::{PageRequest, PageWindow, row_bytes};
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -246,6 +246,40 @@ pub fn compute_quality_panel_report(
     }
 }
 
+impl QualityPanelReport {
+    fn window(&self) -> PageWindow {
+        self.page.window_fit(self.rows.len(), |i| {
+            row_bytes(|w| write_quality_row(&self.rows[i], self.unavail_row_attr(), w))
+        })
+    }
+
+    fn unavail_row_attr(&self) -> &'static str {
+        if self.cfiles == 0 {
+            " unavail=\"confusion\""
+        } else {
+            ""
+        }
+    }
+}
+
+fn write_quality_row<W: Write + ?Sized>(
+    r: &QualityPanelRow,
+    unavail_row_attr: &str,
+    w: &mut W,
+) -> io::Result<()> {
+    use crate::serialize::XmlEscapeExt;
+    writeln!(
+        w,
+        "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"{}\" fired=\"{}\"{unavail_row_attr}/>",
+        r.path.xml_escaped(),
+        r.line,
+        r.name.xml_escaped(),
+        r.fam,
+        r.of,
+        r.fired
+    )
+}
+
 impl crate::serialize::XmlReport for QualityPanelReport {
     crate::xml_report_meta!(
         "quality_panel",
@@ -254,7 +288,7 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         comment: "ripwire-rs quality-panel schema=ripwire-rs.quality-panel/v1: every quality family in ONE report."
     );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = self.page.window(self.rows.len(), 40);
+        let pw = self.window();
         let ccut = if self.cfiles > 0 { 40 } else { 0 };
         let unavail_attrs = if self.cfiles == 0 {
             " unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\""
@@ -291,24 +325,10 @@ impl crate::serialize::XmlReport for QualityPanelReport {
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let unavail_row_attr = if self.cfiles == 0 {
-            " unavail=\"confusion\""
-        } else {
-            ""
-        };
-        let pw = self.page.window(self.rows.len(), 40);
+        let unavail_row_attr = self.unavail_row_attr();
+        let pw = self.window();
         for r in &self.rows[pw.begin..pw.end] {
-            use crate::serialize::XmlEscapeExt;
-            writeln!(
-                w,
-                "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"{}\" fired=\"{}\"{unavail_row_attr}/>",
-                r.path.xml_escaped(),
-                r.line,
-                r.name.xml_escaped(),
-                r.fam,
-                r.of,
-                r.fired
-            )?;
+            write_quality_row(r, unavail_row_attr, w)?;
         }
         Ok(())
     }

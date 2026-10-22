@@ -1,7 +1,9 @@
 use super::{find_symbols_by_name, transitive_impact_multi};
 use crate::domain::{CorpusView, IngestResult, Interner, NodeId};
 use crate::graph::Graph;
-use crate::serialize::{GraphGauges, PathLayerExt, XmlEscapeExt, XmlReport};
+use crate::serialize::{
+    GraphGauges, PageRequest, PageWindow, Paged, PathLayerExt, XmlEscapeExt, XmlReport, row_bytes,
+};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Write};
 
@@ -181,14 +183,26 @@ pub enum VerifyWitness<'a> {
     Hits(Vec<(String, u32, String, String)>),
 }
 
-impl VerifyWitness<'_> {
-    fn len(&self) -> usize {
-        match self {
-            Self::Nodes(v) => v.len(),
-            Self::Uses(v) => v.len(),
-            Self::Hits(v) => v.len(),
-        }
+fn write_use_witness<W: Write>(
+    out: &mut W,
+    &(role, file, line, enc): &(&str, &str, u32, Option<&str>),
+) -> io::Result<()> {
+    let f_esc = file.xml_escaped();
+    match enc.filter(|s| !s.is_empty()) {
+        Some(e) => write!(
+            out,
+            "<u role=\"{role}\" p=\"{f_esc}:{line}\" in_id=\"{}\"/>",
+            e.xml_escaped()
+        ),
+        None => write!(out, "<u role=\"{role}\" p=\"{f_esc}:{line}\"/>"),
     }
+}
+
+fn hit_window(hits: &[(String, u32, String, String)], page: PageRequest) -> PageWindow {
+    Paged::new(hits, page, |h| {
+        row_bytes(|mut w| write_hit_witness(h, &mut w))
+    })
+    .window
 }
 
 pub struct VerifyReport<'a> {
@@ -202,6 +216,28 @@ pub struct VerifyReport<'a> {
     pub ingest: &'a IngestResult,
     pub interner: &'a Interner,
     pub gauges: GraphGauges,
+    pub page: PageRequest,
+}
+
+impl VerifyReport<'_> {
+    fn witness_window(&self) -> PageWindow {
+        let (ingest, interner, page) = (self.ingest, self.interner, self.page);
+        match &self.witness {
+            VerifyWitness::Nodes(ids) => {
+                Paged::new(ids, page, |&id| {
+                    row_bytes(|mut w| write_sym_witness(id, ingest, interner, &mut w))
+                })
+                .window
+            }
+            VerifyWitness::Uses(sites) => {
+                Paged::new(sites, page, |site| {
+                    row_bytes(|mut w| write_use_witness(&mut w, site))
+                })
+                .window
+            }
+            VerifyWitness::Hits(hits) => hit_window(hits, page),
+        }
+    }
 }
 
 impl XmlReport for VerifyReport<'_> {
@@ -220,9 +256,6 @@ impl XmlReport for VerifyReport<'_> {
         (!self.complete).then_some(self.gauges)
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let total = self.witness.len();
-        let shown = total.min(20);
-        let capped = usize::from(shown < total);
         write!(
             out,
             " claim=\"{}\" shape=\"{}\" verdict=\"{}\"{}",
@@ -237,30 +270,23 @@ impl XmlReport for VerifyReport<'_> {
         if self.complete {
             write!(out, " complete=\"1\"")?;
         }
-        write!(out, " shown=\"{shown}\" capped=\"{capped}\"")
+        write!(out, "{}", self.witness_window().xml_attrs())
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        let win = self.witness_window();
         match &self.witness {
             VerifyWitness::Nodes(ids) => {
-                for &id in ids.iter().take(20) {
+                for &id in &ids[win.begin..win.end] {
                     write_sym_witness(id, self.ingest, self.interner, out)?;
                 }
             }
             VerifyWitness::Uses(sites) => {
-                for &(role, file, line, enc) in sites.iter().take(20) {
-                    let f_esc = file.xml_escaped();
-                    match enc.filter(|s| !s.is_empty()) {
-                        Some(e) => write!(
-                            out,
-                            "<u role=\"{role}\" p=\"{f_esc}:{line}\" in_id=\"{}\"/>",
-                            e.xml_escaped()
-                        )?,
-                        None => write!(out, "<u role=\"{role}\" p=\"{f_esc}:{line}\"/>")?,
-                    }
+                for site in &sites[win.begin..win.end] {
+                    write_use_witness(out, site)?;
                 }
             }
             VerifyWitness::Hits(hits) => {
-                for h in hits.iter().take(20) {
+                for h in &hits[win.begin..win.end] {
                     write_hit_witness(h, out)?;
                 }
             }
@@ -300,7 +326,13 @@ fn parse_verify_claim(claim: &str) -> Option<(&str, &str, &str, bool)> {
     ))
 }
 
-fn eval_calls<'a>(claim: &'a str, a: &str, b: &str, ctx: &VerifyContext<'a>) -> VerifyReport<'a> {
+fn eval_calls<'a>(
+    claim: &'a str,
+    a: &str,
+    b: &str,
+    ctx: &VerifyContext<'a>,
+    page: PageRequest,
+) -> VerifyReport<'a> {
     let from_ids = find_symbols_by_name(a, ctx.ingest, ctx.interner);
     let to_ids = find_symbols_by_name(b, ctx.ingest, ctx.interner);
     let path = bfs_shortest_path(ctx.graph, &from_ids, &to_ids);
@@ -325,6 +357,7 @@ fn eval_calls<'a>(claim: &'a str, a: &str, b: &str, ctx: &VerifyContext<'a>) -> 
         ingest: ctx.ingest,
         interner: ctx.interner,
         gauges: ctx.graph.gauges(),
+        page,
     }
 }
 
@@ -333,6 +366,7 @@ fn eval_uses<'a>(
     sym: &str,
     is_unused: bool,
     ctx: &VerifyContext<'a>,
+    page: PageRequest,
 ) -> VerifyReport<'a> {
     let defs = find_symbols_by_name(sym, ctx.ingest, ctx.interner);
     let sites = (ctx.ingest, ctx.interner).collect_symbol_uses(sym);
@@ -357,6 +391,7 @@ fn eval_uses<'a>(
         ingest: ctx.ingest,
         interner: ctx.interner,
         gauges: ctx.graph.gauges(),
+        page,
     }
 }
 
@@ -365,6 +400,7 @@ fn eval_defines<'a>(
     file_pat: &str,
     sym: &str,
     ctx: &VerifyContext<'a>,
+    page: PageRequest,
 ) -> VerifyReport<'a> {
     let defs_of_name = find_symbols_by_name(sym, ctx.ingest, ctx.interner);
     let in_file: Vec<NodeId> = defs_of_name
@@ -392,6 +428,7 @@ fn eval_defines<'a>(
             ingest: ctx.ingest,
             interner: ctx.interner,
             gauges: ctx.graph.gauges(),
+            page,
         };
     }
     let hits = collect_literal_hits(file_pat, sym, ctx);
@@ -414,16 +451,28 @@ fn eval_defines<'a>(
         ingest: ctx.ingest,
         interner: ctx.interner,
         gauges: ctx.graph.gauges(),
+        page,
     }
+}
+
+/// The `reaches(SYM, "FILE" | LAYER)` operands: the symbol and the file or layer it must reach.
+struct ReachesOperands<'a> {
+    sym: &'a str,
+    target: &'a str,
+    is_quoted: bool,
 }
 
 fn eval_reaches<'a>(
     claim: &'a str,
-    sym: &str,
-    target: &str,
-    is_quoted: bool,
+    operands: ReachesOperands<'_>,
     ctx: &VerifyContext<'a>,
+    page: PageRequest,
 ) -> VerifyReport<'a> {
+    let ReachesOperands {
+        sym,
+        target,
+        is_quoted,
+    } = operands;
     let target_defs = find_symbols_by_name(sym, ctx.ingest, ctx.interner);
     let ranks = vec![0.0; ctx.ingest.symbols.len()];
     let impact = transitive_impact_multi(
@@ -469,18 +518,20 @@ fn eval_reaches<'a>(
         ingest: ctx.ingest,
         interner: ctx.interner,
         gauges: ctx.graph.gauges(),
+        page,
     }
 }
 
 pub fn evaluate_verify_claim<W: Write>(
     claim: &str,
     ctx: &VerifyContext<'_>,
+    page: PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     let rep = match parse_verify_claim(claim) {
-        Some(("calls", a, b, _)) => eval_calls(claim, a, b, ctx),
-        Some(("uses", sym, _, _)) => eval_uses(claim, sym, false, ctx),
-        Some(("unused", sym, _, _)) => eval_uses(claim, sym, true, ctx),
+        Some(("calls", a, b, _)) => eval_calls(claim, a, b, ctx, page),
+        Some(("uses", sym, _, _)) => eval_uses(claim, sym, false, ctx, page),
+        Some(("unused", sym, _, _)) => eval_uses(claim, sym, true, ctx, page),
         Some(("contains", f, lit, _)) => {
             let hits = collect_literal_hits(f, lit, ctx);
             let total = hits.len();
@@ -490,15 +541,25 @@ pub fn evaluate_verify_claim<W: Write>(
                 verdict: if total > 0 { "confirmed" } else { "refuted" },
                 facts: format!(" hits=\"{total}\""),
                 limit: None,
-                complete: total <= 20,
+                complete: !hit_window(&hits, page).capped,
                 witness: VerifyWitness::Hits(hits),
                 ingest: ctx.ingest,
                 interner: ctx.interner,
                 gauges: ctx.graph.gauges(),
+                page,
             }
         }
-        Some(("defines", f, sym, _)) => eval_defines(claim, f, sym, ctx),
-        Some(("reaches", sym, target, q)) => eval_reaches(claim, sym, target, q, ctx),
+        Some(("defines", f, sym, _)) => eval_defines(claim, f, sym, ctx, page),
+        Some(("reaches", sym, target, q)) => eval_reaches(
+            claim,
+            ReachesOperands {
+                sym,
+                target,
+                is_quoted: q,
+            },
+            ctx,
+            page,
+        ),
         _ => VerifyReport {
             claim,
             shape: "calls",
@@ -510,6 +571,7 @@ pub fn evaluate_verify_claim<W: Write>(
             ingest: ctx.ingest,
             interner: ctx.interner,
             gauges: ctx.graph.gauges(),
+            page,
         },
     };
     rep.render_envelope(out)

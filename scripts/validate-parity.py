@@ -21,6 +21,7 @@ OPTIONAL_ATTRS = {
     "graph_ambiguous",
     "graph_unresolved",
     "graph_partial",
+    "skipped_mode_only",
     "tsconfig_unread",
     "imports_unresolved",
     "ts_decl_only",
@@ -294,17 +295,12 @@ def check_declined_window_invariants(root_rw):
         return "impact declined_calls is smaller than its sample"
     if "dc_shown" in root_rw.attrib and int(root_rw.attrib["dc_shown"]) != rows:
         return "impact dc_shown differs from its sample"
-    if rows < count and not root_rw.attrib.get("dc_next"):
-        return "impact capped declined calls missing dc_next"
     return None
 
 
 def check_file_window_invariants(root_rw):
     if root_rw.tag != "impact":
         return None
-    for node in root_rw.findall("files"):
-        if node.attrib.get("files_capped") == "1" and not node.attrib.get("files_next"):
-            return "impact capped files missing files_next"
     return check_declined_window_invariants(root_rw)
 
 

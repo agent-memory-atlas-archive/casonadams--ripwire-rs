@@ -105,6 +105,7 @@ fn test_graph_query_execution() {
         ripwire_rs::serialize::PageRequest {
             limit: Some(1),
             offset: Some(0),
+            budget: None,
         },
         &mut paged_out,
     )
@@ -145,7 +146,13 @@ fn test_graph_query_execution() {
         ("invalid_claim", "not-established"),
     ] {
         let mut v_out = Vec::new();
-        evaluate_verify_claim(claim, &v_ctx, &mut v_out).unwrap();
+        evaluate_verify_claim(
+            claim,
+            &v_ctx,
+            ripwire_rs::serialize::PageRequest::default(),
+            &mut v_out,
+        )
+        .unwrap();
         let v_str = String::from_utf8(v_out).unwrap();
         assert!(
             v_str.contains(&format!("verdict=\"{expected}\"")),

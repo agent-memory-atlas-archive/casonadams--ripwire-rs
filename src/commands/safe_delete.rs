@@ -1,4 +1,5 @@
 //! `--safe-delete SYM`: safe-delete assessment joining callers, blast radius, tests, and history.
+use super::common::safety::context_of;
 use super::common::safety_queries::execute_safe_delete_query;
 use super::{Plugin, Run};
 use clap::Args;
@@ -14,14 +15,7 @@ pub struct SafeDeleteArgs {
 fn run(run: &Run<'_>, args: &SafeDeleteArgs) -> io::Result<()> {
     let sym = args.safe_delete.as_deref().unwrap_or_default();
     run.report(|ctx, out| {
-        execute_safe_delete_query(
-            ctx.root,
-            sym,
-            ctx.ingest,
-            ctx.graph,
-            ctx.interner,
-            out,
-        )
+        execute_safe_delete_query(&context_of(ctx), sym, run.page(), out)
     })
 }
 

@@ -1,5 +1,5 @@
-use crate::serialize::JsonValueExt;
 use crate::serialize::escape::{XmlEscapeExt, escape_xml_str};
+use crate::serialize::{JsonValueExt, Paged};
 use serde_json::Value;
 use std::io::{self, Write};
 
@@ -123,7 +123,10 @@ impl crate::serialize::XmlReport for WhereisReport<'_> {
         let sym = escape_xml_str(self.val.str_or("symbol", ""));
         let hits = self.hits();
         let rows = whereis_rows(hits, self.listing());
-        let (pw, _) = self.val.paginate_items(&rows.listed, 60);
+        let paged = Paged::new(&rows.listed[..], self.val.page_request(), |&(h, refs)| {
+            crate::serialize::row_bytes(|mut w| emit_whereis_hit(&mut w, h, refs))
+        });
+        let pw = paged.window;
         let folded_attr = if rows.folded > 0 {
             format!(" folded=\"{}\"", rows.folded)
         } else {
@@ -157,7 +160,10 @@ impl crate::serialize::XmlReport for WhereisReport<'_> {
             emit_whereis_history(out, &Value::Object(hist.clone()), &sym)?;
         }
         let rows = whereis_rows(self.hits(), self.listing());
-        let (_, shown) = self.val.paginate_items(&rows.listed, 60);
+        let paged = Paged::new(&rows.listed[..], self.val.page_request(), |&(h, refs)| {
+            crate::serialize::row_bytes(|mut w| emit_whereis_hit(&mut w, h, refs))
+        });
+        let shown = paged.rows();
         for &(h, refs) in shown {
             emit_whereis_hit(out, h, refs)?;
         }
@@ -220,8 +226,10 @@ impl crate::serialize::XmlReport for OwnersReport<'_> {
         let display_items = files
             .map(|f| collect_owner_display_items(f, detail))
             .unwrap_or_default();
-        let (pw, _) = self.val.paginate_items(&display_items, 40);
-        let page_attrs = pw.xml_attrs();
+        let paged = Paged::new(&display_items[..], self.val.page_request(), |f| {
+            crate::serialize::row_bytes(|mut w| write_owner_entry(&mut w, f))
+        });
+        let page_attrs = paged.attrs();
         write!(
             out,
             " files=\"{count}\"{page_attrs} root=\"{root}\"{at_attr}"
@@ -234,7 +242,10 @@ impl crate::serialize::XmlReport for OwnersReport<'_> {
         let display_items = files
             .map(|f| collect_owner_display_items(f, detail))
             .unwrap_or_default();
-        let (_, page) = self.val.paginate_items(&display_items, 40);
+        let paged = Paged::new(&display_items[..], self.val.page_request(), |f| {
+            crate::serialize::row_bytes(|mut w| write_owner_entry(&mut w, f))
+        });
+        let page = paged.rows();
         if !detail && uniform_count > 0 {
             writeln!(
                 out,
@@ -315,8 +326,10 @@ impl crate::serialize::XmlReport for FlagsReport<'_> {
         let cmake = self.val.u64_or("cmake_count", 0);
         let env = self.val.u64_or("env_count", 0);
         let dark = self.val.u64_or("dark_gates", 0);
-        let (pw, _) = self.val.paginate_items(items, 100);
-        let page_attrs = pw.xml_attrs();
+        let paged = Paged::new(&items[..], self.val.page_request(), |g| {
+            crate::serialize::row_bytes(|mut w| write_flag_gate_entry(&mut w, g))
+        });
+        let page_attrs = paged.attrs();
         write!(
             out,
             " files=\"{files}\" gates=\"{count}\" dark_gates=\"{dark}\" compile=\"{compile}\" cmake=\"{cmake}\" env=\"{env}\"{page_attrs}"
@@ -325,7 +338,10 @@ impl crate::serialize::XmlReport for FlagsReport<'_> {
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let empty = Vec::new();
         let items = self.val.array_any(&["gates", "flags"]).unwrap_or(&empty);
-        let (_, page) = self.val.paginate_items(items, 100);
+        let paged = Paged::new(&items[..], self.val.page_request(), |g| {
+            crate::serialize::row_bytes(|mut w| write_flag_gate_entry(&mut w, g))
+        });
+        let page = paged.rows();
         for g in page {
             write_flag_gate_entry(out, g)?;
         }
@@ -400,6 +416,15 @@ fn group_doc_drift_items(val: &Value) -> Vec<(&str, Vec<&Value>)> {
     grouped
 }
 
+fn write_doc_drift_group<W: Write>(out: &mut W, doc: &str, list: &[&Value]) -> io::Result<()> {
+    let file = escape_xml_str(doc);
+    writeln!(out, "  <doc p=\"{file}\" drift=\"{}\">", list.len())?;
+    for d in list {
+        write_doc_drift_anchor(out, &file, d)?;
+    }
+    writeln!(out, "  </doc>")
+}
+
 pub struct DocDriftReport<'a> {
     pub val: &'a Value,
 }
@@ -417,8 +442,10 @@ impl crate::serialize::XmlReport for DocDriftReport<'_> {
             .as_u64()
             .map_or(grouped.len(), |n| n as usize);
         let extra_counts = format_doc_drift_header_counts(self.val);
-        let (pw, _) = self.val.paginate_items(&grouped, 40);
-        let page_attrs = pw.xml_attrs();
+        let paged = Paged::new(&grouped[..], self.val.page_request(), |(doc, list)| {
+            crate::serialize::row_bytes(|mut w| write_doc_drift_group(&mut w, doc, list))
+        });
+        let page_attrs = paged.attrs();
         write!(
             out,
             " root=\"{root}\" docs=\"{docs_cnt}\"{extra_counts} drift=\"{count}\"{page_attrs}{at_attr}"
@@ -426,14 +453,12 @@ impl crate::serialize::XmlReport for DocDriftReport<'_> {
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let grouped = group_doc_drift_items(self.val);
-        let (_, page) = self.val.paginate_items(&grouped, 40);
+        let paged = Paged::new(&grouped[..], self.val.page_request(), |(doc, list)| {
+            crate::serialize::row_bytes(|mut w| write_doc_drift_group(&mut w, doc, list))
+        });
+        let page = paged.rows();
         for (doc, list) in page {
-            let file = escape_xml_str(doc);
-            writeln!(out, "  <doc p=\"{file}\" drift=\"{}\">", list.len())?;
-            for d in list {
-                write_doc_drift_anchor(out, &file, d)?;
-            }
-            writeln!(out, "  </doc>")?;
+            write_doc_drift_group(out, doc, list)?;
         }
         Ok(())
     }
@@ -659,26 +684,31 @@ impl crate::serialize::XmlReport for TreeReport<'_> {
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let (_, shown_slice) = self.shown();
         for f in shown_slice {
-            write!(
-                out,
-                "<file p=\"{}\" symbols=\"{}\">",
-                f.path.xml_escaped(),
-                f.total_symbols
-            )?;
-            for &(kind, name) in &f.top_symbols {
-                write!(out, "<s t=\"{kind}\" n=\"{}\"/>", name.xml_escaped())?;
-            }
-            write!(out, "</file>")?;
+            write_tree_file(out, f)?;
         }
         Ok(())
     }
 }
 
+fn write_tree_file<W: Write>(out: &mut W, f: &TreeFileSymbols<'_>) -> io::Result<()> {
+    write!(
+        out,
+        "<file p=\"{}\" symbols=\"{}\">",
+        f.path.xml_escaped(),
+        f.total_symbols
+    )?;
+    for &(kind, name) in &f.top_symbols {
+        write!(out, "<s t=\"{kind}\" n=\"{}\"/>", name.xml_escaped())?;
+    }
+    write!(out, "</file>")
+}
+
 impl TreeReport<'_> {
     fn shown(&self) -> (crate::serialize::PageWindow, &[TreeFileSymbols<'_>]) {
-        use crate::serialize::PaginateSlice;
-        self.file_symbols
-            .paginate(80, self.page.limit, self.page.offset)
+        let paged = Paged::new(self.file_symbols, self.page, |f| {
+            crate::serialize::row_bytes(|mut w| write_tree_file(&mut w, f))
+        });
+        (paged.window, paged.rows())
     }
 }
 

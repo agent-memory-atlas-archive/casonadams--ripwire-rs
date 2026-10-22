@@ -389,6 +389,19 @@ pub fn compute_adaptive_cut(scores: &[f64], floor: usize, ceiling: usize) -> (us
     }
 }
 
+/// Bytes one ranked symbol row costs: its name, file path and signature span.
+fn symbol_row_bytes(
+    sym: &crate::domain::Symbol,
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> usize {
+    let signature = sym.sig_end_byte.saturating_sub(sym.sig_start_byte) as usize;
+    crate::serialize::text_bytes(&[
+        interner.resolve(&sym.name),
+        ingest.sym_file_path(sym, interner),
+    ]) + signature
+}
+
 fn build_for_symbol_entry<'s>(
     idx: usize,
     score: f64,
@@ -585,7 +598,18 @@ pub fn call_for_task_with_options(
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
     diversify_top_candidates(&mut scored, &raw_terms, ingest, interner);
-    let mut limit = opts.budget_tokens.unwrap_or(25).min(scored.len());
+    let page = crate::serialize::PageRequest {
+        limit: None,
+        offset: None,
+        budget: opts
+            .budget_tokens
+            .map(crate::query::map::token_budget_bytes),
+    };
+    let mut limit = page
+        .window_fit(scored.len(), |i| {
+            symbol_row_bytes(scored[i].1, ingest, interner)
+        })
+        .shown;
     let mut adaptive_info = None;
     if opts.adaptive && scored.len() > 5 {
         let scores: Vec<f64> = scored.iter().map(|s| s.0).collect();
@@ -620,9 +644,9 @@ pub fn call_for_task_with_options(
         compute_for_route_metadata(task, &raw_terms, &scored, interner);
     let lego = collect_for_lego(ingest, interner, &scored[..limit]);
     let compose = collect_for_compose(ingest, interner, &scored[..limit]);
-    let hops = collect_for_hops(ingest, interner, opts.graph, &scored[..limit]);
+    let hops = collect_for_hops(ingest, interner, opts.graph, &scored[..limit], page);
     let tree = collect_for_tree_rows(ingest, interner, &scored, limit);
-    let docs = collect_for_doc_mentions(ingest, interner, &raw_terms);
+    let docs = collect_for_doc_mentions(ingest, interner, &raw_terms, page);
     let sig_bytes: usize = symbols_json
         .iter()
         .map(|s| {
@@ -651,6 +675,7 @@ pub fn call_for_task_with_options(
         "hops": hops,
         "tree": tree,
         "docs": docs,
+        "budget": page.budget,
         "adaptive": adaptive_info.map(|(k, t, g)| json!({ "kept": k, "total": t, "gap": g }))
     })
 }
@@ -725,6 +750,7 @@ fn collect_for_hops(
     interner: &Interner,
     graph_opt: Option<&Graph>,
     ranked: &[(f64, &crate::domain::Symbol)],
+    page: crate::serialize::PageRequest,
 ) -> Vec<Value> {
     use crate::domain::CorpusView;
     let Some(graph) = graph_opt else {
@@ -732,7 +758,7 @@ fn collect_for_hops(
     };
     let view = (ingest, interner);
     let mut hops = Vec::new();
-    for &(_, sym) in ranked.iter().take(6) {
+    for &(_, sym) in ranked {
         let callees: Vec<Value> = graph
             .callees(sym.id)
             .filter_map(|(cid, _)| ingest.sym(cid))
@@ -746,15 +772,22 @@ fn collect_for_hops(
         if callees.is_empty() {
             continue;
         }
+        let calls = crate::serialize::Paged::new(&callees, page, |c| c.to_string().len())
+            .rows()
+            .to_vec();
         hops.push(json!({
             "name": view.sym_name(sym),
             "path": view.sym_path(sym),
             "line": sym.line,
             "total": callees.len(),
-            "calls": callees.into_iter().take(16).collect::<Vec<_>>(),
+            "calls": calls,
         }));
     }
-    hops
+    let window = crate::serialize::Paged::new(&hops, page, |h| h.to_string().len()).window;
+    hops.into_iter()
+        .skip(window.begin)
+        .take(window.shown)
+        .collect()
 }
 
 fn collect_for_tree_rows(
@@ -788,6 +821,7 @@ fn collect_for_doc_mentions(
     ingest: &IngestResult,
     interner: &Interner,
     raw_terms: &[&str],
+    page: crate::serialize::PageRequest,
 ) -> Vec<Value> {
     let mut doc_hits: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
     for sym in &ingest.symbols {
@@ -809,8 +843,10 @@ fn collect_for_doc_mentions(
     }
     let mut docs: Vec<(&str, usize)> = doc_hits.into_iter().collect();
     docs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
-    docs.into_iter()
-        .take(4)
-        .map(|(p, m)| json!({ "path": p, "mentions": m }))
+    let window =
+        crate::serialize::Paged::new(&docs, page, |d| crate::serialize::text_bytes(&[d.0])).window;
+    docs[window.begin..window.end]
+        .iter()
+        .map(|&(p, m)| json!({ "path": p, "mentions": m }))
         .collect()
 }

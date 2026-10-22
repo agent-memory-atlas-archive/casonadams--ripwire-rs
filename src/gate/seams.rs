@@ -188,6 +188,61 @@ pub fn find_integration_seams(
     }
 }
 
+/// The edges of one seam group under `page`'s byte budget; `--limit`/`--offset` address groups, not edges.
+fn seam_edge_window(
+    group: &SeamGroup,
+    page: crate::serialize::PageRequest,
+) -> crate::serialize::PageWindow {
+    crate::serialize::PageRequest {
+        limit: None,
+        offset: None,
+        budget: page.budget,
+    }
+    .window_fit(group.edges.len(), |j| {
+        crate::serialize::row_bytes(|w| write_seam_edge(&group.edges[j], w))
+    })
+}
+
+fn write_seam_edge(e: &SeamEdge, w: &mut dyn Write) -> io::Result<()> {
+    writeln!(
+        w,
+        "    <edge caller=\"{}\" p=\"{}\" callee=\"{}\" cp=\"{}\"/>",
+        e.caller.xml_escaped(),
+        e.caller_path.xml_escaped(),
+        e.callee.xml_escaped(),
+        e.callee_path.xml_escaped()
+    )
+}
+
+fn write_seam_group(
+    group: &SeamGroup,
+    page: crate::serialize::PageRequest,
+    w: &mut dyn Write,
+) -> io::Result<()> {
+    let edges = seam_edge_window(group, page);
+    writeln!(
+        w,
+        "  <seam from=\"{}\" to=\"{}\" untested=\"{}\" shown=\"{}\" capped=\"{}\">",
+        group.from_dir,
+        group.to_dir,
+        group.edges.len(),
+        edges.shown,
+        usize::from(edges.capped)
+    )?;
+    for e in &group.edges[edges.begin..edges.end] {
+        write_seam_edge(e, w)?;
+    }
+    writeln!(w, "  </seam>")
+}
+
+impl SeamsReport {
+    fn groups_paged(&self) -> crate::serialize::Paged<'_, SeamGroup> {
+        crate::serialize::Paged::new(&self.groups, self.page, |g| {
+            crate::serialize::row_bytes(|w| write_seam_group(g, self.page, w))
+        })
+    }
+}
+
 impl crate::serialize::XmlReport for SeamsReport {
     crate::xml_report_meta!(
         "seams",
@@ -196,7 +251,7 @@ impl crate::serialize::XmlReport for SeamsReport {
         comment: "ripwire-rs seams schema=ripwire-rs.seams/v1: cross-directory call edges NO test reaches."
     );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
-        Some(self.page.window(self.seam_pairs_count, 20))
+        Some(self.groups_paged().window)
     }
     fn pr_iters(&self) -> Option<u32> {
         Some(self.pr_iters)
@@ -216,27 +271,8 @@ impl crate::serialize::XmlReport for SeamsReport {
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let window = self.page.window(self.groups.len(), 20);
-        for g in self.groups.iter().skip(window.begin).take(window.shown) {
-            let e_len = g.edges.len();
-            let e_shown = e_len.min(5);
-            let e_cap = usize::from(e_shown < e_len);
-            writeln!(
-                w,
-                "  <seam from=\"{}\" to=\"{}\" untested=\"{e_len}\" shown=\"{e_shown}\" capped=\"{e_cap}\">",
-                g.from_dir, g.to_dir
-            )?;
-            for e in g.edges.iter().take(e_shown) {
-                writeln!(
-                    w,
-                    "    <edge caller=\"{}\" p=\"{}\" callee=\"{}\" cp=\"{}\"/>",
-                    e.caller.xml_escaped(),
-                    e.caller_path.xml_escaped(),
-                    e.callee.xml_escaped(),
-                    e.callee_path.xml_escaped()
-                )?;
-            }
-            writeln!(w, "  </seam>")?;
+        for group in self.groups_paged().rows() {
+            write_seam_group(group, self.page, w)?;
         }
         Ok(())
     }

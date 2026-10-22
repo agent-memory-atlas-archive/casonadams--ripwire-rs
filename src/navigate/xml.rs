@@ -1,6 +1,6 @@
-use super::{DeclinedCall, ImpactDef, ImpactNode, NavNeighborhood, SymbolNavInfo};
+use super::{DeclinedCall, ImpactDef, ImpactNode, NavNeighborhood, ReachFile, SymbolNavInfo};
 use crate::domain::{IngestResult, Interner, SymKind};
-use crate::serialize::XmlEscapeExt;
+use crate::serialize::{Paged, XmlEscapeExt, row_bytes};
 use std::io::{self, Write};
 
 /// Direction of a 1-hop navigation report.
@@ -32,8 +32,10 @@ pub struct NavItemsReport<'a> {
 }
 
 impl NavItemsReport<'_> {
-    fn window(&self) -> crate::serialize::PageWindow {
-        self.page.window(self.items.len(), 40)
+    fn paged_items(&self) -> Paged<'_, SymbolNavInfo> {
+        Paged::new(self.items, self.page, |it| {
+            row_bytes(|mut w| self.write_item(&mut w, it))
+        })
     }
 
     fn grouped(&self) -> bool {
@@ -91,32 +93,36 @@ impl NavItemsReport<'_> {
         }
     }
 
+    fn write_item<W: Write>(&self, out: &mut W, it: &SymbolNavInfo) -> io::Result<()> {
+        let binding_attrs = self.binding_attrs(it);
+        let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
+            " tested=\"1\""
+        } else {
+            ""
+        };
+        let sites_attr = if self.dir == NavDir::Callers && !it.sites.is_empty() {
+            format!(" sites_at=\"{}\"", it.sites.join(" ").xml_escaped())
+        } else {
+            String::new()
+        };
+        write!(
+            out,
+            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{binding_attrs}{}{tested_attr}{sites_attr}/>",
+            it.kind,
+            it.name.xml_escaped(),
+            it.path.xml_escaped(),
+            it.line,
+            self.of_def_attr(it)
+        )
+    }
+
     fn write_rows<W: Write>(
         &self,
-        win: crate::serialize::PageWindow,
+        items: &Paged<'_, SymbolNavInfo>,
         out: &mut W,
     ) -> io::Result<()> {
-        for it in &self.items[win.begin..win.end] {
-            let binding_attrs = self.binding_attrs(it);
-            let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
-                " tested=\"1\""
-            } else {
-                ""
-            };
-            let sites_attr = if self.dir == NavDir::Callers && !it.sites.is_empty() {
-                format!(" sites_at=\"{}\"", it.sites.join(" ").xml_escaped())
-            } else {
-                String::new()
-            };
-            write!(
-                out,
-                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{binding_attrs}{}{tested_attr}{sites_attr}/>",
-                it.kind,
-                it.name.xml_escaped(),
-                it.path.xml_escaped(),
-                it.line,
-                self.of_def_attr(it)
-            )?;
+        for it in items.rows() {
+            self.write_item(out, it)?;
         }
         let all_defs = self.of_all_defs_attr();
         for dc in self.declined {
@@ -127,9 +133,10 @@ impl NavItemsReport<'_> {
 
     fn write_attrs<W: Write>(
         &self,
-        win: crate::serialize::PageWindow,
+        items: &Paged<'_, SymbolNavInfo>,
         out: &mut W,
     ) -> io::Result<()> {
+        let win = items.window;
         let count = self.items.len();
         let hop_tested = self
             .items
@@ -233,13 +240,13 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
         })
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        self.write_attrs(self.window(), out)
+        self.write_attrs(&self.paged_items(), out)
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         if self.grouped() {
             write_def_rows(out, self.def_rows)?;
         }
-        self.write_rows(self.window(), out)
+        self.write_rows(&self.paged_items(), out)
     }
 }
 
@@ -255,32 +262,23 @@ pub struct ImpactReport<'a> {
     pub page: crate::serialize::PageRequest,
 }
 
-const IMPACT_ROWS_CAP: usize = 40;
-const IMPACT_DC_CAP: usize = 16;
-const IMPACT_FILES_CAP: usize = 20;
-
 impl ImpactReport<'_> {
-    fn window(&self) -> crate::serialize::PageWindow {
-        self.page.window(self.nodes.len(), IMPACT_ROWS_CAP)
+    fn reach(&self) -> Paged<'_, ImpactNode> {
+        Paged::new(self.nodes, self.page, |n| {
+            row_bytes(|mut w| write_reach_row(&mut w, n, true))
+        })
     }
 
-    fn cap(&self, default_cap: usize) -> usize {
-        self.page.limit.filter(|&l| l > 0).unwrap_or(default_cap)
+    fn importers(&self) -> Paged<'_, &str> {
+        Paged::new(&self.importers, self.page.nested(), |p| {
+            row_bytes(|mut w| write_importer_row(&mut w, p))
+        })
     }
 
-    fn shown_importers(&self) -> usize {
-        self.importers.len().min(self.cap(IMPACT_ROWS_CAP))
-    }
-
-    fn shown_declined(&self) -> usize {
-        self.declined.len().min(self.cap(IMPACT_DC_CAP))
-    }
-
-    fn follow_up(&self, attr: &str, limit: usize) -> String {
-        format!(
-            " {attr}=\"--impact={} --limit={limit}\"",
-            self.sym_name.xml_escaped()
-        )
+    fn declined(&self) -> Paged<'_, DeclinedCall<'_>> {
+        Paged::new(&self.declined, self.page.nested(), |dc| {
+            row_bytes(|mut w| write_declined_row(&mut w, dc, None, ""))
+        })
     }
 
     fn by_depth_attr(&self) -> String {
@@ -301,88 +299,88 @@ impl ImpactReport<'_> {
     }
 
     fn importer_attrs(&self) -> String {
-        let total = self.importers.len();
-        let shown = self.shown_importers();
-        let capped = shown < total;
-        let next = if capped {
-            self.follow_up("importers_next", total)
-        } else {
-            String::new()
-        };
+        let importers = self.importers();
+        let win = importers.window;
         format!(
-            " importers=\"{total}\" shown_importers=\"{shown}\" importers_capped=\"{}\"{next}",
-            usize::from(capped)
+            " importers=\"{}\" shown_importers=\"{}\" importers_capped=\"{}\"",
+            win.total,
+            win.shown,
+            usize::from(win.capped)
         )
     }
 
     fn declined_attrs(&self) -> String {
-        let total = self.declined.len();
-        if total == 0 {
+        let declined = self.declined();
+        let win = declined.window;
+        if win.total == 0 {
             return String::new();
         }
-        let shown = self.shown_declined();
-        if shown == total {
-            return format!(" declined_calls=\"{total}\"");
+        if !win.capped {
+            return format!(" declined_calls=\"{}\"", win.total);
         }
-        let next = self.follow_up("dc_next", total.max(self.cap(IMPACT_ROWS_CAP)));
-        format!(" declined_calls=\"{total}\" dc_shown=\"{shown}\"{next}")
+        format!(
+            " declined_calls=\"{}\" dc_shown=\"{}\"",
+            win.total, win.shown
+        )
     }
 
     fn write_files_block<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let files = super::reach_files(self.nodes);
-        let total = files.len();
-        let shown = total.min(self.cap(IMPACT_FILES_CAP));
-        let next = if shown < total {
-            self.follow_up("files_next", total)
-        } else {
-            String::new()
-        };
+        let page = Paged::new(&files, self.page.nested(), |f| {
+            row_bytes(|mut w| write_reach_file(&mut w, f))
+        });
+        let win = page.window;
         write!(
             out,
-            "<files files=\"{total}\" shown_files=\"{shown}\" files_capped=\"{}\"{next}>",
-            usize::from(shown < total)
+            "<files files=\"{}\" shown_files=\"{}\" files_capped=\"{}\">",
+            win.total,
+            win.shown,
+            usize::from(win.capped)
         )?;
-        for f in &files[..shown] {
-            write!(
-                out,
-                "<rf p=\"{}\" syms=\"{}\" d=\"{}\"/>",
-                f.path.xml_escaped(),
-                f.syms,
-                f.hops
-            )?;
+        for f in page.rows() {
+            write_reach_file(out, f)?;
         }
         write!(out, "</files>")
     }
+}
 
-    fn write_reach_rows<W: Write>(
-        &self,
-        win: crate::serialize::PageWindow,
-        out: &mut W,
-    ) -> io::Result<()> {
-        let mut prev_hops = None;
-        for n in &self.nodes[win.begin..win.end] {
-            let depth_attr = if prev_hops == Some(n.hops) {
-                String::new()
-            } else {
-                format!(" d=\"{}\"", n.hops)
-            };
-            prev_hops = Some(n.hops);
-            let tested_attr = if n.tested || crate::gate::affected::is_test_path(&n.path) {
-                " tested=\"1\""
-            } else {
-                ""
-            };
-            write!(
-                out,
-                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{depth_attr}{tested_attr}/>",
-                n.kind,
-                n.name.xml_escaped(),
-                n.path.xml_escaped(),
-                n.line
-            )?;
-        }
-        Ok(())
-    }
+fn write_reach_row<W: Write>(out: &mut W, n: &ImpactNode, show_depth: bool) -> io::Result<()> {
+    let depth_attr = if show_depth {
+        format!(" d=\"{}\"", n.hops)
+    } else {
+        String::new()
+    };
+    let tested_attr = if n.tested || crate::gate::affected::is_test_path(&n.path) {
+        " tested=\"1\""
+    } else {
+        ""
+    };
+    write!(
+        out,
+        "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{depth_attr}{tested_attr}/>",
+        n.kind,
+        n.name.xml_escaped(),
+        n.path.xml_escaped(),
+        n.line
+    )
+}
+
+fn write_reach_file<W: Write>(out: &mut W, f: &ReachFile<'_>) -> io::Result<()> {
+    write!(
+        out,
+        "<rf p=\"{}\" syms=\"{}\" d=\"{}\"/>",
+        f.path.xml_escaped(),
+        f.syms,
+        f.hops
+    )
+}
+
+fn write_importer_row<W: Write>(out: &mut W, p: &str) -> io::Result<()> {
+    write!(
+        out,
+        "<f via=\"import\" p=\"{}\" lazy=\"0\"/>",
+        p.xml_escaped()
+    )
 }
 
 impl crate::serialize::XmlReport for ImpactReport<'_> {
@@ -390,7 +388,7 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
         "impact",
         "ripwire-rs.impact/v1",
         root: false,
-        comment: "ripwire-rs impact schema=ripwire-rs.impact/v1: transitive blast radius of of=. declined_calls=K: call sites naming a reached def the resolver left unbound; <dc in= p= cands=>: one such site, NOT an edge; dc_shown=N rows printed (file-first); dc_next= lists every site."
+        comment: "ripwire-rs impact schema=ripwire-rs.impact/v1: transitive blast radius of of=. declined_calls=K: call sites naming a reached def the resolver left unbound; <dc in= p= cands=>: one such site, NOT an edge; dc_shown=N rows printed (file-first)."
     );
     fn pr_iters(&self) -> Option<u32> {
         self.pr_iters
@@ -412,27 +410,27 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
             self.importer_attrs(),
             self.declined_attrs(),
             self.root.xml_escaped(),
-            self.window().xml_attrs(),
+            self.reach().attrs(),
             self.gauge_attrs,
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let win = self.window();
         if self.defs.len() >= 2 {
             write_def_rows(out, &self.defs)?;
         }
-        if win.capped {
+        let reach = self.reach();
+        if reach.window.capped {
             self.write_files_block(out)?;
         }
-        self.write_reach_rows(win, out)?;
-        for p in &self.importers[..self.shown_importers()] {
-            write!(
-                out,
-                "<f via=\"import\" p=\"{}\" lazy=\"0\"/>",
-                p.xml_escaped()
-            )?;
+        let mut prev_hops = None;
+        for n in reach.rows() {
+            write_reach_row(out, n, prev_hops != Some(n.hops))?;
+            prev_hops = Some(n.hops);
         }
-        for dc in &self.declined[..self.shown_declined()] {
+        for p in self.importers().rows() {
+            write_importer_row(out, p)?;
+        }
+        for dc in self.declined().rows() {
             write_declined_row(out, dc, None, "")?;
         }
         Ok(())
@@ -499,12 +497,12 @@ impl crate::serialize::XmlReport for FindSymbolReport<'_> {
         write_def_rows(out, self.def_rows)?;
         for dir in [NavDir::Callers, NavDir::Callees] {
             let report = self.neighbors(dir);
-            let win = self.page.window(report.items.len(), 0);
+            let items = report.paged_items();
             let tag = dir.tag();
             write!(out, "<{tag}")?;
-            report.write_attrs(win, out)?;
+            report.write_attrs(&items, out)?;
             writeln!(out, ">")?;
-            report.write_rows(win, out)?;
+            report.write_rows(&items, out)?;
             writeln!(out, "</{tag}>")?;
         }
         Ok(())
@@ -547,9 +545,25 @@ impl<'a> UsesReport<'a> {
         }
     }
 
-    fn window(&self) -> crate::serialize::PageWindow {
-        self.page.window(self.sites.len(), 0)
+    fn paged_sites(&self) -> Paged<'_, (&'static str, &'a str, u32, Option<&'a str>)> {
+        Paged::new(&self.sites, self.page, |site| {
+            row_bytes(|mut w| write_use_row(&mut w, site))
+        })
     }
+}
+
+fn write_use_row<W: Write>(
+    out: &mut W,
+    &(role, file, line, enc): &(&str, &str, u32, Option<&str>),
+) -> io::Result<()> {
+    let in_id = enc
+        .map(|e| format!(" in_id=\"{}\"", e.xml_escaped()))
+        .unwrap_or_default();
+    writeln!(
+        out,
+        "  <u role=\"{role}\" p=\"{}:{line}\"{in_id}/>",
+        file.xml_escaped()
+    )
 }
 
 impl crate::serialize::XmlReport for UsesReport<'_> {
@@ -560,9 +574,10 @@ impl crate::serialize::XmlReport for UsesReport<'_> {
         comment: "ripwire-rs uses schema=ripwire-rs.uses/v1: resolvable use-sites of of=. defs=N: definitions the selector matched. external=1: of= has no indexed definition. limit=/offset= page the rows; next_offset= continues."
     );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let win = self.window();
-        let page_attrs = if win.limit > 0 || win.offset > 0 {
-            win.xml_attrs()
+        let sites = self.paged_sites();
+        let win = sites.window;
+        let page_attrs = if win.capped || win.limit > 0 || win.offset > 0 {
+            sites.attrs()
         } else {
             String::new()
         };
@@ -578,16 +593,8 @@ impl crate::serialize::XmlReport for UsesReport<'_> {
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let win = self.window();
-        for &(role, file, line, enc) in &self.sites[win.begin..win.end] {
-            let in_id = enc
-                .map(|e| format!(" in_id=\"{}\"", e.xml_escaped()))
-                .unwrap_or_default();
-            writeln!(
-                out,
-                "  <u role=\"{role}\" p=\"{}:{line}\"{in_id}/>",
-                file.xml_escaped()
-            )?;
+        for site in self.paged_sites().rows() {
+            write_use_row(out, site)?;
         }
         Ok(())
     }

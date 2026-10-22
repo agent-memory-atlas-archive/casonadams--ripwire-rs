@@ -2,7 +2,7 @@ use super::{find_symbols_by_name, navigate_1hop};
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
 use crate::query::commands::QueryContext;
-use crate::serialize::XmlEscapeExt;
+use crate::serialize::{PageRequest, Paged, XmlEscapeExt, row_bytes};
 use std::io::{self, Write};
 
 pub fn resolve_symbol_chain_at<'a>(
@@ -101,8 +101,45 @@ struct PackTaskBody {
 
 const MAX_PACK_BODY_BYTES: usize = 3600;
 const MAX_PACK_TOTAL_BODY_BYTES: usize = 9600;
-const MAX_PACK_CALLERS: usize = 12;
-const MAX_PACK_TESTS: usize = 20;
+
+fn write_pack_caller<W: Write>(out: &mut W, c: &super::SymbolNavInfo) -> io::Result<()> {
+    write!(
+        out,
+        "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
+        c.kind,
+        c.name.xml_escaped(),
+        c.path.xml_escaped(),
+        c.line
+    )
+}
+
+fn write_pack_test<W: Write>(
+    out: &mut W,
+    t: &crate::gate::affected::AffectedTest,
+) -> io::Result<()> {
+    let partner = if t.is_partner { " partner=\"1\"" } else { "" };
+    let run = t.run_attr();
+    write!(
+        out,
+        "<t p=\"{}\"{partner} hops=\"{}\"{run}/>",
+        t.path.xml_escaped(),
+        t.hops
+    )
+}
+
+fn pack_callers(callers: &[super::SymbolNavInfo]) -> Paged<'_, super::SymbolNavInfo> {
+    Paged::new(callers, PageRequest::default(), |c| {
+        row_bytes(|mut w| write_pack_caller(&mut w, c))
+    })
+}
+
+fn pack_tests(
+    tests: &[crate::gate::affected::AffectedTest],
+) -> Paged<'_, crate::gate::affected::AffectedTest> {
+    Paged::new(tests, PageRequest::default(), |t| {
+        row_bytes(|mut w| write_pack_test(&mut w, t))
+    })
+}
 
 pub fn truncate_body_to_budget(raw: &str, max_bytes: usize) -> String {
     if raw.len() <= max_bytes {
@@ -137,7 +174,7 @@ fn maybe_push_pack_body(
         return false;
     };
     let remaining = MAX_PACK_TOTAL_BODY_BYTES.saturating_sub(*acc_body_bytes);
-    if bodies.len() < 3 && remaining >= 256 {
+    if remaining >= 256 {
         let capped_body = truncate_body_to_budget(b, MAX_PACK_BODY_BYTES.min(remaining));
         *acc_body_bytes += capped_body.len();
         bodies.push(PackTaskBody {
@@ -243,7 +280,7 @@ fn collect_pack_surface_and_callers(
             surface.extend(find_symbols_by_name(n, env.ingest, env.interner));
         }
     }
-    for c in top_caller_nodes.iter().take(MAX_PACK_CALLERS) {
+    for c in pack_callers(&top_caller_nodes).rows() {
         surface.insert(c.id);
     }
     (top_caller_nodes, surface)
@@ -272,13 +309,11 @@ fn write_pack_task_ctx<W: Write>(
         env.ingest,
         env.interner,
     );
-    let callers_shown = top_caller_nodes.len().min(MAX_PACK_CALLERS);
-    let callers_capped = usize::from(callers_shown < top_caller_nodes.len());
-    let tests_shown = aff.tests.len().min(MAX_PACK_TESTS);
-    let tests_capped = usize::from(tests_shown < aff.tests.len());
+    let callers = pack_callers(&top_caller_nodes);
+    let tests = pack_tests(&aff.tests);
     let bodies_capped = usize::from(bodies.len() < total_bodies);
     let body_bytes: usize = bodies.iter().map(|b| b.body.len() + 64).sum();
-    let aux_bytes = callers_shown * 56 + tests_shown * 64 + 320;
+    let aux_bytes = callers.window.shown * 56 + tests.window.shown * 64 + 320;
     let est_tokens = ((sigs_buf.len() + body_bytes + aux_bytes) / 4).max(32);
     if include_legend {
         writeln!(
@@ -310,33 +345,23 @@ fn write_pack_task_ctx<W: Write>(
     }
     write!(
         out,
-        "</bodies><callers of_top=\"1\" shown=\"{callers_shown}\" total=\"{}\" capped=\"{callers_capped}\">",
-        top_caller_nodes.len()
+        "</bodies><callers of_top=\"1\" shown=\"{}\" total=\"{}\" capped=\"{}\">",
+        callers.window.shown,
+        callers.window.total,
+        usize::from(callers.window.capped)
     )?;
-    for c in top_caller_nodes.iter().take(callers_shown) {
-        write!(
-            out,
-            "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
-            c.kind,
-            c.name.xml_escaped(),
-            c.path.xml_escaped(),
-            c.line
-        )?;
+    for c in callers.rows() {
+        write_pack_caller(out, c)?;
     }
     write!(
         out,
-        "</callers><tests shown=\"{tests_shown}\" total=\"{}\" capped=\"{tests_capped}\">",
-        aff.tests.len()
+        "</callers><tests shown=\"{}\" total=\"{}\" capped=\"{}\">",
+        tests.window.shown,
+        tests.window.total,
+        usize::from(tests.window.capped)
     )?;
-    for t in aff.tests.iter().take(tests_shown) {
-        let partner = if t.is_partner { " partner=\"1\"" } else { "" };
-        let run = t.run_attr();
-        write!(
-            out,
-            "<t p=\"{}\"{partner} hops=\"{}\"{run}/>",
-            t.path.xml_escaped(),
-            t.hops
-        )?;
+    for t in tests.rows() {
+        write_pack_test(out, t)?;
     }
     write!(out, "</tests></ctx>")?;
     if include_legend {

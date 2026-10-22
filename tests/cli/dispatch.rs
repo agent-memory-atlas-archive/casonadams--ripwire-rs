@@ -38,8 +38,17 @@ fn test_path_queries_report_fixture_edges_and_reject_missing_endpoints() {
 fn test_safe_delete_reports_callers_and_missing_symbols() {
     let (ingest, graph, interner) = setup_in_memory_fixture();
     let mut out = Vec::new();
+    let facts = ripwire_rs::query::safety::SafetyContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
     ripwire_rs::commands::common::safety_queries::execute_safe_delete_query(
-        ":memory:", "helper", &ingest, &graph, &interner, &mut out,
+        &facts,
+        "helper",
+        ripwire_rs::serialize::PageRequest::default(),
+        &mut out,
     )
     .unwrap();
     let xml = String::from_utf8(out).unwrap();
@@ -50,8 +59,17 @@ fn test_safe_delete_reports_callers_and_missing_symbols() {
     assert!(xml.contains("run_cli"), "{xml}");
 
     let mut out = Vec::new();
+    let facts = ripwire_rs::query::safety::SafetyContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
     ripwire_rs::commands::common::safety_queries::execute_safe_delete_query(
-        ":memory:", "missing", &ingest, &graph, &interner, &mut out,
+        &facts,
+        "missing",
+        ripwire_rs::serialize::PageRequest::default(),
+        &mut out,
     )
     .unwrap_err();
     assert!(out.is_empty());

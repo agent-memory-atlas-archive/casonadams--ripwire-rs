@@ -1,6 +1,7 @@
 //! `--field-affinity [STRUCT]`: cache-conscious field affinity analysis.
 use super::{Plugin, Run};
 use crate::commands::context::ExecutionContext;
+use crate::commands::context::Paginated;
 use crate::serialize::XmlWriter;
 use clap::Args;
 use std::io::{self, Write};
@@ -23,6 +24,7 @@ pub fn render<W: Write>(
             ctx.ingest,
             ctx.interner,
             ctx.root,
+            ctx.cli.page_request(),
         );
         ctx.write_report(&rep, out)?;
     }

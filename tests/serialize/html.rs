@@ -1,3 +1,4 @@
+use ripwire_rs::serialize::PageRequest;
 use ripwire_rs::serialize::html::{cx_color, lang_color};
 use ripwire_rs::{
     ColorBy, Graph, IngestResult, Interner, Lang, SymKind, Symbol, write_call_graph_html,
@@ -69,7 +70,10 @@ fn test_generate_and_write_call_graph_html() {
         &ranks,
         &interner,
         ColorBy::Community,
-        Some(10),
+        PageRequest {
+            limit: Some(10),
+            ..Default::default()
+        },
     )
     .unwrap();
 

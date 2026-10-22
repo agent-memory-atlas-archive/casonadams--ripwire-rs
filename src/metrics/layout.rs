@@ -1,4 +1,5 @@
 use crate::domain::{IngestResult, Interner, SymKind};
+use crate::serialize::{PageRequest, PageWindow, row_bytes};
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -164,10 +165,12 @@ pub fn compute_field_affinity_report(
     ingest: &IngestResult,
     interner: &Interner,
     root: &str,
+    page: PageRequest,
 ) -> FieldAffinityReport {
     if let Some(sym) = sym_opt.filter(|s| !s.is_empty()) {
         return FieldAffinityReport {
             layout: compute_layout_report(sym, ingest, interner, root),
+            page,
         };
     }
     use crate::domain::CorpusView;
@@ -179,7 +182,6 @@ pub fn compute_field_affinity_report(
             matches!(s.kind, SymKind::Struct | SymKind::Class)
                 && s.lang.semantics().supports_c_layout()
         })
-        .take(20)
         .map(|s| extract_struct_layout_def(s, view.sym_path(s), root))
         .collect();
     let found = !defs.is_empty();
@@ -189,12 +191,14 @@ pub fn compute_field_affinity_report(
             found,
             defs,
         },
+        page,
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FieldAffinityReport {
     pub layout: StructLayoutReport,
+    pub page: PageRequest,
 }
 
 impl crate::serialize::XmlReport for FieldAffinityReport {
@@ -209,66 +213,81 @@ impl crate::serialize::XmlReport for FieldAffinityReport {
         let files_cnt: std::collections::HashSet<&str> =
             self.layout.defs.iter().map(|d| d.path.as_str()).collect();
         let files = files_cnt.len();
-        let shown = aggregates.min(20);
-        let capped = usize::from(shown < aggregates);
-        let findings: usize = self
-            .layout
-            .defs
+        let window = self.window();
+        let findings: usize = self.layout.defs[window.begin..window.end]
             .iter()
-            .take(shown)
             .map(|d| d.fields.len().saturating_sub(1))
             .sum();
+        let pw = window.xml_attrs();
         write!(
             out,
-            " block=\"64\" model=\"lp64-approx\" counts_floor=\"1\" weighting=\"fanin-floor\" aggregates=\"{aggregates}\" files=\"{files}\" fns_scanned=\"{aggregates}\" accesses=\"{findings}\" amb_skipped=\"0\" structs=\"{aggregates}\" shown=\"{shown}\" capped=\"{capped}\" findings=\"{findings}\" min_fns=\"2\" as_loops=\"0\" as_index=\"0\" as_chase=\"0\" as_mixed=\"0\" as_unknown=\"0\"",
+            " block=\"64\" model=\"lp64-approx\" counts_floor=\"1\" weighting=\"fanin-floor\" aggregates=\"{aggregates}\" files=\"{files}\" fns_scanned=\"{aggregates}\" accesses=\"{findings}\" amb_skipped=\"0\" structs=\"{aggregates}\"{pw} findings=\"{findings}\" min_fns=\"2\" as_loops=\"0\" as_index=\"0\" as_chase=\"0\" as_mixed=\"0\" as_unknown=\"0\"",
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::XmlEscapeExt;
-        let shown = self.layout.defs.len().min(20);
-        for d in self.layout.defs.iter().take(shown) {
-            let f_cnt = d.fields.len();
-            let pairs = d.pair_count();
-            let sepcost = d.sepcost();
-            let size = d.total_size();
-            let align = d.max_align();
-            let lines = d.cache_lines();
-            writeln!(
-                out,
-                "  <s n=\"{}\" p=\"{}\" l=\"{}\" agg=\"{}\" modeled=\"1\" fields=\"{f_cnt}\" touched=\"{f_cnt}\" fns=\"1\" pairs=\"{pairs}\" sepcost=\"{sepcost:.2}\" findings=\"0\" size=\"{size}\" align=\"{align}\" lines=\"{lines}\">",
-                self.layout.sym.xml_escaped(),
-                d.path.xml_escaped(),
-                d.line,
-                d.agg_kind
-            )?;
-            for i in 0..d.fields.len() {
-                for j in (i + 1)..d.fields.len() {
-                    let fa = &d.fields[i];
-                    let fb = &d.fields[j];
-                    let dist = fb.offset.saturating_sub(fa.offset);
-                    let wt = ((64.0 - dist as f64).max(0.0)) / 64.0;
-                    writeln!(
-                        out,
-                        "    <pair a=\"{}\" b=\"{}\" fns=\"1\" w=\"1\" dist=\"{dist}\" wt=\"{wt:.2}\"/>",
-                        fa.name.xml_escaped(),
-                        fb.name.xml_escaped()
-                    )?;
-                }
-            }
-            writeln!(out, "  </s>")?;
+        let window = self.window();
+        for d in &self.layout.defs[window.begin..window.end] {
+            write_field_affinity_block(&self.layout.sym, d, out)?;
         }
         Ok(())
     }
 }
 
+impl FieldAffinityReport {
+    fn window(&self) -> PageWindow {
+        self.page.window_fit(self.layout.defs.len(), |i| {
+            row_bytes(|w| write_field_affinity_block(&self.layout.sym, &self.layout.defs[i], w))
+        })
+    }
+}
+
+fn write_field_affinity_block<W: Write + ?Sized>(
+    sym: &str,
+    d: &StructLayoutDef,
+    out: &mut W,
+) -> io::Result<()> {
+    use crate::serialize::XmlEscapeExt;
+    let f_cnt = d.fields.len();
+    let pairs = d.pair_count();
+    let sepcost = d.sepcost();
+    let size = d.total_size();
+    let align = d.max_align();
+    let lines = d.cache_lines();
+    writeln!(
+        out,
+        "  <s n=\"{}\" p=\"{}\" l=\"{}\" agg=\"{}\" modeled=\"1\" fields=\"{f_cnt}\" touched=\"{f_cnt}\" fns=\"1\" pairs=\"{pairs}\" sepcost=\"{sepcost:.2}\" findings=\"0\" size=\"{size}\" align=\"{align}\" lines=\"{lines}\">",
+        sym.xml_escaped(),
+        d.path.xml_escaped(),
+        d.line,
+        d.agg_kind
+    )?;
+    for i in 0..d.fields.len() {
+        for j in (i + 1)..d.fields.len() {
+            let fa = &d.fields[i];
+            let fb = &d.fields[j];
+            let dist = fb.offset.saturating_sub(fa.offset);
+            let wt = ((64.0 - dist as f64).max(0.0)) / 64.0;
+            writeln!(
+                out,
+                "    <pair a=\"{}\" b=\"{}\" fns=\"1\" w=\"1\" dist=\"{dist}\" wt=\"{wt:.2}\"/>",
+                fa.name.xml_escaped(),
+                fb.name.xml_escaped()
+            )?;
+        }
+    }
+    writeln!(out, "  </s>")
+}
+
 pub fn serialize_field_affinity_xml<W: Write>(
     rep: &StructLayoutReport,
     root: &str,
+    page: PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
     FieldAffinityReport {
         layout: rep.clone(),
+        page,
     }
     .write_xml_report(root, out)
 }

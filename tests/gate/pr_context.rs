@@ -23,6 +23,7 @@ fn test_serialize_pr_context_xml() {
             bus_factor: 1,
         }],
         gauges: GraphGauges::default(),
+        page: ripwire_rs::serialize::PageRequest::default(),
     };
     let mut out = Vec::new();
     serialize_pr_context_xml(&report, &mut out).expect("serialize should succeed");
@@ -66,6 +67,7 @@ fn test_compute_pr_context_report() {
         changed_files: &files,
         base_ref: "HEAD~1",
         commits: &[],
+        page: Default::default(),
     };
     let report = compute_pr_context_from_facts(&req, &ingest, &graph, &interner);
     assert_eq!(report.base_ref, "HEAD~1");

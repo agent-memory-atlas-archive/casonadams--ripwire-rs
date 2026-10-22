@@ -92,8 +92,7 @@ pub fn execute_dead_code_query_paged<W: Write>(
         ctx.root,
         &dead,
         ctx.graph.gauges(),
-        ctx.page.limit_opt(),
-        ctx.page.offset_opt(),
+        ctx.page.page_request(),
         out,
     )
 }

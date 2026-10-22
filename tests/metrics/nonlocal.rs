@@ -51,25 +51,40 @@ fn nonlocal_state_report_honors_limit_and_offset() {
         }],
     };
     let funcs = vec![func("a"), func("b"), func("c")];
-    let render = |limit, offset| {
+    let render = |page: PageRequest| {
         let report = NonlocalStateReport {
             funcs: &funcs,
             gauges: GraphGauges::default(),
-            page: PageRequest { limit, offset },
+            page,
         };
         let mut out = Vec::new();
         report.write_xml_report(".", &mut out).unwrap();
         String::from_utf8(out).unwrap()
     };
-    let all = render(None, None);
+    let all = render(PageRequest::default());
     assert!(all.contains("shown=\"3\" capped=\"0\"") && all.matches("<fn ").count() == 3);
-    let page = render(Some(1), Some(1));
+    let page = render(PageRequest {
+        limit: Some(1),
+        offset: Some(1),
+        ..PageRequest::default()
+    });
     assert_eq!(page.matches("<fn ").count(), 1);
     assert!(
         page.contains(" n=\"b\" ")
             && page.contains("shown=\"1\"")
             && page.contains("has_more=\"1\"")
     );
+    let tiny = render(PageRequest {
+        budget: Some(1),
+        ..PageRequest::default()
+    });
+    assert_eq!(tiny.matches("<fn ").count(), 1);
+    assert!(tiny.contains("has_more=\"1\""));
+    let roomy = render(PageRequest {
+        budget: Some(usize::MAX),
+        ..PageRequest::default()
+    });
+    assert_eq!(roomy.matches("<fn ").count(), 3);
 }
 
 #[test]

@@ -122,7 +122,7 @@ two hops away, a read/write that never calls SYM, or an `#include` that pulls it
 - **Transitive blast radius** — `ripwire-rs <dir> --impact=SYM --legend=compact`
 - `--uses` lists all indexed sites unless `--limit=N` or `--offset=M` requests a window; continue at `next_offset`.
   `--impact` keeps unbound candidate calls in separate `<dc>` rows. They are not edges or reached symbols;
-  follow `dc_next` to see every candidate site.
+  `dc_shown` of `declined_calls` says how many are printed; raise `--token-budget` to see every candidate site.
 - Python, JavaScript/TypeScript, and Rust index bare non-local variable reads.
   Grep's `reads=` / `reads_at=` are indexed sites, not text estimates; locals,
   assignment targets, and unsupported binding forms are not reconstructed.

@@ -1,11 +1,9 @@
 use super::Graph;
 use crate::domain::{IngestResult, Interner, NodeId};
-use crate::serialize::{PageWindow, XmlEscapeExt};
+use crate::serialize::{PageRequest, PageWindow, Paged, XmlEscapeExt, row_bytes};
 use std::collections::HashMap;
 use std::io::{self, Write};
 
-/// Default number of top-level modules printed before the window cuts (`--limit` overrides it).
-pub const ZOOM_TOP_MODULE_CAP: usize = 40;
 /// Default number of hierarchy levels printed from the top (`--zoom-levels` overrides it).
 pub const ZOOM_DEFAULT_LEVELS_SHOWN: usize = 2;
 
@@ -13,8 +11,7 @@ pub const ZOOM_DEFAULT_LEVELS_SHOWN: usize = 2;
 pub struct ZoomOptions {
     pub depth: Option<u32>,
     pub levels_shown: Option<u32>,
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
+    pub page: PageRequest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -239,6 +236,8 @@ pub fn execute_zoom_query<W: Write>(
     }
     let dirs = node_dirs(ingest, interner, graph.node_count());
     let tree = build_zoom_tree(&hierarchy, &dirs, opts.levels_shown);
-    let window = PageWindow::compute(tree.top.len(), ZOOM_TOP_MODULE_CAP, opts.limit, opts.offset);
-    serialize_zoom_xml(&tree, &window, pr_iters, graph.gauges(), out)
+    let top = Paged::new(&tree.top, opts.page, |m| {
+        row_bytes(|mut w| write_module(m, &mut w))
+    });
+    serialize_zoom_xml(&tree, &top.window, pr_iters, graph.gauges(), out)
 }

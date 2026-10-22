@@ -1,7 +1,7 @@
 use super::find_symbols_by_name;
 use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
-use crate::serialize::XmlEscapeExt;
+use crate::serialize::{PageRequest, Paged, XmlEscapeExt, row_bytes};
 use std::collections::BTreeSet;
 use std::io::{self, Write};
 
@@ -431,20 +431,32 @@ fn evaluate_graph_expr(
 
 pub struct GraphQueryReport<'a> {
     pub expr: &'a str,
-    pub matched_nodes: &'a BTreeSet<NodeId>,
+    pub matched_nodes: &'a [NodeId],
     pub ingest: &'a IngestResult,
     pub interner: &'a Interner,
     pub pr_iters: u32,
     pub gauges: crate::serialize::GraphGauges,
-    pub limit: Option<usize>,
-    pub offset: Option<usize>,
+    pub page: PageRequest,
 }
 
 impl GraphQueryReport<'_> {
-    fn window(&self) -> crate::serialize::PageWindow {
-        let total = self.matched_nodes.len();
-        let default_cap = self.limit.unwrap_or(total);
-        crate::serialize::PageWindow::compute(total, default_cap, self.limit, self.offset)
+    fn paged_nodes(&self) -> Paged<'_, NodeId> {
+        Paged::new(self.matched_nodes, self.page, |&id| {
+            row_bytes(|mut w| self.write_node(&mut w, id))
+        })
+    }
+
+    fn write_node<W: Write>(&self, out: &mut W, node_id: NodeId) -> io::Result<()> {
+        if let Some(sym) = self.ingest.sym(node_id) {
+            let n = self.interner[sym.name].xml_escaped();
+            let p = self.ingest.sym_file_path(sym, self.interner).xml_escaped();
+            writeln!(
+                out,
+                "<s t=\"{}\" n=\"{n}\" p=\"{p}:{}\"/>",
+                sym.kind, sym.line
+            )?;
+        }
+        Ok(())
     }
 }
 
@@ -468,26 +480,16 @@ impl crate::serialize::XmlReport for GraphQueryReport<'_> {
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let count = self.matched_nodes.len();
-        let pw = self.window();
         write!(
             out,
             " expr=\"{}\" count=\"{count}\"{}",
             self.expr.xml_escaped(),
-            pw.xml_attrs()
+            self.paged_nodes().attrs()
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let pw = self.window();
-        for &node_id in self.matched_nodes.iter().skip(pw.begin).take(pw.shown) {
-            if let Some(sym) = self.ingest.sym(node_id) {
-                let n = self.interner[sym.name].xml_escaped();
-                let p = self.ingest.sym_file_path(sym, self.interner).xml_escaped();
-                writeln!(
-                    out,
-                    "<s t=\"{}\" n=\"{n}\" p=\"{p}:{}\"/>",
-                    sym.kind, sym.line
-                )?;
-            }
+        for &node_id in self.paged_nodes().rows() {
+            self.write_node(out, node_id)?;
         }
         Ok(())
     }
@@ -529,7 +531,9 @@ pub fn execute_graph_query_expr_paged<W: Write>(
     let parsed = parser
         .parse_expr()
         .unwrap_or_else(|| GraphExpr::Name(expr.to_string()));
-    let matched_nodes = evaluate_graph_expr(&parsed, ingest, graph, interner);
+    let matched_nodes: Vec<NodeId> = evaluate_graph_expr(&parsed, ingest, graph, interner)
+        .into_iter()
+        .collect();
     let pr_iters = graph
         .page_rank(&crate::rank::PageRankConfig::default())
         .iterations
@@ -542,8 +546,7 @@ pub fn execute_graph_query_expr_paged<W: Write>(
         interner,
         pr_iters,
         gauges: graph.gauges(),
-        limit: page.limit,
-        offset: page.offset,
+        page,
     }
     .write_xml_report(root, out)
 }

@@ -55,6 +55,45 @@ fn test_paging_discloses_window_and_pasteable_next() {
 }
 
 #[test]
+fn test_budget_windows_hits_when_no_limit_is_given() {
+    let hits: Vec<Value> = (1..=50).map(|l| hit("a.py", l, "f")).collect();
+    let xml = render(&json!({
+        "pattern": "p", "verb": "grep", "literal": true, "budget": 1,
+        "hits": hits, "enc": {"f": {"callers": 0, "floor": false, "cx": 1}},
+    }));
+    assert!(xml.contains("hits=\"50\" shown=\"1\" capped=\"1\" total=\"50\" has_more=\"1\""));
+    assert!(xml.contains("hits_capped=\"1\""));
+    assert!(xml.contains("<hit l=\"1\""));
+    assert!(!xml.contains("<hit l=\"2\""));
+    assert!(xml.contains("next=\"--grep=p --offset=1 --legend=compact\""));
+}
+
+#[test]
+fn test_large_budget_shows_every_hit() {
+    let hits: Vec<Value> = (1..=5).map(|l| hit("a.py", l, "f")).collect();
+    let xml = render(&json!({
+        "pattern": "p", "verb": "grep", "literal": true, "budget": 1000000,
+        "hits": hits, "enc": {"f": {"callers": 0, "floor": false, "cx": 1}},
+    }));
+    assert!(xml.contains("hits=\"5\" shown=\"5\" capped=\"0\" hits_capped=\"0\""));
+    assert_eq!(xml.matches("<hit ").count(), 5);
+    assert!(xml.contains("hits_capped=\"0\""));
+    assert!(xml.contains("complete=\"1\""));
+}
+
+#[test]
+fn test_explicit_limit_wins_over_budget() {
+    let hits: Vec<Value> = (1..=5).map(|l| hit("a.py", l, "f")).collect();
+    let xml = render(&json!({
+        "pattern": "p", "verb": "grep", "literal": true, "limit": 3, "budget": 1,
+        "hits": hits, "enc": {"f": {"callers": 0, "floor": false, "cx": 1}},
+    }));
+    assert!(xml.contains("hits=\"5\" shown=\"3\" capped=\"1\" total=\"5\" has_more=\"1\""));
+    assert!(xml.contains("<hit l=\"3\""));
+    assert!(!xml.contains("<hit l=\"4\""));
+}
+
+#[test]
 fn test_identical_sites_merge_into_one_hit_with_at_markers() {
     let xml = render(&json!({
         "pattern": "p", "verb": "grep", "literal": true,

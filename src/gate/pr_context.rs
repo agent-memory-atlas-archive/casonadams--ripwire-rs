@@ -24,6 +24,7 @@ pub struct PrContextReport {
     pub files_count: usize,
     pub files: Vec<PrFileContext>,
     pub gauges: crate::serialize::GraphGauges,
+    pub page: crate::serialize::PageRequest,
 }
 
 fn build_single_pr_file_context(
@@ -101,6 +102,7 @@ pub struct PrContextRequest<'a> {
     pub changed_files: &'a [String],
     pub base_ref: &'a str,
     pub commits: &'a [crate::git::history::CommitInfo],
+    pub page: crate::serialize::PageRequest,
 }
 
 #[must_use]
@@ -122,6 +124,7 @@ pub fn compute_pr_context_from_facts(
         files_count: files.len(),
         files,
         gauges: graph.gauges(),
+        page: req.page,
     }
 }
 
@@ -139,12 +142,13 @@ pub fn compute_pr_context_in_root(
         changed_files,
         base_ref,
         commits: &commits,
+        page: crate::serialize::PageRequest::default(),
     };
     compute_pr_context_from_facts(&req, ingest, graph, interner)
 }
 
 /// Serialize PR context to canonical XML format.
-fn write_pr_file_context<W: Write>(f: &PrFileContext, out: &mut W) -> io::Result<()> {
+fn write_pr_file_context(f: &PrFileContext, out: &mut dyn Write) -> io::Result<()> {
     writeln!(
         out,
         "  <file p=\"{}\" symbols=\"{}\">",
@@ -178,6 +182,14 @@ fn write_pr_file_context<W: Write>(f: &PrFileContext, out: &mut W) -> io::Result
     writeln!(out, "  </file>")
 }
 
+impl PrContextReport {
+    fn files_paged(&self) -> crate::serialize::Paged<'_, PrFileContext> {
+        crate::serialize::Paged::new(&self.files, self.page, |f| {
+            crate::serialize::row_bytes(|w| write_pr_file_context(f, w))
+        })
+    }
+}
+
 impl crate::serialize::XmlReport for PrContextReport {
     crate::xml_report_meta!(
         "pr-context",
@@ -185,19 +197,31 @@ impl crate::serialize::XmlReport for PrContextReport {
         root: true,
         comment: "ripwire-rs pr-context schema=ripwire-rs.pr-context/v1: review bundle per changed file vs base=."
     );
+    fn page_window(&self) -> Option<crate::serialize::PageWindow> {
+        Some(self.files_paged().window)
+    }
     fn graph_gauges(&self) -> Option<crate::serialize::GraphGauges> {
         Some(self.gauges)
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         let est_tokens = 180 + self.files.len() * 140;
+        let window = self.files_paged().window;
+        let budget = self
+            .page
+            .budget
+            .unwrap_or(crate::serialize::DEFAULT_PACK_BUDGET_BYTES);
+        let budget_tokens = budget / crate::serialize::BYTES_PER_TOKEN;
+        let trim_level = usize::from(window.capped);
+        let truncated = if window.capped { "files" } else { "none" };
+        let budget_default = usize::from(self.page.budget.is_none());
         write!(
             w,
-            " base=\"{}\" direction=\"worktree-since-head\" files=\"{}\" skipped_mode_only=\"0\" budget_tokens=\"8000\" est_tokens=\"{est_tokens}\" trim_level=\"0\" truncated=\"none\" budget_default=\"1\" at=\"HEAD\"",
+            " base=\"{}\" direction=\"worktree-since-head\" files=\"{}\" budget_tokens=\"{budget_tokens}\" est_tokens=\"{est_tokens}\" trim_level=\"{trim_level}\" truncated=\"{truncated}\" budget_default=\"{budget_default}\" at=\"HEAD\"",
             self.base_ref, self.files_count
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        for f in &self.files {
+        for f in self.files_paged().rows() {
             write_pr_file_context(f, w)?;
         }
         Ok(())

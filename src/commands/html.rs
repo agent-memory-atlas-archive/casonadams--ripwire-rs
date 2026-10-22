@@ -1,7 +1,7 @@
 //! `--html [FILE]` / `--color-by`: writes the interactive call-graph HTML page.
 use super::{Plugin, Run};
 use crate::cli::Cli;
-use crate::commands::context::load_repo_analysis_for_cli;
+use crate::commands::context::{Paginated, load_repo_analysis_for_cli};
 use clap::Args;
 use std::io;
 
@@ -23,10 +23,11 @@ fn execute_html_export(
 ) -> io::Result<()> {
     let color_by = color_by.parse().unwrap_or_default();
     let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
+    let page = cli.page_request();
     if let Some(path) = out_file {
         let mut file = std::fs::File::create(path)?;
         crate::serialize::html::write_call_graph_html(
-            &mut file, &ingest, &graph, &pr.ranks, &interner, color_by, None,
+            &mut file, &ingest, &graph, &pr.ranks, &interner, color_by, page,
         )
     } else {
         let mut stdout = io::stdout().lock();
@@ -37,7 +38,7 @@ fn execute_html_export(
             &pr.ranks,
             &interner,
             color_by,
-            None,
+            page,
         )
     }
 }

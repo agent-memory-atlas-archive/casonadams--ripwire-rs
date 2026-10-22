@@ -17,14 +17,13 @@ pub struct SituArgs {
 fn run(run: &Run<'_>, args: &SituArgs) -> io::Result<()> {
     let files = args.situ.clone().flatten();
     run.report(|ctx, out| {
-        execute_situ_query(
-            ctx.root,
-            files.as_deref(),
-            ctx.ingest,
-            ctx.graph,
-            ctx.interner,
-            out,
-        )
+        let safety = crate::query::safety::SafetyContext {
+            root: ctx.root,
+            ingest: ctx.ingest,
+            graph: ctx.graph,
+            interner: ctx.interner,
+        };
+        execute_situ_query(&safety, files.as_deref(), run.page(), out)
     })
 }
 
@@ -46,6 +45,7 @@ pub static SITU: Plugin<SituArgs> = Plugin {
                 root: s.root,
                 files: &files,
                 commits: Some(&commits),
+                page: crate::serialize::PageRequest::default(),
                 context: crate::query::safety::SafetyContext {
                     root: s.root,
                     ingest: s.ingest,

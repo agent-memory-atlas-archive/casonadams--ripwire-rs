@@ -24,8 +24,7 @@ pub fn execute_deps_query_paged<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let mut rep = compute_deps_report(ingest, graph, interner);
-    rep.limit = page.limit;
-    rep.offset = page.offset;
+    rep.page = page;
     crate::serialize::serialize_deps_report_xml(root, &rep, out)
 }
 

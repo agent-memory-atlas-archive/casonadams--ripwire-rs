@@ -1,19 +1,6 @@
 use super::lint::{LINT_RULES, LintFinding, LintScan};
-use crate::serialize::{PageRequest, XmlEscapeExt};
+use crate::serialize::{PageRequest, XmlEscapeExt, row_bytes};
 use std::io::{self, Write};
-
-const DEFAULT_BYTE_BUDGET: usize = 100_000;
-
-fn default_cap(findings: &[LintFinding]) -> usize {
-    let mut bytes = 0;
-    findings
-        .iter()
-        .take_while(|f| {
-            bytes += f.path.len() + f.rule.len() + f.enclosing.len() + f.message.len() + 80;
-            bytes <= DEFAULT_BYTE_BUDGET
-        })
-        .count()
-}
 
 fn selection_attrs(scan: &LintScan) -> String {
     if scan.options.select.is_empty() && scan.options.ignore.is_empty() {
@@ -49,18 +36,27 @@ fn count_attrs(scan: &LintScan) -> String {
     attrs
 }
 
+fn write_lint_finding_row<W: Write + ?Sized>(f: &LintFinding, out: &mut W) -> io::Result<()> {
+    writeln!(
+        out,
+        "  <f rule=\"{}\" p=\"{}:{}\" in=\"{}\">{}</f>",
+        f.rule,
+        f.path.xml_escaped(),
+        f.line,
+        f.enclosing.xml_escaped(),
+        f.message.xml_escaped()
+    )
+}
+
 pub fn serialize_lint_xml<W: Write>(
     root: &str,
     scan: &LintScan,
     page: PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
-    let cap = if page.limit.is_some() || page.offset.is_some() {
-        0
-    } else {
-        default_cap(&scan.findings)
-    };
-    let window = page.window(scan.findings.len(), cap);
+    let window = page.window_fit(scan.findings.len(), |i| {
+        row_bytes(|w| write_lint_finding_row(&scan.findings[i], w))
+    });
     let shown = &scan.findings[window.begin..window.end];
     writeln!(
         out,
@@ -99,15 +95,7 @@ pub fn serialize_lint_xml<W: Write>(
         )?;
     }
     for f in shown {
-        writeln!(
-            out,
-            "  <f rule=\"{}\" p=\"{}:{}\" in=\"{}\">{}</f>",
-            f.rule,
-            f.path.xml_escaped(),
-            f.line,
-            f.enclosing.xml_escaped(),
-            f.message.xml_escaped()
-        )?;
+        write_lint_finding_row(f, out)?;
     }
     writeln!(out, "</lint>")
 }

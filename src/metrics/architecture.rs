@@ -441,7 +441,6 @@ pub fn compute_deps_report<'a>(
         rows,
         cycles,
         violations,
-        limit: None,
-        offset: None,
+        page: crate::serialize::PageRequest::default(),
     }
 }

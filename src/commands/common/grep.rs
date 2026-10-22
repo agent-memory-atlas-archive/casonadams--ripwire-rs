@@ -51,6 +51,7 @@ pub fn execute<W: Write>(
         pruned_dirs: corpus.pruned_dirs,
         limit: page.limit,
         offset: page.offset.unwrap_or(0),
+        budget: page.budget,
         verb,
         path_filter: in_scope,
         any_tier: crate::query::grep::parse_any_tier(modifiers.grep_in.as_deref())?,
@@ -76,6 +77,9 @@ pub fn write_hits<W: Write>(mut val: Value, page: PageRequest, out: &mut W) -> i
     }
     if let Some(offset) = page.offset {
         val["offset"] = Value::from(offset as u64);
+    }
+    if let Some(budget) = page.budget {
+        val["budget"] = Value::from(budget as u64);
     }
     crate::serialize::serialize_grep_xml(&val, out)
 }

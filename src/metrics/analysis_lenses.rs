@@ -1,6 +1,7 @@
 use crate::domain::{IngestResult, Interner, SymKind};
 use crate::graph::Graph;
-use crate::serialize::{PageRequest, XmlEscapeExt};
+use crate::query::safety::SafetyContext;
+use crate::serialize::{PageRequest, PageWindow, XmlEscapeExt, row_bytes, text_bytes};
 use std::io::{self, Write};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -121,6 +122,52 @@ pub fn compute_context_ratio(
     }
 }
 
+impl ContextRatioReport {
+    fn window(&self) -> PageWindow {
+        self.page.window_fit(self.rows.len(), |i| {
+            let r = &self.rows[i];
+            row_bytes(|w| write_ratio_sym_row(r, w)) + row_bytes(|w| write_ratio_file_row(r, w))
+        })
+    }
+}
+
+fn write_ratio_sym_row<W: Write + ?Sized>(r: &ContextRatioRow, w: &mut W) -> io::Result<()> {
+    writeln!(
+        w,
+        "  <s p=\"{}:{}\" n=\"{}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+        r.path.xml_escaped(),
+        r.line,
+        r.name.xml_escaped(),
+        r.kind,
+        r.sites,
+        r.ents,
+        r.ents_out,
+        r.ent_ratio,
+        r.files,
+        r.files_out,
+        r.rtok,
+        r.rtok_out,
+        r.read_ratio
+    )
+}
+
+fn write_ratio_file_row<W: Write + ?Sized>(r: &ContextRatioRow, w: &mut W) -> io::Result<()> {
+    writeln!(
+        w,
+        "  <f p=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
+        r.path.xml_escaped(),
+        r.sites,
+        r.ents,
+        r.ents_out,
+        r.ent_ratio,
+        r.files,
+        r.files_out,
+        r.rtok,
+        r.rtok_out,
+        r.read_ratio
+    )
+}
+
 impl crate::serialize::XmlReport for ContextRatioReport {
     crate::xml_report_meta!(
         "contextratio",
@@ -129,7 +176,7 @@ impl crate::serialize::XmlReport for ContextRatioReport {
         comment: "ripwire-rs context-ratio schema=ripwire-rs.context-ratio/v1: LOCAL-REASONING lens."
     );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = self.page.window(self.rows.len(), 40);
+        let pw = self.window();
         write!(
             w,
             " units=\"{}\" file_units=\"{}\" defs_per_name_cap=\"8\" body_bytes_per_token=\"3.80\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\" defs_capped=\"1\" counts_floor=\"1\"",
@@ -147,42 +194,13 @@ impl crate::serialize::XmlReport for ContextRatioReport {
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = self.page.window(self.rows.len(), 40);
+        let pw = self.window();
         let page_rows = &self.rows[pw.begin..pw.end];
         for r in page_rows {
-            writeln!(
-                w,
-                "  <s p=\"{}:{}\" n=\"{}\" t=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
-                r.path.xml_escaped(),
-                r.line,
-                r.name.xml_escaped(),
-                r.kind,
-                r.sites,
-                r.ents,
-                r.ents_out,
-                r.ent_ratio,
-                r.files,
-                r.files_out,
-                r.rtok,
-                r.rtok_out,
-                r.read_ratio
-            )?;
+            write_ratio_sym_row(r, w)?;
         }
         for r in page_rows {
-            writeln!(
-                w,
-                "  <f p=\"{}\" sites=\"{}\" ents=\"{}\" ents_out=\"{}\" ent_ratio=\"{:.3}\" files=\"{}\" files_out=\"{}\" rtok=\"{}\" rtok_out=\"{}\" read_ratio=\"{:.3}\" ext=\"0\" amb_names=\"0\"/>",
-                r.path.xml_escaped(),
-                r.sites,
-                r.ents,
-                r.ents_out,
-                r.ent_ratio,
-                r.files,
-                r.files_out,
-                r.rtok,
-                r.rtok_out,
-                r.read_ratio
-            )?;
+            write_ratio_file_row(r, w)?;
         }
         Ok(())
     }
@@ -280,6 +298,41 @@ pub fn compute_ensemble(
     }
 }
 
+impl EnsembleReport {
+    fn window(&self) -> PageWindow {
+        self.page.window_fit(self.rows.len(), |i| {
+            let r = &self.rows[i];
+            row_bytes(|w| write_ensemble_sym_row(r, w))
+                + row_bytes(|w| write_ensemble_file_row(r, w))
+        })
+    }
+}
+
+fn write_ensemble_sym_row<W: Write + ?Sized>(r: &EnsembleRow, w: &mut W) -> io::Result<()> {
+    writeln!(
+        w,
+        "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"3\" fired=\"{}\" unavail=\"confusion\"/>",
+        r.path.xml_escaped(),
+        r.line,
+        r.name.xml_escaped(),
+        r.fam,
+        r.fired
+    )
+}
+
+fn write_ensemble_file_row<W: Write + ?Sized>(r: &EnsembleRow, w: &mut W) -> io::Result<()> {
+    writeln!(
+        w,
+        "  <f p=\"{}\" top=\"{}\" top_l=\"{}\" top_fam=\"{}\" union_fam=\"{}\" union=\"{}\" syms=\"1\"/>",
+        r.path.xml_escaped(),
+        r.name.xml_escaped(),
+        r.line,
+        r.fam,
+        r.fam,
+        r.fired
+    )
+}
+
 impl crate::serialize::XmlReport for EnsembleReport {
     crate::xml_report_meta!(
         "ensemble",
@@ -288,8 +341,8 @@ impl crate::serialize::XmlReport for EnsembleReport {
         comment: "ripwire-rs ensemble schema=ripwire-rs.ensemble/v1: four orthogonal evidence families joined."
     );
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = self.page.window(self.rows.len(), 40);
-        let f_shown = pw.shown.min(20);
+        let pw = self.window();
+        let f_shown = pw.shown;
         write!(
             w,
             " families=\"4\" eligible=\"{}\" ranked=\"{}\" no_family=\"{}\" unavailable=\"confusion\" unavailable_why=\"confusion: C/C++ only\" bar_ccx=\"15\" bar_loc=\"60\" bar_nest=\"4\" bar_params=\"5\" rcut=\"40\" rmeasured=\"{}\" hcut=\"14\" hranked=\"{}\" window=\"12mo\" cfiles=\"{}\" cscope=\"{}\" lscope=\"{}\" shown_syms=\"{}\" syms_capped=\"{}\" shown_files=\"{f_shown}\" files_capped=\"{}\" total=\"{}\" has_more=\"{}\" next_offset=\"{}\" offset=\"{}\" limit=\"{}\" at=\"HEAD\"",
@@ -312,31 +365,13 @@ impl crate::serialize::XmlReport for EnsembleReport {
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = self.page.window(self.rows.len(), 40);
+        let pw = self.window();
         let page_rows = &self.rows[pw.begin..pw.end];
-        let f_shown = page_rows.len().min(20);
         for r in page_rows {
-            writeln!(
-                w,
-                "  <s p=\"{}:{}\" n=\"{}\" fam=\"{}\" of=\"3\" fired=\"{}\" unavail=\"confusion\"/>",
-                r.path.xml_escaped(),
-                r.line,
-                r.name.xml_escaped(),
-                r.fam,
-                r.fired
-            )?;
+            write_ensemble_sym_row(r, w)?;
         }
-        for r in page_rows.iter().take(f_shown) {
-            writeln!(
-                w,
-                "  <f p=\"{}\" top=\"{}\" top_l=\"{}\" top_fam=\"{}\" union_fam=\"{}\" union=\"{}\" syms=\"1\"/>",
-                r.path.xml_escaped(),
-                r.name.xml_escaped(),
-                r.line,
-                r.fam,
-                r.fam,
-                r.fired
-            )?;
+        for r in page_rows {
+            write_ensemble_file_row(r, w)?;
         }
         Ok(())
     }
@@ -531,6 +566,34 @@ pub fn compute_comment_coherence_with_sources<S: crate::query::SourceReader + ?S
     }
 }
 
+impl CommentCoherenceReport {
+    fn window(&self) -> PageWindow {
+        self.page.window_fit(self.rows.len(), |i| {
+            row_bytes(|w| write_comment_coherence_row(&self.rows[i], w))
+        })
+    }
+}
+
+fn write_comment_coherence_row<W: Write + ?Sized>(
+    r: &CommentCoherenceRow,
+    w: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        w,
+        "  <fn p=\"{}:{}\" n=\"{}\" c_coeff=\"{:.3}\" words=\"{}\" restate=\"{}\" cic=\"{:.3}\" c_terms=\"{}\" i_terms=\"{}\" shared=\"{}\"/>",
+        r.path.xml_escaped(),
+        r.line,
+        r.name.xml_escaped(),
+        r.c_coeff,
+        r.words,
+        r.restate,
+        r.cic,
+        r.c_terms,
+        r.i_terms,
+        r.shared
+    )
+}
+
 impl crate::serialize::XmlReport for CommentCoherenceReport {
     crate::xml_report_meta!(
         "comment_coherence",
@@ -539,7 +602,7 @@ impl crate::serialize::XmlReport for CommentCoherenceReport {
         comment: "ripwire-rs comment-coherence schema=ripwire-rs.comment-coherence/v1: two comment/name content measures per documented function."
     );
     fn page_window(&self) -> Option<crate::serialize::PageWindow> {
-        Some(self.page.window(self.rows.len(), 40))
+        Some(self.window())
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
         write!(
@@ -549,22 +612,9 @@ impl crate::serialize::XmlReport for CommentCoherenceReport {
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {
-        let pw = self.page.window(self.rows.len(), 40);
+        let pw = self.window();
         for r in &self.rows[pw.begin..pw.end] {
-            writeln!(
-                w,
-                "  <fn p=\"{}:{}\" n=\"{}\" c_coeff=\"{:.3}\" words=\"{}\" restate=\"{}\" cic=\"{:.3}\" c_terms=\"{}\" i_terms=\"{}\" shared=\"{}\"/>",
-                r.path.xml_escaped(),
-                r.line,
-                r.name.xml_escaped(),
-                r.c_coeff,
-                r.words,
-                r.restate,
-                r.cic,
-                r.c_terms,
-                r.i_terms,
-                r.shared
-            )?;
+            write_comment_coherence_row(r, w)?;
         }
         Ok(())
     }
@@ -599,6 +649,22 @@ pub fn classify_identifier_casing(name: &str) -> &'static str {
 pub struct NamingScope<'a> {
     pub root: &'a str,
     pub include_locals: bool,
+}
+
+fn write_vote_row<W: Write + ?Sized>(
+    w: &mut W,
+    kind: &str,
+    style: &str,
+    count: usize,
+) -> io::Result<()> {
+    writeln!(
+        w,
+        "  <vote kind=\"{kind}\" style=\"{style}\" count=\"{count}\"/>"
+    )
+}
+
+fn write_style_row<W: Write + ?Sized>(w: &mut W, name: &str, count: usize) -> io::Result<()> {
+    writeln!(w, "  <style name=\"{name}\" count=\"{count}\"/>")
 }
 
 pub fn serialize_naming_consistency_xml<W: Write>(
@@ -639,12 +705,12 @@ pub fn serialize_naming_consistency_xml<W: Write>(
         ingest.symbol_count()
     )?;
     let votes: Vec<_> = counts.into_iter().collect();
-    let pw = page.window(votes.len(), votes.len());
+    let pw = page.window_fit(votes.len(), |i| {
+        let ((kind, style), count) = &votes[i];
+        row_bytes(|w| write_vote_row(w, kind, style, *count))
+    });
     for ((kind, style), count) in &votes[pw.begin..pw.end] {
-        writeln!(
-            out,
-            "  <vote kind=\"{kind}\" style=\"{style}\" count=\"{count}\"/>"
-        )?;
+        write_vote_row(out, kind, style, *count)?;
     }
     writeln!(out, "</{tag}>")
 }
@@ -669,9 +735,12 @@ pub fn serialize_naming_calibration_xml<W: Write>(
         *style_totals.entry(style).or_insert(0) += 1;
     }
     let styles: Vec<_> = style_totals.into_iter().collect();
-    let pw = page.window(styles.len(), styles.len());
+    let pw = page.window_fit(styles.len(), |i| {
+        let (style, count) = styles[i];
+        row_bytes(|w| write_style_row(w, style, count))
+    });
     for (style, count) in &styles[pw.begin..pw.end] {
-        writeln!(out, "  <style name=\"{style}\" count=\"{count}\"/>")?;
+        write_style_row(out, style, *count)?;
     }
     writeln!(out, "</naming-calibration>")
 }
@@ -722,20 +791,24 @@ fn write_report_modules_and_bridges<W: Write>(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
+    page: PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     let (comms, _, modules) =
         crate::metrics::architecture::build_ranked_communities(None, ingest, graph, interner);
-    let shown_mods = modules.len().min(12);
+    let pw = page.window_fit(modules.len(), |i| {
+        text_bytes(&[modules[i].label, modules[i].dir])
+    });
     writeln!(
         out,
-        "## Modules (call-graph clusters; showing {shown_mods} of {})",
+        "## Modules (call-graph clusters; showing {} of {})",
+        pw.shown,
         modules.len()
     )?;
     if modules.is_empty() {
         writeln!(out, "- (none)\n")?;
     } else {
-        for m in modules.iter().take(shown_mods) {
+        for m in &modules[pw.begin..pw.end] {
             let intents = extract_module_intents(&m.members);
             writeln!(
                 out,
@@ -749,19 +822,19 @@ fn write_report_modules_and_bridges<W: Write>(
     let bridges: Vec<_> =
         crate::metrics::architecture::collect_community_bridges(&comms, &modules, ingest, graph)
             .into_iter()
-            .take(8)
             .map(|(_, _, la, lb, w)| (non_empty_or(la, "module"), non_empty_or(lb, "module"), w))
             .collect();
+    let pw = page.window_fit(bridges.len(), |i| text_bytes(&[bridges[i].0, bridges[i].1]));
     writeln!(
         out,
         "## Cross-module bridges (showing {} of {})",
-        bridges.len(),
+        pw.shown,
         bridges.len()
     )?;
     if bridges.is_empty() {
         writeln!(out, "- (none)\n")?;
     } else {
-        for (la, lb, w) in bridges {
+        for (la, lb, w) in &bridges[pw.begin..pw.end] {
             writeln!(out, "- `{la}` ↔ `{lb}` ({w} edges)")?;
         }
         writeln!(out)?;
@@ -773,37 +846,40 @@ fn write_report_deps_sections<W: Write>(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
+    page: PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
     let deps = crate::metrics::architecture::compute_deps_report(ingest, graph, interner);
     let mut god: Vec<&crate::serialize::DepsFileRow<'_>> =
         deps.rows.iter().filter(|r| r.afferent > 0).collect();
     god.sort_by(|a, b| b.afferent.cmp(&a.afferent).then_with(|| a.path.cmp(b.path)));
-    let shown_god = god.len().min(10);
+    let pw = page.window_fit(god.len(), |i| text_bytes(&[god[i].path]));
     writeln!(
         out,
-        "## God files (most depended-on; showing {shown_god} of {})",
+        "## God files (most depended-on; showing {} of {})",
+        pw.shown,
         god.len()
     )?;
     if god.is_empty() {
         writeln!(out, "- (no include/import edges captured)\n")?;
     } else {
-        for g in god.iter().take(shown_god) {
+        for g in &god[pw.begin..pw.end] {
             writeln!(out, "- `{}` — {} dependents", g.path, g.afferent)?;
         }
         writeln!(out)?;
     }
 
-    let shown_cyc = deps.cycles.len().min(6);
+    let pw = page.window_fit(deps.cycles.len(), |i| text_bytes(&deps.cycles[i]));
     writeln!(
         out,
-        "## Dependency cycles (showing {shown_cyc} of {})",
+        "## Dependency cycles (showing {} of {})",
+        pw.shown,
         deps.cycles.len()
     )?;
     if deps.cycles.is_empty() {
         writeln!(out, "- none (acyclic)\n")?;
     } else {
-        for cyc in deps.cycles.iter().take(shown_cyc) {
+        for cyc in &deps.cycles[pw.begin..pw.end] {
             let formatted: Vec<String> = cyc.iter().map(|p| format!("`{p}`")).collect();
             writeln!(out, "- {}", formatted.join(" ↔ "))?;
         }
@@ -813,21 +889,25 @@ fn write_report_deps_sections<W: Write>(
 }
 
 pub fn serialize_executive_report_md<W: Write>(
-    root: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
+    facts: &SafetyContext<'_>,
     ranks: &[f64],
-    interner: &Interner,
+    page: PageRequest,
     out: &mut W,
 ) -> io::Result<()> {
+    let SafetyContext {
+        root,
+        ingest,
+        graph,
+        interner,
+    } = *facts;
     writeln!(out, "# Architecture & Quality Report (`{root}`)\n")?;
     writeln!(out, "## Corpus Overview")?;
     writeln!(out, "- **Files Indexed**: {}", ingest.files.len())?;
     writeln!(out, "- **Symbols Extracted**: {}", ingest.symbol_count())?;
     writeln!(out, "- **Call Graph Edges**: {}\n", graph.edge_count())?;
 
-    write_report_modules_and_bridges(ingest, graph, interner, out)?;
-    write_report_deps_sections(ingest, graph, interner, out)?;
+    write_report_modules_and_bridges(ingest, graph, interner, page, out)?;
+    write_report_deps_sections(ingest, graph, interner, page, out)?;
 
     use crate::domain::CorpusView;
     let view = (ingest, interner);
@@ -842,10 +922,14 @@ pub fn serialize_executive_report_md<W: Write>(
         let rb = ranks.get(b).copied().unwrap_or(0.0);
         rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
     });
+    let pw = page.window_fit(order.len(), |i| {
+        let sym = &ingest.symbols[order[i]];
+        text_bytes(&[view.sym_name(sym), sym.kind.tag(), view.sym_path(sym)])
+    });
     writeln!(out, "## Top Symbols by PageRank")?;
     writeln!(out, "| Symbol | Kind | File | Line | CCX | PageRank |")?;
     writeln!(out, "|---|---|---|---|---|---|")?;
-    for idx in order.into_iter().take(15) {
+    for &idx in &order[pw.begin..pw.end] {
         let sym = &ingest.symbols[idx];
         let name = view.sym_name(sym);
         let file = view.sym_path(sym);

@@ -1,13 +1,13 @@
 use crate::domain::{IngestResult, Interner, NodeId, RefRole, SymKind, Symbol};
 use crate::graph::Graph;
 use crate::languages::source::{SourceRegion, source_regions};
+use crate::serialize::{PageRequest, Paged, text_bytes};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 /// String-literal hits ride along with code hits only while code hits stay below this count.
 const STRING_LIFT_MAX_CODE_HITS: usize = 8;
-const READS_AT_SHOWN: usize = 3;
 const UNINDEXED_CANDIDATE_CAP: usize = 500;
 
 #[derive(Clone, Copy)]
@@ -18,6 +18,7 @@ pub struct GrepRequest<'a> {
     pub pruned_dirs: usize,
     pub limit: Option<usize>,
     pub offset: usize,
+    pub budget: Option<usize>,
     pub pattern: &'a str,
     pub verb: &'a str,
     pub path_filter: Option<&'a str>,
@@ -55,6 +56,7 @@ impl<'a> GrepRequest<'a> {
             pruned_dirs: 0,
             limit: None,
             offset: 0,
+            budget: None,
             pattern,
             verb: "grep",
             path_filter: None,
@@ -346,6 +348,7 @@ struct EncCtx<'a> {
     ingest: &'a IngestResult,
     interner: &'a Interner,
     graph: Option<&'a Graph>,
+    budget: Option<usize>,
 }
 
 fn enc_json(ctx: &EncCtx<'_>, defs: &[&Symbol]) -> Value {
@@ -368,7 +371,7 @@ fn enc_json(ctx: &EncCtx<'_>, defs: &[&Symbol]) -> Value {
         "floor_next": format!("--{}={plain}", if reads_indexed { "uses" } else { "grep" }),
         "cx": defs.iter().map(|d| d.cx).max().unwrap_or(0),
         "reads": reads.len(),
-        "reads_at": &reads[..reads.len().min(READS_AT_SHOWN)],
+        "reads_at": Paged::new(&reads, PageRequest { limit: None, offset: None, budget: ctx.budget }, |r| text_bytes(&[r.as_str()])).rows(),
     });
     if let Some(set) = callers {
         obj["callers"] = json!(set.len());
@@ -380,12 +383,14 @@ pub fn enclosing_metadata(
     ingest: &IngestResult,
     interner: &Interner,
     graph: Option<&Graph>,
+    budget: Option<usize>,
     hits: &[Value],
 ) -> Map<String, Value> {
     let ctx = EncCtx {
         ingest,
         interner,
         graph,
+        budget,
     };
     let names: HashSet<&str> = hits
         .iter()
@@ -476,13 +481,16 @@ pub fn call_grep(ingest: &IngestResult, interner: &Interner, req: &GrepRequest<'
     if req.offset > 0 {
         obj.insert("offset".into(), json!(req.offset));
     }
+    if let Some(budget) = req.budget {
+        obj.insert("budget".into(), json!(budget));
+    }
     obj.insert("context".into(), json!(req.before > 0 || req.after > 0));
     obj.extend(tier_attrs(
         TierCounts::of(&files),
         files.len(),
         req.any_tier,
     ));
-    let enc = enclosing_metadata(ingest, interner, req.graph, &hits);
+    let enc = enclosing_metadata(ingest, interner, req.graph, req.budget, &hits);
     obj.insert("enc".into(), Value::Object(enc));
     obj.insert("hits".into(), Value::Array(hits));
     if let Value::Object(extra) = scan_unindexed(ingest, interner, req) {

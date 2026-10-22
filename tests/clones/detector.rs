@@ -108,8 +108,13 @@ fn clone_report_honors_limit_and_offset() {
     let ingest = ingest_in_memory_files(&files, &registry, &interner);
     let clones = find_clones(&ingest, &interner, 10, Some(&sources));
     assert_eq!(clones.len(), 2);
-    let report = |limit, offset| {
-        let xml = render_clones_xml(&clones, &ingest, &interner, PageRequest { limit, offset });
+    let report = |limit, offset, budget| {
+        let page = PageRequest {
+            limit,
+            offset,
+            budget,
+        };
+        let xml = render_clones_xml(&clones, &ingest, &interner, page);
         let doc = roxmltree::Document::parse(&xml).unwrap();
         let root = doc.root_element();
         let groups = doc
@@ -122,13 +127,18 @@ fn clone_report_honors_limit_and_offset() {
             root.attribute("has_more").map(str::to_string),
         )
     };
-    assert_eq!(report(None, None).0, 2);
+    assert_eq!(report(None, None, None).0, 2);
+    assert_eq!(report(None, None, Some(usize::MAX)).0, 2);
     assert_eq!(
-        report(Some(1), None),
+        report(None, None, Some(1)),
         (1, Some("1".into()), Some("1".into()))
     );
     assert_eq!(
-        report(Some(1), Some(1)),
+        report(Some(1), None, Some(usize::MAX)),
+        (1, Some("1".into()), Some("1".into()))
+    );
+    assert_eq!(
+        report(Some(1), Some(1), None),
         (1, Some("1".into()), Some("0".into()))
     );
 }

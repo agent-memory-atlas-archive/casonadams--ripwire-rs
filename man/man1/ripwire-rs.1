@@ -113,7 +113,7 @@ Query direct 1-hop outgoing callees called by symbol \fISYM\fR.
 .TP
 .BI \-\-impact= SYM
 Compute transitive blast radius (reachability graph) reaching symbol \fISYM\fR across code and database schema migrations.
-Unbound candidate call sites appear separately as \fB<dc>\fR rows and are not graph edges. A capped candidate list includes \fBdc_next\fR; use \fB\-\-limit\fR to expand it.
+Unbound candidate call sites appear separately as \fB<dc>\fR rows and are not graph edges. A capped candidate list reports \fBdc_shown\fR of \fBdeclined_calls\fR; raise \fB\-\-token-budget\fR to show more.
 .TP
 .BI \-\-impact\-depth= N
 Optional impact traversal depth limit, matching MCP \fBmax_depth\fR. Global; also works with \fBnavigate --impact\fR. The default traversal is unchanged.

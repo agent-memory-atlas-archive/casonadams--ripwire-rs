@@ -32,8 +32,7 @@ pub fn render<W: Write>(
     let opts = crate::graph::zoom::ZoomOptions {
         depth: args.zoom.flatten(),
         levels_shown: args.zoom_levels,
-        limit: page.limit,
-        offset: page.offset,
+        page,
     };
     crate::graph::zoom::execute_zoom_query(
         ctx.ingest,

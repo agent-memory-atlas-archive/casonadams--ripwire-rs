@@ -90,6 +90,7 @@ pub fn call_navigation(
         page: crate::serialize::PageRequest {
             limit: args.opt_usize("limit"),
             offset: args.opt_usize("offset"),
+            budget: args.opt_usize("budget_tokens").map(crate::query::map::token_budget_bytes),
         },
         max_depth: args.opt_usize("max_depth").map(|depth| depth as u32),
     };
@@ -107,6 +108,7 @@ macro_rules! nav_tool {
                 ("limit", "integer", "Maximum report items"),
                 ("offset", "integer", "Report item offset"),
                 ("max_depth", "integer", "Maximum traversal depth"),
+                ("budget_tokens", "integer", "Output budget in tokens"),
             ],
             required: &["symbol"],
             handler: |state, args| $crate::commands::nav::call_navigation(state, args, $mode),

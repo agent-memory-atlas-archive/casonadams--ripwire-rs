@@ -58,7 +58,7 @@ fn semantic_read_report(path: &str, lang: Lang, source: &[u8]) -> (Value, String
     let hits = vec![json!({
         "path": path, "line": symbol.line, "text": "LIMIT", "enclosing": "LIMIT", "enc_id": 1
     })];
-    let enc = enclosing_metadata(&ingest, &interner, Some(&graph), &hits);
+    let enc = enclosing_metadata(&ingest, &interner, Some(&graph), None, &hits);
     let mut xml = Vec::new();
     serialize_grep_xml(
         &json!({
