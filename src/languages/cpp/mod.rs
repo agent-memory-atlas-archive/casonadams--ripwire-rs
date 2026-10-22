@@ -144,7 +144,7 @@ pub(super) fn is_template_specialization(spec: &str, primary: &str) -> bool {
 }
 
 impl LanguageSemantics for CppLanguage {
-    crate::languages::c::flags::c_family_flags!();
+    crate::languages::c::flags::c_family_hooks!();
 
     fn flag_manifests(&self) -> &'static [&'static str] {
         &["CMakeLists.txt", "cmake/options.cmake"]

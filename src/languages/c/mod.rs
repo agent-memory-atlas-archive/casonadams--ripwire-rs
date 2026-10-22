@@ -603,7 +603,7 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
 };
 
 impl LanguageSemantics for CLanguage {
-    crate::languages::c::flags::c_family_flags!();
+    crate::languages::c::flags::c_family_hooks!();
 
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS

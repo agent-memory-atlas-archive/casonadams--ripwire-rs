@@ -30,7 +30,7 @@ const KINDS: ComplexityKinds = ComplexityKinds {
 };
 
 impl LanguageSemantics for CudaLanguage {
-    crate::languages::c::flags::c_family_flags!();
+    crate::languages::c::flags::c_family_hooks!();
 
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS

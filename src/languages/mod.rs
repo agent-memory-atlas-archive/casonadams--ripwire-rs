@@ -57,7 +57,6 @@ pub struct Implementation {
 use crate::domain::SymKind;
 use crate::ingest::FileParseResult;
 use std::collections::HashMap;
-use std::path::Path;
 use tree_sitter::{Language, Query};
 
 /// Cross-language symbol resolution compatibility group.
@@ -308,13 +307,9 @@ pub trait LanguageSemantics: Sync {
         false
     }
 
-    /// True if `path` is a public interface header (`.h`, `.hpp`, `.hh`, `.hxx`, `.cuh`) in a C-family language.
-    fn is_header_file(&self, path: &str) -> bool {
-        self.dialect_group() == DialectGroup::CFamily
-            && matches!(
-                Path::new(path).extension().and_then(|e| e.to_str()),
-                Some("h" | "hpp" | "hh" | "hxx" | "cuh")
-            )
+    /// True if `path` is a public interface header (C-family `.h`, `.hpp`, ...).
+    fn is_header_file(&self, _path: &str) -> bool {
+        false
     }
 
     /// True if definitions in this language represent SQL tables targeted by `RefRole::Read` / `RefRole::Write`.
@@ -582,12 +577,9 @@ pub trait LanguageSemantics: Sync {
         None
     }
 
-    fn is_reserved_identifier(&self, name: &str) -> bool {
-        self.dialect_group() == DialectGroup::CFamily
-            && (name.starts_with("__")
-                || name
-                    .strip_prefix('_')
-                    .is_some_and(|rest| rest.starts_with(char::is_uppercase)))
+    /// True if `name` is reserved for the implementation (C-family `__x`, `_X`).
+    fn is_reserved_identifier(&self, _name: &str) -> bool {
+        false
     }
 
     /// Declared return type in a callable's signature text, when the grammar names one.

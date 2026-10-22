@@ -145,8 +145,8 @@ pub fn facts(lang: &impl LanguageSemantics, lines: &[&str], path: &str) -> Vec<F
     facts
 }
 
-/// The flag hooks every C-family plugin shares.
-macro_rules! c_family_flags {
+/// The hooks every C-family plugin shares: flag harvesting, header files and reserved identifiers.
+macro_rules! c_family_hooks {
     () => {
         fn env_reads(&self) -> &'static [$crate::languages::common::flags::EnvRead] {
             &[$crate::languages::common::flags::EnvRead::Call("getenv")]
@@ -155,6 +155,18 @@ macro_rules! c_family_flags {
         fn flag_facts(&self, lines: &[&str], path: &str) -> Vec<$crate::languages::common::flags::FlagFact> {
             $crate::languages::c::flags::facts(self, lines, path)
         }
+
+        fn is_header_file(&self, path: &str) -> bool {
+            matches!(
+                std::path::Path::new(path).extension().and_then(|e| e.to_str()),
+                Some("h" | "hpp" | "hh" | "hxx" | "cuh")
+            )
+        }
+
+        fn is_reserved_identifier(&self, name: &str) -> bool {
+            name.starts_with("__")
+                || name.strip_prefix('_').is_some_and(|rest| rest.starts_with(char::is_uppercase))
+        }
     };
 }
-pub(crate) use c_family_flags;
+pub(crate) use c_family_hooks;
