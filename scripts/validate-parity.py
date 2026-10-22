@@ -375,6 +375,18 @@ def check_plan_lanes_json(out_rw, out_rip):
     return f"plan-lanes missing keys {missing}" if missing else None
 
 
+def check_situ_xml(output):
+    root, error = parse_xml_dom(output)
+    if error:
+        return f"situ {error}"
+    if root.tag != "situ" or root.attrib.get("schema") != "ripwire-rs.situ/v1":
+        return "situ requires <situ schema=\"ripwire-rs.situ/v1\">"
+    summary = root.find("summary")
+    if summary is None or not {"files", "blast_radius"} <= summary.attrib.keys():
+        return "situ summary missing files or blast_radius"
+    return None
+
+
 def check_non_xml_parity(cmd, out_rw, out_rip):
     if cmd == "-v":
         return None if ("ripwire" in out_rw or "rw" in out_rw) else "missing version string"
@@ -383,10 +395,17 @@ def check_non_xml_parity(cmd, out_rw, out_rip):
     if "--html" in cmd:
         return None if ("<!DOCTYPE html>" in out_rw and "const NODES" in out_rw) else "missing html"
     if "--situ" in cmd:
-        return None if "situational-awareness" in out_rw else "missing situ"
+        return check_situ_xml(out_rw)
     if "--plan-lanes" in cmd:
         return check_plan_lanes_json(out_rw, out_rip)
     return "unhandled text command"
+
+
+def check_xml_timeout(cmd, output):
+    if cmd == "--situ":
+        return check_situ_xml(output)
+    root, error = parse_xml_dom(output)
+    return error if error else (None if root.attrib.get("schema") else "missing schema")
 
 
 def run_one_check(rw_bin, rip_bin, repo, cmd):
@@ -399,11 +418,10 @@ def run_one_check(rw_bin, rip_bin, repo, cmd):
     try:
         p_rip = subprocess.run(c_rip, capture_output=True, text=True, timeout=4)
     except subprocess.TimeoutExpired:
-        is_text = cmd in ("-v", "--mermaid", "--html", "--situ") or "--plan-lanes" in cmd
+        is_text = cmd in ("-v", "--mermaid", "--html") or "--plan-lanes" in cmd
         if is_text:
             return None if p_rw.stdout.strip() else "empty text output"
-        root_rw, err_rw = parse_xml_dom(p_rw.stdout)
-        return err_rw if err_rw else (None if root_rw.attrib.get("schema") else "missing schema")
+        return check_xml_timeout(cmd, p_rw.stdout)
     if p_rw.returncode != p_rip.returncode:
         if (
             (p_rw.returncode != 0 and p_rip.returncode != 0)
