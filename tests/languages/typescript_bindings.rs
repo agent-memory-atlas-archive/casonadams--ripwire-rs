@@ -1,0 +1,119 @@
+use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, NodeId, Symbol, ingest_in_memory_files};
+
+/// A fluent server function whose handler reads a response body through a property call.
+const SERVER_FN: &str = "import { createServerFn } from \"@tanstack/react-start\";\n\
+export const resumeSession = createServerFn({ method: \"POST\" })\n\
+  .inputValidator((d: unknown): { token: string } => ({ token: String(d) }))\n\
+  .handler(async ({ data }: { data: { token: string } }) => {\n\
+    const res = await fetch(data.token);\n\
+    const json = await res.json();\n\
+    return json;\n\
+  });\n";
+
+/// A same-named module variable in an unrelated script: a property call must never bind to it.
+const REFRESH_SCRIPT: &str = "let json;\n\
+export function refresh(raw: string): void {\n  json = JSON.parse(raw);\n}\n";
+
+/// An imported server function called from a nested async IIFE inside a handler.
+const ROUTE: &str = "import { resumeSession } from \"../lib/auth\";\n\
+export function mount(token: string): void {\n\
+  const handler = (msg: { token: string }) => {\n\
+    void (async () => {\n\
+      await resumeSession({ data: { token: msg.token } });\n\
+    })();\n\
+  };\n\
+  handler({ token: token });\n\
+}\n";
+
+struct Fixture {
+    interner: Interner,
+    ingest: ripwire_rs::IngestResult,
+    graph: Graph,
+}
+
+fn fixture(files: &[(&str, &str)]) -> Fixture {
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let sources: Vec<(&str, Lang, &[u8])> = files
+        .iter()
+        .map(|(path, src)| (*path, Lang::TypeScript, src.as_bytes()))
+        .collect();
+    let ingest = ingest_in_memory_files(&sources, &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    Fixture {
+        interner,
+        ingest,
+        graph,
+    }
+}
+
+impl Fixture {
+    fn module_symbol(&self, name: &str) -> &Symbol {
+        self.ingest
+            .symbols
+            .iter()
+            .find(|sym| self.interner.resolve(&sym.name) == name && sym.scope.is_none())
+            .unwrap_or_else(|| panic!("module symbol {name} not indexed"))
+    }
+
+    fn named(&self, ids: impl Iterator<Item = NodeId>) -> Vec<String> {
+        let mut names: Vec<String> = ids
+            .map(|id| {
+                let sym = self.ingest.sym(id).expect("symbol");
+                self.interner.resolve(&sym.name).to_string()
+            })
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn callers(&self, name: &str) -> Vec<String> {
+        let id = self.module_symbol(name).id;
+        self.named(self.graph.callers(id).map(|(caller, _)| caller))
+    }
+
+    fn callees(&self, name: &str) -> Vec<String> {
+        let id = self.module_symbol(name).id;
+        self.named(self.graph.callees(id).map(|(callee, _)| callee))
+    }
+}
+
+fn all_files() -> Fixture {
+    fixture(&[
+        ("src/lib/auth.ts", SERVER_FN),
+        ("scripts/refresh-dev-token.ts", REFRESH_SCRIPT),
+        ("src/routes/native-resume.ts", ROUTE),
+    ])
+}
+
+#[test]
+fn call_inside_nested_iife_binds_to_imported_fluent_handler() {
+    let fx = all_files();
+    let callers = fx.callers("resumeSession");
+    assert!(
+        callers
+            .iter()
+            .any(|name| name == "handler" || name == "mount"),
+        "nested IIFE call not attributed: {callers:?}"
+    );
+}
+
+#[test]
+fn fluent_handler_callees_exclude_same_named_module_variable() {
+    let fx = all_files();
+    let callees = fx.callees("resumeSession");
+    assert!(
+        !callees.iter().any(|name| name == "json"),
+        "property call res.json() bound to the unrelated `let json`: {callees:?}"
+    );
+}
+
+#[test]
+fn property_call_on_unknown_receiver_never_binds_to_a_variable() {
+    let fx = all_files();
+    let json = fx.callers("json");
+    assert!(
+        json.is_empty(),
+        "property call bound to a module variable: {json:?}"
+    );
+}

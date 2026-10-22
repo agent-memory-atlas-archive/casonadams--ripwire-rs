@@ -131,3 +131,71 @@ fn writes_to_local_bindings_do_not_reach_module_state() {
         "parameter mutation is not module state"
     );
 }
+
+const DEV_TOKEN_SCRIPT: &str = "let json;
+export function refreshToken(raw: string): string {
+  json = JSON.parse(raw);
+  return json.token;
+}
+";
+
+const INTERCEPT_SPEC: &str =
+    "export async function intercept(res: { json(): Promise<{ data: number }> }): Promise<number> {
+  const json = await res.json();
+  return json.data;
+}
+export async function bare(res: { json(): Promise<{ data: number }> }): Promise<number> {
+  return (await res.json()).data;
+}
+";
+
+#[test]
+fn local_declaration_shadows_cross_file_global_of_same_name() {
+    let report = state_report(&[
+        ("scripts/refresh-dev-token.ts", DEV_TOKEN_SCRIPT),
+        ("e2e/intercept.spec.ts", INTERCEPT_SPEC),
+    ]);
+    assert!(
+        function(&report, "intercept").is_none(),
+        "a local const json and a property call res.json() bind to another file's let json"
+    );
+    assert!(
+        function(&report, "bare").is_none(),
+        "a property call on an unknown receiver is not a read of a same-named variable"
+    );
+}
+
+const ENV_CONFIG: &str = "export const OWNER = process.env.DEV_MEMBER_ID!;
+export const BASE = `${process.env.HOST}/api`;
+export const ENDPOINT = process.env.HOST + \"/graphql\";
+export const FALLBACK = process.env.PORT ?? \"3000\";
+export const LIMITS = { max: process.env.MAX };
+export let counter = 0;
+";
+
+const ENV_USE: &str =
+    "import { OWNER, BASE, ENDPOINT, FALLBACK, LIMITS, counter } from \"./config\";
+export function owner(): string {
+  return OWNER + BASE + ENDPOINT + FALLBACK;
+}
+export function limit(): unknown {
+  return LIMITS.max;
+}
+export function bump(): void {
+  counter++;
+}
+";
+
+#[test]
+fn const_bound_to_environment_scalar_is_not_mutable_state() {
+    let report = state_report(&[(CONFIG, ENV_CONFIG), ("src/use.ts", ENV_USE)]);
+    assert!(
+        function(&report, "owner").is_none(),
+        "env-derived scalar consts are immutable: {:?}",
+        function(&report, "owner").map(|f| &f.cells)
+    );
+    let limit = function(&report, "limit").expect("const object contents stay state reads");
+    assert_eq!((limit.reads, limit.writes), (1, 0));
+    let bump = function(&report, "bump").expect("genuine let write stays state");
+    assert_eq!((bump.reads, bump.writes), (0, 1));
+}

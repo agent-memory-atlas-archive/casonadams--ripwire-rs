@@ -1,4 +1,4 @@
-use crate::domain::{IngestResult, Interner, Lang, NodeId};
+use crate::domain::{IngestResult, Interner, Lang, NodeId, RefRole};
 use crate::graph::Graph;
 use crate::languages::has_dir_component;
 use crate::serialize::XmlEscapeExt;
@@ -183,6 +183,48 @@ pub fn find_partner_tests(
         .collect();
     partners.sort_unstable();
     partners
+}
+
+/// Assertion scripts that import a changed source file: static import reach, for scripts whose imports
+/// the call graph does not follow (type-only imports). Only files a language names as assertion scripts.
+fn assertion_importers(
+    seed_source_files: &[String],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> Vec<String> {
+    let file_index: HashMap<&str, u32> = ingest
+        .files
+        .iter()
+        .map(|f| (interner.resolve(&f.path), f.id))
+        .collect();
+    let mut out: Vec<String> = ingest
+        .references
+        .iter()
+        .filter(|r| r.role == RefRole::Import)
+        .filter_map(|r| {
+            let file = ingest.files.get(r.file_id as usize)?;
+            let path = interner.resolve(&file.path);
+            if !file.lang.semantics().is_assertion_script(path) {
+                return None;
+            }
+            let raw = interner.resolve(&r.callee_name);
+            let target = crate::languages::resolve_import(
+                file.lang,
+                path,
+                raw,
+                &file_index,
+                &ingest.import_aliases,
+            )?;
+            let target_path = interner.resolve(&ingest.files.get(target as usize)?.path);
+            seed_source_files
+                .iter()
+                .any(|s| s == target_path)
+                .then(|| path.to_string())
+        })
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
 }
 
 struct SeedResolution {
@@ -372,6 +414,13 @@ fn affected_from_seeds(
             tests.push(AffectedTest::new(partner.clone(), hops, false, true));
         }
         seen_test_paths.insert(partner);
+    }
+
+    for importer in assertion_importers(&seeds.seed_source_files, ingest, interner) {
+        if seen_test_paths.insert(importer.clone()) {
+            let hops = test_hops.remove(&importer).unwrap_or(1);
+            tests.push(AffectedTest::new(importer, hops, false, false));
+        }
     }
 
     for (test_path, hops) in test_hops {

@@ -66,6 +66,8 @@ locations, and `--nonlocal-state`; target resolution does not turn them into cal
      6. Polymorphic interface/trait contract fallback (`RefRole::Extends` implementors)
    - Self-loops (`from_symbol == to_symbol`) are discarded when building the CSR `Graph`.
    - An unqualified call or read whose name is a parameter of an enclosing function or closure is local and never enters the ladder; `LanguageSemantics::parameters_shadow_calls` is false for Ruby, where `name(...)` always calls the method.
+   - A member call `x.f()` on a receiver the index does not type (`Reference::member_call`) never binds to a non-callable `Var` named `f` when `LanguageSemantics::member_call_targets_callables_only` holds (JavaScript and TypeScript). A property call cannot reach a module or local variable; the call stays unresolved and disclosed.
+   - A fluent builder `export const f = createServerFn({..}).handler(async (x) => ..)` takes the parameter count of its final callback (`LanguageSemantics::resolve_def_params_and_name`), so calls to `f` pass the arity check.
 2. **`RefOutcome::External`**:
    - Unresolved call whose qualifier matches `LanguageSemantics::is_std_or_builtin_qualifier` (`std`, `fmt`, `os`, `Array`, `Promise`, `System`, `Console`, `Enum`, `NSString`, etc.) or whose unpinned member name matches `LanguageSemantics::is_std_or_builtin_member`.
 3. **`RefOutcome::Declined`**:

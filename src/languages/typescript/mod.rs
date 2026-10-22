@@ -1,7 +1,7 @@
 use super::javascript::{
     JS_KINDS, JS_STD_MEMBERS, JS_STD_QUALIFIERS, TS_CONFIG_MANIFESTS, is_const_scalar_binding,
-    is_jsx_intrinsic_tag_call, is_std_member_call_value, parse_tsconfig_paths,
-    resolve_web_import_target,
+    is_assertion_script, is_jsx_intrinsic_tag_call, is_std_member_call_value,
+    js_test_partner_subject, parse_tsconfig_paths, resolve_web_import_target,
 };
 use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
@@ -246,6 +246,33 @@ impl LanguageSemantics for TypeScriptLanguage {
         is_const_scalar_binding(ctx)
     }
 
+    fn test_partner_subject<'a>(&self, file_stem: &'a str, in_test_dir: bool) -> Option<&'a str> {
+        js_test_partner_subject(file_stem, in_test_dir)
+    }
+
+    fn is_assertion_script(&self, path: &str) -> bool {
+        is_assertion_script(path)
+    }
+
+    fn resolve_def_params_and_name(
+        &self,
+        def_node: Option<tree_sitter::Node<'_>>,
+        _source_bytes: &[u8],
+        _kind: crate::domain::SymKind,
+        orig_name: &str,
+    ) -> (u16, String) {
+        let params = def_node
+            .and_then(fluent_handler)
+            .or(def_node)
+            .map(|node| crate::gate::contract::extract_param_count(node, &SYNTAX))
+            .unwrap_or(0);
+        (params, orig_name.to_string())
+    }
+
+    fn member_call_targets_callables_only(&self) -> bool {
+        true
+    }
+
     fn should_ignore_call(&self, name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {
         is_jsx_intrinsic_tag_call(name_node, name)
     }
@@ -296,4 +323,35 @@ impl LanguageSemantics for TypeScriptLanguage {
     ) -> Option<u32> {
         resolve_web_import_target(importer_path, raw_target, file_index)
     }
+}
+
+/// The handler a fluent server-function builder returns: the final callback of a member-call chain on a
+/// factory call (`export const f = createServerFn({..}).inputValidator(v).handler(async ({ data }) => ..)`).
+/// Calls to `f` pass the handler's arguments, so its parameters are the definition's parameters.
+fn fluent_handler(def: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    let mut cursor = def.walk();
+    let lexical = if def.kind() == "export_statement" {
+        def.named_children(&mut cursor)
+            .find(|child| child.kind() == "lexical_declaration")?
+    } else {
+        def
+    };
+    let mut cursor = lexical.walk();
+    let declarator = lexical
+        .named_children(&mut cursor)
+        .find(|child| child.kind() == "variable_declarator")?;
+    let chain = declarator
+        .child_by_field_name("value")
+        .filter(|value| {
+            value.kind() == "call_expression"
+                && value
+                    .child_by_field_name("function")
+                    .is_some_and(|callee| callee.kind() == "member_expression")
+        })?;
+    let arguments = chain.child_by_field_name("arguments")?;
+    let mut cursor = arguments.walk();
+    arguments
+        .named_children(&mut cursor)
+        .last()
+        .filter(|last| matches!(last.kind(), "arrow_function" | "function_expression"))
 }

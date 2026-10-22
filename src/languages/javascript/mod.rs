@@ -1,3 +1,4 @@
+use super::common::util::universal_test_partner_subject;
 use super::{
     ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
     probe_with_suffixes, resolve_relative_or_exact, strip_import_quotes,
@@ -442,6 +443,18 @@ impl LanguageSemantics for JavaScriptLanguage {
         is_const_scalar_binding(ctx)
     }
 
+    fn test_partner_subject<'a>(&self, file_stem: &'a str, in_test_dir: bool) -> Option<&'a str> {
+        js_test_partner_subject(file_stem, in_test_dir)
+    }
+
+    fn is_assertion_script(&self, path: &str) -> bool {
+        is_assertion_script(path)
+    }
+
+    fn member_call_targets_callables_only(&self) -> bool {
+        true
+    }
+
     fn should_ignore_call(&self, name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {
         is_jsx_intrinsic_tag_call(name_node, name)
     }
@@ -647,27 +660,49 @@ fn is_write_target_root(node: tree_sitter::Node<'_>) -> bool {
     }
 }
 
-/// True for a literal scalar initializer: number, string, boolean, `null`, a substitution-free template,
-/// a signed number, or such a literal under `as`/`satisfies`/parentheses.
-fn is_scalar_literal(node: tree_sitter::Node<'_>) -> bool {
+/// True for an initializer whose value is provably a string, number, boolean or `null`: a literal, a
+/// template whose substitutions are scalar, an environment read (`process.env.X`, possibly under `!`,
+/// `as`, or parentheses), or a `+`, `??` or `||` of scalars. Objects, arrays and calls are never scalar.
+fn is_scalar_expression(node: tree_sitter::Node<'_>, source: &[u8]) -> bool {
     match node.kind() {
         "number" | "string" | "true" | "false" | "null" => true,
         "template_string" => {
             let mut cursor = node.walk();
-            node.named_children(&mut cursor)
-                .all(|child| child.kind() != "template_substitution")
+            node.named_children(&mut cursor).all(|child| {
+                child.kind() != "template_substitution"
+                    || child
+                        .named_child(0)
+                        .is_some_and(|inner| is_scalar_expression(inner, source))
+            })
         }
         "unary_expression" => node
             .child_by_field_name("argument")
             .is_some_and(|arg| arg.kind() == "number"),
-        "as_expression" | "satisfies_expression" | "parenthesized_expression" => {
-            node.named_child(0).is_some_and(is_scalar_literal)
+        "as_expression" | "satisfies_expression" | "parenthesized_expression"
+        | "non_null_expression" => node
+            .named_child(0)
+            .is_some_and(|inner| is_scalar_expression(inner, source)),
+        "binary_expression" => {
+            node.child_by_field_name("operator")
+                .is_some_and(|op| matches!(op.kind(), "+" | "??" | "||"))
+                && ["left", "right"].into_iter().all(|field| {
+                    node.child_by_field_name(field)
+                        .is_some_and(|side| is_scalar_expression(side, source))
+                })
         }
+        "member_expression" | "subscript_expression" => is_env_read(node, source),
         _ => false,
     }
 }
 
-/// A `const` declarator bound to a scalar literal: an immutable binding whose reads are never state.
+/// `process.env.NAME` or `process.env["NAME"]`: an environment value, always a string or undefined.
+fn is_env_read(node: tree_sitter::Node<'_>, source: &[u8]) -> bool {
+    node.child_by_field_name("object")
+        .and_then(|object| object.utf8_text(source).ok())
+        .is_some_and(|text| text == "process.env")
+}
+
+/// A `const` declarator bound to a provably scalar value: an immutable binding whose reads are never state.
 /// `const` objects and arrays are not scalars; their contents stay mutable and are tracked by writes.
 pub(super) fn is_const_scalar_binding(ctx: &DefCaptureGateContext<'_>) -> bool {
     let Some(declarator) = ctx
@@ -685,7 +720,7 @@ pub(super) fn is_const_scalar_binding(ctx: &DefCaptureGateContext<'_>) -> bool {
     is_const
         && declarator
             .child_by_field_name("value")
-            .is_some_and(is_scalar_literal)
+            .is_some_and(|value| is_scalar_expression(value, ctx.source_bytes))
 }
 
 /// A const whose value calls a standard member (`fetch(u).then(f)`, `items.map(f)`) holds data, not a builder.
@@ -715,13 +750,35 @@ pub(crate) fn js_test_run_command(
     manifest: Option<&str>,
     node_test: bool,
 ) -> Option<String> {
+    if is_assertion_script(path) {
+        // Run by its own header command (`tsx <file>`), not by the manifest's test runner.
+        return None;
+    }
     match manifest {
         Some(m) if m.contains("vitest") => Some(format!("npx vitest run {path}")),
         Some(m) if m.contains("jest") => Some(format!("npx jest {path}")),
         _ => (node_test
             && (source.contains("require('node:test')")
                 || source.contains("require(\"node:test\")")))
-        .then(|| format!("node --test {path}")),
+            .then(|| format!("node --test {path}")),
     }
+}
+
+/// `x.check.ts` / `.tsx` / `.js`: a standalone assertion script named after the subject it checks.
+#[must_use]
+pub(crate) fn is_assertion_script(path: &str) -> bool {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    [".check.ts", ".check.tsx", ".check.js"]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
+}
+
+/// Partner subject for JS-family files: an assertion script names its subject as `x.check`, else the
+/// universal test-naming conventions apply.
+pub(crate) fn js_test_partner_subject(file_stem: &str, in_test_dir: bool) -> Option<&str> {
+    file_stem
+        .strip_suffix(".check")
+        .filter(|subject| !subject.is_empty())
+        .or_else(|| universal_test_partner_subject(file_stem, in_test_dir))
 }
 
