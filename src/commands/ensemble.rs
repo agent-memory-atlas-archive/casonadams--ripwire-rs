@@ -21,10 +21,12 @@ pub fn render<W: Write>(
     _args: &EnsembleArgs,
     out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
+    let history = crate::metrics::PanelHistory::load(ctx.root, ctx.ingest, ctx.interner);
     let rep = crate::metrics::compute_ensemble(
         ctx.ingest,
         ctx.graph,
         ctx.interner,
+        history,
         ctx.cli.page_request(),
     );
     ctx.write_report(&rep, out)?;

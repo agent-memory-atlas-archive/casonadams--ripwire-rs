@@ -119,10 +119,22 @@ fn callable_subjects<'a>(ctx: &FileLintContext<'a>) -> impl Iterator<Item = File
     subjects(ctx).filter(|s| s.sym.is_callable())
 }
 
+/// Names of one or two letters once surrounding underscores are ignored.
+#[must_use]
+pub fn is_short_name(name: &str) -> bool {
+    let core = name.trim_matches('_');
+    !core.is_empty() && core.chars().count() <= 2 && core.chars().all(char::is_alphabetic)
+}
+
+/// Names split into more words than `MAX_WORDS`.
+#[must_use]
+pub fn is_wordy_name(name: &str) -> bool {
+    words(name).len() > MAX_WORDS
+}
+
 pub fn short(ctx: &FileLintContext<'_>, sink: &mut Sink<'_>) {
     for s in subjects(ctx) {
-        let core = s.name.trim_matches('_');
-        if !core.is_empty() && core.chars().count() <= 2 && core.chars().all(char::is_alphabetic) {
+        if is_short_name(s.name) {
             let what = if s.sym.is_callable() {
                 "1-2 letter function name; visible far beyond a 20-line scope"
             } else {
@@ -135,8 +147,8 @@ pub fn short(ctx: &FileLintContext<'_>, sink: &mut Sink<'_>) {
 
 pub fn wordy(ctx: &FileLintContext<'_>, sink: &mut Sink<'_>) {
     for s in subjects(ctx) {
-        let n = words(s.name).len();
-        if n > MAX_WORDS {
+        if is_wordy_name(s.name) {
+            let n = words(s.name).len();
             sink.at_symbol(s, format!("{} ({n} words in one name)", s.name));
         }
     }

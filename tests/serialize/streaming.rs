@@ -641,7 +641,10 @@ fn test_page_window_and_xml_report_trait() {
         &ingest,
         &graph,
         &interner,
-        None,
+        ripwire_rs::metrics::PanelInputs {
+            preset: None,
+            history: Err("in-memory ingest: no git history".to_string()),
+        },
         ripwire_rs::serialize::PageRequest::default(),
     );
     assert!(qp.to_xml_string().contains("ripwire-rs.quality-panel/v1"));
@@ -656,6 +659,7 @@ fn test_page_window_and_xml_report_trait() {
         &ingest,
         &graph,
         &interner,
+        Err("in-memory ingest: no git history".to_string()),
         ripwire_rs::serialize::PageRequest::default(),
     );
     assert!(ens.to_xml_string().contains("ripwire-rs.ensemble/v1"));

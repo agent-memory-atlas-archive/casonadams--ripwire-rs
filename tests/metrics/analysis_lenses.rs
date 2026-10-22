@@ -16,7 +16,13 @@ fn test_context_ratio_and_ensemble() {
     let cr = compute_context_ratio(&ingest, &graph, &interner, PageRequest::default());
     assert_eq!(cr.units, 0);
 
-    let ens = compute_ensemble(&ingest, &graph, &interner, PageRequest::default());
+    let ens = compute_ensemble(
+        &ingest,
+        &graph,
+        &interner,
+        Err("in-memory ingest: no git history".to_string()),
+        PageRequest::default(),
+    );
     assert_eq!(ens.eligible, 0);
     let cc = compute_comment_coherence(&ingest, &interner, PageRequest::default());
     assert_eq!(cc.documented, 0);
@@ -42,11 +48,21 @@ fn test_evaluate_symbol_ensemble() {
     let mut ingest = IngestResult::new();
     ingest.symbols.push(sym);
     let graph = Graph::build(&ingest, &interner);
-    let ens = compute_ensemble(&ingest, &graph, &interner, PageRequest::default());
+    let ens = compute_ensemble(
+        &ingest,
+        &graph,
+        &interner,
+        Err("in-memory ingest: no git history".to_string()),
+        PageRequest::default(),
+    );
     assert_eq!(ens.rows.len(), 1);
-    assert!(ens.rows[0].fired.contains("structural"));
-    assert!(ens.rows[0].fired.contains("historical"));
-    assert!(ens.rows[0].fired.contains("lexical"));
+    assert_eq!(ens.rows[0].fired, "structural");
+    assert!(!ens.enabled.contains(&"historical"));
+    assert!(
+        ens.unavailable
+            .iter()
+            .any(|(name, _)| *name == "historical")
+    );
 }
 
 #[test]

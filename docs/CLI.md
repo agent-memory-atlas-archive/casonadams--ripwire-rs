@@ -228,7 +228,11 @@ ripwire-rs . --slice="compute:x" --slice-flow=fwd
 # Annotate every symbol with fan-in, fan-out, complexity, and change-amplification
 ripwire-rs . --metrics
 
-# Entire quality panel in one report across 6 evidence families (strict|default|lenient)
+# Entire quality panel in one report across 6 evidence families (strict|default|lenient).
+# historical = git commits per file in the 12-month window (cut at 14); lexical = 1-2 letter or
+# over-long names; each ranked row lists one <e> child per fired family with its measured values.
+# Families that cannot be measured (confusion: non-C; historical: no git, shallow) are listed in
+# unavailable= and never substituted.
 ripwire-rs . --quality-panel=default
 
 # Show struct memory layout with computed LP64 field offsets and alignment padding
