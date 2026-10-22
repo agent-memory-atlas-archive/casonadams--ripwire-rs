@@ -37,7 +37,7 @@ impl NavItemsReport<'_> {
     }
 
     fn grouped(&self) -> bool {
-        self.dir == NavDir::Callers && self.def_rows.len() >= 2
+        self.def_rows.len() >= 2
     }
 
     fn of_def_attr(&self, item: &SymbolNavInfo) -> String {
@@ -90,12 +90,82 @@ impl NavItemsReport<'_> {
             _ => role.to_string(),
         }
     }
+
+    fn write_rows<W: Write>(
+        &self,
+        win: crate::serialize::PageWindow,
+        out: &mut W,
+    ) -> io::Result<()> {
+        for it in &self.items[win.begin..win.end] {
+            let binding_attrs = self.binding_attrs(it);
+            let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
+                " tested=\"1\""
+            } else {
+                ""
+            };
+            let sites_attr = if self.dir == NavDir::Callers && !it.sites.is_empty() {
+                format!(" sites_at=\"{}\"", it.sites.join(" ").xml_escaped())
+            } else {
+                String::new()
+            };
+            write!(
+                out,
+                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{binding_attrs}{}{tested_attr}{sites_attr}/>",
+                it.kind,
+                it.name.xml_escaped(),
+                it.path.xml_escaped(),
+                it.line,
+                self.of_def_attr(it)
+            )?;
+        }
+        let all_defs = self.of_all_defs_attr();
+        for dc in self.declined {
+            write_declined_row(out, dc, Some(self.dir), &all_defs)?;
+        }
+        Ok(())
+    }
+
+    fn write_attrs<W: Write>(
+        &self,
+        win: crate::serialize::PageWindow,
+        out: &mut W,
+    ) -> io::Result<()> {
+        let count = self.items.len();
+        let hop_tested = self
+            .items
+            .iter()
+            .filter(|it| it.tested || crate::gate::affected::is_test_path(&it.path))
+            .count();
+        let hop_untested = count.saturating_sub(hop_tested);
+        let of = self.of.xml_escaped();
+        let tag = self.dir.tag();
+        let uses_next = format!(" uses_next=\"--uses={of}\"");
+        let next = match (win.has_more, self.dir) {
+            (true, dir) => format!(
+                " next=\"--{tag}={of} --offset={}\"{}",
+                win.next_offset,
+                if dir == NavDir::Callers {
+                    uses_next.as_str()
+                } else {
+                    ""
+                }
+            ),
+            (false, NavDir::Callers) => format!(" next=\"--uses={of}\""),
+            (false, NavDir::Callees) => format!(" next=\"--expand={of}\""),
+        };
+        write!(
+            out,
+            " of=\"{of}\" defs=\"{}\" count=\"{count}\" root=\"{}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{}{} {}{next}",
+            self.defs,
+            self.root.xml_escaped(),
+            self.declined_attr(),
+            win.xml_attrs(),
+            self.gauge_attrs
+        )
+    }
 }
 
 fn write_def_rows<W: Write>(out: &mut W, defs: &[ImpactDef<'_>]) -> io::Result<()> {
-    if defs.len() < 2 {
-        return Ok(());
-    }
     for (ix, d) in defs.iter().enumerate() {
         let sc = d
             .scope
@@ -158,77 +228,18 @@ impl crate::serialize::XmlReport for NavItemsReport<'_> {
                 "ripwire-rs callers schema=ripwire-rs.callers/v1: 1-hop callers of of=. <def ix= t= sc= p= bodyless=1>: the groups defs= forms (a definition and the declarations tied to it; bodyless=1 tied to none), listed when there are two or more. of_def=K[~s|~t|~n]: the group the caller edge reaches (~s: one arm of an ambiguous call; ~t: a primary template whose specialization is another group; ~n: bound by name alone). via=name: the edge bound by name alone. declined_calls=K: call sites naming of= the resolver left unbound, in no count; <dc in= p= cands= via=declined>: one such site (calling def, file:line), NOT an edge; cands=K: in-tree defs it could have meant."
             }
             NavDir::Callees => {
-                "ripwire-rs callees schema=ripwire-rs.callees/v1: 1-hop callees of of=. role=macro: the callee is a macro expansion. via=name: bound by name alone (same directory or repository-wide). prov=scip|binding|import|final-segment|split: how the edge bound; scip = pinned by a --scip index; binding = exposed to the caller's language by a binding framework (pybind11 .def); import = through a module alias the file imports; final-segment = a type qualifier matched by last name only; split = one arm of an ambiguous call. declined_calls=K: call sites inside of= the resolver left unbound, in no count; <dc n= l= cands= via=declined>: one such site (called name, line), NOT an edge; cands=K: in-tree defs it could have meant."
+                "ripwire-rs callees schema=ripwire-rs.callees/v1: 1-hop callees of of=. <def ix= t= sc= p= bodyless=1> lists definition groups when there are two or more; of_def= identifies which groups call each callee, with ~s|~t|~n split/template/name provenance. role=macro: the callee is a macro expansion. via=name: bound by name alone (same directory or repository-wide). prov=scip|binding|import|final-segment|split: how the edge bound; scip = pinned by a compiler index; binding = exposed to the caller's language by a binding framework (pybind11 .def); import = through a module alias the file imports; final-segment = a type qualifier matched by last name only; split = one arm of an ambiguous call. declined_calls=K: call sites inside of= the resolver left unbound, in no count; <dc n= l= cands= via=declined>: one such site (called name, line), NOT an edge; cands=K: in-tree defs it could have meant."
             }
         })
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let count = self.items.len();
-        let win = self.window();
-        let hop_tested = self
-            .items
-            .iter()
-            .filter(|it| it.tested || crate::gate::affected::is_test_path(&it.path))
-            .count();
-        let hop_untested = count.saturating_sub(hop_tested);
-        let of = self.of.xml_escaped();
-        let tag = self.dir.tag();
-        let uses_next = format!(" uses_next=\"--uses={of}\"");
-        let next = match (win.has_more, self.dir) {
-            (true, dir) => format!(
-                " next=\"--{tag}={of} --offset={}\"{}",
-                win.next_offset,
-                if dir == NavDir::Callers {
-                    uses_next.as_str()
-                } else {
-                    ""
-                }
-            ),
-            (false, NavDir::Callers) => format!(" next=\"--uses={of}\""),
-            (false, NavDir::Callees) => format!(" next=\"--expand={of}\""),
-        };
-        write!(
-            out,
-            " of=\"{of}\" defs=\"{}\" count=\"{count}\" root=\"{}\" hop_tested=\"{hop_tested}\" hop_untested=\"{hop_untested}\"{}{} {}{next}",
-            self.defs,
-            self.root.xml_escaped(),
-            self.declined_attr(),
-            win.xml_attrs(),
-            self.gauge_attrs
-        )
+        self.write_attrs(self.window(), out)
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let win = self.window();
         if self.grouped() {
             write_def_rows(out, self.def_rows)?;
         }
-        for it in &self.items[win.begin..win.end] {
-            let binding_attrs = self.binding_attrs(it);
-            let tested_attr = if it.tested || crate::gate::affected::is_test_path(&it.path) {
-                " tested=\"1\""
-            } else {
-                ""
-            };
-            let sites_attr = if self.dir == NavDir::Callers && !it.sites.is_empty() {
-                format!(" sites_at=\"{}\"", it.sites.join(" ").xml_escaped())
-            } else {
-                String::new()
-            };
-            write!(
-                out,
-                "<s t=\"{}\" n=\"{}\" p=\"{}:{}\"{binding_attrs}{}{tested_attr}{sites_attr}/>",
-                it.kind,
-                it.name.xml_escaped(),
-                it.path.xml_escaped(),
-                it.line,
-                self.of_def_attr(it)
-            )?;
-        }
-        let all_defs = self.of_all_defs_attr();
-        for dc in self.declined {
-            write_declined_row(out, dc, Some(self.dir), &all_defs)?;
-        }
-        Ok(())
+        self.write_rows(self.window(), out)
     }
 }
 
@@ -240,7 +251,7 @@ pub struct ImpactReport<'a> {
     pub importers: Vec<&'a str>,
     pub declined: Vec<DeclinedCall<'a>>,
     pub gauge_attrs: &'a str,
-    pub pr_iters: u32,
+    pub pr_iters: Option<u32>,
     pub page: crate::serialize::PageRequest,
 }
 
@@ -381,6 +392,9 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
         root: false,
         comment: "ripwire-rs impact schema=ripwire-rs.impact/v1: transitive blast radius of of=. declined_calls=K: call sites naming a reached def the resolver left unbound; <dc in= p= cands=>: one such site, NOT an edge; dc_shown=N rows printed (file-first); dc_next= lists every site."
     );
+    fn pr_iters(&self) -> Option<u32> {
+        self.pr_iters
+    }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let reaches = self.nodes.len();
         let radius_tested = self
@@ -392,7 +406,7 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
         let of = self.sym_name.xml_escaped();
         write!(
             out,
-            " of=\"{of}\" defs=\"{}\" reaches=\"{reaches}\"{}{} radius_tested=\"{radius_tested}\" radius_untested=\"{radius_untested}\"{} root=\"{}\"{} {} pr_iters=\"{}\" next=\"--safe-delete={of}\"",
+            " of=\"{of}\" defs=\"{}\" reaches=\"{reaches}\"{}{} radius_tested=\"{radius_tested}\" radius_untested=\"{radius_untested}\"{} root=\"{}\"{} {} next=\"--safe-delete={of}\"",
             self.defs.iter().map(|d| d.members.len()).sum::<usize>(),
             self.by_depth_attr(),
             self.importer_attrs(),
@@ -400,12 +414,13 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
             self.root.xml_escaped(),
             self.window().xml_attrs(),
             self.gauge_attrs,
-            self.pr_iters.max(1),
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let win = self.window();
-        write_def_rows(out, &self.defs)?;
+        if self.defs.len() >= 2 {
+            write_def_rows(out, &self.defs)?;
+        }
         if win.capped {
             self.write_files_block(out)?;
         }
@@ -424,42 +439,76 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
     }
 }
 
-/// Serialize symbol neighborhood to Ripwire-compatible XML.
-pub fn serialize_find_symbol_xml<W: Write>(nav: &NavNeighborhood, out: &mut W) -> io::Result<()> {
-    writeln!(
-        out,
-        "<find-symbol schema=\"ripwire-rs.find-symbol/v1\" of=\"{}\" p=\"{}:{}\" callers=\"{}\" callees=\"{}\">",
-        nav.target.name.xml_escaped(),
-        nav.target.path.xml_escaped(),
-        nav.target.line,
-        nav.callers.len(),
-        nav.callees.len()
-    )?;
-    writeln!(out, "  <callers>")?;
-    for c in &nav.callers {
-        writeln!(
-            out,
-            "    <s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
-            c.kind,
-            c.name.xml_escaped(),
-            c.path.xml_escaped(),
-            c.line
-        )?;
+/// Definition groups and their incoming/outgoing neighborhoods under one query root.
+pub struct FindSymbolReport<'a> {
+    pub root: &'a str,
+    pub of: &'a str,
+    pub defs: usize,
+    pub def_rows: &'a [ImpactDef<'a>],
+    pub nav: &'a NavNeighborhood,
+    pub callers_declined: &'a [DeclinedCall<'a>],
+    pub callees_declined: &'a [DeclinedCall<'a>],
+    pub page: crate::serialize::PageRequest,
+}
+
+impl FindSymbolReport<'_> {
+    fn neighbors(&self, dir: NavDir) -> NavItemsReport<'_> {
+        let (items, declined) = match dir {
+            NavDir::Callers => (&self.nav.callers, self.callers_declined),
+            NavDir::Callees => (&self.nav.callees, self.callees_declined),
+        };
+        NavItemsReport {
+            dir,
+            root: self.root,
+            of: self.of,
+            defs: self.defs,
+            def_rows: self.def_rows,
+            items,
+            declined,
+            gauge_attrs: &self.nav.gauge_attrs,
+            page: self.page,
+        }
     }
-    writeln!(out, "  </callers>")?;
-    writeln!(out, "  <callees>")?;
-    for c in &nav.callees {
-        writeln!(
-            out,
-            "    <s t=\"{}\" n=\"{}\" p=\"{}:{}\"/>",
-            c.kind,
-            c.name.xml_escaped(),
-            c.path.xml_escaped(),
-            c.line
-        )?;
+}
+
+impl crate::serialize::XmlReport for FindSymbolReport<'_> {
+    crate::xml_report_meta!(
+        "find-symbol",
+        "ripwire-rs.find-symbol/v1",
+        root: true,
+        comment: "ripwire-rs find-symbol: all matching definition groups and their unioned neighborhoods. p= is the primary match; <def ix= t= sc= p= bodyless=1> lists every group, including tied declarations. Inside callers, of_def= identifies the called groups; inside callees, it identifies the calling groups. ~s|~t|~n retain split/template/name binding provenance. prov= and role= describe callee bindings and macros. Each neighborhood has its own count/page and declined sites, which are not edges."
+    );
+    fn root_path(&self) -> &str {
+        self.root
     }
-    writeln!(out, "  </callees>")?;
-    writeln!(out, "</find-symbol>")
+    fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        write!(
+            out,
+            " of=\"{}\" p=\"{}:{}\" defs=\"{}\" groups=\"{}\" callers=\"{}\" callees=\"{}\" {}",
+            self.of.xml_escaped(),
+            self.nav.target.path.xml_escaped(),
+            self.nav.target.line,
+            self.defs,
+            self.def_rows.len(),
+            self.nav.callers.len(),
+            self.nav.callees.len(),
+            self.nav.gauge_attrs,
+        )
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
+        write_def_rows(out, self.def_rows)?;
+        for dir in [NavDir::Callers, NavDir::Callees] {
+            let report = self.neighbors(dir);
+            let win = self.page.window(report.items.len(), 0);
+            let tag = dir.tag();
+            write!(out, "<{tag}")?;
+            report.write_attrs(win, out)?;
+            writeln!(out, ">")?;
+            report.write_rows(win, out)?;
+            writeln!(out, "</{tag}>")?;
+        }
+        Ok(())
+    }
 }
 
 /// Serialize static use-sites to Ripwire-compatible XML.

@@ -2,7 +2,8 @@ use crate::domain::{IngestResult, Interner};
 use crate::gate::baseline::{
     DEFAULT_BASELINE_FILE, QualitySnapshot, compute_snapshot, read_baseline_file,
 };
-use crate::mcp::McpState;
+use crate::query::commands::QueryContext;
+use crate::serialize::XmlEscapeExt;
 use std::collections::HashMap;
 use std::io::{self, Write};
 use std::path::Path;
@@ -163,7 +164,14 @@ fn write_regression_row<W: Write>(r: &QualityRegression, out: &mut W) -> io::Res
     writeln!(
         out,
         "  <r kind=\"{}\" sym=\"{}\" p=\"{}:{}\" was=\"{}\" now=\"{}\" gating=\"{}\" bar=\"{bar_val}\"{}/>",
-        r.kind, r.sym_name, r.file_path, r.line, r.was_val, r.now_val, gating_val, origin_attr
+        r.kind.xml_escaped(),
+        r.sym_name.xml_escaped(),
+        r.file_path.xml_escaped(),
+        r.line,
+        r.was_val,
+        r.now_val,
+        gating_val,
+        origin_attr
     )
 }
 
@@ -177,7 +185,7 @@ impl QualityDeltaReport {
 impl crate::serialize::ToXmlString for QualityDeltaReport {
     fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let mut hb_attr = match self.head_basis {
-            Some(hb) => format!(" head_basis=\"{hb}\""),
+            Some(hb) => format!(" head_basis=\"{}\"", hb.xml_escaped()),
             None => String::new(),
         };
         if self.baseline_absorbed > 0 {
@@ -188,7 +196,6 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
         }
         let collapse = self.collapsed_stale_replay();
         let stale_attr = collapse.map_or_else(String::new, |replay| {
-            use crate::serialize::XmlEscapeExt;
             format!(
                 " stale_by_kind=\"{}\" stale_next=\"{} --show-stale\"",
                 stale_by_kind(&self.stale_acks).xml_escaped(),
@@ -204,15 +211,15 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
             return writeln!(
                 out,
                 "<!-- ripwire-rs quality-delta schema=ripwire-rs.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. -->\n<quality-delta schema=\"ripwire-rs.quality-delta/v1\" baseline=\"{}\" regressions=\"0\" gating=\"0\" stale=\"{}\" at=\"{}\"{hb_attr}{stale_attr}></quality-delta>",
-                self.baseline_source,
+                self.baseline_source.xml_escaped(),
                 self.stale_acks.len(),
-                self.at_stamp
+                self.at_stamp.xml_escaped()
             );
         }
         writeln!(
             out,
             "<!-- ripwire-rs quality-delta schema=ripwire-rs.quality-delta/v1: only what the change made WORSE vs baseline=: regressions= minor= gating=; <r kind= sym= p= was= now= gating= bar=>, <sa> acked; with no regressions the <sa> rows collapse to stale_by_kind= and stale_next= prints them. baseline_absorbed=N: the pinned sidecar was taken on a dirty tree that already held N gating findings, so a green exit means clean since the pin. -->\n<quality-delta schema=\"ripwire-rs.quality-delta/v1\" baseline=\"{}\" regressions=\"{}\" minor=\"{}\" acked=\"{}\" stale=\"{}\" preexisting-worse=\"{}\" new-symbol=\"{}\" gating=\"{}\" register-macro-excluded=\"0\" api-new-surface=\"{}\" at=\"{}\" renames=\"0\" rename_window_commits=\"0\" acked_by_rename=\"0\" acked_by_content=\"0\"{hb_attr}{stale_attr}>",
-            self.baseline_source,
+            self.baseline_source.xml_escaped(),
             self.regressions.len(),
             self.minor_count,
             self.acked_count,
@@ -221,7 +228,7 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
             self.new_symbol_count,
             self.gating_count,
             self.api_new_surface,
-            self.at_stamp
+            self.at_stamp.xml_escaped()
         )?;
         for r in &self.regressions {
             write_regression_row(r, out)?;
@@ -231,7 +238,11 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
                 writeln!(
                     out,
                     "  <sa kind=\"{}\" key=\"{}\" why=\"{}\" sym=\"{}\" p=\"{}\"/>",
-                    sa.kind, sa.key, sa.why, sa.sym, sa.path
+                    sa.kind.xml_escaped(),
+                    sa.key.xml_escaped(),
+                    sa.why.xml_escaped(),
+                    sa.sym.xml_escaped(),
+                    sa.path.xml_escaped()
                 )?;
             }
         }
@@ -541,33 +552,24 @@ fn merge_snapshot_entries(dst: &mut QualitySnapshot, src: QualitySnapshot) {
     dst.public_api.extend(src.public_api);
 }
 
-fn resolve_rev_tree<'a>(repo: &'a gix::Repository, rev: &str) -> Option<gix::Tree<'a>> {
-    if !rev.is_empty()
-        && rev != "HEAD"
-        && let Ok(id) = repo.rev_parse_single(rev)
-        && let Ok(obj) = id.object()
-        && let Ok(commit) = obj.try_into_commit()
-        && let Ok(tree) = commit.tree()
-    {
-        return Some(tree);
-    }
+fn head_tree<'a>(repo: &'a gix::Repository) -> Option<gix::Tree<'a>> {
     repo.head_commit().ok()?.tree().ok()
 }
 
-fn read_changed_rev_blobs<P: AsRef<Path>>(
-    root_path: P,
-    rev: &str,
+fn resolve_rev_tree<'a>(repo: &'a gix::Repository, rev: &str) -> Option<gix::Tree<'a>> {
+    match rev {
+        "" | "HEAD" => head_tree(repo),
+        rev => crate::git::repo::revision_tree(repo, rev).or_else(|| head_tree(repo)),
+    }
+}
+
+fn collect_tree_blobs(
+    tree: &gix::Tree<'_>,
     ingest: &IngestResult,
     interner: &Interner,
     changed_set: &std::collections::HashSet<&str>,
 ) -> Vec<(String, crate::domain::Lang, Vec<u8>)> {
     let mut rev_files = Vec::new();
-    let Ok(repo) = gix::open(root_path.as_ref()) else {
-        return rev_files;
-    };
-    let Some(tree) = resolve_rev_tree(&repo, rev) else {
-        return rev_files;
-    };
     for f in &ingest.files {
         let rel_path = interner.resolve(&f.path);
         if changed_set.contains(rel_path)
@@ -578,6 +580,22 @@ fn read_changed_rev_blobs<P: AsRef<Path>>(
         }
     }
     rev_files
+}
+
+fn read_changed_rev_blobs<P: AsRef<Path>>(
+    root_path: P,
+    rev: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    changed_set: &std::collections::HashSet<&str>,
+) -> Vec<(String, crate::domain::Lang, Vec<u8>)> {
+    let Ok(repo) = gix::open(root_path.as_ref()) else {
+        return Vec::new();
+    };
+    let Some(tree) = resolve_rev_tree(&repo, rev) else {
+        return Vec::new();
+    };
+    collect_tree_blobs(&tree, ingest, interner, changed_set)
 }
 
 #[must_use]
@@ -623,7 +641,7 @@ pub fn load_revision_baseline_incremental(
 
 fn load_head_baseline_incremental(
     root: &str,
-    state: &McpState,
+    state: &QueryContext<'_>,
     working: &QualitySnapshot,
     changed_files: &[String],
     head_sha: &str,
@@ -631,8 +649,8 @@ fn load_head_baseline_incremental(
     load_revision_baseline_incremental(
         root,
         "HEAD",
-        &state.ingest,
-        &state.interner,
+        state.ingest,
+        state.interner,
         working,
         changed_files,
         head_sha,
@@ -670,14 +688,14 @@ pub fn symbol_matches_and_changed(
 
 fn find_preexisting_callable_in_file<'a>(
     file_path: &str,
-    state: &'a McpState,
+    state: &'a QueryContext<'_>,
     baseline: &QualitySnapshot,
 ) -> Option<(&'a crate::domain::Symbol, String, String)> {
     for sym in &state.ingest.symbols {
         if (sym.kind == crate::domain::SymKind::Function
             || sym.kind == crate::domain::SymKind::Method)
             && let Some((sym_name, sym_file)) =
-                symbol_matches_and_changed(sym, file_path, &state.ingest, &state.interner, baseline)
+                symbol_matches_and_changed(sym, file_path, state.ingest, state.interner, baseline)
         {
             return Some((sym, sym_name, sym_file));
         }
@@ -686,9 +704,9 @@ fn find_preexisting_callable_in_file<'a>(
 }
 
 fn check_churn_regressions(
-    root: &str,
-    state: &McpState,
+    state: &QueryContext<'_>,
     baseline: &QualitySnapshot,
+    changed_files: &[String],
     regressions: &mut Vec<QualityRegression>,
 ) {
     let Some(commits) = &state.commits else {
@@ -698,8 +716,7 @@ fn check_churn_regressions(
         return;
     }
 
-    let changed_files = crate::cli::safety::get_working_tree_changed_files(root);
-    for f in &changed_files {
+    for f in changed_files {
         let commit_count = commits
             .iter()
             .filter(|c| c.changed_files.iter().any(|cf| cf == f || cf.ends_with(f)))
@@ -780,7 +797,7 @@ fn check_body_text_regressions(
 
 pub fn collect_changed_clone_regressions(
     clones: Vec<crate::clones::CloneGroup>,
-    state: &McpState,
+    state: &QueryContext<'_>,
     changed_files: &[String],
     regressions: &mut Vec<QualityRegression>,
 ) {
@@ -831,18 +848,18 @@ pub fn is_changed_callable(
 }
 
 fn check_source_and_clone_regressions(
-    root: &str,
-    state: &McpState,
+    state: &QueryContext<'_>,
     baseline: &QualitySnapshot,
     changed_files: &[String],
+    clones: &[crate::clones::CloneGroup],
     regressions: &mut Vec<QualityRegression>,
 ) {
     use crate::domain::CorpusView;
-    let root_path = Path::new(root);
     for sym in &state.ingest.symbols {
         let file_path = state.sym_path(sym);
         if is_changed_callable(sym, file_path, changed_files)
-            && let Some(body) = state.read_sym_source(root, sym)
+            && let Ok(bytes) = state.sources.read(file_path)
+            && let Some(body) = sym.source_text(&bytes)
         {
             let sym_name = state.sym_name(sym);
             let key = format!("{file_path}::{sym_name}");
@@ -850,14 +867,7 @@ fn check_source_and_clone_regressions(
             check_body_text_regressions(sym, sym_name, file_path, &body, is_new, regressions);
         }
     }
-    let clones = crate::clones::find_clones_in_root(
-        &state.ingest,
-        &state.interner,
-        60,
-        None,
-        Some(root_path),
-    );
-    collect_changed_clone_regressions(clones, state, changed_files, regressions);
+    collect_changed_clone_regressions(clones.to_vec(), state, changed_files, regressions);
 }
 
 fn filter_regressions_by_scope(
@@ -865,7 +875,7 @@ fn filter_regressions_by_scope(
     regressions: &mut [QualityRegression],
     scope_spec: &str,
 ) {
-    let changed = crate::cli::safety::get_working_tree_changed_files(root);
+    let changed = crate::git::repo::working_tree_changes(root);
     let pats: Vec<&str> = scope_spec.split(',').map(str::trim).collect();
     for r in regressions {
         let in_scope = if scope_spec == "diff" {
@@ -908,7 +918,7 @@ pub fn content_id(body: &str, own_name: &str) -> u64 {
         .fold(OFFSET, |h, b| (h ^ u64::from(b)).wrapping_mul(PRIME))
 }
 
-fn regression_content_id(state: &McpState, r: &QualityRegression) -> Option<u64> {
+fn regression_content_id(state: &QueryContext<'_>, r: &QualityRegression) -> Option<u64> {
     if matches!(
         r.kind.as_str(),
         "duplication" | "new-clone-of-reused-helper"
@@ -924,7 +934,7 @@ fn regression_content_id(state: &McpState, r: &QualityRegression) -> Option<u64>
         state.ingest.symbols.iter().find(|s| {
             s.file_id as usize == file_id && state.interner.resolve(&s.name) == r.sym_name
         })?;
-    let bytes = std::fs::read(Path::new(&state.root).join(&r.file_path)).ok()?;
+    let bytes = state.sources.read(&r.file_path).ok()?;
     Some(content_id(
         &String::from_utf8_lossy(sym.source_bytes(&bytes)),
         &r.sym_name,
@@ -960,12 +970,23 @@ pub fn stale_replay_for(scope: Option<&str>) -> String {
     }
 }
 
-pub fn apply_cli_delta_options(
-    state: &McpState,
+pub fn update_report_counts(report: &mut QualityDeltaReport) {
+    report.gating_count = report.regressions.iter().filter(|r| r.is_gating).count();
+    report.minor_count = report.regressions.len().saturating_sub(report.gating_count);
+    report.preexisting_worse_count = report
+        .regressions
+        .iter()
+        .filter(|r| !r.is_new_symbol)
+        .count();
+}
+
+pub fn apply_cli_delta_options_with_writer<W: std::io::Write>(
+    state: &QueryContext<'_>,
     report: &mut QualityDeltaReport,
     opts: DeltaCliOptions<'_>,
+    ack_writer: impl FnOnce() -> io::Result<W>,
 ) -> io::Result<()> {
-    let root = state.root.as_str();
+    let root = state.root;
     let scope_opt = opts.scope.filter(|s| !s.is_empty());
     if let Some(scope_spec) = scope_opt {
         filter_regressions_by_scope(root, &mut report.regressions, scope_spec);
@@ -975,16 +996,26 @@ pub fn apply_cli_delta_options(
     }
     if let Some(reason) = opts.quality_ack {
         let ack_pats = opts.ack_only.map(split_ack_patterns).unwrap_or_default();
-        let mut file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(Path::new(root).join(DEFAULT_ACKS_FILE))?;
+        let mut file = ack_writer()?;
         let cid_for = |r: &QualityRegression| regression_content_id(state, r);
         ack_matching_regressions(report, &ack_pats, reason, cid_for, &mut file)?;
     }
     report.gating_count = report.regressions.iter().filter(|r| r.is_gating).count();
     report.minor_count = report.regressions.len().saturating_sub(report.gating_count);
     Ok(())
+}
+
+pub fn apply_cli_delta_options(
+    state: &QueryContext<'_>,
+    report: &mut QualityDeltaReport,
+    opts: DeltaCliOptions<'_>,
+) -> io::Result<()> {
+    apply_cli_delta_options_with_writer(state, report, opts, || {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(Path::new(state.root).join(DEFAULT_ACKS_FILE))
+    })
 }
 
 pub fn split_ack_patterns(raw: &str) -> Vec<&str> {
@@ -1000,77 +1031,154 @@ pub enum DeltaBasis {
     HeadOnly,
 }
 
-/// Evaluate quality delta for a workspace root.
-pub fn evaluate_quality_delta(root: &str, state: &McpState) -> io::Result<QualityDeltaReport> {
+pub fn evaluate_quality_delta(
+    root: &str,
+    state: &QueryContext<'_>,
+) -> io::Result<QualityDeltaReport> {
     evaluate_quality_delta_with_basis(root, state, DeltaBasis::PinnedOrHead)
 }
 
-pub fn evaluate_quality_delta_with_basis(
-    root: &str,
-    state: &McpState,
-    basis: DeltaBasis,
-) -> io::Result<QualityDeltaReport> {
-    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let head_sha = at_stamp
+#[must_use]
+pub fn resolve_delta_head_sha(at_stamp: &str) -> &str {
+    at_stamp
         .strip_suffix("+dirty")
         .unwrap_or(if at_stamp.is_empty() {
             "HEAD"
         } else {
-            &at_stamp
-        });
-    let changed_files = crate::cli::safety::get_working_tree_changed_files(root);
-    let mut working = compute_snapshot(&state.ingest, &state.graph, &state.interner, head_sha);
-    working.dirty = !changed_files.is_empty();
+            at_stamp
+        })
+}
 
-    let baseline_path = Path::new(root).join(DEFAULT_BASELINE_FILE);
-    let (baseline, source_name, head_basis) = if basis == DeltaBasis::PinnedOrHead
-        && baseline_path.exists()
-    {
-        let snap = read_baseline_file(&baseline_path)?;
-        (snap, "sidecar", None)
-    } else if changed_files.is_empty() {
-        (working.clone(), "git-HEAD", Some("identity"))
+pub struct QualityDeltaFacts<'a> {
+    pub working: &'a QualitySnapshot,
+    pub baseline: &'a QualitySnapshot,
+    pub source_name: &'static str,
+    pub head_basis: Option<&'static str>,
+    pub at_stamp: &'a str,
+    pub changed_files: &'a [String],
+    pub acks: Option<&'a QualityAcks>,
+    pub clones: &'a [crate::clones::CloneGroup],
+}
+
+pub fn assemble_quality_delta_report(
+    state: &QueryContext<'_>,
+    facts: &QualityDeltaFacts<'_>,
+) -> QualityDeltaReport {
+    let mut report = compute_quality_delta_with_acks(
+        facts.working,
+        facts.baseline,
+        facts.source_name,
+        facts.acks,
+    );
+    report.head_basis = facts.head_basis;
+    report.baseline_absorbed = facts.baseline.absorbed;
+    if !facts.at_stamp.is_empty() {
+        report.at_stamp = facts.at_stamp.to_string();
+    }
+    if !facts.changed_files.is_empty() {
+        check_churn_regressions(
+            state,
+            facts.baseline,
+            facts.changed_files,
+            &mut report.regressions,
+        );
+        check_source_and_clone_regressions(
+            state,
+            facts.baseline,
+            facts.changed_files,
+            facts.clones,
+            &mut report.regressions,
+        );
+        if let Some(ledger) = facts.acks {
+            let _ = apply_quality_acks(&mut report.regressions, ledger);
+        }
+    }
+    update_report_counts(&mut report);
+    report
+}
+
+fn try_read_pinned_baseline(root: &str, basis: DeltaBasis) -> io::Result<Option<QualitySnapshot>> {
+    if basis == DeltaBasis::PinnedOrHead {
+        let baseline_path = Path::new(root).join(DEFAULT_BASELINE_FILE);
+        if baseline_path.exists() {
+            return read_baseline_file(&baseline_path).map(Some);
+        }
+    }
+    Ok(None)
+}
+
+fn resolve_quality_baseline(
+    root: &str,
+    state: &QueryContext<'_>,
+    basis: DeltaBasis,
+    working: &QualitySnapshot,
+    changed_files: &[String],
+) -> io::Result<(QualitySnapshot, &'static str, Option<&'static str>)> {
+    if let Some(snap) = try_read_pinned_baseline(root, basis)? {
+        return Ok((snap, "sidecar", None));
+    }
+    if changed_files.is_empty() {
+        Ok((working.clone(), "git-HEAD", Some("identity")))
     } else {
-        let snap = load_head_baseline_incremental(root, state, &working, &changed_files, head_sha);
-        (snap, "git-HEAD", None)
-    };
+        let snap =
+            load_head_baseline_incremental(root, state, working, changed_files, &working.head_sha);
+        Ok((snap, "git-HEAD", None))
+    }
+}
 
+fn load_quality_acks(root: &str) -> Option<QualityAcks> {
     let acks_path = Path::new(root).join(DEFAULT_ACKS_FILE);
-    let acks = if acks_path.exists() {
+    if acks_path.exists() {
         std::fs::read_to_string(&acks_path)
             .ok()
             .map(|c| parse_acks_content(&c))
     } else {
         None
+    }
+}
+
+fn collect_delta_clones(
+    state: &QueryContext<'_>,
+    root: &str,
+    has_changes: bool,
+) -> Vec<crate::clones::CloneGroup> {
+    if !has_changes {
+        return Vec::new();
+    }
+    crate::clones::find_clones_in_root(
+        state.ingest,
+        state.interner,
+        60,
+        None,
+        Some(Path::new(root)),
+    )
+}
+
+pub fn evaluate_quality_delta_with_basis(
+    root: &str,
+    state: &QueryContext<'_>,
+    basis: DeltaBasis,
+) -> io::Result<QualityDeltaReport> {
+    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
+    let head_sha = resolve_delta_head_sha(&at_stamp);
+    let changed_files = crate::git::repo::working_tree_changes(root);
+    let mut working = compute_snapshot(state.ingest, state.graph, state.interner, head_sha);
+    working.dirty = !changed_files.is_empty();
+
+    let (baseline, source_name, head_basis) =
+        resolve_quality_baseline(root, state, basis, &working, &changed_files)?;
+    let acks = load_quality_acks(root);
+    let clones = collect_delta_clones(state, root, !changed_files.is_empty());
+
+    let facts = QualityDeltaFacts {
+        working: &working,
+        baseline: &baseline,
+        source_name,
+        head_basis,
+        at_stamp: &at_stamp,
+        changed_files: &changed_files,
+        acks: acks.as_ref(),
+        clones: &clones,
     };
-
-    let mut report =
-        compute_quality_delta_with_acks(&working, &baseline, source_name, acks.as_ref());
-    report.head_basis = head_basis;
-    report.baseline_absorbed = baseline.absorbed;
-    if !at_stamp.is_empty() {
-        report.at_stamp = at_stamp;
-    }
-    if !changed_files.is_empty() {
-        check_churn_regressions(root, state, &baseline, &mut report.regressions);
-        check_source_and_clone_regressions(
-            root,
-            state,
-            &baseline,
-            &changed_files,
-            &mut report.regressions,
-        );
-        if let Some(ledger) = &acks {
-            let _ = apply_quality_acks(&mut report.regressions, ledger);
-        }
-    }
-    report.gating_count = report.regressions.iter().filter(|r| r.is_gating).count();
-    report.minor_count = report.regressions.len().saturating_sub(report.gating_count);
-    report.preexisting_worse_count = report
-        .regressions
-        .iter()
-        .filter(|r| !r.is_new_symbol)
-        .count();
-
-    Ok(report)
+    Ok(assemble_quality_delta_report(state, &facts))
 }

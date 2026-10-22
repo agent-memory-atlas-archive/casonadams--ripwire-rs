@@ -1,0 +1,322 @@
+use ripwire_rs::query::commands::{
+    BatchQuery, QueryContext, dispatch, execute_batch, parse_batch_content,
+};
+use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, PageRankConfig, ingest_in_memory_files};
+use serde_json::json;
+
+fn with_context(run: impl FnOnce(&QueryContext<'_>)) {
+    let sources = [(
+        "virtual.rs",
+        b"pub fn target() {}\nfn caller() { target(); }\n".as_slice(),
+    )];
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let ingest = ingest_in_memory_files(
+        &[("virtual.rs", Lang::Rust, sources[0].1)],
+        &registry,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&PageRankConfig::default());
+    run(&QueryContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        pr: &pr,
+        interner: &interner,
+        commits: None,
+        sources: &sources,
+        at: None,
+    });
+}
+
+#[test]
+fn map_top_k_selects_the_most_connected_definition() {
+    let source = b"fn hub() { left(); right(); last(); }\nfn left() {}\nfn right() {}\nfn last() {}\nfn caller() { left(); }\n";
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[("virtual.rs", Lang::Rust, source.as_slice())],
+        &registry,
+        &interner,
+    );
+    let workspace = ripwire_rs::Workspace::from_ingest(":memory:", ingest, interner);
+    let sources = [("virtual.rs", source.as_slice())];
+    let context = workspace.query_context(&sources);
+    let result = dispatch(
+        &context,
+        "analyze",
+        &json!({"rank_by": "degree", "top_k": 1}),
+    )
+    .unwrap();
+    let report = roxmltree::Document::parse(result.as_str().unwrap()).unwrap();
+    let names: Vec<_> = report
+        .descendants()
+        .filter(|node| node.has_tag_name("s"))
+        .map(|node| node.attribute("n").unwrap())
+        .collect();
+    assert_eq!(names, ["hub"]);
+}
+
+#[test]
+fn dispatch_rejects_invalid_arguments_and_returns_indexed_symbol() {
+    with_context(|context| {
+        for arguments in [
+            json!({}),
+            json!({"symbol": 7}),
+            json!({"symbol": "target", "limit": -1}),
+        ] {
+            assert!(dispatch(context, "find_symbol", &arguments).is_err());
+        }
+        assert!(dispatch(context, "not_a_command", &json!({})).is_err());
+        let result = dispatch(context, "find_symbol", &json!({"symbol": "target"})).unwrap();
+        let xml = result.as_str().unwrap();
+        assert!(xml.contains("target"));
+        assert!(xml.contains("virtual.rs"));
+    });
+}
+
+#[test]
+fn batch_retains_successes_and_isolates_rejected_queries() {
+    with_context(|context| {
+        let queries = parse_batch_content(
+            "# indexed reads\nfind_symbol:target\nfind_symbol:{}\nreplace_symbol_body:{\"symbol\":\"target\",\"new_body\":\"fn target() {}\"}\nbatch:{}\nquality_delta:{\"ack_only\":true}\nfind_symbol:caller\n",
+        );
+        let results = execute_batch(context, &queries).unwrap();
+        assert_eq!(results.len(), 6);
+        assert!(results[0]["result"].as_str().unwrap().contains("target"));
+        for result in &results[1..5] {
+            assert!(result["error"].is_string());
+            assert!(result.get("result").is_none());
+        }
+        assert!(results[5]["result"].as_str().unwrap().contains("caller"));
+    });
+}
+
+#[test]
+fn batch_enforces_sixteen_query_boundary() {
+    with_context(|context| {
+        let mut queries: Vec<_> = (0..16)
+            .map(|_| BatchQuery {
+                name: "find_symbol".into(),
+                arguments: json!({"symbol": "target"}),
+            })
+            .collect();
+        assert_eq!(execute_batch(context, &queries).unwrap().len(), 16);
+        queries.push(BatchQuery {
+            name: "find_symbol".into(),
+            arguments: json!({"symbol": "target"}),
+        });
+        assert!(execute_batch(context, &queries).is_err());
+    });
+}
+
+#[test]
+fn batch_malformed_items_preserve_order_and_structured_errors() {
+    with_context(|context| {
+        let result = dispatch(
+            context,
+            "batch",
+            &json!({"queries": [
+                {"name": "find_symbol", "arguments": {"symbol": "target"}},
+                {"name": 7}, null,
+                {"name": "find_symbol", "arguments": []},
+                {"name": "unknown"},
+                {"name": "find_symbol", "arguments": {"symbol": "caller"}}
+            ]}),
+        )
+        .unwrap();
+        let items = result.as_array().unwrap();
+        assert_eq!(items.len(), 6);
+        assert!(items[0]["result"].as_str().unwrap().contains("target"));
+        for item in &items[1..5] {
+            assert!(item["error"].is_string());
+        }
+        assert!(items[5]["result"].as_str().unwrap().contains("caller"));
+        assert_eq!(items[0]["kind"], "xml");
+    });
+}
+
+#[test]
+fn batch_xml_escapes_text_and_json_without_escaping_xml_reports() {
+    let results = [
+        json!({"tool": "memory_recall", "kind": "text", "result": "A & B <example/>"}),
+        json!({"tool": "json", "kind": "json", "result": {"note": "<&"}}),
+        json!({"tool": "find_symbol", "kind": "xml", "result": "<symbols/>"}),
+        json!({"tool": "unknown", "error": "unknown & rejected"}),
+    ];
+    let mut output = Vec::new();
+    ripwire_rs::cli::queries::write_batch_results(":memory:", &results, &mut output).unwrap();
+    let xml = String::from_utf8(output).unwrap();
+    assert!(xml.contains("A &amp; B &lt;example/&gt;"));
+    assert!(xml.contains("&lt;&amp;"));
+    assert!(xml.contains("<symbols/>"));
+    assert!(xml.contains("unknown &amp; rejected"));
+
+    let bad_xml = [json!({"tool": "bad", "kind": "xml", "result": 123})];
+    let mut bad_out = Vec::new();
+    assert!(
+        ripwire_rs::cli::queries::write_batch_results(":memory:", &bad_xml, &mut bad_out).is_err()
+    );
+
+    let mut esc_out = Vec::new();
+    let sample = [json!({"tool": "find_symbol", "kind": "xml", "result": "<symbols/>"})];
+    ripwire_rs::cli::queries::write_batch_results("root&path", &sample, &mut esc_out).unwrap();
+    assert!(
+        String::from_utf8(esc_out)
+            .unwrap()
+            .contains("root=\"root&amp;path\"")
+    );
+}
+
+#[test]
+fn owners_dispatch_retains_root_revision_and_detail_author() {
+    with_context(|context| {
+        let commits = [ripwire_rs::git::history::CommitInfo {
+            id: "revision".into(),
+            timestamp: 1_700_000_000,
+            author: "Ada".into(),
+            changed_files: vec!["virtual.rs".into()],
+        }];
+        let owned = QueryContext {
+            commits: Some(&commits),
+            at: Some("revision:date"),
+            ..*context
+        };
+        let folded = dispatch(&owned, "owners", &json!({})).unwrap();
+        assert!(folded.as_str().unwrap().contains("<uniform"));
+        let detail = dispatch(&owned, "owners", &json!({"detail": 1})).unwrap();
+        let xml = detail.as_str().unwrap();
+        assert!(xml.contains("root=\":memory:\""));
+        assert!(xml.contains("revision:date"));
+        assert!(xml.contains("virtual.rs"));
+        assert!(xml.contains("Ada"));
+    });
+}
+
+#[test]
+fn catalogue_document_consumers_use_supplied_source_bytes() {
+    let sources = [
+        ("virtual.rs", b"pub fn target() {}\n".as_slice()),
+        ("guide.md", b"# Guide\nUse `target` and replace `removed_api()`.\n".as_slice()),
+        ("config.py", b"import os\nFLAG = os.getenv(\"IN_MEMORY_FLAG\")\n".as_slice()),
+        ("test_runner.py", b"import unittest\nclass Tests(unittest.TestCase):\n    def test_target(self):\n        pass\nif __name__ == '__main__':\n    unittest.main()\n".as_slice()),
+    ];
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            ("virtual.rs", Lang::Rust, sources[0].1),
+            ("guide.md", Lang::Markdown, sources[1].1),
+            ("config.py", Lang::Python, sources[2].1),
+            ("test_runner.py", Lang::Python, sources[3].1),
+        ],
+        &registry,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&PageRankConfig::default());
+    let context = QueryContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        pr: &pr,
+        interner: &interner,
+        commits: Some(&[]),
+        sources: &sources,
+        at: Some("memory"),
+    };
+    let mentions = dispatch(&context, "mentions", &json!({"symbol": "target"})).unwrap();
+    assert!(mentions.as_str().unwrap().contains("guide.md"));
+    let flags = dispatch(&context, "flags", &json!({})).unwrap();
+    assert!(flags.as_str().unwrap().contains("IN_MEMORY_FLAG"));
+    let drift = dispatch(&context, "doc_drift", &json!({})).unwrap();
+    assert!(drift.as_str().unwrap().contains("removed_api"));
+    let affected = dispatch(&context, "affected", &json!({"files": "test_runner.py"})).unwrap();
+    let document = roxmltree::Document::parse(affected.as_str().unwrap()).unwrap();
+    assert!(
+        document
+            .descendants()
+            .any(|node| node.attribute("run") == Some("python3 test_runner.py"))
+    );
+}
+
+#[test]
+fn whereis_catalogue_advertises_selectors_and_renderer_exposes_refs() {
+    let descriptor = ripwire_rs::query::commands::COMMANDS
+        .iter()
+        .find(|command| command.name == "whereis")
+        .unwrap();
+    for selector in ["listing", "full_text"] {
+        assert!(descriptor.parameters().any(|(name, _, _)| name == selector));
+    }
+    with_context(|context| {
+        assert!(
+            dispatch(
+                context,
+                "whereis",
+                &json!({"symbol": "target", "listing": "invalid"})
+            )
+            .unwrap_err()
+            .contains("expected defs, refs, or all")
+        );
+        assert!(
+            dispatch(
+                context,
+                "whereis",
+                &json!({"symbol": "target", "full_text": 1})
+            )
+            .is_err()
+        );
+        let mut report = ripwire_rs::query::doc_tools::whereis_from_sources(
+            context.sources,
+            context.ingest,
+            context.interner,
+            "target",
+        );
+        report["listing"] = "refs".into();
+        report["full_text"] = true.into();
+        let mut output = Vec::new();
+        ripwire_rs::serialize::serialize_whereis_xml(&report, &mut output).unwrap();
+        let xml = String::from_utf8(output).unwrap();
+        assert!(xml.contains("kind=\"ref\""));
+        assert!(xml.contains("caller()"));
+    });
+}
+
+#[test]
+fn edit_check_pages_preserve_flagged_callers_and_offset_unflagged_rows() {
+    let interner = Interner::new();
+    let registry = LanguageRegistry::new().unwrap();
+    let ingest = ingest_in_memory_files(&[("virtual.rs", Lang::Rust,
+        b"pub fn target(a: i32, b: i32) {}\nfn broken() { target(1); }\nfn first() { target(1, 2); }\nfn second() { target(3, 4); }\n".as_slice())],
+        &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let context = ripwire_rs::query::safety::SafetyContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
+    let baseline = ripwire_rs::gate::contract::SignatureContract {
+        name: "target".into(),
+        params: 1,
+        is_public: true,
+    };
+    let mut output = Vec::new();
+    ripwire_rs::query::safety::write_edit_check_from_facts(
+        &ripwire_rs::query::safety::EditCheckRequest {
+            sym_name: "target",
+            head_contract: Some(&baseline),
+            page: Some((1, 1)),
+            at_stamp: Some("memory"),
+        },
+        &context,
+        &mut output,
+    )
+    .unwrap();
+    let xml = String::from_utf8(output).unwrap();
+    assert!(xml.contains("n=\"broken\""));
+    assert!(xml.contains("shown_unflagged=\"1\""));
+    assert!(xml.contains("offset=\"1\" limit=\"1\""));
+}

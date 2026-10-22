@@ -1,4 +1,4 @@
-use ripwire_rs::cli::{NavMode, execute_nav_symbol_query};
+use ripwire_rs::query::navigation::{NavMode, execute_nav_symbol_query};
 use ripwire_rs::{Graph, Lang, LanguageRegistry, ingest_in_memory_files};
 use ripwire_rs::{Interner, PageRankConfig};
 
@@ -325,6 +325,16 @@ fn prototypes_and_overload_signatures_group_with_their_definition() {
         "{fmt}"
     );
     assert!(!fmt.contains("prov=\"split\""), "{fmt}");
+    let found = nav_xml(fixtures, "area", NavMode::FindSymbol).unwrap();
+    assert!(found.contains("defs=\"3\" groups=\"2\""), "{found}");
+    assert!(
+        found.contains("<def ix=\"1\" t=\"fn\" p=\"inc/old.h:1\" bodyless=\"1\"/><def ix=\"2\" t=\"fn\" p=\"src/shape.c:1\"/>"),
+        "{found}"
+    );
+    assert!(
+        found.contains("n=\"total\" p=\"src/shape.c:2\" of_def=\"2\""),
+        "{found}"
+    );
 }
 
 #[test]
@@ -334,15 +344,17 @@ fn primary_template_binds_over_its_specialization_with_tilde_t() {
         Lang::Cpp,
         b"template <typename T> struct Box { T get() { return T(); } };\ntemplate <> struct Box<int> { int get() { return 7; } };\nint use_box() { Box<int> b; return b.get(); }\n",
     )];
-    let xml = nav_xml(fixtures, "get", NavMode::Callers).unwrap();
-    assert!(
-        xml.contains("<def ix=\"2\" t=\"method\" sc=\"Box&lt;int&gt;\""),
-        "{xml}"
-    );
-    assert!(
-        xml.contains("n=\"use_box\" p=\"box.cpp:3\" of_def=\"1~t\""),
-        "{xml}"
-    );
+    for mode in [NavMode::Callers, NavMode::FindSymbol] {
+        let xml = nav_xml(fixtures, "get", mode).unwrap();
+        assert!(
+            xml.contains("<def ix=\"2\" t=\"method\" sc=\"Box&lt;int&gt;\""),
+            "{xml}"
+        );
+        assert!(
+            xml.contains("n=\"use_box\" p=\"box.cpp:3\" of_def=\"1~t\""),
+            "{xml}"
+        );
+    }
 }
 
 #[test]
@@ -352,9 +364,60 @@ fn macro_callees_carry_role_macro() {
         Lang::C,
         b"#define SQ(x) ((x)*(x))\nint use_sq() { return SQ(3); }\n",
     )];
-    let xml = nav_xml(fixtures, "use_sq", NavMode::Callees).unwrap();
+    for mode in [NavMode::Callees, NavMode::FindSymbol] {
+        let xml = nav_xml(fixtures, "use_sq", mode).unwrap();
+        assert!(
+            xml.contains("<s t=\"macro\" n=\"SQ\" p=\"mac.c:1\" role=\"macro\"/>"),
+            "{xml}"
+        );
+    }
+}
+
+#[test]
+fn find_symbol_preserves_the_definition_group_owning_each_callee() {
+    let fixtures: &[(&str, Lang, &[u8])] = &[
+        (
+            "a/core.py",
+            Lang::Python,
+            b"def process():\n    return alpha()\n\ndef alpha():\n    return 1\n",
+        ),
+        (
+            "b/core.py",
+            Lang::Python,
+            b"def process():\n    return beta()\n\ndef beta():\n    return 2\n",
+        ),
+    ];
+    let xml = nav_xml(fixtures, "process", NavMode::FindSymbol).unwrap();
+    assert!(xml.contains("defs=\"2\" groups=\"2\""), "{xml}");
     assert!(
-        xml.contains("<s t=\"macro\" n=\"SQ\" p=\"mac.c:1\" role=\"macro\"/>"),
+        xml.contains("<def ix=\"1\" t=\"fn\" p=\"a/core.py:1\"/>"),
         "{xml}"
     );
+    assert!(
+        xml.contains("<def ix=\"2\" t=\"fn\" p=\"b/core.py:1\"/>"),
+        "{xml}"
+    );
+    for (name, group) in [("alpha", "1"), ("beta", "2")] {
+        let prefix = format!("<s t=\"fn\" n=\"{name}\" ");
+        let row = xml
+            .split_once(&prefix)
+            .unwrap_or_else(|| panic!("missing {name}: {xml}"))
+            .1
+            .split_once("/>")
+            .unwrap()
+            .0;
+        assert!(row.contains(&format!("of_def=\"{group}\"")), "{xml}");
+    }
+}
+
+#[test]
+fn find_symbol_keeps_the_uncapped_default_neighborhood() {
+    let mut source = String::from("def target():\n    return 0\n");
+    for ix in 0..45 {
+        source.push_str(&format!("\ndef caller_{ix}():\n    return target()\n"));
+    }
+    let fixtures = [("many.py", Lang::Python, source.as_bytes())];
+    let xml = nav_xml(&fixtures, "target", NavMode::FindSymbol).unwrap();
+    assert!(xml.contains("callers=\"45\""), "{xml}");
+    assert_eq!(xml.matches("<s ").count(), 45, "{xml}");
 }

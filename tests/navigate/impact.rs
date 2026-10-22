@@ -1,4 +1,4 @@
-use ripwire_rs::cli::{NavContext, NavMode, execute_nav_symbol_query_in_root};
+use ripwire_rs::query::navigation::{NavContext, NavMode, execute_nav_symbol_query_in_root};
 use ripwire_rs::serialize::PageRequest;
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, PageRankConfig, ingest_in_memory_files};
 
@@ -23,6 +23,8 @@ fn render(files: &[(&str, Lang, &[u8])], mode: NavMode, sym: &str, page: PageReq
         ranks: &pr.ranks,
         interner: &interner,
         page,
+        max_depth: None,
+        pr_iters: Some(pr.iterations),
     };
     let mut out = Vec::new();
     execute_nav_symbol_query_in_root(".", sym, mode, &ctx, &mut out).unwrap();
@@ -226,4 +228,40 @@ fn impact_importer_sample_is_independent_of_reach_offset() {
     assert!(middle.contains("<f via=\"import\" p=\"a.py\""), "{middle}");
     assert!(!middle.contains("<f via=\"import\" p=\"b.py\""), "{middle}");
     assert!(middle.contains(" shown_importers=\"1\""), "{middle}");
+}
+
+#[test]
+fn shared_impact_depth_changes_the_reachable_set() {
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let files = [("pkg/core.py", Lang::Python, CHAIN)];
+    let ingest = ingest_in_memory_files(&files, &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let ranks = graph.page_rank(&PageRankConfig::default()).ranks;
+    let mut ctx = NavContext {
+        ingest: &ingest,
+        graph: &graph,
+        ranks: &ranks,
+        interner: &interner,
+        page: PageRequest::default(),
+        max_depth: Some(1),
+        pr_iters: None,
+    };
+    let mut shallow = Vec::new();
+    execute_nav_symbol_query_in_root(".", "base", NavMode::Impact, &ctx, &mut shallow).unwrap();
+    let shallow = String::from_utf8(shallow).unwrap();
+    assert!(shallow.contains("reaches=\"2\""), "{shallow}");
+    assert!(shallow.contains(" n=\"mid_a\""), "{shallow}");
+    assert!(shallow.contains(" n=\"mid_b\""), "{shallow}");
+    assert!(!shallow.contains(" n=\"top\""), "{shallow}");
+    assert!(!shallow.contains(" pr_iters="), "{shallow}");
+
+    ctx.max_depth = Some(2);
+    ctx.pr_iters = Some(7);
+    let mut deeper = Vec::new();
+    execute_nav_symbol_query_in_root(".", "base", NavMode::Impact, &ctx, &mut deeper).unwrap();
+    let deeper = String::from_utf8(deeper).unwrap();
+    assert!(deeper.contains("reaches=\"3\""), "{deeper}");
+    assert!(deeper.contains(" n=\"top\""), "{deeper}");
+    assert!(deeper.contains(" pr_iters=\"7\""), "{deeper}");
 }

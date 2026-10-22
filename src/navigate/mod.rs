@@ -29,7 +29,7 @@ pub struct SymbolNavInfo {
     pub tested: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sites: Vec<String>,
-    /// Matched definitions this caller has an edge to, with how each edge bound.
+    /// Matched query definitions connected to this neighbor, with how each edge bound.
     #[serde(skip)]
     pub of_defs: Vec<(NodeId, EdgeProv)>,
     /// How this callee edge was bound.
@@ -262,8 +262,8 @@ pub fn navigate_1hop_multi(
     target.tested |= tested_mask.get(first_id as usize).copied().unwrap_or(false);
     let mut caller_slots: HashMap<NodeId, usize> = HashMap::new();
     let mut callers: Vec<SymbolNavInfo> = Vec::new();
-    let mut seen_callees = HashSet::new();
-    let mut callees = Vec::new();
+    let mut callee_slots: HashMap<NodeId, usize> = HashMap::new();
+    let mut callees: Vec<SymbolNavInfo> = Vec::new();
     use crate::domain::CorpusView;
     let view = (ingest, interner);
     let target_names: Vec<_> = sym_ids
@@ -295,15 +295,19 @@ pub fn navigate_1hop_multi(
         }
         for edge in graph.callee_edges(sym_id) {
             let callee_id = edge.to;
-            if seen_callees.insert(callee_id)
-                && let Some(mut info) =
-                    get_symbol_nav_info(callee_id, ingest, ranks, interner, edge.weight)
+            if let Some(&slot) = callee_slots.get(&callee_id) {
+                callees[slot].of_defs.push((sym_id, edge.prov));
+                callees[slot].prov = callees[slot].prov.max(edge.prov);
+            } else if let Some(mut info) =
+                get_symbol_nav_info(callee_id, ingest, ranks, interner, edge.weight)
             {
                 info.prov = edge.prov;
+                info.of_defs.push((sym_id, edge.prov));
                 info.tested |= tested_mask
                     .get(callee_id as usize)
                     .copied()
                     .unwrap_or(false);
+                callee_slots.insert(callee_id, callees.len());
                 callees.push(info);
             }
         }

@@ -1,4 +1,5 @@
 use crate::domain::{IngestResult, Interner};
+use crate::query::{FileSources, SourceReader};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 
@@ -143,6 +144,7 @@ struct WhereisScan {
 fn scan_repo_whereis(
     repo: &gix::Repository,
     root: &str,
+    sources: &(impl SourceReader + ?Sized),
     symbol_name: &str,
     index_defs: &HashMap<&str, HashSet<u32>>,
 ) -> WhereisScan {
@@ -162,7 +164,6 @@ fn scan_repo_whereis(
         .into_iter()
         .filter_map(|p| p.strip_prefix(scope.as_str()).map(str::to_string))
         .collect();
-    let root_path = std::path::Path::new(root);
     let mut rows: Vec<Value> = head_hits
         .iter()
         .filter(|h| changed.binary_search(&h.path).is_err())
@@ -179,7 +180,7 @@ fn scan_repo_whereis(
     for path in &changed {
         let defs = index_defs.get(path.as_str());
         rows.extend(scan_file_whereis_hits(
-            root_path,
+            sources,
             path,
             symbol_name,
             defs,
@@ -265,7 +266,7 @@ pub(super) fn probe_name_history(root: &str, sym_name: &str, head_sha: &str) -> 
         "head": head_sha,
         "fate": {
             "v": "never",
-            "note": "no commit reachable from HEAD ever removed a line carrying this name — so for a name HEAD does not have, this repo never had it"
+            "note": "no commit reachable from HEAD ever removed a line carrying this name \u{2014} so for a name HEAD does not have, this repo never had it"
         }
     }))
 }
@@ -295,18 +296,16 @@ fn checkout_row(src: &CheckoutLine<'_>, symbol_name: &str, defs: Option<&HashSet
 }
 
 fn scan_file_whereis_hits(
-    root_path: &std::path::Path,
+    sources: &(impl SourceReader + ?Sized),
     rel_path: &str,
     symbol_name: &str,
     defs: Option<&HashSet<u32>>,
     label: &str,
 ) -> Vec<Value> {
-    let full_path = if root_path == std::path::Path::new(".") {
-        std::path::PathBuf::from(rel_path)
-    } else {
-        root_path.join(rel_path)
+    let Ok(bytes) = sources.read(rel_path) else {
+        return Vec::new();
     };
-    let Ok(content) = std::fs::read_to_string(full_path) else {
+    let Ok(content) = std::str::from_utf8(&bytes) else {
         return Vec::new();
     };
     if !content.contains(symbol_name) {
@@ -331,17 +330,16 @@ fn scan_file_whereis_hits(
 fn scan_files_whereis(
     ingest: &IngestResult,
     interner: &Interner,
-    root: &str,
+    sources: &(impl SourceReader + ?Sized),
     symbol_name: &str,
     index_defs: &HashMap<&str, HashSet<u32>>,
 ) -> WhereisScan {
-    let root_path = std::path::Path::new(root);
     let mut rows: Vec<Value> = ingest
         .files
         .iter()
         .flat_map(|fi| {
             let path = interner.resolve(&fi.path);
-            scan_file_whereis_hits(root_path, path, symbol_name, index_defs.get(path), "HEAD")
+            scan_file_whereis_hits(sources, path, symbol_name, index_defs.get(path), "HEAD")
         })
         .collect();
     sort_checkout_rows(&mut rows);
@@ -383,6 +381,94 @@ pub fn index_def_lines<'a>(
     defs
 }
 
+pub fn validate_whereis_listing(listing: Option<&str>) -> Result<(), String> {
+    if let Some(listing) = listing
+        && !matches!(listing, "defs" | "refs" | "all")
+    {
+        return Err(format!(
+            "invalid whereis listing '{listing}': expected defs, refs, or all"
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct WhereisRequest<'a> {
+    pub root: &'a str,
+    pub symbol_name: &'a str,
+    pub with_history: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct WhereisFacts {
+    pub history: Option<Value>,
+    pub head_date: Option<String>,
+    pub at_stamp: Option<String>,
+    pub branch_rows: Vec<Value>,
+    pub refs_scanned: usize,
+}
+
+pub fn whereis_from_sources_with_facts(
+    sources: &(impl SourceReader + ?Sized),
+    ingest: &IngestResult,
+    interner: &Interner,
+    symbol_name: &str,
+    facts: &WhereisFacts,
+) -> Value {
+    let defs = index_def_lines(ingest, interner, symbol_name);
+    let mut scan = scan_files_whereis(ingest, interner, sources, symbol_name, &defs);
+    scan.rows.extend(facts.branch_rows.clone());
+    scan.refs_scanned += facts.refs_scanned;
+    whereis_report(
+        symbol_name,
+        scan,
+        facts.history.clone(),
+        facts.head_date.as_deref().unwrap_or(""),
+        facts.at_stamp.as_deref().unwrap_or(""),
+    )
+}
+
+pub fn whereis_from_sources(
+    sources: &(impl SourceReader + ?Sized),
+    ingest: &IngestResult,
+    interner: &Interner,
+    symbol_name: &str,
+) -> Value {
+    whereis_from_sources_with_facts(
+        sources,
+        ingest,
+        interner,
+        symbol_name,
+        &WhereisFacts::default(),
+    )
+}
+
+pub fn whereis_with_sources_and_history(
+    req: WhereisRequest<'_>,
+    sources: &(impl SourceReader + ?Sized),
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> Value {
+    let at_stamp = crate::git::history::compute_git_at_stamp(req.root).unwrap_or_default();
+    let repo = crate::git::repo::discover(req.root);
+    let head_date = repo
+        .as_ref()
+        .and_then(|repo| crate::git::repo::commit_stamp(repo, "HEAD"))
+        .map(|(_, date)| date)
+        .unwrap_or_default();
+    let index_defs = index_def_lines(ingest, interner, req.symbol_name);
+    let scan = match &repo {
+        Some(repo) => scan_repo_whereis(repo, req.root, sources, req.symbol_name, &index_defs),
+        None => scan_files_whereis(ingest, interner, sources, req.symbol_name, &index_defs),
+    };
+    let history_info = if req.with_history && !scan.on_head {
+        probe_name_history(req.root, req.symbol_name, &at_stamp)
+    } else {
+        None
+    };
+    whereis_report(req.symbol_name, scan, history_info, &head_date, &at_stamp)
+}
+
 /// Execute `whereis` tool: identify where a symbol lives (definitions and references).
 pub fn call_whereis(
     ingest: &IngestResult,
@@ -391,24 +477,27 @@ pub fn call_whereis(
     symbol_name: &str,
     with_history: bool,
 ) -> Value {
-    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-    let repo = crate::git::repo::discover(root);
-    let head_date = repo
-        .as_ref()
-        .and_then(|repo| crate::git::repo::commit_stamp(repo, "HEAD"))
-        .map(|(_, date)| date)
-        .unwrap_or_default();
-    let index_defs = index_def_lines(ingest, interner, symbol_name);
-    let scan = match &repo {
-        Some(repo) => scan_repo_whereis(repo, root, symbol_name, &index_defs),
-        None => scan_files_whereis(ingest, interner, root, symbol_name, &index_defs),
-    };
-    let history_info = if with_history && !scan.on_head {
-        probe_name_history(root, symbol_name, &at_stamp)
-    } else {
-        None
-    };
+    whereis_with_sources_and_history(
+        WhereisRequest {
+            root,
+            symbol_name,
+            with_history,
+        },
+        &FileSources {
+            root: std::path::Path::new(root),
+        },
+        ingest,
+        interner,
+    )
+}
 
+fn whereis_report(
+    symbol_name: &str,
+    scan: WhereisScan,
+    history_info: Option<Value>,
+    head_date: &str,
+    at_stamp: &str,
+) -> Value {
     let hits_count = scan.rows.len();
     json!({
         "symbol": symbol_name,
@@ -433,7 +522,14 @@ pub fn inspect_branch_stray(
     if branch.is_empty() || branch == "HEAD" || branch == head_ref {
         return None;
     }
-    let Some((short_base, unmerged)) = crate::git::repo::unmerged_commits(repo, branch) else {
+    branch_stray_from_facts(branch, crate::git::repo::unmerged_commits(repo, branch))
+}
+
+pub fn branch_stray_from_facts(
+    branch: &str,
+    relation: Option<(String, usize)>,
+) -> Option<(String, Value)> {
+    let Some((short_base, unmerged)) = relation else {
         return Some(("unknown".to_string(), json!({})));
     };
     if unmerged > 0 {
@@ -453,29 +549,48 @@ pub fn inspect_branch_stray(
     }
 }
 
-fn gather_branch_stray(
-    repo: &gix::Repository,
+pub fn gather_branch_stray_from_facts<'a, I>(
     head_ref: &str,
-) -> (usize, usize, usize, usize, Vec<Value>) {
+    branches: I,
+) -> (usize, usize, usize, usize, Vec<Value>)
+where
+    I: IntoIterator<Item = (&'a str, Option<(String, usize)>)>,
+{
     let mut refs_count = 0usize;
     let mut unmerged = 0usize;
     let mut merged = 0usize;
     let mut unknown = 0usize;
-    let mut branches = Vec::new();
-    for branch in crate::git::repo::local_branches(repo) {
-        if let Some((verdict, branch_val)) = inspect_branch_stray(repo, &branch, head_ref) {
+    let mut branch_vals = Vec::new();
+    for (branch, relation) in branches {
+        if branch.is_empty() || branch == "HEAD" || branch == head_ref {
+            continue;
+        }
+        if let Some((verdict, val)) = branch_stray_from_facts(branch, relation) {
             refs_count += 1;
             match verdict.as_str() {
                 "unmerged" => {
                     unmerged += 1;
-                    branches.push(branch_val);
+                    branch_vals.push(val);
                 }
                 "merged" => merged += 1,
                 _ => unknown += 1,
             }
         }
     }
-    (refs_count, unmerged, merged, unknown, branches)
+    (refs_count, unmerged, merged, unknown, branch_vals)
+}
+
+fn gather_branch_stray(
+    repo: &gix::Repository,
+    head_ref: &str,
+) -> (usize, usize, usize, usize, Vec<Value>) {
+    let branches = crate::git::repo::local_branches(repo);
+    gather_branch_stray_from_facts(
+        head_ref,
+        branches
+            .iter()
+            .map(|b| (b.as_str(), crate::git::repo::unmerged_commits(repo, b))),
+    )
 }
 
 /// Execute `stray_content` tool.

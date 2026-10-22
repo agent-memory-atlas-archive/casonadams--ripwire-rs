@@ -1,4 +1,4 @@
-use crate::domain::{FileInfo, Interner, NO_NODE, NodeId, RefRole, Reference, Symbol};
+use crate::domain::{FileInfo, Interner, NO_NODE, NodeId, RefRole, Reference, SymKind, Symbol};
 use lasso::Spur;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -108,7 +108,6 @@ pub enum EdgeProv {
     FinalSegment,
     /// The qualifier is a module alias bound by an import of the definition's file.
     Import,
-    /// A binding framework exposed the definition to the caller's language (pybind11 `.def`).
     Binding,
     /// A compiler-backed SCIP index pinned the call site to this definition.
     Scip,
@@ -173,6 +172,22 @@ impl ResolvedRef {
     #[must_use]
     pub fn is_ambiguous(&self) -> bool {
         self.prov.is_split()
+    }
+
+    fn binding(from: NodeId, targets: Vec<NodeId>) -> Option<Self> {
+        if targets.is_empty() {
+            return None;
+        }
+        Some(Self {
+            from,
+            conf_per_target: 1.0 / targets.len() as f32,
+            prov: if targets.len() > 1 {
+                EdgeProv::Split
+            } else {
+                EdgeProv::Binding
+            },
+            targets,
+        })
     }
 }
 
@@ -403,6 +418,27 @@ pub fn index_module_qualifiers(
             maps[r.file_id as usize].insert(bound, target);
         }
     }
+    for symbol in ingest.symbols.iter().filter(|symbol| !symbol.has_body()) {
+        let Some(raw) = symbol
+            .lang
+            .semantics()
+            .symbol_implied_import(symbol.kind, interner.resolve(&symbol.name))
+        else {
+            continue;
+        };
+        let Some(importer) = ingest.files.get(symbol.file_id as usize) else {
+            continue;
+        };
+        if let Some(target) = crate::languages::resolve_import(
+            symbol.lang,
+            interner.resolve(&importer.path),
+            &raw,
+            &file_index,
+            &ingest.import_aliases,
+        ) {
+            maps[symbol.file_id as usize].insert(symbol.name, target);
+        }
+    }
     maps
 }
 
@@ -464,6 +500,12 @@ fn is_non_table_read_write(r: &Reference) -> bool {
 }
 
 fn classify_rejected_with_interner(r: &Reference, interner: &Interner) -> RefOutcome {
+    if let Some(recv) = r.receiver_type
+        && let Some(recv_str) = interner.try_resolve(&recv)
+        && (recv_str.contains("::") || r.lang.semantics().is_std_or_builtin_qualifier(recv_str))
+    {
+        return RefOutcome::External;
+    }
     if r.qualifier
         .and_then(|q| interner.try_resolve(&q))
         .is_some_and(|qs| r.lang.semantics().is_std_or_builtin_qualifier(qs))
@@ -509,6 +551,53 @@ pub trait ResolutionLookup {
     fn qualifier_module_file(&self, _file_id: u32, _qualifier: Spur) -> Option<u32> {
         None
     }
+    fn trait_index(&self) -> Option<&crate::resolve::TraitIndex> {
+        None
+    }
+
+    /// Methods a receiver of a named owner type may reach. A trait owner dispatches to its
+    /// impls; a concrete owner prefers its inherent methods and otherwise uses trait impls.
+    #[must_use]
+    fn owner_candidates(&self, r: &Reference, recv: Spur) -> Option<CandBuffer> {
+        let interner = self.interner()?;
+        let trait_idx = self.trait_index()?;
+        let text = interner.try_resolve(&recv)?;
+        let qualifier_file = |file: u32, q: Spur| self.qualifier_module_file(file, q);
+        let env = crate::resolve::TraitEnv {
+            symbols: self.symbols(),
+            file_dirs: self.file_dirs(),
+            interner,
+            qualifier_file: &qualifier_file,
+        };
+        let owner = trait_idx.resolve_receiver_owner(text, r.file_id, r.start_byte, &env)?;
+        let symbols = self.symbols();
+        let found: Vec<NodeId> = if symbols[owner as usize].kind == SymKind::Interface {
+            trait_idx.dispatch(owner, r.callee_name, symbols)
+        } else {
+            let all = trait_idx.subject_targets(owner, r.callee_name, symbols);
+            let compatible: Vec<NodeId> = all
+                .into_iter()
+                .filter(|&id| self.is_owner_compatible(r, &symbols[id as usize]))
+                .collect();
+            let inherent: Vec<NodeId> = compatible
+                .iter()
+                .copied()
+                .filter(|&id| !trait_idx.is_non_inherent(id))
+                .collect();
+            if inherent.is_empty() {
+                compatible
+            } else {
+                inherent
+            }
+        };
+        let mut out = CandBuffer::default();
+        for id in found {
+            if self.is_owner_compatible(r, &symbols[id as usize]) {
+                out.push(id);
+            }
+        }
+        (!out.is_empty()).then_some(out)
+    }
 
     #[must_use]
     fn is_compatible_target(&self, r: &Reference, sym: &Symbol) -> bool {
@@ -527,6 +616,12 @@ pub trait ResolutionLookup {
                 return false;
             }
         }
+        self.is_owner_compatible(r, sym)
+    }
+
+    /// Language and arity compatibility, without the std-member name filter.
+    #[must_use]
+    fn is_owner_compatible(&self, r: &Reference, sym: &Symbol) -> bool {
         let arity_ok = sym.kind == crate::domain::SymKind::Macro
             || !r.arg_count_known
             || r.arg_count <= sym.params
@@ -593,6 +688,11 @@ pub trait ResolutionLookup {
         all_cands: &[NodeId],
         r: &Reference,
     ) -> Option<(CandBuffer, Narrowing)> {
+        if let Some(recv) = r.receiver_type {
+            return self
+                .owner_candidates(r, recv)
+                .map(|cands| (cands, Narrowing::CallerScope));
+        }
         let symbols = self.symbols();
         let mut cands = CandBuffer::default();
         for &id in all_cands {
@@ -674,6 +774,9 @@ pub trait ResolutionLookup {
             Some(crate::domain::ScipTarget::External) => return RefOutcome::External,
             _ => {}
         }
+        if r.callable_field {
+            return self.classify_callable(r);
+        }
         let outcome = self.classify_by_name(r);
         match outcome {
             RefOutcome::External
@@ -684,6 +787,27 @@ pub trait ResolutionLookup {
         }
     }
 
+    fn callable_targets(&self, _r: &Reference) -> Option<&[NodeId]> {
+        None
+    }
+
+    fn classify_callable(&self, r: &Reference) -> RefOutcome {
+        let Some(candidates) = self.callable_targets(r) else {
+            return RefOutcome::Declined;
+        };
+        let targets: Vec<_> = candidates
+            .iter()
+            .copied()
+            .filter(|&id| {
+                let symbol = &self.symbols()[id as usize];
+                symbol.lang.is_compatible(r.lang)
+                    && (!r.arg_count_known || r.arg_count <= symbol.params)
+            })
+            .collect();
+        ResolvedRef::binding(r.from_symbol, targets)
+            .map_or(RefOutcome::Declined, RefOutcome::Resolved)
+    }
+
     fn classify_foreign(&self, r: &Reference) -> Option<RefOutcome> {
         let targets: Vec<NodeId> = self
             .foreign_targets(r.callee_name, r.lang)?
@@ -691,20 +815,7 @@ pub trait ResolutionLookup {
             .copied()
             .filter(|&target| target != r.from_symbol)
             .collect();
-        if targets.is_empty() {
-            return None;
-        }
-        let prov = if targets.len() > 1 {
-            EdgeProv::Split
-        } else {
-            EdgeProv::Binding
-        };
-        Some(RefOutcome::Resolved(ResolvedRef {
-            from: r.from_symbol,
-            conf_per_target: 1.0 / targets.len() as f32,
-            targets,
-            prov,
-        }))
+        ResolvedRef::binding(r.from_symbol, targets).map(RefOutcome::Resolved)
     }
 
     /// Candidates with tied declarations folded into their definition, and a primary template
@@ -732,6 +843,15 @@ pub trait ResolutionLookup {
         let Some((cands, narrowing)) = self.filter_ref_candidates(all_cands, r) else {
             return classify_rejected_candidates(r, self.interner());
         };
+        if r.receiver_type.is_some() {
+            let targets = cands
+                .iter()
+                .copied()
+                .filter(|&id| id != r.from_symbol)
+                .collect();
+            return ResolvedRef::binding(r.from_symbol, targets)
+                .map_or(RefOutcome::Ignored, RefOutcome::Resolved);
+        }
         let (cands, template) = self.collapse_definition_groups(&cands);
         let caller_file_id = r.file_id;
         let caller_dir_id = self
@@ -753,7 +873,18 @@ pub trait ResolutionLookup {
                 RefOutcome::Declined
             };
         };
-        let real_targets: Vec<NodeId> = tier_targets
+        self.resolve_targets(r, tier_targets, narrowing, tier, template)
+    }
+
+    fn resolve_targets(
+        &self,
+        r: &Reference,
+        targets: Vec<NodeId>,
+        narrowing: Narrowing,
+        tier: Tier,
+        template: bool,
+    ) -> RefOutcome {
+        let real_targets: Vec<NodeId> = targets
             .into_iter()
             .filter(|&target| target != r.from_symbol)
             .collect();
@@ -785,6 +916,8 @@ pub struct ResolutionContext<'a> {
     pub module_qualifiers: Option<&'a [HashMap<Spur, u32>]>,
     pub foreign: Option<&'a HashMap<(Spur, crate::domain::Lang), Vec<NodeId>>>,
     pub scip: Option<&'a HashMap<(u32, u32, Spur), crate::domain::ScipTarget>>,
+    pub trait_index: Option<&'a crate::resolve::TraitIndex>,
+    pub callables: Option<&'a crate::resolve::CallableIndex>,
 }
 
 impl ResolutionLookup for ResolutionContext<'_> {
@@ -813,9 +946,15 @@ impl ResolutionLookup for ResolutionContext<'_> {
         self.foreign?.get(&(name, caller)).map(Vec::as_slice)
     }
 
+    fn callable_targets(&self, r: &Reference) -> Option<&[NodeId]> {
+        self.callables?.targets(r, self)
+    }
+
     #[inline]
     fn scip_target(&self, r: &Reference) -> Option<crate::domain::ScipTarget> {
-        self.scip?.get(&(r.file_id, r.line, r.callee_name)).copied()
+        self.scip?
+            .get(&(r.file_id, r.name_line, r.callee_name))
+            .copied()
     }
 
     #[inline]
@@ -831,5 +970,10 @@ impl ResolutionLookup for ResolutionContext<'_> {
             .get(file_id as usize)?
             .get(&qualifier)
             .copied()
+    }
+
+    #[inline]
+    fn trait_index(&self) -> Option<&crate::resolve::TraitIndex> {
+        self.trait_index
     }
 }

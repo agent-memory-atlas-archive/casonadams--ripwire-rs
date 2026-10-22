@@ -1,11 +1,8 @@
-use ripwire_rs::cli::execute_hotspots_with;
-use ripwire_rs::git::history::CommitInfo;
+use ripwire_rs::git::history::{CommitInfo, MERGE_BOMB_MAX_FILES, compute_file_churn};
 use ripwire_rs::{
-    FileInfo, IngestResult, Interner, Lang, McpState, SymKind, Symbol, ToXmlString,
-    compute_hotspots,
+    FileInfo, IngestResult, Interner, Lang, SymKind, Symbol, ToXmlString, compute_hotspots,
 };
 use std::collections::HashMap;
-use std::io::Cursor;
 
 #[test]
 fn test_hotspots_computation_and_ranking() {
@@ -114,7 +111,7 @@ fn test_hotspots_computation_and_ranking() {
 }
 
 #[test]
-fn test_cli_hotspots_execution_xml_output() {
+fn test_commit_churn_drives_hotspot_xml() {
     let interner = Interner::new();
     let mut ingest = IngestResult::new();
 
@@ -139,7 +136,6 @@ fn test_cli_hotspots_execution_xml_output() {
     sym.ccx = 15;
     ingest.symbols.push(sym);
 
-    let state = McpState::from_ingest(".", ingest, interner);
     let commits = vec![
         CommitInfo {
             id: "c1".to_string(),
@@ -161,10 +157,16 @@ fn test_cli_hotspots_execution_xml_output() {
         },
     ];
 
-    let mut out = Cursor::new(Vec::new());
-    execute_hotspots_with(None, &commits, &state, &mut out).expect("execute hotspots succeeds");
-
-    let xml = String::from_utf8(out.into_inner()).unwrap();
+    let churn = compute_file_churn(&commits, 3000, MERGE_BOMB_MAX_FILES);
+    let counts = churn
+        .into_iter()
+        .map(|(path, churn)| (path, churn.commits))
+        .collect();
+    let report = compute_hotspots(&ingest, &interner, &counts);
+    assert_eq!(report.ranked_count, 1);
+    assert_eq!(report.files[0].churn, 3);
+    assert_eq!(report.files[0].score, 45);
+    let xml = report.to_xml_string();
     assert!(xml.contains(
         "<hotspots schema=\"ripwire-rs.hotspots/v1\" window=\"12mo@HEAD\" files=\"1\" ranked=\"1\""
     ));

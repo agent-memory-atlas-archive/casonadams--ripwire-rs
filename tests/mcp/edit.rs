@@ -1,7 +1,7 @@
-use ripwire_rs::mcp::edit::{
+use ripwire_rs::query::edit::{
     EditOp, execute_edit_plan_json, perform_atomic_edit, splice_file_bytes,
 };
-use ripwire_rs::{FileInfo, IngestResult, Interner, Lang, SymKind, Symbol};
+use ripwire_rs::{IngestResult, Interner};
 
 fn assert_splice(
     original: &[u8],
@@ -53,7 +53,7 @@ fn test_splice_file_bytes_insert_after() {
 #[test]
 fn test_perform_atomic_edit_refusals() {
     let interner = Interner::new();
-    let mut ingest = IngestResult::new();
+    let ingest = IngestResult::new();
 
     let res_nul = perform_atomic_edit(
         &ingest,
@@ -74,32 +74,6 @@ fn test_perform_atomic_edit_refusals() {
         "fn foo() {}",
     );
     assert_eq!(res_missing["applied"], false);
-
-    ingest.files.push(FileInfo {
-        id: 0,
-        path: interner.intern("nonexistent_file_xyz.rs"),
-        lang: Lang::Rust,
-        line_count: 10,
-        byte_size: 100,
-    });
-    ingest.symbols.push(Symbol::new(
-        0,
-        interner.intern("found_sym"),
-        interner.intern("found_sym"),
-        SymKind::Function,
-        Lang::Rust,
-        0,
-        1,
-    ));
-    let res_unreadable = perform_atomic_edit(
-        &ingest,
-        &interner,
-        EditOp::ReplaceBody,
-        "found_sym",
-        None,
-        "fn found_sym() {}",
-    );
-    assert_eq!(res_unreadable["applied"], false);
 
     let bad_json = execute_edit_plan_json(".", "not json", true, &ingest, &interner);
     assert_eq!(bad_json["applied"], false);

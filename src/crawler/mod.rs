@@ -287,6 +287,38 @@ pub struct SkippedCensus {
     pub unindexed_exts: Vec<(String, usize)>,
 }
 
+pub fn classify_skipped_item(
+    rel_path: &str,
+    is_dir: bool,
+    size: u64,
+    options: &CrawlerOptions,
+    census: &mut SkippedCensus,
+    ext_counts: &mut std::collections::HashMap<String, usize>,
+) {
+    if is_dir {
+        return;
+    }
+    let norm_path = rel_path.replace('\\', "/");
+    let ext = Path::new(&norm_path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if is_path_denylisted(&norm_path, &options.custom_excludes) {
+        census.excluded.push((norm_path, size, ext));
+        return;
+    }
+    let lang = resolve_path_lang(Path::new(&norm_path));
+    if lang == Lang::Unknown {
+        if !ext.is_empty() {
+            *ext_counts.entry(ext.clone()).or_default() += 1;
+        }
+        census.unsupported.push((norm_path, size, ext));
+    } else if size > lang.semantics().max_file_size(options.max_file_size) {
+        census.oversize.push((norm_path, size, ext));
+    }
+}
+
 fn classify_skipped_entry(
     entry: &ignore::DirEntry,
     root: &Path,
@@ -295,35 +327,20 @@ fn classify_skipped_entry(
     ext_counts: &mut std::collections::HashMap<String, usize>,
 ) {
     let path = entry.path();
-    if path.is_dir() {
-        return;
-    }
-    let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+    let size = entry.metadata().map_or(0, |m| m.len());
     let rel_path = if path == root {
         path.file_name().unwrap_or_default()
     } else {
         path.strip_prefix(root).unwrap_or(path).as_os_str()
-    }
-    .to_string_lossy()
-    .replace('\\', "/");
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    if is_path_denylisted(&rel_path, &options.custom_excludes) {
-        census.excluded.push((rel_path, size, ext));
-        return;
-    }
-    let lang = resolve_path_lang(path);
-    if lang == Lang::Unknown {
-        if !ext.is_empty() {
-            *ext_counts.entry(ext.clone()).or_default() += 1;
-        }
-        census.unsupported.push((rel_path, size, ext));
-    } else if size > lang.semantics().max_file_size(options.max_file_size) {
-        census.oversize.push((rel_path, size, ext));
-    }
+    };
+    classify_skipped_item(
+        &rel_path.to_string_lossy(),
+        path.is_dir(),
+        size,
+        options,
+        census,
+        ext_counts,
+    );
 }
 
 #[must_use]

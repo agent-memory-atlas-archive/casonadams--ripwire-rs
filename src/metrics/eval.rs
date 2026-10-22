@@ -64,8 +64,17 @@ fn score_eval_query_hit(
     query: &str,
     target_name: &str,
 ) -> Option<usize> {
-    let res =
-        crate::mcp::retrieval::call_for_task(ingest, interner, ranks, query, Some(10), None, false);
+    let res = crate::query::retrieval::call_for_task_with_options(
+        ingest,
+        interner,
+        ranks,
+        query,
+        crate::query::retrieval::ForTaskOptions {
+            budget_tokens: Some(10),
+            signatures_only: true,
+            ..Default::default()
+        },
+    );
     res["symbols"]
         .as_array()?
         .iter()

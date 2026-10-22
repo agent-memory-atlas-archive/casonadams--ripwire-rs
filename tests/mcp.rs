@@ -6,5 +6,5 @@ mod mcp {
     mod recall;
     mod retrieval;
     mod server;
-    mod tools_33;
+    mod source_retrieval;
 }

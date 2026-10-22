@@ -424,13 +424,16 @@ pub struct Reference {
     pub from_symbol: NodeId,
     pub callee_name: Spur,
     pub qualifier: Option<Spur>,
+    pub receiver_type: Option<Spur>,
     pub file_id: u32,
     pub line: u32,
+    pub name_line: u32,
     pub start_byte: u32,
     pub lang: Lang,
     pub role: RefRole,
     pub arg_count: u16,
     pub arg_count_known: bool,
+    pub callable_field: bool,
 }
 
 impl Reference {
@@ -446,13 +449,16 @@ impl Reference {
             from_symbol,
             callee_name,
             qualifier: None,
+            receiver_type: None,
             file_id,
             line,
+            name_line: line,
             start_byte: 0,
             lang,
             role,
             arg_count: 0,
             arg_count_known: false,
+            callable_field: false,
         }
     }
 
@@ -492,6 +498,29 @@ pub struct ForeignBinding {
     pub caller: Lang,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CallableBinding {
+    pub file_id: u32,
+    pub from_symbol: NodeId,
+    pub start_byte: u32,
+    pub owner: Spur,
+    pub field: Spur,
+    pub target: Option<Spur>,
+    pub target_qualifier: Option<Spur>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Implementation {
+    pub file_id: u32,
+    pub subject: Spur,
+    pub trait_name: Option<Spur>,
+    pub trait_qualifier: Option<Spur>,
+    pub subject_bound: Option<Spur>,
+    pub generic_subject: bool,
+    pub start_byte: u32,
+    pub end_byte: u32,
+}
+
 /// What a SCIP index says a call site at `file_id:line` naming `callee` reaches.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScipTarget {
@@ -519,6 +548,10 @@ pub struct IngestResult {
     pub foreign_bindings: Vec<ForeignBinding>,
     #[serde(default)]
     pub scip_sites: Vec<ScipSite>,
+    #[serde(default)]
+    pub callable_bindings: Vec<CallableBinding>,
+    #[serde(default)]
+    pub implementations: Vec<Implementation>,
 }
 
 impl IngestResult {

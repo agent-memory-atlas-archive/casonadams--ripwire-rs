@@ -2,7 +2,129 @@ use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
 use serde_json::{Value, json};
 use std::collections::{HashSet, VecDeque};
+use std::io::{self, Write};
 
+pub const DEFAULT_CONNECT_RADIUS: u32 = 2;
+
+pub struct ConnectRequest<'a> {
+    pub root: &'a str,
+    pub symbols: &'a [&'a str],
+    pub radius: u32,
+}
+
+pub fn execute_connect_query<W: Write>(
+    syms: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    execute_connect_query_with_radius(
+        ".",
+        syms,
+        DEFAULT_CONNECT_RADIUS,
+        ingest,
+        graph,
+        interner,
+        out,
+    )
+}
+
+pub fn execute_connect_query_with_radius<W: Write>(
+    root: &str,
+    syms: &str,
+    max_radius: u32,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let symbols: Vec<&str> = syms
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+    let request = ConnectRequest {
+        root,
+        symbols: &symbols,
+        radius: max_radius,
+    };
+    execute_connect(&request, ingest, graph, interner, out)
+}
+
+pub fn execute_connect<W: Write>(
+    request: &ConnectRequest<'_>,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    for s in request.symbols {
+        if crate::navigate::find_symbols_by_name(s, ingest, interner).is_empty() {
+            return Err(io::Error::other(format!(
+                "ripwire-rs: --connect symbol not found: {s}"
+            )));
+        }
+    }
+    let mut val =
+        call_connect_with_radius(ingest, graph, interner, request.symbols, request.radius);
+    val["root"] = serde_json::Value::String(request.root.to_string());
+    crate::serialize::serialize_connect_xml(&val, out)
+}
+
+pub fn split_endpoint_pair(pair: &str) -> (&str, &str) {
+    if let Some((from, to)) = pair.split_once(',') {
+        (from.trim(), to.trim())
+    } else if let Some((from, to)) = pair.split_once("->") {
+        (from.trim(), to.trim())
+    } else if let Some((from, to)) = pair.rsplit_once(':')
+        && !from.ends_with(':')
+    {
+        (from.trim(), to.trim())
+    } else if let Some((from, to)) = pair.split_once(':') {
+        (from.trim(), to.trim())
+    } else {
+        (pair.trim(), "")
+    }
+}
+
+pub struct PathRequest<'a> {
+    pub from: &'a str,
+    pub to: &'a str,
+}
+
+pub fn execute_path_query<W: Write>(
+    pair: &str,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let (from, to) = split_endpoint_pair(pair);
+    execute_path_between(&PathRequest { from, to }, ingest, graph, interner, out)
+}
+
+pub fn execute_path_between<W: Write>(
+    request: &PathRequest<'_>,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<()> {
+    let PathRequest { from, to } = *request;
+    if crate::navigate::find_symbols_by_name(from, ingest, interner).is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire-rs: --path endpoint not found: {from}"
+        )));
+    }
+    if crate::navigate::find_symbols_by_name(to, ingest, interner).is_empty() {
+        return Err(io::Error::other(format!(
+            "ripwire-rs: --path endpoint not found: {to}"
+        )));
+    }
+    let val = call_path_between(ingest, graph, interner, from, to);
+    crate::serialize::serialize_path_between_xml(&val, out)
+}
 fn find_symbols_matching(ingest: &IngestResult, interner: &Interner, name: &str) -> Vec<NodeId> {
     use crate::navigate::SymbolLookup;
     (ingest, interner).find_symbols(name)
@@ -314,15 +436,6 @@ fn record_connect_pair(
     acc.dir_edge_ids.extend(d_edges);
 }
 
-pub fn call_connect(
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    symbol_names: &[String],
-) -> Value {
-    call_connect_with_radius(ingest, graph, interner, symbol_names, 6)
-}
-
 fn expand_connect_seeds(ingest: &IngestResult, ids: Vec<NodeId>) -> Vec<NodeId> {
     let mut out = ids.clone();
     for &id in &ids {
@@ -345,18 +458,18 @@ fn expand_connect_seeds(ingest: &IngestResult, ids: Vec<NodeId>) -> Vec<NodeId> 
     out
 }
 
-pub fn call_connect_with_radius(
+fn call_connect_with_radius(
     ingest: &IngestResult,
     graph: &Graph,
     interner: &Interner,
-    symbol_names: &[String],
+    symbol_names: &[&str],
     max_radius: u32,
 ) -> Value {
     let resolved: Vec<(&str, Vec<NodeId>)> = symbol_names
         .iter()
         .filter_map(|name| {
             let raw_ids = find_symbols_matching(ingest, interner, name);
-            (!raw_ids.is_empty()).then(|| (name.as_str(), expand_connect_seeds(ingest, raw_ids)))
+            (!raw_ids.is_empty()).then(|| (*name, expand_connect_seeds(ingest, raw_ids)))
         })
         .collect();
     let mut acc = ConnectAccum {
@@ -406,85 +519,13 @@ pub fn call_connect_with_radius(
         .collect();
 
     json!({
+        "radius": max_radius,
         "symbols": symbol_names,
         "resolved": resolved.len(),
         "terminals": terminals_json,
         "steiner": steiner_json,
         "edges": edges_json,
         "connections": acc.connections
-    })
-}
-
-/// Execute `analyze` and `rank_by` tools.
-pub fn call_analyze(
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    ranks: &[f64],
-    top_k: Option<usize>,
-    rank_by: Option<&str>,
-) -> Value {
-    let mode = rank_by.unwrap_or("pagerank");
-    let mut indices: Vec<usize> = (0..ingest.symbols.len()).collect();
-
-    match mode {
-        "degree" => {
-            indices.sort_by_key(|&idx| {
-                let id = idx as NodeId;
-                std::cmp::Reverse(graph.in_degree(id) + graph.out_degree(id))
-            });
-        }
-        "ccx" => {
-            indices.sort_by_key(|&idx| {
-                std::cmp::Reverse(ingest.symbols.get(idx).map(|s| s.ccx).unwrap_or(0))
-            });
-        }
-        _ => {
-            indices.sort_by(|&a, &b| {
-                let ra = ranks.get(a).copied().unwrap_or(0.0);
-                let rb = ranks.get(b).copied().unwrap_or(0.0);
-                rb.partial_cmp(&ra).unwrap_or(std::cmp::Ordering::Equal)
-            });
-        }
-    }
-
-    let limit = top_k.unwrap_or(20).min(indices.len());
-    let mut symbols_out = Vec::new();
-
-    for &idx in &indices[..limit] {
-        if let Some(sym) = ingest.symbols.get(idx) {
-            let id = idx as NodeId;
-            let name = interner.resolve(&sym.name);
-            let path = ingest
-                .files
-                .get(sym.file_id as usize)
-                .map(|f| interner.resolve(&f.path))
-                .unwrap_or("");
-            let callees: Vec<&str> = graph
-                .callees(id)
-                .filter_map(|(c_id, _)| ingest.symbols.get(c_id as usize))
-                .map(|cs| interner.resolve(&cs.name))
-                .collect();
-
-            symbols_out.push(json!({
-                "id": id,
-                "name": name,
-                "kind": sym.kind.tag(),
-                "path": path,
-                "line": sym.line,
-                "in_degree": graph.in_degree(id),
-                "out_degree": graph.out_degree(id),
-                "ccx": sym.ccx,
-                "rank": (ranks.get(idx).copied().unwrap_or(0.0) * 10000.0).round() / 10000.0,
-                "callees": callees
-            }));
-        }
-    }
-
-    json!({
-        "ranked_by": mode,
-        "total_symbols": ingest.symbol_count(),
-        "symbols": symbols_out
     })
 }
 

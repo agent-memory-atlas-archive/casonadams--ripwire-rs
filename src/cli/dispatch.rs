@@ -2,69 +2,68 @@ use super::args::*;
 use super::queries::*;
 use super::retrieval::execute_retrieval_verb;
 use super::safety::*;
-use super::stream::*;
 use crate::domain::Interner;
 use crate::graph::Graph;
-use crate::mcp::run_mcp_stdio;
+use crate::query::map::*;
+use crate::query::navigation::{NavContext, NavMode, execute_nav_symbol_query_in_root};
 use crate::rank::PageRankResult;
+use crate::workspace::{load_repo_analysis, load_repo_analysis_with_options};
 use clap::Parser;
 use std::io::{self, Write};
 use std::path::Path;
 pub fn execute_navigate_with<W: Write>(
+    root: &str,
     args: &NavigateArgs,
     ctx: &NavContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
-    let Some(sym_name) = args.symbol.as_deref() else {
-        return writeln!(out, "Error: --symbol is required for navigate commands");
+    let sym_name = args.symbol.as_deref().ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "--symbol is required for navigate",
+        )
+    })?;
+    let mode = if args.impact {
+        NavMode::Impact
+    } else if args.callers {
+        NavMode::Callers
+    } else if args.callees {
+        NavMode::Callees
+    } else {
+        NavMode::FindSymbol
     };
-    let ids = crate::navigate::find_symbols_by_name(sym_name, ctx.ingest, ctx.interner);
-    if ids.is_empty() {
-        return writeln!(out, "Symbol '{sym_name}' not found");
-    }
-    if args.impact {
-        return execute_nav_symbol_query_in_root(".", sym_name, NavMode::Impact, ctx, out);
-    }
-    if args.callers || args.callees {
-        let mode = if args.callers {
-            NavMode::Callers
-        } else {
-            NavMode::Callees
-        };
-        return execute_nav_symbol_query_in_root(".", sym_name, mode, ctx, out);
-    }
-    if let Some(nav) =
-        crate::navigate::navigate_1hop(ids[0], ctx.ingest, ctx.graph, ctx.ranks, ctx.interner)
-    {
-        crate::navigate::serialize_find_symbol_xml(&nav, out)?;
-    }
-    Ok(())
+    execute_nav_symbol_query_in_root(root, sym_name, mode, ctx, out)
 }
 
-pub fn execute_navigate(args: &NavigateArgs) -> io::Result<()> {
-    let root = args.path.as_deref().unwrap_or(".");
-    let (ingest, graph, pr, interner) = load_repo_analysis(root)?;
+pub fn execute_navigate(cli: &Cli, args: &NavigateArgs, default_root: &str) -> io::Result<()> {
+    let root = args.path.as_deref().unwrap_or(default_root);
+    let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
     let ctx = NavContext {
         ingest: &ingest,
         graph: &graph,
         ranks: &pr.ranks,
+        pr_iters: Some(pr.iterations),
         interner: &interner,
-        page: crate::serialize::PageRequest::default(),
+        page: crate::serialize::PageRequest {
+            limit: cli.modifiers.limit,
+            offset: cli.modifiers.offset,
+        },
+        max_depth: cli.nav.impact_depth,
     };
     let mut stdout_lock = io::stdout().lock();
-    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
-    execute_navigate_with(args, &ctx, &mut stdout)?;
-    stdout.flush()
+    let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
+    execute_navigate_with(root, args, &ctx, &mut stdout)?;
+    stdout.finish()
 }
 
 pub fn execute_html_export(cli: &Cli, root: &str, out_file: Option<&str>) -> io::Result<()> {
     let color_by = cli.color_by.parse().unwrap_or_default();
-    let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+    let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
     if let Some(path) = out_file {
         let mut file = std::fs::File::create(path)?;
         crate::serialize::html::write_call_graph_html(
             &mut file, &ingest, &graph, &pr.ranks, &interner, color_by, None,
-        )?;
+        )
     } else {
         let mut stdout = io::stdout().lock();
         crate::serialize::html::write_call_graph_html(
@@ -75,9 +74,8 @@ pub fn execute_html_export(cli: &Cli, root: &str, out_file: Option<&str>) -> io:
             &interner,
             color_by,
             None,
-        )?;
+        )
     }
-    Ok(())
 }
 
 pub fn execute_stream_xml(root: &str) -> io::Result<()> {
@@ -85,62 +83,7 @@ pub fn execute_stream_xml(root: &str) -> io::Result<()> {
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
     execute_stream_xml_with(root, &ingest, &graph, &pr, &interner, &mut stdout)?;
-    stdout.flush()
-}
-
-pub fn load_repo_analysis(
-    root: &str,
-) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
-    load_repo_analysis_cached(root, None, false)
-}
-
-pub fn load_repo_analysis_cached(
-    root: &str,
-    cache_path: Option<&Path>,
-    no_cache: bool,
-) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
-    let opts = crate::crawler::CrawlerOptions::default();
-    load_repo_analysis_with_options(root, cache_path, no_cache, &opts, None)
-}
-
-/// Crawl, ingest, and resolve `root`; a SCIP index pins the call sites it covers and bypasses
-/// the cache, whose key does not cover the index.
-pub fn load_repo_analysis_with_options(
-    root: &str,
-    cache_path: Option<&Path>,
-    no_cache: bool,
-    opts: &crate::crawler::CrawlerOptions,
-    scip_index: Option<&Path>,
-) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
-    let cacheable = *opts == crate::crawler::CrawlerOptions::default() && scip_index.is_none();
-    if !no_cache
-        && cacheable
-        && let Some(cached) = crate::cache::load_cached_analysis(root, cache_path)
-    {
-        return Ok(cached);
-    }
-    let files = crate::crawler::crawl_directory(root, opts);
-    let registry =
-        crate::ingest::LanguageRegistry::new().map_err(|e| io::Error::other(e.to_string()))?;
-    let interner = Interner::new();
-    let mut ingest = crate::ingest::ingest_crawled_files(&files, &registry, &interner);
-    if let Some(path) = scip_index {
-        let bytes = std::fs::read(path).map_err(|e| {
-            io::Error::new(
-                e.kind(),
-                format!("ripwire-rs: --scip {}: {e}", path.display()),
-            )
-        })?;
-        ingest.scip_sites = crate::resolve::scip_sites(&bytes, &ingest, &interner)
-            .map_err(|e| io::Error::other(format!("ripwire-rs: --scip {}: {e}", path.display())))?;
-    }
-    let graph = Graph::build(&ingest, &interner);
-    let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
-    if cacheable {
-        let _ =
-            crate::cache::save_cached_analysis(root, cache_path, (&ingest, &graph, &pr, &interner));
-    }
-    Ok((ingest, graph, pr, interner))
+    stdout.finish()
 }
 
 #[must_use]
@@ -170,13 +113,14 @@ pub fn crawler_options_for_cli(cli: &Cli) -> crate::crawler::CrawlerOptions {
 pub fn load_repo_analysis_for_cli(
     cli: &Cli,
     root: &str,
+    force_uncached: bool,
 ) -> io::Result<(crate::domain::IngestResult, Graph, PageRankResult, Interner)> {
     let cache_path = cli.modifiers.cache.as_deref().map(Path::new);
     let opts = crawler_options_for_cli(cli);
     load_repo_analysis_with_options(
         root,
         cache_path,
-        cli.modifiers.no_cache,
+        cli.modifiers.no_cache || force_uncached,
         &opts,
         cli.scip.as_deref().map(Path::new),
     )
@@ -187,54 +131,33 @@ pub fn compute_effective_budget(
     token_budget: Option<usize>,
     max_tokens: Option<usize>,
 ) -> Option<usize> {
-    if let Some(tb) = token_budget.or(max_tokens) {
-        if tb <= 200 {
-            Some(tb.saturating_mul(4))
-        } else {
-            Some(tb.saturating_mul(2).saturating_sub(1100).max(512))
-        }
-    } else {
-        pack_budget.or(Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES))
-    }
+    token_budget
+        .or(max_tokens)
+        .map(crate::query::map::token_budget_bytes)
+        .or(pack_budget)
+        .or(Some(crate::serialize::DEFAULT_PACK_BUDGET_BYTES))
 }
 
 pub fn dispatch_top_nav(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     let (sym, mode) = cli.nav.active_query()?;
     Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
         let mut stdout_lock = io::stdout().lock();
-        if cli.modifiers.json {
-            let ids = crate::navigate::find_symbols_by_name(sym, &ingest, &interner);
-            if let Some(&id) = ids.first() {
-                if mode == NavMode::Impact {
-                    let impact = crate::navigate::transitive_impact(
-                        id, &ingest, &graph, &pr.ranks, &interner, None,
-                    );
-                    serde_json::to_writer_pretty(&mut stdout_lock, &impact)?;
-                    writeln!(stdout_lock)?;
-                    return Ok(());
-                } else if let Some(nav) =
-                    crate::navigate::navigate_1hop(id, &ingest, &graph, &pr.ranks, &interner)
-                {
-                    serde_json::to_writer_pretty(&mut stdout_lock, &nav)?;
-                    writeln!(stdout_lock)?;
-                    return Ok(());
-                }
-            }
-        }
         let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
         let nav_ctx = NavContext {
             ingest: &ingest,
             graph: &graph,
             ranks: &pr.ranks,
+            pr_iters: Some(pr.iterations),
             interner: &interner,
             page: crate::serialize::PageRequest {
                 limit: cli.modifiers.limit,
                 offset: cli.modifiers.offset,
             },
+            max_depth: cli.nav.impact_depth,
         };
         execute_nav_symbol_query_in_root(root, sym, mode, &nav_ctx, &mut stdout)?;
-        stdout.flush()
+        stdout.finish()
     })())
 }
 
@@ -286,9 +209,17 @@ impl ExecutionContext<'_> {
 
 /// Trait for CLI verb groups that execute against an `ExecutionContext`.
 pub trait CliVerb: VerbGroup {
-    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()>;
+    fn execute_verb<W: Write>(
+        &self,
+        ctx: &ExecutionContext<'_>,
+        out: &mut crate::serialize::XmlWriter<'_, W>,
+    ) -> io::Result<()>;
 
     fn force_plain_markdown(&self) -> bool {
+        false
+    }
+
+    fn emits_plain_text(&self) -> bool {
         false
     }
 }
@@ -298,7 +229,7 @@ pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::R
         return None;
     }
     Some((|| {
-        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+        let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
         let ctx = ExecutionContext {
             cli,
             root,
@@ -309,13 +240,21 @@ pub fn run_cli_verb<V: CliVerb>(verb: &V, cli: &Cli, root: &str) -> Option<io::R
         };
         let plain = verb.force_plain_markdown();
         let mut stdout_lock = io::stdout().lock();
-        let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, plain);
+        let mut stdout = if verb.emits_plain_text() && !cli.is_json_out() {
+            crate::serialize::XmlWriter::new(&mut stdout_lock, true)
+        } else {
+            cli.wrap_xml_writer(&mut stdout_lock, plain)
+        };
         verb.execute_verb(&ctx, &mut stdout)?;
-        stdout.flush()
+        stdout.finish()
     })())
 }
 impl CliVerb for TopRetrievalArgs {
-    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+    fn execute_verb<W: Write>(
+        &self,
+        ctx: &ExecutionContext<'_>,
+        out: &mut crate::serialize::XmlWriter<'_, W>,
+    ) -> io::Result<()> {
         if let Some(task) = self.pack_task.as_deref()
             && let Some(part_opt) = ctx.cli.safety.partition
         {
@@ -330,11 +269,12 @@ impl CliVerb for TopRetrievalArgs {
             );
         }
         if let Some(task) = self.recall.as_deref() {
-            let val = crate::mcp::retrieval::call_memory_recall_in_root(
-                ctx.root,
+            let inputs = crate::query::search::collect_recall_inputs(Path::new(ctx.root));
+            let val = crate::query::search::call_memory_recall(
+                &inputs,
                 task,
                 ctx.cli.top_k,
-                ctx.cli.max_tokens,
+                ctx.cli.token_budget.or(ctx.cli.max_tokens),
             );
             return crate::serialize::serialize_recall_text(task, &val, out);
         }
@@ -354,26 +294,24 @@ impl CliVerb for TopRetrievalArgs {
         }
         execute_retrieval_verb(self, ctx, out)
     }
+
+    fn emits_plain_text(&self) -> bool {
+        self.recall.is_some()
+    }
 }
 
 impl CliVerb for TopDetailArgs {
-    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+    fn execute_verb<W: Write>(
+        &self,
+        ctx: &ExecutionContext<'_>,
+        out: &mut crate::serialize::XmlWriter<'_, W>,
+    ) -> io::Result<()> {
         let compress = ctx.cli.modifiers.compress;
-        if let Some(syms) = self.expand.as_deref() {
+        if let Some(syms) = self.expand.as_deref().or(self.outline.as_deref()) {
             execute_expand_or_outline_compressed(
                 ctx.root,
                 syms,
-                false,
-                compress,
-                ctx.ingest,
-                ctx.interner,
-                out,
-            )
-        } else if let Some(syms) = self.outline.as_deref() {
-            execute_expand_or_outline_compressed(
-                ctx.root,
-                syms,
-                true,
+                self.expand.is_none(),
                 compress,
                 ctx.ingest,
                 ctx.interner,
@@ -422,22 +360,25 @@ impl CliVerb for TopDetailArgs {
 }
 
 impl CliVerb for TopSafetyArgs {
-    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+    fn execute_verb<W: Write>(
+        &self,
+        ctx: &ExecutionContext<'_>,
+        out: &mut crate::serialize::XmlWriter<'_, W>,
+    ) -> io::Result<()> {
         let page = crate::serialize::PageRequest {
             limit: ctx.cli.modifiers.limit,
             offset: ctx.cli.modifiers.offset,
         };
-        let res = execute_safety_verb(
-            self,
-            page,
-            ctx.root,
-            ctx.ingest,
-            ctx.graph,
-            ctx.interner,
-            out,
-        );
-        out.flush()?;
-        if let Some(code) = res? {
+        let safety = crate::query::safety::SafetyContext {
+            root: ctx.root,
+            ingest: ctx.ingest,
+            graph: ctx.graph,
+            interner: ctx.interner,
+        };
+        let res = execute_safety_verb(self, page, &safety, out);
+        let code = res?;
+        out.finish()?;
+        if let Some(code) = code {
             std::process::exit(code);
         }
         Ok(())
@@ -448,34 +389,35 @@ impl CliVerb for TopSafetyArgs {
 pub fn execute_safety_verb<W: Write>(
     args: &TopSafetyArgs,
     page: crate::serialize::PageRequest,
-    root: &str,
-    ingest: &crate::domain::IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+    ctx: &crate::query::safety::SafetyContext<'_>,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
     let Some(files_opt) = &args.test_gate else {
-        return execute_safety_dispatch(args, root, ingest, graph, interner, out);
+        return execute_safety_dispatch(args, ctx, out);
     };
     let failed = execute_test_gate_query_paged(
-        root,
+        ctx.root,
         files_opt.as_deref(),
         page,
-        ingest,
-        graph,
-        interner,
+        ctx.ingest,
+        ctx.graph,
+        ctx.interner,
         out,
     )?;
     Ok(failed.then_some(4))
 }
 
 impl CliVerb for TopWorkspaceArgs {
-    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+    fn execute_verb<W: Write>(
+        &self,
+        ctx: &ExecutionContext<'_>,
+        out: &mut crate::serialize::XmlWriter<'_, W>,
+    ) -> io::Result<()> {
         if self.owners {
             return execute_workspace_owners(ctx, out);
         }
         if self.stray_content {
-            let val = crate::mcp::doc_tools::call_stray_content(ctx.root);
+            let val = crate::query::doc_tools::call_stray_content(ctx.root);
             return crate::serialize::serialize_stray_content_xml(&val, out);
         }
         if let Some((spec, op)) = self.active_edit_op() {
@@ -492,11 +434,28 @@ impl CliVerb for TopWorkspaceArgs {
                 out,
             )
         } else {
+            let sources = crate::query::FileSources {
+                root: Path::new(ctx.root),
+            };
+            let notes_content = self.notes.then(|| {
+                std::fs::read_to_string(Path::new(ctx.root).join(".ripwire-rs_notes"))
+                    .unwrap_or_default()
+            });
+            let plan_content = self
+                .plan_lint
+                .as_deref()
+                .and_then(|path| std::fs::read_to_string(path).ok());
+            let workspace = super::workspace::WorkspaceContext {
+                root: ctx.root,
+                ingest: ctx.ingest,
+                interner: ctx.interner,
+                sources: &sources,
+                notes_content: notes_content.as_deref(),
+                plan_content: plan_content.as_deref(),
+            };
             execute_workspace_doc_query_paged(
                 self,
-                ctx.root,
-                ctx.ingest,
-                ctx.interner,
+                &workspace,
                 ctx.cli.with_history_flag(),
                 ctx.cli,
                 out,
@@ -515,7 +474,7 @@ fn execute_workspace_owners<W: Write>(ctx: &ExecutionContext<'_>, out: &mut W) -
         .iter()
         .map(|f| ctx.interner.resolve(&f.path).to_string())
         .collect();
-    let mut val = crate::mcp::doc_tools::call_owners(
+    let mut val = crate::query::doc_tools::call_owners(
         commits.as_deref(),
         None,
         at_stamp.as_deref(),
@@ -609,12 +568,13 @@ fn execute_arch_rules_query<W: Write>(
     ingest: &crate::domain::IngestResult,
     graph: &Graph,
     interner: &Interner,
-    stdout: &mut W,
+    stdout: &mut crate::serialize::XmlWriter<'_, W>,
 ) -> io::Result<()> {
     let content = std::fs::read_to_string(rules_file)?;
     let cfg = crate::gate::arch::ArchConfig::parse(&content);
     let violations = crate::gate::arch::check_architecture_rules(&cfg, ingest, graph, interner);
     crate::gate::arch::serialize_arch_xml(root, &violations, stdout)?;
+    stdout.finish()?;
     if !violations.is_empty() {
         std::process::exit(2);
     }
@@ -624,7 +584,7 @@ fn execute_arch_rules_query<W: Write>(
 fn execute_arch_or_zoom_query<W: Write>(
     arch_args: &TopArchitectureArgs,
     ctx: &ExecutionContext<'_>,
-    out: &mut W,
+    out: &mut crate::serialize::XmlWriter<'_, W>,
 ) -> Option<io::Result<()>> {
     if arch_args.mermaid {
         return Some(crate::graph::generate_mermaid_diagram(
@@ -664,17 +624,26 @@ fn execute_arch_or_zoom_query<W: Write>(
 }
 
 impl CliVerb for TopArchitectureArgs {
-    fn execute_verb<W: Write>(&self, ctx: &ExecutionContext<'_>, out: &mut W) -> io::Result<()> {
+    fn execute_verb<W: Write>(
+        &self,
+        ctx: &ExecutionContext<'_>,
+        out: &mut crate::serialize::XmlWriter<'_, W>,
+    ) -> io::Result<()> {
         if let Some(res) = execute_arch_or_zoom_query(self, ctx, out) {
             return res;
         }
         if self.dead_code {
             execute_dead_code_query_paged(
-                ctx.root,
-                ctx.ingest,
-                ctx.graph,
-                ctx.interner,
-                ctx.cli,
+                &super::arch::DeadCodeContext {
+                    root: ctx.root,
+                    sources: &crate::query::FileSources {
+                        root: Path::new(ctx.root),
+                    },
+                    ingest: ctx.ingest,
+                    graph: ctx.graph,
+                    interner: ctx.interner,
+                    page: ctx.cli,
+                },
                 out,
             )
         } else if self.communities || self.community.is_some() {
@@ -788,18 +757,18 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     }
     if cli.modifiers.eval_retrieval {
         return Some((|| {
-            let (ingest, _graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+            let (ingest, _graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
             let mut stdout = io::stdout().lock();
             crate::metrics::run_retrieval_eval_for_repo(&ingest, &interner, &pr.ranks, &mut stdout)
         })());
     }
     if let Some(file) = cli.modifiers.batch.as_deref() {
         return Some((|| {
-            let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+            let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
             let mut stdout_lock = io::stdout().lock();
             let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
             execute_batch_file(root, file, &ingest, &graph, &pr, &interner, &mut stdout)?;
-            stdout.flush()
+            stdout.finish()
         })());
     }
     dispatch_top_nav(cli, root)
@@ -813,7 +782,7 @@ pub fn dispatch_top_flags(cli: &Cli, root: &str) -> Option<io::Result<()>> {
 pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io::Result<()> {
     let emit_legend = !cli.is_legend_none();
     let legend_full = cli.legend.eq_ignore_ascii_case("full");
-    let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root)?;
+    let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
     let rank_by = if cli.modifiers.stable || cli.modifiers.order.eq_ignore_ascii_case("stable") {
@@ -821,80 +790,116 @@ pub fn dispatch_default_run(cli: &Cli, root: &str, budget: Option<usize>) -> io:
     } else {
         &cli.rank_by
     };
-    let args = RankedStreamArgs {
-        root,
-        rank_by,
-        pack_budget: budget,
-        top_k: cli.top_k.or(Some(200)),
-        emit_legend,
-        legend_full,
-        map_diff: cli.safety.map_diff,
-        no_inventory: cli.modifiers.no_inventory,
-    };
+    let changed_files = cli
+        .safety
+        .map_diff
+        .then(|| crate::git::repo::working_tree_changes(root));
+    let at = cli.safety.map_diff.then(|| {
+        crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".to_string())
+    });
+    let mut args = MapRequest::new(root);
+    args.rank_by = rank_by;
+    args.pack_budget = budget;
+    args.top_k = cli.top_k.or(args.top_k);
+    args.emit_legend = emit_legend;
+    args.legend_full = legend_full;
+    args.map_diff = changed_files
+        .as_ref()
+        .zip(at.as_deref())
+        .map(|(files, at)| MapDiff { files, at });
+    args.no_inventory = cli.modifiers.no_inventory;
     execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut stdout)?;
-    stdout.flush()
+    stdout.finish()
 }
-fn execute_orient_subcommand(orient_args: &OrientArgs) -> io::Result<()> {
-    let root = orient_args.path.as_deref().unwrap_or(".");
-    let Some(task) = orient_args.for_task.as_deref() else {
-        return execute_stream_xml(root);
+fn execute_orient_subcommand(cli: &Cli, args: &OrientArgs, default_root: &str) -> io::Result<()> {
+    let root = args.path.as_deref().unwrap_or(default_root);
+    let Some(task) = args.for_task.as_deref() else {
+        return dispatch_default_run(cli, root, cli.effective_budget_bytes());
     };
-    let (ingest, graph, pr, interner) = load_repo_analysis_cached(root, None, false)?;
-    let val = crate::mcp::retrieval::call_for_task_with_options(
+    let (ingest, graph, pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
+    let sources = crate::query::FileSources {
+        root: Path::new(root),
+    };
+    let at = crate::git::history::compute_git_at_stamp(root);
+    let query = crate::query::commands::QueryContext {
+        root,
+        ingest: &ingest,
+        graph: &graph,
+        pr: &pr,
+        interner: &interner,
+        sources: &sources,
+        commits: None,
+        at: at.as_deref(),
+    };
+    let val = crate::query::retrieval::call_for_task_with_options(
         &ingest,
         &interner,
         &pr.ranks,
         task,
-        crate::mcp::retrieval::ForTaskOptions {
-            root,
-            graph: Some(&graph),
-            ..Default::default()
-        },
+        cli.retrieval
+            .for_options(&query, cli.token_budget.or(cli.max_tokens)),
     );
+    if let Some(error) = val["error"].as_str() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, error));
+    }
     let mut stdout_lock = io::stdout().lock();
-    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+    let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
     crate::serialize::serialize_for_xml(&val, &mut stdout)?;
-    stdout.flush()
+    stdout.finish()
+}
+
+fn execute_slice_for_cli(
+    cli: &Cli,
+    root: &str,
+    target: Option<&str>,
+    flow: &str,
+    max_depth: u32,
+) -> io::Result<()> {
+    let target = target
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "slice target is required"))?;
+    let flow = flow
+        .parse()
+        .map_err(|e: String| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    let (ingest, _, _, interner) = load_repo_analysis_for_cli(cli, root, false)?;
+    let registry = crate::ingest::LanguageRegistry::new().map_err(io::Error::other)?;
+    let sources = crate::query::FileSources {
+        root: Path::new(root),
+    };
+    let at = crate::git::history::compute_git_at_stamp(root);
+    let report = crate::slice::query_slice(
+        crate::slice::SliceRequest {
+            root,
+            target,
+            flow,
+            max_depth,
+            at: at.as_deref(),
+        },
+        crate::slice::SliceContext {
+            ingest: &ingest,
+            interner: &interner,
+            registry: &registry,
+        },
+        &sources,
+    )
+    .map_err(io::Error::other)?;
+    let mut stdout_lock = io::stdout().lock();
+    let mut stdout = cli.wrap_xml_writer(&mut stdout_lock, false);
+    stdout.write_all(report.as_bytes())?;
+    stdout.finish()
 }
 
 pub fn dispatch_subcommand(command: &Commands, cli: &Cli, default_root: &str) -> io::Result<()> {
     match command {
-        Commands::Mcp(mcp_args) => run_mcp_stdio(mcp_args.path.as_deref().unwrap_or(default_root)),
-        Commands::Navigate(nav_args) => execute_navigate(nav_args),
-        Commands::Orient(orient_args) => execute_orient_subcommand(orient_args),
-        Commands::Gate(gate_args) => {
-            let root = gate_args.path.as_deref().unwrap_or(default_root);
-            let sub_gate = GateDispatchArgs {
-                edit_check: gate_args.edit_check.as_deref(),
-                affected: gate_args.affected.as_deref(),
-                quality_baseline: gate_args.quality_baseline,
-                quality_delta: gate_args.quality_delta,
-                ..Default::default()
-            };
-            if let Some(res) = dispatch_gate_command(root, sub_gate) {
-                return res;
-            }
-            if gate_args.clones {
-                return crate::clones::execute_clones_command(root, gate_args.min_tokens);
-            }
-            Ok(())
-        }
-        Commands::Metrics(metrics_args) => {
-            let root = metrics_args.path.as_deref().unwrap_or(default_root);
-            if let Some(res) = dispatch_git_metrics_with_flags(
-                root,
-                GitMetricsFlags {
-                    cochange: metrics_args.cochange.as_ref().map(|o| o.as_deref()),
-                    hotspots: metrics_args.hotspots,
-                    since: metrics_args.since.as_deref(),
-                    ..Default::default()
-                },
-            ) {
-                return res;
-            }
-            Ok(())
-        }
-        Commands::Slice(slice_args) => crate::slice::execute_slice_command_with_depth(
+        Commands::Mcp(mcp_args) => crate::mcp::run_mcp_stdio_with_scip(
+            mcp_args.path.as_deref().unwrap_or(default_root),
+            cli.scip.as_deref().map(Path::new),
+        ),
+        Commands::Navigate(nav_args) => execute_navigate(cli, nav_args, default_root),
+        Commands::Orient(orient_args) => execute_orient_subcommand(cli, orient_args, default_root),
+        Commands::Gate(args) => execute_gate_subcommand(args, cli, default_root),
+        Commands::Metrics(args) => execute_metrics_subcommand(args, default_root),
+        Commands::Slice(slice_args) => execute_slice_for_cli(
+            cli,
             default_root,
             slice_args.target.as_deref(),
             &slice_args.flow,
@@ -902,6 +907,39 @@ pub fn dispatch_subcommand(command: &Commands, cli: &Cli, default_root: &str) ->
         ),
         Commands::Skills(skills_args) => execute_skills_install(skills_args.path.as_deref()),
     }
+}
+
+fn execute_gate_subcommand(args: &GateArgs, cli: &Cli, default_root: &str) -> io::Result<()> {
+    let root = args.path.as_deref().unwrap_or(default_root);
+    let inherited = gate_args_for_cli(cli);
+    let gate = GateDispatchArgs {
+        edit_check: args.edit_check.as_deref().or(inherited.edit_check),
+        affected: args.affected.as_deref().or(inherited.affected),
+        quality_baseline: args.quality_baseline || inherited.quality_baseline,
+        quality_delta: args.quality_delta || inherited.quality_delta,
+        ..inherited
+    };
+    if let Some(result) = dispatch_gate_command(root, gate, cli) {
+        return result;
+    }
+    if args.clones {
+        return crate::clones::execute_clones_command(root, args.min_tokens);
+    }
+    Ok(())
+}
+
+fn execute_metrics_subcommand(args: &MetricsArgs, default_root: &str) -> io::Result<()> {
+    let root = args.path.as_deref().unwrap_or(default_root);
+    dispatch_git_metrics_with_flags(
+        root,
+        GitMetricsFlags {
+            cochange: args.cochange.as_ref().map(|value| value.as_deref()),
+            hotspots: args.hotspots,
+            since: args.since.as_deref(),
+            ..Default::default()
+        },
+    )
+    .unwrap_or(Ok(()))
 }
 pub fn execute_skills_install(target: Option<&str>) -> io::Result<()> {
     let report = crate::skills::install_skills(target)?;
@@ -923,9 +961,9 @@ pub fn execute_skills_install(target: Option<&str>) -> io::Result<()> {
 /// Execute CLI from parsed options.
 fn dispatch_primary_workflows(cli: &Cli, root: &str) -> Option<io::Result<()>> {
     if cli.mcp {
-        return Some(crate::mcp::run_mcp_stdio_with_options(
+        return Some(crate::mcp::run_mcp_stdio_with_scip(
             root,
-            cli.modifiers.no_stable,
+            cli.scip.as_deref().map(Path::new),
         ));
     }
     if cli.modifiers.lsp {
@@ -975,9 +1013,29 @@ fn validate_retrieval_modifiers(r: &TopRetrievalArgs) -> io::Result<()> {
             "ripwire-rs: --sections= modifies --for=TASK; pass it too",
         ));
     }
-    crate::mcp::retrieval::parse_for_sections(raw)
+    crate::query::retrieval::parse_for_sections(raw)
         .map(|_| ())
         .map_err(io::Error::other)
+}
+
+fn gate_args_for_cli(cli: &Cli) -> GateDispatchArgs<'_> {
+    GateDispatchArgs {
+        edit_check: cli.edit_check.as_deref(),
+        affected: cli.affected.as_deref(),
+        quality_baseline: cli.quality_baseline,
+        quality_delta: cli.quality_delta || cli.safety.quality_ack.is_some(),
+        scope: cli.safety.scope.as_deref(),
+        quality_ack: cli
+            .safety
+            .quality_ack
+            .as_ref()
+            .map(|o| o.as_deref().unwrap_or("acknowledged")),
+        ack_only: cli.safety.ack_only.as_deref(),
+        show_stale: cli.safety.show_stale,
+        allow_dirty: cli.safety.allow_dirty,
+        limit: cli.limit_opt(),
+        offset: cli.offset_opt(),
+    }
 }
 
 pub fn run_cli_args(mut cli: Cli) -> io::Result<()> {
@@ -998,24 +1056,9 @@ pub fn run_cli_args(mut cli: Cli) -> io::Result<()> {
     if let Some(res) = dispatch_primary_workflows(&cli, root) {
         return res;
     }
-    let cli_gate = GateDispatchArgs {
-        edit_check: cli.edit_check.as_deref(),
-        affected: cli.affected.as_deref(),
-        quality_baseline: cli.quality_baseline,
-        quality_delta: cli.quality_delta || cli.safety.quality_ack.is_some(),
-        scope: cli.safety.scope.as_deref(),
-        quality_ack: cli
-            .safety
-            .quality_ack
-            .as_ref()
-            .map(|o| o.as_deref().unwrap_or("acknowledged")),
-        ack_only: cli.safety.ack_only.as_deref(),
-        show_stale: cli.safety.show_stale,
-        allow_dirty: cli.safety.allow_dirty,
-        limit: cli.limit_opt(),
-        offset: cli.offset_opt(),
-    };
-    if let Some(res) = dispatch_gate_command(root, cli_gate) {
+    if !matches!(cli.command.as_ref(), Some(Commands::Gate(_)))
+        && let Some(res) = dispatch_gate_command(root, gate_args_for_cli(&cli), &cli)
+    {
         return res;
     }
 
@@ -1026,12 +1069,7 @@ pub fn run_cli_args(mut cli: Cli) -> io::Result<()> {
         return execute_html_export(&cli, root, html_opt.as_deref());
     }
     if let Some(target) = cli.slice.as_deref() {
-        return crate::slice::execute_slice_command_with_depth(
-            root,
-            Some(target),
-            &cli.slice_flow,
-            cli.slice_depth,
-        );
+        return execute_slice_for_cli(&cli, root, Some(target), &cli.slice_flow, cli.slice_depth);
     }
     let budget = cli.effective_budget_bytes();
     match &cli.command {

@@ -1,6 +1,6 @@
 use ripwire_rs::gate::contract::{
     ContractStatus, SignatureContract, check_node_visibility, compare_contracts,
-    extract_param_count, parse_head_signature_match,
+    extract_param_count, parse_head_signature_match, parse_symbol_contract_from_bytes,
 };
 use ripwire_rs::{Lang, LanguageRegistry};
 use streaming_iterator::StreamingIterator;
@@ -156,4 +156,78 @@ void makeSwap() {
     }
     assert!(found_prepare);
     assert!(found_ctor);
+}
+
+#[test]
+fn test_parse_symbol_contract_from_bytes_multi_language() {
+    // Rust fixture
+    let rust_code = b"pub fn greet(first: &str, last: &str) -> String { format!(\"{first} {last}\") }\nfn secret(code: u32) -> bool { code == 42 }\n";
+    let pub_contract = parse_symbol_contract_from_bytes(rust_code, "greet", Lang::Rust).unwrap();
+    assert_eq!(
+        pub_contract,
+        Some(SignatureContract {
+            name: "greet".to_string(),
+            params: 2,
+            is_public: true,
+        })
+    );
+
+    let priv_contract = parse_symbol_contract_from_bytes(rust_code, "secret", Lang::Rust).unwrap();
+    assert_eq!(
+        priv_contract,
+        Some(SignatureContract {
+            name: "secret".to_string(),
+            params: 1,
+            is_public: false,
+        })
+    );
+
+    let missing = parse_symbol_contract_from_bytes(rust_code, "not_present", Lang::Rust).unwrap();
+    assert_eq!(missing, None);
+
+    // Python fixture
+    let py_code = b"def calculate_total(subtotal, tax, discount=0):\n    return subtotal + tax - discount\n\ndef _internal_helper(val):\n    pass\n";
+    let py_pub =
+        parse_symbol_contract_from_bytes(py_code, "calculate_total", Lang::Python).unwrap();
+    assert_eq!(
+        py_pub,
+        Some(SignatureContract {
+            name: "calculate_total".to_string(),
+            params: 3,
+            is_public: true,
+        })
+    );
+
+    let py_priv =
+        parse_symbol_contract_from_bytes(py_code, "_internal_helper", Lang::Python).unwrap();
+    assert_eq!(
+        py_priv,
+        Some(SignatureContract {
+            name: "_internal_helper".to_string(),
+            params: 1,
+            is_public: false,
+        })
+    );
+
+    // Go fixture
+    let go_code = b"package math\n\nfunc ExportedAdd(a int, b int, c int) int {\n    return a + b + c\n}\n\nfunc unexportedHelper(x int) bool {\n    return x > 0\n}\n";
+    let go_pub = parse_symbol_contract_from_bytes(go_code, "ExportedAdd", Lang::Go).unwrap();
+    assert_eq!(
+        go_pub,
+        Some(SignatureContract {
+            name: "ExportedAdd".to_string(),
+            params: 3,
+            is_public: true,
+        })
+    );
+
+    let go_priv = parse_symbol_contract_from_bytes(go_code, "unexportedHelper", Lang::Go).unwrap();
+    assert_eq!(
+        go_priv,
+        Some(SignatureContract {
+            name: "unexportedHelper".to_string(),
+            params: 1,
+            is_public: false,
+        })
+    );
 }

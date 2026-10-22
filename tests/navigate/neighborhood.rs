@@ -1,7 +1,7 @@
-use ripwire_rs::cli::{NavMode, execute_nav_symbol_query};
 use ripwire_rs::navigate::{
     ImpactReport, NavDir, find_symbols_by_name, navigate_1hop, transitive_impact,
 };
+use ripwire_rs::query::navigation::{NavMode, execute_nav_symbol_query};
 use ripwire_rs::serialize::{GraphGauges, PageRequest, XmlReport};
 use ripwire_rs::{
     FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
@@ -102,7 +102,7 @@ fn test_navigate_1hop_and_impact() {
             importers,
             declined: Vec::new(),
             gauge_attrs: GraphGauges::ZERO_XML_ATTRS,
-            pr_iters: 1,
+            pr_iters: Some(1),
             page: PageRequest::default(),
         }
         .render_envelope(&mut out)

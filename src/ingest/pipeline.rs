@@ -3,7 +3,8 @@ use super::ownership::{assign_module_scope_owner, build_file_references};
 use super::registry::LanguageRegistry;
 use crate::crawler::CrawledFile;
 use crate::domain::{
-    FileInfo, ForeignBinding, IngestResult, Interner, Lang, NodeId, Reference, Symbol,
+    CallableBinding, FileInfo, ForeignBinding, IngestResult, Interner, Lang, NodeId, Reference,
+    Symbol,
 };
 use rayon::prelude::*;
 use std::fs;
@@ -170,6 +171,8 @@ pub struct FileIndex {
     pub symbols: Vec<Symbol>,
     pub references: Vec<Reference>,
     pub foreign_bindings: Vec<ForeignBinding>,
+    pub callable_bindings: Vec<CallableBinding>,
+    pub implementations: Vec<crate::domain::Implementation>,
 }
 
 pub fn index_file(
@@ -181,6 +184,8 @@ pub fn index_file(
     let mut next_id: NodeId = 0;
     let mut symbols = build_file_symbols(parsed.defs, file, file_id, interner, &mut next_id);
     let mut references = build_file_references(parsed.refs, file, file_id, &symbols, interner);
+    let callable_bindings =
+        intern_callable_bindings(parsed.callable_bindings, &symbols, file_id, interner);
     assign_module_scope_owner(
         &mut symbols,
         &mut references,
@@ -189,22 +194,93 @@ pub fn index_file(
         interner,
         &mut next_id,
     );
-    let foreign_bindings = parsed
-        .foreign_exports
-        .into_iter()
-        .map(|e| ForeignBinding {
-            file_id,
-            exported: interner.intern(&e.exported),
-            target: interner.intern(&e.target),
-            target_scope: e.target_scope.map(|s| interner.intern(&s)),
-            caller: e.caller,
-        })
-        .collect();
+    let foreign_bindings = intern_foreign_bindings(parsed.foreign_exports, file_id, interner);
+    let implementations = intern_implementations(parsed.implementations, file_id, interner);
     FileIndex {
         symbols,
         references,
         foreign_bindings,
+        callable_bindings,
+        implementations,
     }
+}
+
+fn intern_foreign_bindings(
+    exports: Vec<crate::languages::ForeignExport>,
+    file_id: u32,
+    interner: &Interner,
+) -> Vec<ForeignBinding> {
+    exports
+        .into_iter()
+        .map(|export| ForeignBinding {
+            file_id,
+            exported: interner.intern(&export.exported),
+            target: interner.intern(&export.target),
+            target_scope: export.target_scope.map(|scope| interner.intern(&scope)),
+            caller: export.caller,
+        })
+        .collect()
+}
+
+fn intern_callable_bindings(
+    bindings: Vec<crate::languages::CallableBinding>,
+    symbols: &[Symbol],
+    file_id: u32,
+    interner: &Interner,
+) -> Vec<CallableBinding> {
+    bindings
+        .into_iter()
+        .map(|binding| {
+            let target = binding.target.as_deref().map(|value| {
+                value
+                    .rsplit_once("::")
+                    .map_or((None, value), |(qualifier, name)| (Some(qualifier), name))
+            });
+            CallableBinding {
+                file_id,
+                from_symbol: super::ownership::find_enclosing_symbol(symbols, binding.start_byte),
+                start_byte: binding.start_byte as u32,
+                owner: interner.intern(&binding.owner),
+                field: interner.intern(&binding.field),
+                target: target.map(|(_, name)| interner.intern(name)),
+                target_qualifier: target
+                    .and_then(|(qualifier, _)| qualifier)
+                    .map(|value| interner.intern(value)),
+            }
+        })
+        .collect()
+}
+
+fn intern_implementations(
+    implementations: Vec<crate::languages::Implementation>,
+    file_id: u32,
+    interner: &Interner,
+) -> Vec<crate::domain::Implementation> {
+    implementations
+        .into_iter()
+        .map(|implementation| {
+            let trait_path = implementation.trait_path.as_deref().map(|value| {
+                value
+                    .rsplit_once("::")
+                    .map_or((None, value), |(qualifier, name)| (Some(qualifier), name))
+            });
+            crate::domain::Implementation {
+                file_id,
+                subject: interner.intern(&implementation.subject),
+                trait_name: trait_path.map(|(_, name)| interner.intern(name)),
+                trait_qualifier: trait_path
+                    .and_then(|(qualifier, _)| qualifier)
+                    .map(|value| interner.intern(value)),
+                subject_bound: implementation
+                    .subject_bound
+                    .as_deref()
+                    .map(|value| interner.intern(value)),
+                generic_subject: implementation.generic_subject,
+                start_byte: implementation.start_byte as u32,
+                end_byte: implementation.end_byte as u32,
+            }
+        })
+        .collect()
 }
 
 /// Append a file, rebasing its file-local node ids onto the global symbol table.
@@ -216,10 +292,19 @@ fn append_file(ingest: &mut IngestResult, file_info: FileInfo, mut index: FileIn
     for r in &mut index.references {
         r.from_symbol += offset;
     }
+    for binding in &mut index.callable_bindings {
+        if binding.from_symbol != crate::domain::NO_NODE {
+            binding.from_symbol += offset;
+        }
+    }
     ingest.files.push(file_info);
     ingest.symbols.append(&mut index.symbols);
     ingest.references.append(&mut index.references);
     ingest.foreign_bindings.append(&mut index.foreign_bindings);
+    ingest
+        .callable_bindings
+        .append(&mut index.callable_bindings);
+    ingest.implementations.append(&mut index.implementations);
 }
 
 pub fn build_file_symbols(

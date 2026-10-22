@@ -51,6 +51,7 @@ ripwire-rs, rw \- high-throughput agent context router and deterministic static 
 [\fB\-\-add\-skills\fR [\fIDIR\fR]]
 .B ripwire-rs mcp
 [\fIPATH\fR]
+[\fB\-\-scip\fR \fIFILE\fR]
 .br
 .B ripwire-rs skills
 [\fIDIR\fR]
@@ -74,7 +75,7 @@ Alias for \fB\-\-max\-tokens\fR.
 Streaming budget cap in raw bytes (default: 65536 = 64 KB).
 .TP
 .BI \-\-rank\-by= MODE
-Ranking signal algorithm: \fBpagerank\fR (default, structural authority), \fBauthority\fR (HITS authority), or \fBhub\fR (HITS hub).
+Ranking signal algorithm: \fBpagerank\fR (default), \fBauthority\fR, \fBhub\fR, \fBdegree\fR, \fBccx\fR, or \fBstable\fR. Unknown signals are errors.
 .TP
 .BI \-\-legend= MODE
 Schema documentation comment posture: \fBcompact\fR (default, includes in-context AST schema header comment) or \fBnone\fR (suppresses leading XML comments).
@@ -113,6 +114,9 @@ Query direct 1-hop outgoing callees called by symbol \fISYM\fR.
 .BI \-\-impact= SYM
 Compute transitive blast radius (reachability graph) reaching symbol \fISYM\fR across code and database schema migrations.
 Unbound candidate call sites appear separately as \fB<dc>\fR rows and are not graph edges. A capped candidate list includes \fBdc_next\fR; use \fB\-\-limit\fR to expand it.
+.TP
+.BI \-\-impact\-depth= N
+Optional impact traversal depth limit, matching MCP \fBmax_depth\fR. Global; also works with \fBnavigate --impact\fR. The default traversal is unchanged.
 .TP
 .BI \-\-uses= SYM
 Query all static use-sites (calls, definitions, reads, writes, imports, extends) of symbol \fISYM\fR, including cross-language embedded SQL table lineage from application string literals.
@@ -201,7 +205,7 @@ Transitive reachability mapping from changed file or symbol \fIPATH\fR to affect
 Pre-PR verification gate: names tests to run and untested blast radius. Exits with code \fB4\fR if non-empty obligations exist. Defaults to git diff.
 .TP
 .BI \-\-situ [=FILES]
-Situational awareness report for a change: blast radius, tests to run, and Fowler's Shotgun Surgery co-change coupling. Defaults to git diff.
+Canonical \fBripwire-rs.situ/v1\fR XML report for a change: blast radius, tests to run, and Fowler's Shotgun Surgery co-change coupling. Defaults to git diff.
 .TP
 .BI \-\-safe\-delete= SYM
 Safe deletion assessment: joins 1-hop callers, impact blast radius, test coverage, and dead code candidate status for symbol \fISYM\fR.
@@ -391,10 +395,10 @@ Track authored content living on divergent branches that has not merged into \fB
 .SH MODIFIERS & BATCHING
 .TP
 .B \-\-json
-Emit JSON instead of XML for navigation and query commands.
+Emit JSON instead of XML for navigation and query commands, preserving hierarchy, root tag/attributes/items, and text/CDATA. Leaf text uses \fBtext\fR; mixed text is interleaved in \fBitems\fR. Reserved-name attributes use \fBattributes\fR; namespaced names use \fB{uri}local\fR. Malformed reports fail explicitly.
 .TP
 .BI \-\-batch= FILE
-Execute up to 16 heterogeneous sub-queries sequentially from a newline-delimited \fIverb:arg\fR specification file (\fI-\fR for stdin).
+Execute at most 16 shared read sub-queries from \fIname:argument\fR or \fIname:{JSON arguments}\fR lines (\fI-\fR for stdin); ignore blank/comment lines. More than 16 is a whole-batch error. Individual failures emit \fB<error>\fR; recursive batches and writes (including quality baseline and quality-delta acknowledgment options) are rejected per item.
 .TP
 .BI \-\-add\-skills [=DIR]
 Install 17 pre-packaged ripwire-rs agent skills and active manifest (\fB.ripwire\-rs\-manifest\-v1\fR) to \fI~/.agents/skills\fR (or custom \fIDIR\fR). Replaces stale or broken symlinks safely. Alias: \fB\-\-install\-skills\fR.
@@ -413,6 +417,8 @@ Maximum file size in bytes to index (default: 2 MB).
 .TP
 .BI \-\-scip= FILE
 Overlay a compiler\-backed SCIP index: call sites it resolves bind exactly (\fBprov="scip"\fR, map header \fBprecise=K\fR), sites it resolves outside the index count as external, and every other site keeps name resolution. Bypasses the cache.
+Also supported by \fBnavigate\fR, plain and task-ranked \fBorient\fR, and \fBmcp\fR (including \fB\-\-mcp\fR). MCP retains the indexed graph for the session. Unreadable or malformed indexes fail explicitly without a name-only fallback.
+The option is global and may appear before or after a subcommand. Multiline calls match the callee identifier's index line; reported call-site lines preserve the call expression's start.
 .TP
 .B \-\-no\-redact
 Disable secret redaction on emitted code snippets.
@@ -453,9 +459,6 @@ Emit verbatim matched lines in \fB\-\-whereis\fR without length truncation.
 .BI \-\-whereis\-listing= MODE
 Filter \fB\-\-whereis\fR results by \fBdefs\fR, \fBrefs\fR, or \fBall\fR.
 .TP
-.BI \-\-mcp\-legend= MODE
-Configure MCP session legend posture (\fBsession\fR or \fBinline\fR).
-.TP
 .BI \-\-mcp\-tools= LIST
 Restrict exposed MCP tools to a comma-separated list or profile (\fBcore\fR, \fBfull\fR).
 .TP
@@ -489,10 +492,10 @@ Node coloring mode for HTML visualization: \fBlang\fR (default), \fBcommunity\fR
 
 .SH SUBCOMMANDS
 .TP
-.B ripwire-rs orient \fR[\fIPATH\fR]
+.B ripwire-rs orient \fR[\fIPATH\fR] [\fB\-\-for\fR \fITASK\fR] [\fB\-\-scip\fR \fIFILE\fR]
 Exploration and task-based context orientation.
 .TP
-.B ripwire-rs navigate \fR[\fIPATH\fR] \fB\-\-symbol\fR \fISYM\fR [\fB\-\-callers\fR|\fB\-\-callees\fR|\fB\-\-impact\fR]
+.B ripwire-rs navigate \fR[\fIPATH\fR] \fB\-\-symbol\fR \fISYM\fR [\fB\-\-callers\fR|\fB\-\-callees\fR|\fB\-\-impact\fR] [\fB\-\-scip\fR \fIFILE\fR]
 Symbol neighborhood analysis and traversals.
 .TP
 .B ripwire-rs gate \fR[\fIPATH\fR] [\fB\-\-edit\-check\fR|\fB\-\-affected\fR|\fB\-\-quality\-delta\fR|\fB\-\-test\-gate\fR]
@@ -504,8 +507,10 @@ Code health and structural complexity metrics.
 .B ripwire-rs slice \fR[\fIPATH\fR] \fB\-\-symbol\fR \fISYM\fR \fB\-\-var\fR \fIVAR\fR
 Intra-procedural def-use slicing.
 .TP
-.B ripwire-rs mcp \fR[\fIPATH\fR]
+.B ripwire-rs mcp \fR[\fIPATH\fR] [\fB\-\-scip\fR \fIFILE\fR]
 Launch native Model Context Protocol (MCP) JSON-RPC 2.0 server over standard input/output.
+Overlapping tools return canonical CLI XML/text in \fBresult.content[0].text\fR, with identical facts, defaults, errors, and limits; no bespoke JSON summaries. Architecture maps default to 200 symbols and 65536 bytes. Connecting subgraphs default to radius 2. Slicing shares CLI workspace-root and flow/depth errors.
+MCP batch success entries retain \fBtool/result/kind\fR (\fBxml|text|json\fR); malformed names fail per item. The CLI embeds XML and escapes text/JSON results. MCP \fBowners\fR accepts integer \fBdetail > 0\fR; \fBwhereis\fR accepts \fBlisting=defs|refs|all\fR and boolean \fBfull_text\fR, rejecting invalid listings. Detail 2 serves all requested bodies with accurate \fBshown/total\fR.
 .TP
 .B ripwire-rs skills \fR[\fIDIR\fR]
 Install and manage 17 ripwire-rs agent skills into the cross-agent discovery directory (default: \fI~/.agents/skills\fR).

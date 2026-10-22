@@ -1,5 +1,5 @@
 use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
-use ripwire_rs::mcp::retrieval::call_lego;
+use ripwire_rs::query::retrieval::call_lego;
 use ripwire_rs::{Interner, Lang, LanguageRegistry, SymKind, ingest_in_memory_files};
 
 #[test]

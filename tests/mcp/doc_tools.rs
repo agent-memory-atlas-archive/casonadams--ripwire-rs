@@ -1,22 +1,22 @@
 use ripwire_rs::git::history::CommitInfo;
-use ripwire_rs::mcp::doc_tools::{
-    call_mentions_in_root, call_owners, call_stray_content, call_whereis,
-    collect_file_wanted_tokens, conditional_uses, enrich_drift_item_history, extract_cmake_option,
-    extract_env_identifiers, extract_settings_gate, filter_present_in_code_drift,
-    inspect_branch_stray, scan_doc_text_for_drift,
+use ripwire_rs::query::doc_tools::{
+    WhereisFacts, call_owners, collect_file_wanted_tokens, conditional_uses, extract_cmake_option,
+    extract_env_identifiers, extract_settings_gate, filter_present_in_sources_drift,
+    mentions_from_sources, scan_doc_text_for_drift, whereis_from_sources,
+    whereis_from_sources_with_facts,
 };
 use ripwire_rs::{
     FileInfo, IngestResult, Interner, Lang, SymKind, Symbol, serialize_doc_drift_xml,
 };
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 #[test]
 fn test_mentions_empty() {
     let ingest = IngestResult::new();
     let interner = Interner::new();
-    let res = call_mentions_in_root(".", &ingest, &interner, "nonexistent");
+    let sources: [(&str, &[u8]); 0] = [];
+    let res = mentions_from_sources(&sources, &ingest, &interner, "nonexistent");
     assert_eq!(res["total_mentions"], 0);
 }
 
@@ -198,23 +198,7 @@ fn test_gate_extractors() {
 }
 
 #[test]
-fn test_branch_stray_inspection() {
-    let repo = ripwire_rs::git::repo::discover(".").unwrap();
-    assert_eq!(inspect_branch_stray(&repo, "", "main"), None);
-    assert_eq!(inspect_branch_stray(&repo, "HEAD", "main"), None);
-    assert_eq!(inspect_branch_stray(&repo, "main", "main"), None);
-    let (verdict, _) = inspect_branch_stray(&repo, "nonexistent-branch-xyz", "main").unwrap();
-    assert_eq!(verdict, "unknown");
-    let (base, ahead) = ripwire_rs::git::repo::unmerged_commits(&repo, "HEAD").unwrap();
-    assert_eq!(ahead, 0);
-    assert_eq!(
-        base,
-        ripwire_rs::git::repo::short_id(repo.head_id().unwrap())
-    );
-}
-
-#[test]
-fn test_whereis_and_stray() {
+fn test_whereis_reports_indexed_definition() {
     let mut ingest = IngestResult::new();
     let interner = Interner::new();
     let f0 = FileInfo {
@@ -236,12 +220,68 @@ fn test_whereis_and_stray() {
     ingest.files.push(f0);
     ingest.symbols.push(sym);
 
-    let whereis_res = call_whereis(&ingest, &interner, ".", "main", false);
-    assert!(whereis_res["count"].as_u64().unwrap_or(0) >= 1);
-    let whereis_hist = call_whereis(&ingest, &interner, ".", "nonexistent_sym", true);
-    assert!(whereis_hist.get("history").is_some());
-    let stray_res = call_stray_content(".");
-    assert!(stray_res.get("head").is_some());
+    let sources = [("src/main.rs", b"fn main() {}\n".as_slice())];
+    let whereis_res = whereis_from_sources(&sources, &ingest, &interner, "main");
+    assert_eq!(whereis_res["on_head"], 1);
+    assert_eq!(whereis_res["hits"][0]["kind"], "def");
+    assert_eq!(whereis_res["hits"][0]["line"], 1);
+}
+
+#[test]
+fn test_whereis_from_sources_with_facts_branch_and_history() {
+    let mut ingest = IngestResult::new();
+    let interner = Interner::new();
+    let f0 = FileInfo {
+        id: 0,
+        path: interner.intern("src/main.rs"),
+        lang: Lang::Rust,
+        line_count: 10,
+        byte_size: 100,
+    };
+    ingest.files.push(f0);
+
+    let sources = [("src/main.rs", b"// file without symbol\n".as_slice())];
+    let facts = WhereisFacts {
+        history: Some(json!({
+            "probed": 1,
+            "head": "a1b2c3d",
+            "fate": {
+                "v": "removed",
+                "commit": "deadbeef",
+                "date": "2026-10-18",
+                "subject": "deprecate and remove legacy_target"
+            }
+        })),
+        head_date: Some("2026-10-21".to_string()),
+        at_stamp: Some("a1b2c3d".to_string()),
+        branch_rows: vec![json!({
+            "ref": "feature/branch-x",
+            "tip": "feedface",
+            "date": "2026-10-19",
+            "symbol": "legacy_target",
+            "kind": "def",
+            "file": "src/main.rs",
+            "path": "src/main.rs",
+            "line": 4,
+            "text": "pub fn legacy_target() {}",
+            "on_head": false,
+        })],
+        refs_scanned: 3,
+    };
+
+    let res =
+        whereis_from_sources_with_facts(&sources, &ingest, &interner, "legacy_target", &facts);
+    assert_eq!(res["symbol"], "legacy_target");
+    assert_eq!(res["on_head"], 0);
+    assert_eq!(res["refs_scanned"], 3);
+    assert_eq!(res["head_date"], "2026-10-21");
+    assert_eq!(res["at"], "a1b2c3d");
+    assert_eq!(res["hits"].as_array().unwrap().len(), 1);
+    assert_eq!(res["hits"][0]["ref"], "feature/branch-x");
+    assert_eq!(res["hits"][0]["kind"], "def");
+    assert_eq!(res["hits"][0]["line"], 4);
+    assert_eq!(res["history"]["fate"]["v"], "removed");
+    assert_eq!(res["history"]["fate"]["commit"], "deadbeef");
 }
 
 #[test]
@@ -292,7 +332,8 @@ fn test_doc_drift_backtick_and_line_anchors() {
     );
     assert!(drift.iter().any(|d| d["referenced"] == "src/lib.rs:50"));
     assert!(drift.iter().any(|d| d["referenced"] == "deletedFunction"));
-    filter_present_in_code_drift(Path::new("."), &ingest, &interner, &mut drift);
+    let sources = [("src/lib.rs", b"fn existingFn() {}\n".as_slice())];
+    filter_present_in_sources_drift(&sources, &ingest, &interner, &[], &mut drift);
     assert_eq!(drift.len(), 3);
     let mut wanted = HashSet::new();
     wanted.insert("deletedFunction".to_string());
@@ -301,8 +342,6 @@ fn test_doc_drift_backtick_and_line_anchors() {
     let found =
         collect_file_wanted_tokens(b"fn helper() { deletedFunction(); }", &wants_first, &wanted);
     assert_eq!(found, vec!["deletedFunction".to_string()]);
-    enrich_drift_item_history(".", &mut drift[1], "HEAD");
-    assert!(drift[1].get("fate").is_some());
     let mut xml_buf = Vec::new();
     serialize_doc_drift_xml(
         &json!({
@@ -319,6 +358,6 @@ fn test_doc_drift_backtick_and_line_anchors() {
     )
     .unwrap();
     let xml_str = String::from_utf8(xml_buf).unwrap();
-    assert!(xml_str.contains("fate=\""));
+    assert!(xml_str.contains("deletedFunction"));
     assert!(xml_str.contains("prose=\"1\" corpus=\"10\""));
 }

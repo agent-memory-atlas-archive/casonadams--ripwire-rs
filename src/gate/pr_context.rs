@@ -96,6 +96,35 @@ pub fn compute_pr_context(
     compute_pr_context_in_root(".", changed_files, ingest, graph, interner, base_ref)
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct PrContextRequest<'a> {
+    pub changed_files: &'a [String],
+    pub base_ref: &'a str,
+    pub commits: &'a [crate::git::history::CommitInfo],
+}
+
+#[must_use]
+pub fn compute_pr_context_from_facts(
+    req: &PrContextRequest<'_>,
+    ingest: &IngestResult,
+    graph: &Graph,
+    interner: &Interner,
+) -> PrContextReport {
+    let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, Some(graph));
+    let files: Vec<PrFileContext> = req
+        .changed_files
+        .iter()
+        .map(|f| build_single_pr_file_context(f, ingest, graph, interner, &coupling, req.commits))
+        .collect();
+
+    PrContextReport {
+        base_ref: req.base_ref.to_string(),
+        files_count: files.len(),
+        files,
+        gauges: graph.gauges(),
+    }
+}
+
 #[must_use]
 pub fn compute_pr_context_in_root(
     root: &str,
@@ -105,19 +134,13 @@ pub fn compute_pr_context_in_root(
     interner: &Interner,
     base_ref: &str,
 ) -> PrContextReport {
-    let coupling = crate::git::cochange::StaticCouplingMap::build(ingest, interner, Some(graph));
     let commits = crate::git::history::walk_repository_history(root).unwrap_or_default();
-    let files: Vec<PrFileContext> = changed_files
-        .iter()
-        .map(|f| build_single_pr_file_context(f, ingest, graph, interner, &coupling, &commits))
-        .collect();
-
-    PrContextReport {
-        base_ref: base_ref.to_string(),
-        files_count: files.len(),
-        files,
-        gauges: graph.gauges(),
-    }
+    let req = PrContextRequest {
+        changed_files,
+        base_ref,
+        commits: &commits,
+    };
+    compute_pr_context_from_facts(&req, ingest, graph, interner)
 }
 
 /// Serialize PR context to canonical XML format.

@@ -14,9 +14,9 @@ pub mod readability;
 pub mod source_mask;
 
 pub use analysis_lenses::{
-    classify_identifier_casing, compute_comment_coherence, compute_context_ratio, compute_ensemble,
-    serialize_executive_report_md, serialize_naming_calibration_xml,
-    serialize_naming_consistency_xml,
+    classify_identifier_casing, compute_comment_coherence, compute_comment_coherence_with_sources,
+    compute_context_ratio, compute_ensemble, serialize_executive_report_md,
+    serialize_naming_calibration_xml, serialize_naming_consistency_xml,
 };
 pub use dmm::{DmmProperty, DmmReport, compute_dmm_report, serialize_dmm_xml};
 pub use eval::{run_cochange_eval, run_retrieval_eval, run_retrieval_eval_for_repo};

@@ -267,6 +267,19 @@ impl PathLayerExt for str {
     }
 }
 
+pub fn write_cdata<W: std::io::Write>(out: &mut W, text: &str) -> std::io::Result<()> {
+    out.write_all(b"<![CDATA[")?;
+    let mut parts = text.split("]]>");
+    if let Some(first) = parts.next() {
+        out.write_all(first.as_bytes())?;
+    }
+    for part in parts {
+        out.write_all(b"]]]]><![CDATA[>")?;
+        out.write_all(part.as_bytes())?;
+    }
+    out.write_all(b"]]>")
+}
+
 /// Extension trait for resolving a repository root path's git HEAD stamp and XML attribute.
 pub trait GitStampExt {
     fn git_at_or_head(&self) -> String;

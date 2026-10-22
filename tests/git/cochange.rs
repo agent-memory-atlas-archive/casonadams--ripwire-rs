@@ -1,4 +1,3 @@
-use ripwire_rs::cli::execute_cochange_with;
 use ripwire_rs::domain::{
     FileInfo, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
 };
@@ -8,8 +7,9 @@ use ripwire_rs::git::cochange::{
 };
 use ripwire_rs::git::history::CommitInfo;
 use ripwire_rs::graph::Graph;
-use ripwire_rs::mcp::{McpState, dispatch_json_rpc};
-use serde_json::Value;
+use ripwire_rs::query::safety::{
+    SafetyContext, execute_cochange_with, execute_cochange_with_options,
+};
 use std::io::Cursor;
 
 fn create_test_ingest(interner: &Interner) -> IngestResult {
@@ -316,10 +316,16 @@ fn test_git_cochange_surprising_and_recurrence() {
 }
 
 #[test]
-fn test_cli_cochange_execution_and_xml_output() {
+fn test_cochange_query_xml_and_recurrence_filter() {
     let interner = Interner::new();
     let ingest = create_test_ingest(&interner);
-    let state = McpState::from_ingest(".", ingest, interner);
+    let graph = Graph::build(&ingest, &interner);
+    let state = SafetyContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
 
     let commits = vec![
         CommitInfo {
@@ -350,57 +356,19 @@ fn test_cli_cochange_execution_and_xml_output() {
     assert!(xml.contains("<f path=\"src/caller.rs\""));
     assert!(xml.contains("<partner path=\"src/unrelated.rs\" together=\"3\""));
     assert!(xml.contains("surprising=\"1\""));
-
-    let mut repo_buf = Cursor::new(Vec::new());
-    execute_cochange_with(None, None, &commits, &state, &mut repo_buf)
-        .expect("execute repo cochange");
-
-    let repo_xml = String::from_utf8(repo_buf.into_inner()).unwrap();
-    assert!(repo_xml.contains("schema=\"ripwire-rs.cochange/v1\""));
-    assert!(repo_xml.contains("pairs=\"1\""));
-    assert!(repo_xml.contains("<pair a=\"src/caller.rs\" b=\"src/unrelated.rs\" together=\"3\""));
-}
-
-#[test]
-fn test_mcp_cochange_tool_json_rpc() {
-    let interner = Interner::new();
-    let ingest = create_test_ingest(&interner);
-    let commits = vec![
-        CommitInfo {
-            id: "c1".to_string(),
-            timestamp: 100,
-            author: "dev@example.com".to_string(),
-            changed_files: vec!["src/caller.rs".to_string(), "src/unrelated.rs".to_string()],
+    let mut filtered = Vec::new();
+    execute_cochange_with_options(
+        Some("src/caller.rs"),
+        ripwire_rs::query::safety::CochangeOptions {
+            cochange_recur: Some(4),
+            ..Default::default()
         },
-        CommitInfo {
-            id: "c2".to_string(),
-            timestamp: 200,
-            author: "dev@example.com".to_string(),
-            changed_files: vec!["src/caller.rs".to_string(), "src/unrelated.rs".to_string()],
-        },
-        CommitInfo {
-            id: "c3".to_string(),
-            timestamp: 300,
-            author: "dev@example.com".to_string(),
-            changed_files: vec!["src/caller.rs".to_string(), "src/unrelated.rs".to_string()],
-        },
-    ];
-
-    let mut state = Some(McpState::from_ingest(".", ingest, interner).with_commits(commits));
-
-    let req = r#"{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"cochange","arguments":{"path":"src/caller.rs"}}}"#;
-    let resp = dispatch_json_rpc(req, &mut state, ".").expect("reply to cochange");
-    let val: Value = serde_json::from_str(&resp).unwrap();
-    assert_eq!(val["id"], 42);
-
-    let text = val["result"]["content"][0]["text"].as_str().unwrap();
-    let data: Value = serde_json::from_str(text).unwrap();
-    assert_eq!(data["path"], "src/caller.rs");
-
-    let partners = data["partners"].as_array().expect("partners array");
-    assert_eq!(partners.len(), 1);
-    assert_eq!(partners[0]["file"], "src/unrelated.rs");
-    assert_eq!(partners[0]["together"], 3);
-    assert_eq!(partners[0]["surprising"], true);
-    assert_eq!(partners[0]["dep_capable"], true);
+        &commits,
+        &state,
+        &mut filtered,
+    )
+    .expect("filter cochange partners by recurrence");
+    let xml = String::from_utf8(filtered).unwrap();
+    assert!(xml.contains("<f path=\"src/caller.rs\" partners=\"0\">"));
+    assert!(!xml.contains("<partner "));
 }

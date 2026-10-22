@@ -1,8 +1,13 @@
+mod callables;
+pub use callables::CallableIndex;
 pub mod ladder;
 pub mod scip;
+mod scopes;
+pub mod traits;
 
 pub use ladder::*;
 pub use scip::scip_sites;
+pub use traits::*;
 
 use crate::domain::{IngestResult, Interner, NodeId, Reference};
 use lasso::Spur;
@@ -101,24 +106,49 @@ pub struct ResolutionIndex {
     module_qualifiers: Vec<HashMap<Spur, u32>>,
     foreign: ForeignIndex,
     scip: ScipIndex,
+    traits: TraitIndex,
+    callables: CallableIndex,
 }
 
 impl ResolutionIndex {
     #[must_use]
     pub fn build(ingest: &IngestResult, interner: &Interner) -> Self {
         let by_name = index_symbols_by_name(&ingest.symbols);
-        Self {
-            file_dirs: compute_file_dirs(&ingest.files, interner),
+        let file_dirs = compute_file_dirs(&ingest.files, interner);
+        let module_qualifiers = index_module_qualifiers(ingest, interner);
+        let qualifier_file = |file: u32, q: Spur| {
+            module_qualifiers
+                .get(file as usize)
+                .and_then(|m| m.get(&q).copied())
+        };
+        let env = TraitEnv {
+            symbols: &ingest.symbols,
+            file_dirs: &file_dirs,
+            interner,
+            qualifier_file: &qualifier_file,
+        };
+        let traits = TraitIndex::build(&ingest.implementations, &ingest.files, &env);
+        let mut index = Self {
+            file_dirs,
             foreign: index_foreign_bindings(ingest, &by_name),
             by_name,
             file_scopes: index_file_scope_mentions(ingest.files.len(), &ingest.references),
-            module_qualifiers: index_module_qualifiers(ingest, interner),
+            module_qualifiers,
             scip: ingest
                 .scip_sites
                 .iter()
                 .map(|s| ((s.file_id, s.line, s.callee), s.target))
                 .collect(),
-        }
+            traits,
+            callables: CallableIndex::default(),
+        };
+        index.callables = CallableIndex::build(ingest, &index.context(ingest, interner));
+        index
+    }
+
+    #[must_use]
+    pub fn rust_implementors(&self, trait_id: NodeId) -> Vec<NodeId> {
+        self.traits.implementor_ids(trait_id)
     }
 
     #[must_use]
@@ -136,6 +166,8 @@ impl ResolutionIndex {
             module_qualifiers: Some(&self.module_qualifiers),
             foreign: Some(&self.foreign),
             scip: Some(&self.scip),
+            trait_index: Some(&self.traits),
+            callables: Some(&self.callables),
         }
     }
 }

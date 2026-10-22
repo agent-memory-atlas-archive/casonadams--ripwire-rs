@@ -4,57 +4,151 @@ use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};
 use std::path::Path;
 
-fn execute_doc_search_query<W: Write>(
+pub struct WorkspaceContext<'a> {
+    pub root: &'a str,
+    pub ingest: &'a IngestResult,
+    pub interner: &'a Interner,
+    pub sources: &'a dyn crate::query::SourceReader,
+    pub notes_content: Option<&'a str>,
+    pub plan_content: Option<&'a str>,
+}
+
+impl<'a> WorkspaceContext<'a> {
+    pub fn new(
+        root: &'a str,
+        ingest: &'a IngestResult,
+        interner: &'a Interner,
+        sources: &'a dyn crate::query::SourceReader,
+    ) -> Self {
+        Self {
+            root,
+            ingest,
+            interner,
+            sources,
+            notes_content: None,
+            plan_content: None,
+        }
+    }
+}
+
+pub fn render_whereis_xml<W: Write>(
+    val: &serde_json::Value,
+    listing: Option<&str>,
+    full_text: bool,
+    out: &mut W,
+) -> io::Result<()> {
+    crate::query::branch_tools::validate_whereis_listing(listing).map_err(io::Error::other)?;
+    let mut val = val.clone();
+    if let Some(listing) = listing {
+        val["listing"] = serde_json::Value::String(listing.to_string());
+    }
+    if full_text {
+        val["full_text"] = serde_json::Value::Bool(true);
+    }
+    crate::serialize::serialize_whereis_xml(&val, out)
+}
+
+fn execute_whereis_doc_search<W: Write>(
     ws: &TopWorkspaceArgs,
-    root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
+    sym: &str,
+    ctx: &WorkspaceContext<'_>,
+    with_history: bool,
+    out: &mut W,
+) -> io::Result<()> {
+    crate::query::branch_tools::validate_whereis_listing(ws.whereis_listing.as_deref())
+        .map_err(io::Error::other)?;
+    let val = crate::query::branch_tools::whereis_with_sources_and_history(
+        crate::query::branch_tools::WhereisRequest {
+            root: ctx.root,
+            symbol_name: sym,
+            with_history,
+        },
+        ctx.sources,
+        ctx.ingest,
+        ctx.interner,
+    );
+    render_whereis_xml(
+        &val,
+        ws.whereis_listing.as_deref(),
+        ws.whereis_full_text,
+        out,
+    )
+}
+
+fn execute_doc_drift_search<W: Write>(
+    ctx: &WorkspaceContext<'_>,
+    with_history: bool,
+    page: Option<&dyn super::args::Paginated>,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut val = crate::query::doc_tools::doc_drift_with_sources_and_history(
+        ctx.root,
+        ctx.sources,
+        ctx.ingest,
+        ctx.interner,
+        with_history,
+    );
+    if let Some(p) = page {
+        p.apply_pagination_to_json(&mut val);
+    }
+    crate::serialize::serialize_doc_drift_xml(&val, out)
+}
+
+fn execute_flags_doc_search<W: Write>(
+    ctx: &WorkspaceContext<'_>,
+    page: Option<&dyn super::args::Paginated>,
+    out: &mut W,
+) -> io::Result<()> {
+    let mut val = crate::query::doc_tools::flags_from_sources(
+        ctx.root,
+        ctx.sources,
+        ctx.ingest,
+        ctx.interner,
+    );
+    if let Some(p) = page {
+        p.apply_pagination_to_json(&mut val);
+    }
+    crate::serialize::serialize_flags_xml(&val, out)
+}
+
+pub fn execute_doc_search_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    ctx: &WorkspaceContext<'_>,
     with_history: bool,
     page: Option<&dyn super::args::Paginated>,
     out: &mut W,
 ) -> io::Result<bool> {
     if let Some(sym) = ws.whereis.as_deref() {
-        let mut val =
-            crate::mcp::doc_tools::call_whereis(ingest, interner, root, sym, with_history);
-        if let Some(listing) = ws.whereis_listing.as_deref() {
-            val["listing"] = serde_json::Value::String(listing.to_string());
-        }
-        if ws.whereis_full_text {
-            val["full_text"] = serde_json::Value::Bool(true);
-        }
-        crate::serialize::serialize_whereis_xml(&val, out)?;
+        execute_whereis_doc_search(ws, sym, ctx, with_history, out)?;
         Ok(true)
     } else if ws.doc_drift {
-        let mut val = crate::mcp::doc_tools::call_doc_drift_with_history(
-            root,
-            ingest,
-            interner,
-            with_history,
-        );
-        if let Some(p) = page {
-            p.apply_pagination_to_json(&mut val);
-        }
-        crate::serialize::serialize_doc_drift_xml(&val, out)?;
+        execute_doc_drift_search(ctx, with_history, page, out)?;
         Ok(true)
     } else if ws.flags {
-        let mut val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
-        if let Some(p) = page {
-            p.apply_pagination_to_json(&mut val);
-        }
-        crate::serialize::serialize_flags_xml(&val, out)?;
+        execute_flags_doc_search(ctx, page, out)?;
         Ok(true)
     } else if let Some(sym) = ws.mentions.as_deref() {
-        if crate::navigate::find_symbols_by_name(sym, ingest, interner).is_empty() {
+        if crate::navigate::find_symbols_by_name(sym, ctx.ingest, ctx.interner).is_empty() {
             return Err(io::Error::other(format!(
                 "ripwire-rs: --mentions symbol not found: {sym}"
             )));
         }
-        let val = crate::mcp::doc_tools::call_mentions_in_root(root, ingest, interner, sym);
-        crate::serialize::serialize_mentions_xml(&val, out)?;
+        let report = crate::query::doc_tools::mentions_from_sources(
+            ctx.sources,
+            ctx.ingest,
+            ctx.interner,
+            sym,
+        );
+        crate::serialize::serialize_mentions_xml(&report, out)?;
         Ok(true)
     } else {
         Ok(false)
     }
+}
+
+pub fn render_notes_xml<W: Write>(content: &str, out: &mut W) -> io::Result<()> {
+    use crate::serialize::XmlReport;
+    NotesReport { content }.render_envelope(out)
 }
 
 struct NotesReport<'a> {
@@ -79,13 +173,6 @@ impl crate::serialize::XmlReport for NotesReport<'_> {
         }
         writeln!(out, "</notes>")
     }
-}
-
-fn execute_notes_display<W: Write>(root: &str, out: &mut W) -> io::Result<()> {
-    use crate::serialize::XmlReport;
-    let notes_path = Path::new(root).join(".ripwire-rs_notes");
-    let content = std::fs::read_to_string(&notes_path).unwrap_or_default();
-    NotesReport { content: &content }.render_envelope(out)
 }
 
 fn execute_note_append<W: Write>(root: &str, note: &str, out: &mut W) -> io::Result<()> {
@@ -157,7 +244,8 @@ pub fn build_handoff_verified_rows(
 }
 
 fn build_handoff_doc_rows(root: &str, query: &str) -> (String, usize) {
-    let recall = crate::mcp::retrieval::call_memory_recall_in_root(root, query, Some(4), None);
+    let inputs = crate::query::retrieval::collect_recall_inputs(Path::new(root));
+    let recall = crate::query::retrieval::call_memory_recall(&inputs, query, Some(4), None);
     let mut rows = String::new();
     let mut cnt = 0usize;
     if let Some(docs) = recall.get("docs").and_then(|v| v.as_array()) {
@@ -226,14 +314,14 @@ pub fn build_handoff_xml(root: &str, ingest: &IngestResult, interner: &Interner)
     )
 }
 
-fn execute_skipped_census_query<W: Write>(
+pub fn render_skipped_census_xml<W: Write>(
     root: &str,
+    census: &crate::crawler::SkippedCensus,
+    opts: &crate::crawler::CrawlerOptions,
     ingest: &IngestResult,
     out: &mut W,
 ) -> io::Result<()> {
     let root_esc = root.xml_escaped();
-    let opts = crate::crawler::CrawlerOptions::default();
-    let census = crate::crawler::scan_skipped_census(root, &opts);
     let oversize_cnt = census.oversize.len();
     let excluded_cnt = census.excluded.len();
     let unsupported_cnt = census.unsupported.len();
@@ -282,88 +370,131 @@ fn execute_skipped_census_query<W: Write>(
     writeln!(out, "</skipped></ctx>")
 }
 
-fn execute_flip_or_plan_query<W: Write>(
-    ws: &TopWorkspaceArgs,
+pub fn execute_skipped_census_query<W: Write>(
+    ctx: &WorkspaceContext<'_>,
+    out: &mut W,
+) -> io::Result<()> {
+    let opts = crate::crawler::CrawlerOptions::default();
+    let census = crate::crawler::scan_skipped_census(ctx.root, &opts);
+    render_skipped_census_xml(ctx.root, &census, &opts, ctx.ingest, out)
+}
+
+pub fn render_flip_xml<W: Write>(
+    gate: &str,
     root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
+    flags_val: &serde_json::Value,
+    out: &mut W,
+) -> io::Result<()> {
+    writeln!(
+        out,
+        "<flip schema=\"ripwire-rs.flip/v1\" gate=\"{}\" root=\"{}\">",
+        gate.xml_escaped(),
+        root.xml_escaped()
+    )?;
+    if let Some(arr) = flags_val["flags"].as_array() {
+        for f in arr {
+            let name = f["name"].as_str().unwrap_or("");
+            if name.contains(gate) {
+                let p = f["path"].as_str().unwrap_or("").xml_escaped();
+                let l = f["line"].as_u64().unwrap_or(1);
+                writeln!(
+                    out,
+                    "  <site p=\"{p}\" l=\"{l}\" gate=\"{}\"/>",
+                    name.xml_escaped()
+                )?;
+            }
+        }
+    }
+    writeln!(out, "</flip>")
+}
+
+pub fn render_plan_lint_xml<W: Write>(
+    plan_file: &str,
+    content: &str,
+    out: &mut W,
+) -> io::Result<()> {
+    let headings = content.lines().filter(|l| l.starts_with('#')).count();
+    let tasks = content.lines().filter(|l| l.contains("- [")).count();
+    writeln!(
+        out,
+        "<plan-lint schema=\"ripwire-rs.plan-lint/v1\" file=\"{}\" headings=\"{headings}\" tasks=\"{tasks}\" ok=\"{}\"/>",
+        plan_file.xml_escaped(),
+        usize::from(headings > 0)
+    )
+}
+
+pub fn execute_flip_or_plan_query<W: Write>(
+    ws: &TopWorkspaceArgs,
+    ctx: &WorkspaceContext<'_>,
     out: &mut W,
 ) -> io::Result<bool> {
     if let Some(gate) = ws.flip.as_deref() {
-        let val = crate::mcp::doc_tools::call_flags_in_root(root, ingest, interner);
-        writeln!(
-            out,
-            "<flip schema=\"ripwire-rs.flip/v1\" gate=\"{}\" root=\"{}\">",
-            gate.xml_escaped(),
-            root.xml_escaped()
-        )?;
-        if let Some(arr) = val["flags"].as_array() {
-            for f in arr {
-                let name = f["name"].as_str().unwrap_or("");
-                if name.contains(gate) {
-                    let p = f["path"].as_str().unwrap_or("").xml_escaped();
-                    let l = f["line"].as_u64().unwrap_or(1);
-                    writeln!(
-                        out,
-                        "  <site p=\"{p}\" l=\"{l}\" gate=\"{}\"/>",
-                        name.xml_escaped()
-                    )?;
-                }
-            }
-        }
-        writeln!(out, "</flip>")?;
+        let val = crate::query::doc_tools::flags_from_sources(
+            ctx.root,
+            ctx.sources,
+            ctx.ingest,
+            ctx.interner,
+        );
+        render_flip_xml(gate, ctx.root, &val, out)?;
         Ok(true)
     } else if let Some(plan_file) = ws.plan_lint.as_deref() {
-        let content = std::fs::read_to_string(plan_file).unwrap_or_default();
-        let headings = content.lines().filter(|l| l.starts_with('#')).count();
-        let tasks = content.lines().filter(|l| l.contains("- [")).count();
-        writeln!(
-            out,
-            "<plan-lint schema=\"ripwire-rs.plan-lint/v1\" file=\"{}\" headings=\"{headings}\" tasks=\"{tasks}\" ok=\"{}\"/>",
-            plan_file.xml_escaped(),
-            usize::from(headings > 0)
-        )?;
+        let content = ctx.plan_content.unwrap_or_default();
+        render_plan_lint_xml(plan_file, content, out)?;
         Ok(true)
     } else if ws.skipped {
-        execute_skipped_census_query(root, ingest, out)?;
+        execute_skipped_census_query(ctx, out)?;
         Ok(true)
     } else {
         Ok(false)
     }
 }
 
-fn execute_session_tools_query<W: Write>(
+pub fn execute_session_tools_query<W: Write>(
     ws: &TopWorkspaceArgs,
-    root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
+    ctx: &WorkspaceContext<'_>,
     out: &mut W,
 ) -> io::Result<bool> {
     if ws.doctor {
-        super::doctor::collect_doctor_report(root).write_xml(out)?;
+        super::doctor::collect_doctor_report(ctx.root).write_xml(out)?;
         Ok(true)
     } else if ws.handoff {
-        writeln!(out, "{}", build_handoff_xml(root, ingest, interner))?;
+        writeln!(
+            out,
+            "{}",
+            build_handoff_xml(ctx.root, ctx.ingest, ctx.interner)
+        )?;
         Ok(true)
     } else if ws.notes {
-        execute_notes_display(root, out)?;
+        let content = ctx.notes_content.unwrap_or_default();
+        render_notes_xml(content, out)?;
         Ok(true)
     } else if let Some(note) = ws.note_add.as_deref() {
-        execute_note_append(root, note, out)?;
+        execute_note_append(ctx.root, note, out)?;
         Ok(true)
     } else {
-        execute_flip_or_plan_query(ws, root, ingest, interner, out)
+        execute_flip_or_plan_query(ws, ctx, out)
     }
 }
 
-fn resolve_edit_spec(spec: &str, payload_override: Option<&str>) -> io::Result<(String, String)> {
+pub fn resolve_edit_spec(
+    spec: &str,
+    payload_override: Option<&str>,
+) -> io::Result<(String, String)> {
+    resolve_edit_spec_with_reader(spec, payload_override, io::stdin())
+}
+
+pub fn resolve_edit_spec_with_reader<R: io::Read>(
+    spec: &str,
+    payload_override: Option<&str>,
+    mut stdin_reader: R,
+) -> io::Result<(String, String)> {
     if let Some((sym, inline_payload)) = spec.split_once(':') {
         return Ok((sym.to_string(), inline_payload.to_string()));
     }
     let raw_payload = match payload_override {
         Some("-") => {
             let mut buf = String::new();
-            io::Read::read_to_string(&mut io::stdin(), &mut buf)?;
+            stdin_reader.read_to_string(&mut buf)?;
             buf
         }
         Some(p) => std::fs::read_to_string(p).unwrap_or_else(|_| p.to_string()),
@@ -375,7 +506,7 @@ fn resolve_edit_spec(spec: &str, payload_override: Option<&str>) -> io::Result<(
 pub struct EditCliOptions<'a> {
     pub root: &'a str,
     pub spec: &'a str,
-    pub op: crate::mcp::edit::EditOp,
+    pub op: crate::query::edit::EditOp,
     pub payload_override: Option<&'a str>,
     pub dry_run: bool,
 }
@@ -387,8 +518,8 @@ pub fn execute_edit_op_with_options<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let (sym, payload) = resolve_edit_spec(opts.spec, opts.payload_override)?;
-    let res = crate::mcp::edit::perform_atomic_edit_with_options(
-        crate::mcp::edit::EditTargetRequest {
+    let res = crate::query::edit::perform_atomic_edit_with_options(
+        crate::query::edit::EditTargetRequest {
             root: opts.root,
             op: opts.op,
             symbol_name: &sym,
@@ -404,17 +535,13 @@ pub fn execute_edit_op_with_options<W: Write>(
 
 pub fn execute_workspace_doc_query<W: Write>(
     ws: &TopWorkspaceArgs,
-    root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
+    ctx: &WorkspaceContext<'_>,
     with_history: bool,
     out: &mut W,
 ) -> io::Result<()> {
     execute_workspace_doc_query_paged(
         ws,
-        root,
-        ingest,
-        interner,
+        ctx,
         with_history,
         &super::args::TopModifierArgs::default(),
         out,
@@ -423,30 +550,28 @@ pub fn execute_workspace_doc_query<W: Write>(
 
 pub fn execute_workspace_doc_query_paged<W: Write>(
     ws: &TopWorkspaceArgs,
-    root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
+    ctx: &WorkspaceContext<'_>,
     with_history: bool,
     page: &dyn super::args::Paginated,
     out: &mut W,
 ) -> io::Result<()> {
-    if execute_doc_search_query(ws, root, ingest, interner, with_history, Some(page), out)? {
+    if execute_doc_search_query(ws, ctx, with_history, Some(page), out)? {
         return Ok(());
     }
-    if execute_session_tools_query(ws, root, ingest, interner, out)? {
+    if execute_session_tools_query(ws, ctx, out)? {
         return Ok(());
     }
     if let Some((spec, op)) = ws.active_edit_op() {
         execute_edit_op_with_options(
             EditCliOptions {
-                root,
+                root: ctx.root,
                 spec,
                 op,
                 payload_override: None,
                 dry_run: false,
             },
-            ingest,
-            interner,
+            ctx.ingest,
+            ctx.interner,
             out,
         )?;
     }

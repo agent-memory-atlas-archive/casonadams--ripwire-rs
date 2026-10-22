@@ -1,4 +1,4 @@
-use ripwire_rs::mcp::retrieval::call_lego;
+use ripwire_rs::query::retrieval::call_lego;
 use ripwire_rs::{
     Graph, Interner, Lang, LanguageRegistry, NO_NODE, RefRole, SymKind, ingest_in_memory_files,
     resolve_all_references,

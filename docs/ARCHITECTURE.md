@@ -63,6 +63,24 @@
    - String literals, raw strings, and template strings across all host languages (Dart, Rust, Python, TypeScript, Go, Java, C#, etc.) are scanned for SQL DML keyword sequences (`SELECT ... FROM`, `JOIN`, `INSERT INTO`, `UPDATE`, `DELETE FROM`).
    - Keyword pairs classify table accesses into typed reference roles (`RefRole::Read` and `RefRole::Write`).
    - The reference resolution ladder binds these table accesses directly to `.sql` DDL definitions (`CREATE TABLE ...`), unifying database entities into the same CSR in-edge graph as application functions and methods.
+
+CLI and MCP adapters share transport-neutral `query::*` implementations and
+canonical reports. The root-exported `Workspace` lives in `src/workspace.rs`
+and loads shared SCIP-aware analysis; ranking is held in `Workspace.pr.ranks`.
+MCP wraps the same XML/text in JSON-RPC `result.content[0].text`.
+`Workspace.query_context(sources)` borrows the graph and ranks for the shared
+`query::commands` registry; adapters do not clone them for dispatch.
+`SourceReader: Sync` supplies source-query bytes through the shared registry.
+`XmlWriter::finish` completes a report; `Write::flush` only flushes bytes.
+
+Rust ingest records impl-block spans, concrete subjects, trait bounds, and
+function-pointer field assignments without turning declarations or assignments
+into call edges. Resolution uses actual call sites: source-spanned inline modules,
+indexed module files, and lexical type identity select owners before trait
+dispatch or callback invocation. Unproven or ambiguous owners decline rather
+than binding to an unrelated same-named method. `--lego` uses the same Rust
+trait/subject index and declaration spans for implementors and contract methods.
+
 ## Lineage & Acknowledgments
 
 This crate is a pure Rust port and rewrite of the groundbreaking [ripwire (C++23)](https://github.com/redhat-et/ripwire) static analysis engine, originally conceived and authored by **David Brewster** at **Red Hat Emerging Technologies**.

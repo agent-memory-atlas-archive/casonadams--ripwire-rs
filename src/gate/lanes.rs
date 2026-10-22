@@ -129,14 +129,16 @@ fn rank_task_surface_nodes(
     ranks: &[f64],
     interner: &Interner,
 ) -> Vec<NodeId> {
-    let ranked = crate::mcp::retrieval::call_for_task(
+    let ranked = crate::query::retrieval::call_for_task_with_options(
         ingest,
         interner,
         ranks,
         task,
-        Some(surface_cap),
-        None,
-        false,
+        crate::query::retrieval::ForTaskOptions {
+            budget_tokens: Some(surface_cap),
+            signatures_only: true,
+            ..Default::default()
+        },
     );
     let mut surface = Vec::new();
     let mut seen = BTreeSet::new();

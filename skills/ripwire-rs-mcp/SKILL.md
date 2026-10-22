@@ -24,10 +24,10 @@ Before configuring MCP:
 Trigger: "wire ripwire into my agent", "set up the ripwire MCP server", or "which ripwire MCP verb
 answers this?".
 
-**The 35 MCP tools, at a glance** (`33` primary tools + `callers`/`callees` aliases, backed by `McpToolHandler`):
-- **17 read verbs**: `analyze`, `rank_by`, `for`, `find_symbol`, `find_referencing_symbols` (plus `callers` and `callees` aliases), `grep`, `cochange`, `memory_recall`, `situational_awareness`, `mentions`, `owners`, `lego`, `batch` (up to 16 read sub-queries in one call), `fetch_body`, `flags`, `doc_drift`, and `slice`.
-- **13 flagship-reflex verbs**: `exemplar`, `quality_delta`, `quality_baseline`, `impact`, `uses`, `affected`, `path_between`, `connect`, `explore`, `from_trace`, `edit_check`, `whereis`, and `stray_content`.
-- **3 atomic span-addressed edit verbs**: `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`.
+**MCP tools, at a glance** (backed by `CommandDescriptor`):
+- **Read verbs**: `analyze`, `rank_by`, `for`, `find_symbol`, `find_referencing_symbols`, `callers`, `callees`, `grep`, `cochange`, `memory_recall`, `situational_awareness`, `mentions`, `owners`, `lego`, `batch`, `fetch_body`, `flags`, `doc_drift`, and `slice`.
+- **Task and safety verbs**: `exemplar`, `quality_delta`, `quality_baseline`, `impact`, `uses`, `affected`, `path_between`, `connect`, `explore`, `from_trace`, `edit_check`, `whereis`, and `stray_content`.
+- **Atomic span-addressed edit verbs**: `replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol`.
 
 ## Wiring — Starting the stdio MCP server
 
@@ -45,7 +45,22 @@ answers this?".
 Run `ripwire-rs <repo> --doctor` to verify binary PATH agreement, grammar compilation, cache health, and git reachability.
 ### Workspace Root & Caching
 
-Start the server with `ripwire-rs <repo> --mcp` or `ripwire-rs mcp` (defaulting to `.`). The server maintains an in-memory `McpState` backed by `.ripwire.cache` so subsequent tool calls answer in milliseconds without re-parsing unchanged files.
+Start the server with `ripwire-rs <repo> --mcp` or `ripwire-rs mcp` (defaulting to `.`). The server maintains an in-memory `Workspace` with shared SCIP-aware analysis and caches unchanged workspaces.
+
+Pass `ripwire-rs mcp <repo> --scip=index.scip` (or
+`ripwire-rs <repo> --mcp --scip=index.scip`) to pin covered call sites with
+compiler-backed resolution. This bypasses the analysis cache and retains the
+overlay for the server session. An unreadable or malformed index aborts startup
+with a `--scip` diagnostic instead of serving a name-only fallback.
+`--scip` is global, before or after subcommands. Multiline calls match the callee
+identifier's index line; reported lines preserve the call expression start.
+
+Overlapping tools return canonical CLI XML/text in `result.content[0].text`,
+not bespoke JSON summaries. Facts, defaults, errors, limits, definition grouping,
+provenance, and declined evidence match CLI reports. Maps default to 200 symbols
+and 65536 bytes. Rank signals: `pagerank`, `authority`, `hub`, `degree`, `ccx`,
+`stable`; unknown signals (including `churn`) error. Slice shares the CLI
+workspace root and flow/depth validation.
 
 ## The read verbs + fetch_body (and when each beats the CLI form)
 
@@ -74,30 +89,30 @@ enclosing-chain report) and `@FILE:LINE` in any SYM selector; contract gate: `te
 |---|---|---|
 | `analyze` | `ripwire-rs <dir>` | the ranked XML map |
 | `for` (`task`) | `--for=TASK` | the task lens: signatures + cx/in metrics framed for reuse. **Auto-routes** the ranker — pass a symbol NAME verbatim as `task` to get name-exact retrieval (recall@1 ~99%); a conceptual phrase uses subtoken+body. Root carries `route=` as a code (`name-exact(X)` / `subtoken+body[:broad\|:declined]`). |
-| `find_symbol` (`symbol`) | `--callers` + `--callees` | locate a symbol with its callers AND callees in one call — each symbol carries a `handle` |
-| `find_referencing_symbols` (`symbol`) | `--callers=SYM` | just who references/calls it — also handle-bearing |
+| `find_symbol` (`symbol`) | `--find-symbol=SYM` | canonical symbol neighborhood with definition groups, callers, callees, and provenance |
+| `find_referencing_symbols` (`symbol`) | `--callers=SYM` | canonical direct caller report |
 | `grep` (`pattern`) | `--grep=STR` | parallel literal scan + enclosing symbol + matched line |
 | `cochange` (`file`) | `--cochange=FILE` | the lockstep git partners of one file |
 | `memory_recall` (`task`, `top_k` + `budget_tokens` optional) | `--recall=TASK [--top-k=N] [--max-tokens=N]` | full bodies of the few relevant docs/memory notes, bounded by the SAME default 8000-token body ceiling as the CLI (the header discloses `max_tokens=` and every cut). `budget_tokens` raises the ceiling explicitly when you want everything; `top_k` (default 8) shapes how many docs |
-| `situational_awareness` (`diff`/`files` optional) | `--situ` | blast radius, tests_to_run, forgotten co-change partners (the Shotgun Surgery check), hotspot alert — as JSON; defaults to `git diff HEAD`. In `tests_to_run`, `situational_awareness` uses `test`; `explore` and edit receipts use `p`. The field is a path string OR an **array** of paths beside `n` — several runner-less tests sharing their attributes, served as one row — and every row carries `run` or `run_unknown: true` |
+| `situational_awareness` (`diff`/`files` optional) | `--situ` | canonical `ripwire-rs.situ/v1` XML: blast radius, tests, forgotten co-change partners, and hotspots; defaults to `git diff HEAD` |
 | `mentions` (`symbol`) | `--mentions=SYM` | which markdown plans/designs discuss a symbol |
 | `owners` (`symbol` optional) | `--owners[=SYM]` | bus-factor: recency-weighted author ownership |
 | `lego` (`type`) | `--lego=TYPE` | an interface's method contract + every implementor (own-language) |
-| `fetch_body` (`handle`) | `--expand=SYM` | the FULL source of one symbol's definition, addressed by a `handle` from a prior read verb |
-| `batch` (`queries`) | `--batch=FILE` | a one-turn context sweep: up to 16 heterogeneous read sub-queries (`for`/`grep`/`impact`/`uses`/`callers`/`callees`/`mentions`/…) answered in ONE round-trip, merged in order and deduped (`<dup-of q="i"/>`); a failing sub-query is an inline `ok="0"` entry, never a whole-batch failure. Reach for it when a task needs several lookups at once. |
+| `fetch_body` (`handle`) | `--expand=SYM` | full symbol definition source addressed by symbol selector or a supplied handle |
+| `batch` (`queries`) | `--batch=FILE` | up to 16 shared read queries; more is a whole-batch error, while individual failures remain `{tool,error}` MCP / `<error>` CLI. Recursive batch and writes (including quality baseline and quality-delta acknowledgment options) fail per item. CLI accepts `name:argument` or `name:{JSON arguments}`, ignoring blank/comment lines |
 
 **The flagship-reflex verbs** (added 2026-07 so an MCP-only agent gets the same reflexes as the CLI) — these are the moments an agent most often skips the tool for; reach for the verb, not a grep:
 
 | Verb | CLI twin | The moment |
 |---|---|---|
 | `exemplar` (`kind` or `task`) | `--exemplar` | BEFORE you write a fn/class/… — the repo's best-in-class instance to imitate, chosen by ROLE (fan-in / cognitive-cx / tested), with its body |
-| `quality_delta` (`path`) | `--quality-delta` | BEFORE you call it DONE — only what the working tree made WORSE vs the baseline (auto-compares vs git-HEAD; a non-empty `regressions` array is the exit-2-equivalent) |
+| `quality_delta` (`path`) | `--quality-delta` | only what the working tree made worse vs the baseline or git HEAD, in the canonical CLI report |
 | `quality_baseline` (`path`) | `--quality-baseline` | pin the quality floor (writes the HEAD-stamped `.ripwire-rs_quality_baseline`) — a side-effect verb |
-| `impact` (`symbol`, `limit`/`offset` optional) | `--impact=SYM [--limit=N --offset=M]` | "is it safe to change X" — the TRANSITIVE blast radius (beats `find_referencing_symbols`, which is 1-hop). `reaches=` is the true radius; the listing shows 40 by rank unless you raise it, and a paged answer carries `has_more`/`next_offset` so a loop can terminate |
+| `impact` (`symbol`, `limit`/`offset`/`max_depth` optional) | `--impact=SYM [--limit=N --offset=M --impact-depth=N]` | canonical transitive blast radius; `max_depth` and CLI global `--impact-depth` set the same optional traversal limit, including `navigate --impact`; default unchanged |
 | `uses` (`symbol`) | `--uses=SYM` | the resolvable USE-SITES — call/read/write/import/extends, not just calls (`count=0` is a real answer; `counts_floor="1"` — a floor, never a total) |
 | `path_between` (`from`, `to`) | `--path=A,B` | does A reach B, and the shortest call path (named `path_between` — `path` is the root-arg key) |
-| `connect` (`symbols`) | `--connect=A,B,C` | the minimal subgraph joining N (>2) task symbols — the shared-caller join a directed `path_between` can't see |
-| `explore` (`task`, `budget_tokens` + `partition` optional) | `--pack-task=TASK [--partition=N]` | ONE-call task orientation — routed ranking + full bodies + 1-hop callers + field notes + tests_to_run, ALL under one deterministic byte budget (default 6000 tokens). Replaces the `for` → `fetch_body` → `find_referencing_symbols` → `memory_recall` dance. Also dispatchable as `pack_task` (same handler; `explore` is the one advertised in `tools/list` — the discovery-friendly name). **`partition: 2..16`** turns it into the FAN-OUT form for a multi-agent orchestrator: a shared common core plus N minimally-overlapping per-agent slices carved along the call graph's communities, so N sub-agents stop re-deriving one map — `budget_tokens` then means ONE agent's budget (core + its slice). Read `split` / `partitions` vs `requested` on the wrapper before trusting the slices |
+| `connect` (`symbols`) | `--connect=A,B,C` | canonical connecting subgraph for 2..16 symbols; default radius 2 |
+| `explore` (`task`, `budget_tokens` + `partition` optional) | `--pack-task=TASK [--partition=N]` | canonical task pack: ranking, bodies, callers, notes, and tests under one byte budget (default 6000 tokens); `partition: 2..16` requests community-based agent slices, with budget per agent |
 | `from_trace` (`trace`, `budget_tokens` optional) | `--from-trace=FILE` | paste a stack trace / sanitizer report / compiler error → the frames mapped onto indexed symbols, ranked INNERMOST-first, with the innermost in-corpus symbol's FULL body. `trace` = the raw trace TEXT (no stdin/file arg over MCP — paste it, don't hand-translate it into a query) |
 | `edit_check` (`symbol`) | `--edit-check=SYM` | just edited a symbol? did its CONTRACT (params/publicness) change vs git HEAD, and which 1-hop callers are now PROVABLY incompatible? Fast targeted check — for the same question over a whole diff use `quality_delta` instead |
 
@@ -115,41 +130,28 @@ floor, not a total (the hover text says so in place, since JSON-RPC results have
 UTF-8 positions; refuses to combine with `--mcp`/`--listen` — one protocol per stdin. The PoC plan and
 its locked decisions live in `docs/LSP.md`.
 
-## The lazy-body posture: names/signatures by default, bodies by handle on request
+## The lazy-body posture: names/signatures by default, bodies on request
 
-`find_symbol` and `find_referencing_symbols` attach a stable `handle` to every symbol object they return
-(the focus symbol, each caller, each callee) — but **not the body**. Call `fetch_body{path, handle}` only
-when you actually need to read the source, instead of the server sending bodies you didn't ask for. This is
-the kit-style default-lean posture (measured ~90% cut on comparable extract-symbol calls) and matches the
-`2025-11-25` MCP spec's move to stateless HANDLE semantics.
+Navigation returns the canonical lean CLI report, not JSON symbol objects.
+Use `fetch_body{path, handle: SYM}` (CLI `--expand=SYM`) when source is needed;
+do not expect a `handle` field on every navigation row.
 
-- **Handle format**: `sym#<id-hash>@<content-hash>`, both 16 lowercase hex (FNV-1a-64) — the first half from the
-  symbol's STABLE canonical id (`path::scope::name`, never the per-run `NodeId`), the second half pinning the
-  file's bytes at mint time.
 - **Fetch when you're about to reason about the logic**, not just to confirm the symbol exists — the
   name/kind/file/line a read verb already gives you is often enough to decide relevance or pick a call site.
-- **Staleness is automatic and free**: a content-hash mismatch (file changed since mint) makes `fetch_body`
-  refuse rather than serve a body against shifted byte offsets — call a read verb again for a fresh handle.
-  A malformed/unresolvable handle refuses the same way, never a silent wrong-symbol body.
-- **Handles are content-addressed, not pinned literals**: both halves are derived hashes, so a handle you
-  copied out of a prior session or a doc is almost certainly stale — call `find_symbol`/
-  `find_referencing_symbols` fresh each session and read the `handle` it hands back.
 
-## The per-session legend: each definition once per session
+## Canonical report metadata
 
-On the stdio server the legend session opens with the first answer that carries a legend (served inline) or
-with a read of the MCP resource `ripwire-rs://legend-dict` (`initialize` names it). After that, the verbs that take
-`legend` (and `for`) answer rows first and end with `<about … legend="ref" dict= dictv=/>`, which carries the
-root attributes; a definition arrives once per session, in a comment after the rows of the first answer that
-needs it (an answer whose ref form would be longer stays inline). Lost the definitions (a compacted context)?
-Read `ripwire-rs://legend-dict/full` for all of them, or print them with `ripwire-rs --legend-dict`.
-`legend:"compact"` on one call keeps that answer's legend inline; a server started with
-`--mcp --mcp-legend=inline` keeps every answer's legend inline. The HTTP transport (`--listen`) keeps every
-legend inline.
+MCP preserves the shared report's legend without per-session mutation.
+Use `ripwire-rs --legend-dict` for the schema dictionary.
+Batch success entries retain `tool`, `result`, and `kind` (`xml`, `text`, `json`);
+malformed query names affect only their item. `owners` accepts integer
+`detail > 0` for file/author facts; `whereis` accepts `listing` (`defs`, `refs`,
+`all`) and boolean `full_text`. Detail 2 serves every requested body with accurate
+`shown`/`total`; connect discloses its effective radius.
 
 ## The 3 MCP edit verbs — the warm-server counterpart to the preferred CLI
 
-`replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol` — the last 3 of the 30 (see above),
+`replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol` are
 ripwire's MCP WRITE verbs. The preferred shell front door is
 `ripwire-rs ROOT --replace-symbol-body=SYM --edit-payload=FILE|-` (or the matching insert flag); use MCP when
 the server is already warm or a client has no shell. Both fronts call the same safety engine. Each locates
@@ -165,7 +167,7 @@ opts out — reach for it only when the next thing you do is another edit to the
 
 Read **[`mcp-reference.md`](mcp-reference.md)** before calling one of these 3 (full args table + the exact
 newline rule + the safety contract for not-found / ambiguous / stale-index / insane-span failures + the
-atomic-write guarantee) or when you need server internals (`--mcp` implies `--stable`, `_index` staleness
+atomic-write guarantee) or when you need server internals (`_index` staleness
 stamps, warm content-hash rebuilds, working-set PageRank personalization, the background `qsnap` HEAD-warm on
 large workspaces). Short version: every edit-verb failure leaves the file byte-for-byte unchanged, writes are
 atomic (`tmp` + `rename(2)`), and the server never goes stale silently — it rebuilds warm from mtime checks

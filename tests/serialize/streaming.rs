@@ -13,7 +13,7 @@ use ripwire_rs::{
 use serde_json::json;
 
 fn validate_xml_well_formed(raw_xml: &str) {
-    let cleaned = ripwire_rs::serialize::strip_xml_comments(raw_xml);
+    let cleaned = ripwire_rs::serialize::strip_xml_comments(raw_xml).unwrap();
     let xml = cleaned.as_str();
     let mut tag_stack: Vec<&str> = Vec::new();
     let mut i = 0;
@@ -592,8 +592,14 @@ fn test_page_window_and_xml_report_trait() {
     assert!(seams.to_xml_string().contains("ripwire-rs.seams/v1"));
     let scout = ripwire_rs::gate::merge_scout::evaluate_merge_scout("main", &ingest, &interner);
     assert!(scout.to_xml_string().contains("ripwire-rs.merge-scout/v1"));
-    let pr_ctx =
-        ripwire_rs::gate::pr_context::compute_pr_context(&[], &ingest, &graph, &interner, "HEAD");
+    let pr_req = ripwire_rs::gate::pr_context::PrContextRequest {
+        changed_files: &[],
+        base_ref: "HEAD",
+        commits: &[],
+    };
+    let pr_ctx = ripwire_rs::gate::pr_context::compute_pr_context_from_facts(
+        &pr_req, &ingest, &graph, &interner,
+    );
     assert!(pr_ctx.to_xml_string().contains("ripwire-rs.pr-context/v1"));
     let snap = QualitySnapshot::default();
     let dmm = ripwire_rs::metrics::compute_dmm_report(&snap, &snap, "worktree", "HEAD");

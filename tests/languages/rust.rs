@@ -1,7 +1,9 @@
 use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
-use ripwire_rs::{Lang, SymKind};
+use ripwire_rs::{Lang, LanguageRegistry, SymKind};
 use std::collections::HashMap;
 
+use ripwire_rs::domain::RefRole;
+use ripwire_rs::ingest::parse_file_content;
 #[test]
 fn test_rust_graph_protocol_and_imports() {
     verify_protocol_case(&GraphProtocolCase {
@@ -52,4 +54,385 @@ fn test_rust_graph_protocol_and_imports() {
     assert!(sem.is_std_or_builtin_member("unwrap"));
     assert!(sem.is_entrypoint_symbol("main", None, SymKind::Function, "src/main.rs"));
     assert!(!sem.is_entrypoint_symbol("main", None, SymKind::Function, "examples/demo.rs"));
+}
+
+#[test]
+fn test_rust_receiver_type_evidence_and_bindings() {
+    let reg = LanguageRegistry::new().unwrap();
+    let (rust_lang, query) = reg.get(Lang::Rust).unwrap();
+
+    let code = br#"
+use cc::Build;
+
+pub trait Processor {
+    fn perform(&self);
+    fn run(&self) {
+        self.perform();
+    }
+}
+
+pub struct Worker;
+
+impl Processor for Worker {
+    fn perform(&self) {
+        finish();
+    }
+}
+
+pub trait XmlReport {
+    fn generate(&self);
+    fn to_xml_report(&self);
+}
+
+pub trait ToXmlString {
+    fn to_xml(&self);
+}
+
+impl<T: XmlReport> ToXmlString for T {
+    fn to_xml(&self) {
+        self.to_xml_report();
+    }
+}
+
+fn invoke_dynamic(processor: &dyn Processor) {
+    processor.run();
+}
+
+fn invoke_generic<T: XmlReport>(report: &T) {
+    report.generate();
+}
+
+fn invoke_constructors() {
+    let mut build = cc::Build::new();
+    build.file("src/main.c");
+
+    let worker = Worker::new();
+    worker.perform();
+
+    let boxed: Box<dyn Processor> = Box::new(Worker::new());
+    boxed.run();
+
+    let arc = std::sync::Arc::new(Worker);
+    arc.perform();
+}
+
+fn invoke_shadowing() {
+    let mut build = cc::Build::new();
+    {
+        let mut build = Worker::new();
+        build.perform();
+    }
+    build.file("src/lib.c");
+}
+
+fn invoke_callable_field(rule: &Rule) {
+    (rule.check)(123);
+}
+"#;
+
+    let res = parse_file_content(code, rust_lang, query, Lang::Rust, "src/test.rs");
+
+    // 1. Extends ref for impl Processor for Worker
+    let extends_worker = res
+        .refs
+        .iter()
+        .find(|r| r.role == RefRole::Extends && r.callee_name == "Processor")
+        .expect("extends Processor reference");
+    assert_eq!(extends_worker.receiver_type.as_deref(), Some("Worker"));
+    assert_eq!(extends_worker.qualifier, None);
+
+    // 2. Extends ref for impl<T: XmlReport> ToXmlString for T
+    let extends_blanket = res
+        .refs
+        .iter()
+        .find(|r| r.role == RefRole::Extends && r.callee_name == "ToXmlString")
+        .expect("extends ToXmlString reference");
+    assert_eq!(extends_blanket.receiver_type.as_deref(), Some("T"));
+
+    // 3. self.perform() inside trait Processor default method
+    let self_in_trait = res
+        .refs
+        .iter()
+        .find(|r| {
+            r.callee_name == "perform"
+                && r.receiver.as_deref() == Some("self")
+                && r.receiver_type.as_deref() == Some("Processor")
+        })
+        .expect("self.perform in trait Processor");
+    assert_eq!(self_in_trait.qualifier, None);
+
+    // 4. self.to_xml_report() inside impl<T: XmlReport> ToXmlString for T
+    let self_bound = res
+        .refs
+        .iter()
+        .find(|r| r.callee_name == "to_xml_report" && r.receiver.as_deref() == Some("self"))
+        .expect("self.to_xml_report call");
+    assert_eq!(self_bound.receiver_type.as_deref(), Some("XmlReport"));
+
+    // 5. Dynamic trait dispatch: processor.run()
+    let dyn_run = res
+        .refs
+        .iter()
+        .find(|r| r.callee_name == "run" && r.receiver.as_deref() == Some("processor"))
+        .expect("processor.run call");
+    assert_eq!(dyn_run.receiver_type.as_deref(), Some("Processor"));
+    assert_eq!(dyn_run.qualifier, None);
+
+    // 6. Generic bound call: report.generate()
+    let gen_call = res
+        .refs
+        .iter()
+        .find(|r| r.callee_name == "generate" && r.receiver.as_deref() == Some("report"))
+        .expect("report.generate call");
+    assert_eq!(gen_call.receiver_type.as_deref(), Some("XmlReport"));
+
+    // 7. External constructor call: build.file() preserves cc::Build
+    let build_file = res
+        .refs
+        .iter()
+        .find(|r| r.callee_name == "file" && r.receiver.as_deref() == Some("build"))
+        .expect("build.file call");
+    assert_eq!(build_file.receiver_type.as_deref(), Some("cc::Build"));
+    assert_eq!(build_file.qualifier, None);
+
+    // 8. Box<dyn Processor> unwrapped
+    let boxed_call = res
+        .refs
+        .iter()
+        .find(|r| r.callee_name == "run" && r.receiver.as_deref() == Some("boxed"))
+        .expect("boxed.run call");
+    assert_eq!(boxed_call.receiver_type.as_deref(), Some("Processor"));
+
+    // 9. Arc<Worker> unwrapped
+    let arc_call = res
+        .refs
+        .iter()
+        .find(|r| r.callee_name == "perform" && r.receiver.as_deref() == Some("arc"))
+        .expect("arc.perform call");
+    assert_eq!(arc_call.receiver_type.as_deref(), Some("Worker"));
+
+    // 10. Parenthesized callable field call: (rule.check)(123)
+    let callable_call = res
+        .refs
+        .iter()
+        .find(|r| r.callee_name == "check")
+        .expect("rule.check call");
+    assert!(
+        callable_call.callable_field,
+        "must set callable_field = true"
+    );
+}
+
+fn rust_parse(code: &str) -> ripwire_rs::ingest::FileParseResult {
+    let reg = LanguageRegistry::new().unwrap();
+    let (rust_lang, query) = reg.get(Lang::Rust).unwrap();
+    parse_file_content(code.as_bytes(), rust_lang, query, Lang::Rust, "src/test.rs")
+}
+
+fn rust_ref<'a>(
+    res: &'a ripwire_rs::ingest::FileParseResult,
+    callee: &str,
+    receiver: &str,
+) -> &'a ripwire_rs::ingest::RawRef {
+    res.refs
+        .iter()
+        .find(|r| r.callee_name == callee && r.receiver.as_deref() == Some(receiver))
+        .expect("receiver call")
+}
+
+#[test]
+fn test_rust_std_path_qualifier_is_std_builtin() {
+    let res = rust_parse("fn drop(_: u8) {} fn invoke() { std::mem::drop(1u8); }");
+    let call = res
+        .refs
+        .iter()
+        .find(|r| r.callee_name == "drop")
+        .expect("drop call");
+    assert_eq!(call.qualifier.as_deref(), Some("std::mem"));
+    assert!(
+        Lang::Rust
+            .semantics()
+            .is_std_or_builtin_qualifier("std::mem")
+    );
+}
+
+#[test]
+fn test_rust_let_binding_does_not_keep_outer_type() {
+    let res = rust_parse(
+        "struct A; struct B; impl A { fn ping(&self) {} } impl B { fn ping(&self) {} } fn make_b() -> B { B } fn invoke(x: A) { let x = make_b(); x.ping(); }",
+    );
+    assert_ne!(
+        rust_ref(&res, "ping", "x").receiver_type.as_deref(),
+        Some("A")
+    );
+}
+
+#[test]
+fn test_rust_local_box_does_not_unwrap_to_inner() {
+    let res = rust_parse(
+        "mod custom { pub struct Box<T>(pub T); impl<T> Box<T> { pub fn ping(&self) {} } } use custom::Box; struct Inner; impl Inner { fn ping(&self) {} } fn invoke(x: Box<Inner>) { x.ping(); }",
+    );
+    assert_ne!(
+        rust_ref(&res, "ping", "x").receiver_type.as_deref(),
+        Some("Inner")
+    );
+}
+
+#[test]
+fn test_rust_where_clause_bound_is_receiver_type() {
+    let res = rust_parse(
+        "trait Runner { fn run(&self) {} } fn invoke<T>(x: &T) where T: Runner { x.run(); }",
+    );
+    assert_eq!(
+        rust_ref(&res, "run", "x").receiver_type.as_deref(),
+        Some("Runner")
+    );
+}
+
+#[test]
+fn test_rust_ambiguous_nested_bounds_do_not_use_outer_bound() {
+    let res = rust_parse(
+        "trait A { fn go(&self) {} } trait B { fn go(&self) {} } trait Marker {} fn outer<T: A>() { fn inner<T: B + Marker>(x: T) { x.go(); } }",
+    );
+    assert_ne!(
+        rust_ref(&res, "go", "x").receiver_type.as_deref(),
+        Some("A")
+    );
+}
+
+#[test]
+fn test_rust_generic_bound_strips_generic_arguments() {
+    let res = rust_parse(
+        "trait Runner<U> { fn run(&self) {} } fn invoke<T: Runner<u8>>(x: &T) { x.run(); }",
+    );
+    assert_eq!(
+        rust_ref(&res, "run", "x").receiver_type.as_deref(),
+        Some("Runner")
+    );
+}
+
+#[test]
+fn test_rust_type_alias_resolves_to_target() {
+    let res = rust_parse(
+        "struct Worker; impl Worker { fn ping(&self) {} } type Alias = Worker; fn invoke(x: Alias) { x.ping(); }",
+    );
+    assert_eq!(
+        rust_ref(&res, "ping", "x").receiver_type.as_deref(),
+        Some("Worker")
+    );
+}
+
+#[test]
+fn test_rust_std_arc_new_unwraps_to_inner_type() {
+    let res = rust_parse(
+        "struct Worker {} impl Worker { fn ping(&self) {} } fn invoke() { let x = std::sync::Arc::new(Worker {}); x.ping(); }",
+    );
+    assert_eq!(
+        rust_ref(&res, "ping", "x").receiver_type.as_deref(),
+        Some("Worker")
+    );
+}
+
+#[test]
+fn test_rust_associated_call_return_selects_return_type() {
+    let res = rust_parse(
+        "struct Factory; struct Product; impl Factory { fn make() -> Product { Product } fn ping(&self) {} } impl Product { fn ping(&self) {} } fn invoke() { let x = Factory::make(); x.ping(); }",
+    );
+    assert_eq!(
+        rust_ref(&res, "ping", "x").receiver_type.as_deref(),
+        Some("Product")
+    );
+}
+
+#[test]
+fn test_rust_self_box_receiver_resolves_to_enclosing_type() {
+    let res = rust_parse(
+        "struct Worker; impl Worker { fn ping(&self) {} fn invoke(self: Box<Self>) { self.ping(); } }",
+    );
+    assert_eq!(
+        rust_ref(&res, "ping", "self").receiver_type.as_deref(),
+        Some("Worker")
+    );
+}
+
+#[test]
+fn test_rust_destructured_binding_gets_no_type() {
+    let res = rust_parse(
+        "struct Inner; struct Outer(Inner); impl Inner { fn ping(&self) {} } impl Outer { fn ping(&self) {} } fn invoke(Outer(x): Outer) { x.ping(); }",
+    );
+    assert_ne!(
+        rust_ref(&res, "ping", "x").receiver_type.as_deref(),
+        Some("Outer")
+    );
+}
+
+#[test]
+fn test_rust_impl_fact_records_subject_and_trait() {
+    let res = rust_parse(
+        "struct Worker; trait Runner { fn run(&self); } impl Runner for Worker { fn run(&self) {} }",
+    );
+    let imp = res
+        .implementations
+        .iter()
+        .find(|i| i.subject == "Worker")
+        .expect("impl Worker fact");
+    assert_eq!(imp.trait_path.as_deref(), Some("Runner"));
+    assert!(!imp.generic_subject);
+}
+
+#[test]
+fn test_rust_nested_custom_box_does_not_shadow_prelude_box() {
+    let res = rust_parse(
+        "mod custom { pub struct Box<T>(pub T); impl<T> Box<T> { pub fn ping(&self) { custom_end(); } } fn custom_end() {} } struct Inner; impl Inner { fn ping(&self) { inner_end(); } } fn inner_end() {} fn invoke(x: Box<Inner>) { x.ping(); }",
+    );
+    assert_eq!(
+        rust_ref(&res, "ping", "x").receiver_type.as_deref(),
+        Some("Inner")
+    );
+}
+
+#[test]
+fn test_rust_std_mutex_renamed_box_is_not_transparent() {
+    let res = rust_parse(
+        "use std::sync::Mutex as Box; struct Inner; impl Inner { fn get_mut(&mut self) {} } fn invoke(mut x: Box<Inner>) { x.get_mut(); }",
+    );
+    assert_ne!(
+        rust_ref(&res, "get_mut", "x").receiver_type.as_deref(),
+        Some("Inner")
+    );
+}
+
+#[test]
+fn test_rust_renamed_std_arc_import_is_transparent() {
+    let res = rust_parse(
+        "use std::sync::Arc as Shared; struct Worker; impl Worker { fn ping(&self) {} } fn invoke(x: Shared<Worker>) { x.ping(); }",
+    );
+    assert_eq!(
+        rust_ref(&res, "ping", "x").receiver_type.as_deref(),
+        Some("Worker")
+    );
+}
+
+#[test]
+fn test_rust_impl_level_generic_where_bound_is_receiver_type() {
+    let res = rust_parse(
+        "trait Runner { fn run(&self) {} } struct Wrapper<T>(T); impl<T> Wrapper<T> { fn invoke(&self, x: &T) where T: Runner { x.run(); } }",
+    );
+    assert_eq!(
+        rust_ref(&res, "run", "x").receiver_type.as_deref(),
+        Some("Runner")
+    );
+}
+
+#[test]
+fn test_rust_blanket_impl_fact_records_subject_bound() {
+    let res = rust_parse("trait Report {} trait Text {} impl<T> Text for T where T: Report {}");
+    let imp = res
+        .implementations
+        .iter()
+        .find(|i| i.subject == "T")
+        .expect("blanket impl fact");
+    assert_eq!(imp.trait_path.as_deref(), Some("Text"));
+    assert_eq!(imp.subject_bound.as_deref(), Some("Report"));
+    assert!(imp.generic_subject);
 }

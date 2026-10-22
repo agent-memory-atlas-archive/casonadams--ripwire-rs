@@ -1,10 +1,9 @@
 use super::dispatch::handle_tools_call;
 use super::schema;
-use super::state::McpState;
+use crate::workspace::Workspace;
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 
-/// Handle `initialize` method.
 #[must_use]
 pub fn handle_initialize(id: &Value) -> Value {
     json!({
@@ -24,7 +23,6 @@ pub fn handle_initialize(id: &Value) -> Value {
     })
 }
 
-/// Handle `tools/list` method exposing all 33 MCP tools.
 #[must_use]
 pub fn handle_tools_list(id: &Value) -> Value {
     json!({
@@ -38,16 +36,15 @@ pub fn handle_tools_list(id: &Value) -> Value {
 
 /// Run the stdio JSON-RPC loop for MCP clients.
 pub fn run_mcp_stdio(root: &str) -> io::Result<()> {
-    run_mcp_stdio_with_options(root, false)
+    run_mcp_stdio_with_scip(root, None)
 }
 
-pub fn run_mcp_stdio_with_options(root: &str, no_stable: bool) -> io::Result<()> {
+/// Run MCP with a compiler-indexed workspace, failing before serving on index errors.
+pub fn run_mcp_stdio_with_scip(root: &str, scip_index: Option<&std::path::Path>) -> io::Result<()> {
     let stdin = io::stdin();
     let stdout = io::stdout();
-    let mut state = McpState::load(root);
-    if let Some(s) = &mut state {
-        s.no_stable = no_stable;
-    }
+    let loaded = Workspace::load_with_scip(root, scip_index)?;
+    let mut state = Some(loaded);
     run_json_rpc_stream_with_state(
         stdin.lock(),
         stdout.lock(),
@@ -57,22 +54,13 @@ pub fn run_mcp_stdio_with_options(root: &str, no_stable: bool) -> io::Result<()>
     )
 }
 
-fn run_json_rpc_stream<R: BufRead, W: Write>(
-    reader: R,
-    writer: W,
-    root: &str,
-    dispatch: fn(&str, &mut Option<McpState>, &str) -> Option<String>,
-) -> io::Result<()> {
-    let mut state = McpState::load(root);
-    run_json_rpc_stream_with_state(reader, writer, root, &mut state, dispatch)
-}
-
-fn run_json_rpc_stream_with_state<R: BufRead, W: Write>(
+/// Run JSON-RPC protocol over any Read/Write stream pair with an existing workspace state.
+pub fn run_json_rpc_stream_with_state<R: BufRead, W: Write>(
     reader: R,
     mut writer: W,
     root: &str,
-    state: &mut Option<McpState>,
-    dispatch: fn(&str, &mut Option<McpState>, &str) -> Option<String>,
+    state: &mut Option<Workspace>,
+    dispatch: fn(&str, &mut Option<Workspace>, &str) -> Option<String>,
 ) -> io::Result<()> {
     for line_res in reader.lines() {
         let line = line_res?;
@@ -88,16 +76,27 @@ fn run_json_rpc_stream_with_state<R: BufRead, W: Write>(
     Ok(())
 }
 
+/// Run MCP JSON-RPC protocol over any Read/Write stream pair with an existing workspace state.
+pub fn run_mcp_stream_with_state<R: BufRead, W: Write>(
+    reader: R,
+    writer: W,
+    root: &str,
+    state: &mut Option<Workspace>,
+) -> io::Result<()> {
+    run_json_rpc_stream_with_state(reader, writer, root, state, dispatch_json_rpc)
+}
+
 /// Run MCP JSON-RPC protocol over any Read/Write stream pair.
 pub fn run_mcp_stream<R: BufRead, W: Write>(reader: R, writer: W, root: &str) -> io::Result<()> {
-    run_json_rpc_stream(reader, writer, root, dispatch_json_rpc)
+    let mut state = Workspace::load(root);
+    run_mcp_stream_with_state(reader, writer, root, &mut state)
 }
 
 /// Dispatch a single raw JSON-RPC line. Returns `None` for notifications.
 #[must_use]
 pub fn dispatch_json_rpc(
     line: &str,
-    state: &mut Option<McpState>,
+    state: &mut Option<Workspace>,
     default_root: &str,
 ) -> Option<String> {
     let req: Value = match serde_json::from_str(line) {
@@ -167,7 +166,7 @@ fn extract_lsp_file_and_line(params: &Value) -> (&str, u32) {
     (uri, line)
 }
 
-fn handle_lsp_definition(id: &Value, params: &Value, state: &McpState) -> Value {
+fn handle_lsp_definition(id: &Value, params: &Value, state: &Workspace) -> Value {
     let (uri, line) = extract_lsp_file_and_line(params);
     let Some(sym) = crate::navigate::resolve_symbol_at(uri, line, &state.ingest, &state.interner)
     else {
@@ -190,7 +189,7 @@ fn handle_lsp_definition(id: &Value, params: &Value, state: &McpState) -> Value 
     })
 }
 
-fn handle_lsp_references(id: &Value, params: &Value, state: &McpState) -> Value {
+fn handle_lsp_references(id: &Value, params: &Value, state: &Workspace) -> Value {
     let (uri, line) = extract_lsp_file_and_line(params);
     let Some(sym) = crate::navigate::resolve_symbol_at(uri, line, &state.ingest, &state.interner)
     else {
@@ -215,7 +214,7 @@ fn handle_lsp_references(id: &Value, params: &Value, state: &McpState) -> Value 
     json!({ "jsonrpc": "2.0", "id": id, "result": locations })
 }
 
-fn handle_lsp_document_symbols(id: &Value, params: &Value, state: &McpState) -> Value {
+fn handle_lsp_document_symbols(id: &Value, params: &Value, state: &Workspace) -> Value {
     let (uri, _) = extract_lsp_file_and_line(params);
     let mut symbols = Vec::new();
     for sym in &state.ingest.symbols {
@@ -240,7 +239,7 @@ fn handle_lsp_document_symbols(id: &Value, params: &Value, state: &McpState) -> 
     json!({ "jsonrpc": "2.0", "id": id, "result": symbols })
 }
 
-fn handle_lsp_hover(id: &Value, params: &Value, state: &McpState) -> Value {
+fn handle_lsp_hover(id: &Value, params: &Value, state: &Workspace) -> Value {
     let (uri, line) = extract_lsp_file_and_line(params);
     let Some(sym) = crate::navigate::resolve_symbol_at(uri, line, &state.ingest, &state.interner)
     else {
@@ -266,7 +265,7 @@ fn handle_lsp_hover(id: &Value, params: &Value, state: &McpState) -> Value {
 #[must_use]
 pub fn dispatch_lsp_json_rpc(
     line: &str,
-    state: &mut Option<McpState>,
+    state: &mut Option<Workspace>,
     default_root: &str,
 ) -> Option<String> {
     let req: Value = serde_json::from_str(line).ok()?;
@@ -294,7 +293,7 @@ pub fn dispatch_lsp_json_rpc(
         return Some(json!({ "jsonrpc": "2.0", "id": id, "result": Value::Null }).to_string());
     }
     if state.is_none() {
-        *state = McpState::load(default_root);
+        *state = Workspace::load(default_root);
     }
     let Some(st) = state.as_ref() else {
         return Some(
@@ -321,9 +320,20 @@ pub fn dispatch_lsp_json_rpc(
     Some(resp.to_string())
 }
 
-/// Run the stdio JSON-RPC Language Server Protocol loop.
+/// Run LSP JSON-RPC protocol over any Read/Write stream pair with an existing workspace state.
+pub fn run_lsp_stream_with_state<R: BufRead, W: Write>(
+    reader: R,
+    writer: W,
+    root: &str,
+    state: &mut Option<Workspace>,
+) -> io::Result<()> {
+    run_json_rpc_stream_with_state(reader, writer, root, state, dispatch_lsp_json_rpc)
+}
+
+/// Run the stdio JSON-RPC Language Server Protocol loop over any Read/Write stream pair.
 pub fn run_lsp_stream<R: BufRead, W: Write>(reader: R, writer: W, root: &str) -> io::Result<()> {
-    run_json_rpc_stream(reader, writer, root, dispatch_lsp_json_rpc)
+    let mut state = Workspace::load(root);
+    run_lsp_stream_with_state(reader, writer, root, &mut state)
 }
 
 /// Run the stdio JSON-RPC Language Server Protocol loop.

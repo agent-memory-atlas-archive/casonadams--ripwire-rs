@@ -1,0 +1,401 @@
+use ripwire_rs::{
+    EdgeProv, Graph, IngestResult, Interner, Lang, LanguageRegistry, NodeId, ingest_in_memory_files,
+};
+
+struct Fixture {
+    ingest: IngestResult,
+    interner: Interner,
+    graph: Graph,
+}
+
+impl Fixture {
+    fn new(files: &[(&str, &str)]) -> Self {
+        let registry = LanguageRegistry::new().unwrap();
+        let interner = Interner::new();
+        let files: Vec<_> = files
+            .iter()
+            .map(|&(path, source)| (path, Lang::Rust, source.as_bytes()))
+            .collect();
+        let ingest = ingest_in_memory_files(&files, &registry, &interner);
+        let graph = Graph::build(&ingest, &interner);
+        Self {
+            ingest,
+            interner,
+            graph,
+        }
+    }
+
+    fn id(&self, name: &str) -> NodeId {
+        self.ingest
+            .symbols
+            .iter()
+            .find(|symbol| self.interner.resolve(&symbol.canonical_id) == name)
+            .unwrap_or_else(|| panic!("missing symbol {name}"))
+            .id
+    }
+
+    fn callees(&self, name: &str) -> Vec<String> {
+        let mut targets: Vec<_> = self
+            .graph
+            .callees(self.id(name))
+            .map(|(id, _)| {
+                self.interner
+                    .resolve(&self.ingest.symbols[id as usize].canonical_id)
+                    .to_owned()
+            })
+            .collect();
+        targets.sort();
+        targets
+    }
+
+    fn reaches(&self, from: &str, leaf: &str) -> bool {
+        let mut seen = vec![false; self.ingest.symbols.len()];
+        let mut queue = vec![self.id(from)];
+        let mut offset = 0;
+        while offset < queue.len() {
+            let current = queue[offset];
+            offset += 1;
+            if seen[current as usize] {
+                continue;
+            }
+            seen[current as usize] = true;
+            if self
+                .interner
+                .resolve(&self.ingest.symbols[current as usize].name)
+                == leaf
+            {
+                return true;
+            }
+            queue.extend(self.graph.callees(current).map(|(id, _)| id));
+        }
+        false
+    }
+}
+
+#[test]
+fn external_constructor_receivers_do_not_bind_unrelated_local_methods() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        r#"
+struct Ingest;
+impl Ingest { fn file(&self, path: &str) {} }
+struct Build;
+impl Build { fn file(&self, path: &str) {} }
+fn invoke() { let build = cc::Build::new(); build.file("path"); }
+"#,
+    )]);
+    assert_eq!(fixture.callees("src/main.rs::invoke"), [] as [String; 0]);
+}
+
+#[test]
+fn concrete_dispatch_keeps_the_local_inherent_method() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        r#"
+trait Processor { fn perform(&self); }
+struct Worker;
+impl Worker { fn perform(&self) { inherent_end(); } }
+impl Processor for Worker { fn perform(&self) { trait_end(); } }
+fn inherent_end() {}
+fn trait_end() {}
+fn invoke(worker: &Worker) { worker.perform(); }
+"#,
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "inherent_end"));
+    assert!(!fixture.reaches("src/main.rs::invoke", "trait_end"));
+}
+
+#[test]
+fn trait_default_calls_reach_the_implementation_and_its_callee() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        r#"
+trait Processor { fn perform(&self); fn run(&self) { self.perform(); } }
+struct Worker;
+impl Processor for Worker { fn perform(&self) { finish(); } }
+fn finish() {}
+fn invoke(processor: &dyn Processor) { processor.run(); }
+fn entry() { invoke(&Worker); }
+"#,
+    )]);
+    assert_eq!(
+        fixture.callees("src/main.rs::invoke"),
+        ["src/main.rs::Processor::run"]
+    );
+    assert_eq!(
+        fixture.callees("src/main.rs::Processor::run"),
+        ["src/main.rs::Worker::perform"]
+    );
+    assert!(fixture.reaches("src/main.rs::entry", "finish"));
+}
+
+#[test]
+fn dynamic_dispatch_does_not_discard_implementations_in_other_files() {
+    let fixture = Fixture::new(&[
+        (
+            "src/lib.rs",
+            "mod other; trait Processor { fn perform(&self); } struct Worker; impl Processor for Worker { fn perform(&self) {} } fn invoke(value: &dyn Processor) { value.perform(); }",
+        ),
+        (
+            "src/other.rs",
+            "use crate::Processor; struct OtherWorker; impl Processor for OtherWorker { fn perform(&self) {} }",
+        ),
+    ]);
+    assert_eq!(
+        fixture.callees("src/lib.rs::invoke"),
+        [
+            "src/lib.rs::Worker::perform",
+            "src/other.rs::OtherWorker::perform"
+        ]
+    );
+    assert!(
+        fixture
+            .graph
+            .callee_edges(fixture.id("src/lib.rs::invoke"))
+            .all(|edge| edge.prov == EdgeProv::Split)
+    );
+}
+
+#[test]
+fn duplicate_trait_names_in_separate_modules_remain_isolated() {
+    let fixture = Fixture::new(&[
+        (
+            "src/a.rs",
+            "trait Processor { fn perform(&self); } struct Worker; impl Processor for Worker { fn perform(&self) {} } fn invoke(value: &dyn Processor) { value.perform(); }",
+        ),
+        (
+            "src/b.rs",
+            "trait Processor { fn perform(&self); } struct OtherWorker; impl Processor for OtherWorker { fn perform(&self) {} }",
+        ),
+    ]);
+    assert_eq!(
+        fixture.callees("src/a.rs::invoke"),
+        ["src/a.rs::Worker::perform"]
+    );
+}
+
+#[test]
+fn a_local_concrete_type_is_not_an_unrelated_same_named_trait() {
+    let fixture = Fixture::new(&[
+        (
+            "src/a.rs",
+            "struct Handler; impl Handler { fn handle(&self) { local_end(); } } fn local_end() {} fn invoke(value: &Handler) { value.handle(); }",
+        ),
+        (
+            "src/b.rs",
+            "trait Handler { fn handle(&self); } struct Other; impl Handler for Other { fn handle(&self) { unrelated_end(); } } fn unrelated_end() {}",
+        ),
+    ]);
+    assert!(fixture.reaches("src/a.rs::invoke", "local_end"));
+    assert!(!fixture.reaches("src/a.rs::invoke", "unrelated_end"));
+}
+
+#[test]
+fn qualified_local_receivers_resolve_their_indexed_owner() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        "mod workers { pub struct Worker; impl Worker { pub fn perform(&self) { finish(); } } fn finish() {} } fn invoke(value: &workers::Worker) { value.perform(); }",
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "finish"));
+}
+
+#[test]
+fn qualified_trait_receivers_resolve_their_indexed_contract() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        "mod contracts { pub trait Processor { fn perform(&self); } } struct Worker; impl contracts::Processor for Worker { fn perform(&self) { finish(); } } fn finish() {} fn invoke(value: &dyn contracts::Processor) { value.perform(); }",
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "finish"));
+}
+
+#[test]
+fn an_external_qualified_trait_does_not_bind_a_unique_local_trait() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        r#"
+trait Processor { fn perform(&self); }
+struct Worker;
+impl Processor for Worker { fn perform(&self) { local_end(); } }
+struct Foreign;
+impl external::Processor for Foreign { fn perform(&self) { unrelated_end(); } }
+fn local_end() {}
+fn unrelated_end() {}
+fn invoke(value: &dyn Processor) { value.perform(); }
+"#,
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "local_end"));
+    assert!(!fixture.reaches("src/main.rs::invoke", "unrelated_end"));
+}
+
+#[test]
+fn a_default_remains_a_target_when_another_implementation_overrides_it() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        r#"
+trait Processor { fn perform(&self) { default_end(); } }
+struct Worker;
+impl Processor for Worker { fn perform(&self) { override_end(); } }
+struct Other;
+impl Processor for Other {}
+fn default_end() {}
+fn override_end() {}
+fn invoke(value: &dyn Processor) { value.perform(); }
+"#,
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "default_end"));
+    assert!(fixture.reaches("src/main.rs::invoke", "override_end"));
+}
+
+#[test]
+fn separate_trait_impl_blocks_for_one_subject_do_not_merge_method_bodies() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        r#"
+trait First { fn perform(&self); }
+trait Second { fn perform(&self); }
+struct Worker;
+impl First for Worker { fn perform(&self) { first_end(); } }
+impl Second for Worker { fn perform(&self) { second_end(); } }
+fn first_end() {}
+fn second_end() {}
+fn invoke(value: &dyn First) { value.perform(); }
+"#,
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "first_end"));
+    assert!(!fixture.reaches("src/main.rs::invoke", "second_end"));
+}
+
+#[test]
+fn blanket_generic_subjects_are_scoped_to_their_actual_impl_blocks() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        r#"
+trait First { fn write(&self); }
+trait Second { fn write(&self); }
+trait Format { fn format(&self); }
+trait Render { fn format(&self); }
+impl<T: First> Format for T { fn format(&self) { self.write(); } }
+impl<T: Second> Render for T { fn format(&self) { self.write(); } }
+struct Worker;
+impl First for Worker { fn write(&self) { first_end(); } }
+struct Other;
+impl Second for Other { fn write(&self) { second_end(); } }
+fn first_end() {}
+fn second_end() {}
+fn invoke(value: &dyn Format) { value.format(); }
+"#,
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "first_end"));
+    assert!(!fixture.reaches("src/main.rs::invoke", "second_end"));
+}
+
+#[test]
+fn concrete_subjects_receive_applicable_blanket_implementations() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        r#"
+trait Report { fn write(&self); }
+trait Text { fn text(&self); }
+impl<T: Report> Text for T { fn text(&self) { self.write(); } }
+struct Row;
+impl Report for Row { fn write(&self) { finish(); } }
+fn finish() {}
+fn invoke(value: &Row) { value.text(); }
+"#,
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "finish"));
+}
+
+#[test]
+fn proven_cross_file_receivers_can_call_members_with_standard_library_names() {
+    let fixture = Fixture::new(&[
+        (
+            "src/lib.rs",
+            "mod other; use other::Worker; fn invoke(value: &Worker) { value.len(); }",
+        ),
+        (
+            "src/other.rs",
+            "pub struct Worker; impl Worker { pub fn len(&self) { finish(); } } fn finish() {}",
+        ),
+    ]);
+    assert!(fixture.reaches("src/lib.rs::invoke", "finish"));
+}
+
+#[test]
+fn dyn_dispatch_ignores_a_foreign_inherent_method_with_the_trait_name() {
+    let fixture = Fixture::new(&[
+        (
+            "src/lib.rs",
+            "mod other; trait Handler { fn handle(&self); } struct Actual; impl Handler for Actual { fn handle(&self) { actual_end(); } } fn actual_end() {} fn invoke(x: &dyn Handler) { x.handle(); }",
+        ),
+        (
+            "src/other.rs",
+            "struct Handler; impl Handler { fn handle(&self) { foreign_end(); } } fn foreign_end() {}",
+        ),
+    ]);
+    assert!(fixture.reaches("src/lib.rs::invoke", "actual_end"));
+    assert!(!fixture.reaches("src/lib.rs::invoke", "foreign_end"));
+}
+
+#[test]
+fn root_qualified_trait_impl_in_the_same_file_is_a_dispatch_target() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        "trait Processor { fn finish(&self); } struct Worker; impl crate::Processor for Worker { fn finish(&self) { finish_end(); } } fn finish_end() {} fn invoke(p: &dyn Processor) { p.finish(); }",
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "finish_end"));
+}
+
+#[test]
+fn root_qualified_trait_impl_in_another_file_is_a_dispatch_target() {
+    let fixture = Fixture::new(&[
+        (
+            "src/lib.rs",
+            "mod other; trait Processor { fn finish(&self); } fn invoke(p: &dyn Processor) { p.finish(); }",
+        ),
+        (
+            "src/other.rs",
+            "struct Worker; impl crate::Processor for Worker { fn finish(&self) { other_end(); } } fn other_end() {}",
+        ),
+    ]);
+    assert!(fixture.reaches("src/lib.rs::invoke", "other_end"));
+}
+
+#[test]
+fn same_named_concrete_types_in_other_files_keep_their_own_trait_impls() {
+    let fixture = Fixture::new(&[
+        (
+            "src/main.rs",
+            "mod a; mod b; fn invoke(value: &a::Worker) { value.run(); }",
+        ),
+        (
+            "src/a.rs",
+            "trait Processor { fn run(&self); } struct Worker; impl Processor for Worker { fn run(&self) { a_end(); } } fn a_end() {}",
+        ),
+        (
+            "src/b.rs",
+            "trait Other { fn run(&self); } struct Worker; impl Other for Worker { fn run(&self) { b_end(); } } fn b_end() {}",
+        ),
+    ]);
+    assert!(fixture.reaches("src/main.rs::invoke", "a_end"));
+    assert!(!fixture.reaches("src/main.rs::invoke", "b_end"));
+}
+
+#[test]
+fn external_trait_impl_on_a_local_type_is_a_method_target() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        "struct Writer; impl std::io::Write for Writer { fn write(&mut self, buf: &[u8]) -> usize { io_end(); 0 } fn flush(&mut self) {} } fn io_end() {} fn invoke(w: &mut Writer, buf: &[u8]) { w.write(buf); }",
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "io_end"));
+}
+
+#[test]
+fn inherent_method_wins_over_an_external_trait_method_of_the_same_name() {
+    let fixture = Fixture::new(&[(
+        "src/main.rs",
+        "struct Writer; impl Writer { fn write(&mut self, buf: &[u8]) -> usize { inherent_end(); 0 } } impl std::io::Write for Writer { fn write(&mut self, buf: &[u8]) -> usize { io_end(); 0 } fn flush(&mut self) {} } fn inherent_end() {} fn io_end() {} fn invoke(w: &mut Writer, buf: &[u8]) { w.write(buf); }",
+    )]);
+    assert!(fixture.reaches("src/main.rs::invoke", "inherent_end"));
+    assert!(!fixture.reaches("src/main.rs::invoke", "io_end"));
+}

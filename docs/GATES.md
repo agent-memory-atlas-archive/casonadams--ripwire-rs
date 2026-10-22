@@ -2,6 +2,11 @@
 
 `ripwire-rs` includes zero-configuration verification gates for pre-commit hooks, developer workflows, and CI pipelines.
 
+Top-level gate verbs and the `gate` subcommand share CLI analysis and output
+settings, including SCIP overlays, cache/crawl options, JSON, and legend removal.
+For example: `ripwire-rs --json gate . --quality-delta` or
+`ripwire-rs --legend=none --scip=index.scip gate . --edit-check=compute`.
+
 ---
 
 ## 1. Contract Checker (`--edit-check=SYM`)
@@ -164,4 +169,4 @@ ripwire-rs . --arch=rules.txt
 
 ## 10. Situational Awareness (`--situ`)
 
-Summarizes the 5 critical factors of a working tree diff: blast radius, tests to run, forgotten co-change partners, maintenance hotspots touched, and modules modified.
+Emits canonical `ripwire-rs.situ/v1` XML summarizing a working tree diff: blast radius, tests to run, forgotten co-change partners, maintenance hotspots touched, and modules modified. The MCP `situational_awareness` tool returns the same report in `result.content[0].text`.

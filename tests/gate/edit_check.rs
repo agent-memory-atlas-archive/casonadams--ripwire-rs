@@ -1,9 +1,10 @@
-use ripwire_rs::cli::{execute_affected_with, execute_edit_check_with};
-use ripwire_rs::{
-    FileInfo, Graph, IngestResult, Interner, Lang, McpState, RefRole, Reference, SignatureContract,
-    SymKind, Symbol, ToXmlString, check_symbol_contract, dispatch_json_rpc, find_affected_tests,
+use ripwire_rs::query::safety::{
+    EditCheckRequest, SafetyContext, affected_from_sources, write_edit_check_from_facts,
 };
-use serde_json::Value;
+use ripwire_rs::{
+    FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SignatureContract, SymKind,
+    Symbol, ToXmlString, check_symbol_contract, find_affected_tests,
+};
 use std::io::Cursor;
 
 fn setup_test_repository(interner: &Interner) -> IngestResult {
@@ -259,47 +260,52 @@ fn test_affected_tests_transitive_reachability() {
 }
 
 #[test]
-fn test_cli_gate_execution_and_xml_output() {
+fn test_edit_check_and_affected_from_in_memory_facts() {
     let interner = Interner::new();
     let ingest = setup_test_repository(&interner);
-    let state = McpState::from_ingest(".", ingest, interner);
+    let graph = Graph::build(&ingest, &interner);
+    let state = SafetyContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
+    let baseline = SignatureContract {
+        name: "compute".to_string(),
+        params: 2,
+        is_public: true,
+    };
+    let mut out = Cursor::new(Vec::new());
+    write_edit_check_from_facts(
+        &EditCheckRequest {
+            sym_name: "compute",
+            head_contract: Some(&baseline),
+            page: None,
+            at_stamp: Some("fixture-head"),
+        },
+        &state,
+        &mut out,
+    )
+    .expect("write edit-check from supplied contract");
+    let xml = String::from_utf8(out.into_inner()).unwrap();
+    assert!(xml.contains("status=\"contract-change\""));
+    assert!(xml.contains("callers=\"2\" incompatible=\"1\""));
+    assert!(xml.contains("at=\"fixture-head\""));
+    assert!(xml.contains("<site line=\"18\" args=\"2\" required=\"3\"/>"));
+    assert!(xml.contains("<c n=\"modern_worker\" p=\"src/modern_caller.rs:20\"/>"));
 
-    let mut out_edit = Cursor::new(Vec::new());
-    execute_edit_check_with("compute", None, &state, &mut out_edit).expect("execute edit-check");
-    let xml_edit = String::from_utf8(out_edit.into_inner()).unwrap();
-    assert!(xml_edit.contains("<edit-check schema=\"ripwire-rs.edit-check/v1\" sym=\"compute\""));
-
-    let mut out_aff = Cursor::new(Vec::new());
-    execute_affected_with("src/service.rs", &state, &mut out_aff).expect("execute affected");
-    let xml_aff = String::from_utf8(out_aff.into_inner()).unwrap();
-    assert!(
-        xml_aff.contains("<affected schema=\"ripwire-rs.affected/v1\" files=\"src/service.rs\"")
-    );
-    assert!(xml_aff.contains("<test p=\"tests/test_service.rs\""));
-}
-
-#[test]
-fn test_mcp_edit_check_and_affected_tools() {
-    let interner = Interner::new();
-    let ingest = setup_test_repository(&interner);
-    let mut state = Some(McpState::from_ingest(".", ingest, interner));
-
-    let req_edit = r#"{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"edit_check","arguments":{"symbol":"compute"}}}"#;
-    let resp_edit = dispatch_json_rpc(req_edit, &mut state, ".").expect("reply to edit_check");
-    let val_edit: Value = serde_json::from_str(&resp_edit).unwrap();
-    assert_eq!(val_edit["id"], 10);
-    let text_edit = val_edit["result"]["content"][0]["text"].as_str().unwrap();
-    let data_edit: Value = serde_json::from_str(text_edit).unwrap();
-    assert_eq!(data_edit["symbol"], "compute");
-    assert_eq!(data_edit["total_callers"], 2);
-
-    let req_aff = r#"{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"affected","arguments":{"files":"src/service.rs"}}}"#;
-    let resp_aff = dispatch_json_rpc(req_aff, &mut state, ".").expect("reply to affected");
-    let val_aff: Value = serde_json::from_str(&resp_aff).unwrap();
-    assert_eq!(val_aff["id"], 11);
-    let text_aff = val_aff["result"]["content"][0]["text"].as_str().unwrap();
-    let data_aff: Value = serde_json::from_str(text_aff).unwrap();
-    assert_eq!(data_aff["changed"], "src/service.rs");
-    assert_eq!(data_aff["total_tests"], 1);
-    assert_eq!(data_aff["tests"][0]["path"], "tests/test_service.rs");
+    let sources: [(&str, &[u8]); 1] = [(
+        "tests/test_service.rs",
+        b"#[test]\nfn test_integration() { legacy_worker(); }\n",
+    )];
+    let affected = affected_from_sources("src/service.rs", &state, &sources);
+    assert_eq!(affected.seed_count, 1);
+    assert_eq!(affected.total_tests, 1);
+    assert_eq!(affected.tests[0].hops, 2);
+    assert!(!affected.tests[0].is_direct_change);
+    assert!(affected.tests[0].run.is_none());
+    let xml = affected.to_xml_string();
+    assert!(xml.contains("<test p=\"tests/test_service.rs\""));
+    assert!(xml.contains("hops=\"2\""));
+    assert!(xml.contains("run_unknown=\"1\""));
 }

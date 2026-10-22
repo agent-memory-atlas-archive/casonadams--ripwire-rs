@@ -82,6 +82,11 @@
     function: (field_expression
         field: (field_identifier) @name)) @reference.call
 
+(call_expression
+    function: (parenthesized_expression
+        (field_expression
+            field: (field_identifier) @name))) @reference.call
+
 ; Qualified `::`-path calls — the DOMINANT Rust call form
 ; (`Widget::new()`, `util::deep::deepfn()`, `Self::helper()`, `Widget::bump(&mut w)`), 100% invisible
 ; before this pattern. tree-sitter-rust nests scoped_identifier LEFT — `util::deep::deepfn` is
@@ -124,5 +129,4 @@
 (use_declaration
     argument: (_) @import.path)
 
-; Value-position and lexical-binding rules live in languages/rust.rs.
 (identifier) @name @reference.read

@@ -1,4 +1,4 @@
-use ripwire_rs::mcp::recall::{
+use ripwire_rs::query::recall::{
     DocFormat, RecallInput, RecallOptions, csv_to_text, doc_format, html_to_text, is_heading,
     query_terms, recall, split_sections,
 };

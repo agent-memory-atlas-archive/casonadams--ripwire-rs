@@ -247,7 +247,7 @@
 
 The 4 automated gates designed to run in continuous integration pipelines:
 
-- **PR Situational Awareness**: Generates markdown summary of blast radius, reaching tests, and co-change files for the PR review UI.
+- **PR Situational Awareness**: Emits canonical `ripwire-rs.situ/v1` XML with blast radius, reaching tests, and co-change files; fence it in the PR review UI.
   ```bash
   ripwire-rs . --situ
   ```

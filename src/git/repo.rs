@@ -213,24 +213,32 @@ fn sorted_blobs(repo: &gix::Repository, rev: &str, scope: &str) -> Vec<(String, 
     blobs
 }
 
-fn scoped_tree<'r>(repo: &'r gix::Repository, rev: &str, scope: &str) -> Option<gix::Tree<'r>> {
-    let tree = repo
-        .rev_parse_single(rev)
+#[must_use]
+pub fn revision_tree<'a>(repo: &'a gix::Repository, rev: &str) -> Option<gix::Tree<'a>> {
+    repo.rev_parse_single(rev)
         .ok()?
         .object()
         .ok()?
         .peel_to_tree()
-        .ok()?;
+        .ok()
+}
+
+fn scoped_path_tree<'r>(tree: gix::Tree<'r>, scope: &str) -> Option<gix::Tree<'r>> {
     let scope = scope.trim_end_matches('/');
     if scope.is_empty() {
         return Some(tree);
     }
     tree.lookup_entry_by_path(scope)
-        .ok()??
+        .ok()
+        .flatten()?
         .object()
         .ok()?
         .try_into_tree()
         .ok()
+}
+
+fn scoped_tree<'r>(repo: &'r gix::Repository, rev: &str, scope: &str) -> Option<gix::Tree<'r>> {
+    revision_tree(repo, rev).and_then(|tree| scoped_path_tree(tree, scope))
 }
 
 fn word_lines(repo: &gix::Repository, oid: gix::ObjectId, word: &str) -> Vec<(usize, String)> {
@@ -272,16 +280,19 @@ fn is_binary(data: &[u8]) -> bool {
     data[..data.len().min(BINARY_PROBE_LEN)].contains(&0)
 }
 
-/// Short id and committer date (`YYYY-MM-DD`) of the commit `rev` names.
-#[must_use]
-pub fn commit_stamp(repo: &gix::Repository, rev: &str) -> Option<(String, String)> {
-    let commit = repo
-        .rev_parse_single(rev)
+fn revision_commit<'a>(repo: &'a gix::Repository, rev: &str) -> Option<gix::Commit<'a>> {
+    repo.rev_parse_single(rev)
         .ok()?
         .object()
         .ok()?
         .peel_to_commit()
-        .ok()?;
+        .ok()
+}
+
+/// Short id and committer date (`YYYY-MM-DD`) of the commit `rev` names.
+#[must_use]
+pub fn commit_stamp(repo: &gix::Repository, rev: &str) -> Option<(String, String)> {
+    let commit = revision_commit(repo, rev)?;
     let date = commit
         .time()
         .ok()?
@@ -289,9 +300,22 @@ pub fn commit_stamp(repo: &gix::Repository, rev: &str) -> Option<(String, String
     Some((short_id(commit.id), date))
 }
 
-/// Newest non-merge commit reachable from `HEAD` that changes how often `needle` occurs in a file.
-#[must_use]
-pub fn last_count_change(repo: &gix::Repository, needle: &str) -> Option<CommitSummary> {
+fn commit_summary(commit: &gix::Commit<'_>) -> Option<CommitSummary> {
+    let date = commit
+        .author()
+        .ok()?
+        .time()
+        .ok()?
+        .format_or_unix(gix::date::time::format::SHORT);
+    let message = commit.message_raw_sloppy().to_str_lossy();
+    Some(CommitSummary {
+        short_id: short_id(commit.id),
+        date,
+        subject: message.lines().next().unwrap_or("").to_string(),
+    })
+}
+
+fn newest_count_change_id(repo: &gix::Repository, needle: &str) -> Option<gix::ObjectId> {
     use rayon::prelude::*;
     let head = repo.head_id().ok()?;
     let ids: Vec<gix::ObjectId> = repo
@@ -304,25 +328,20 @@ pub fn last_count_change(repo: &gix::Repository, needle: &str) -> Option<CommitS
         .map(|info| info.id)
         .collect();
     let sync_repo = repo.clone().into_sync();
-    let hit = ids.into_par_iter().find_first(|&id| {
+    ids.into_par_iter().find_first(|&id| {
         let local = sync_repo.to_thread_local();
         local
             .find_commit(id)
             .is_ok_and(|commit| changes_count(&local, &commit, needle))
-    })?;
-    let commit = repo.find_commit(hit).ok()?;
-    let date = commit
-        .author()
-        .ok()?
-        .time()
-        .ok()?
-        .format_or_unix(gix::date::time::format::SHORT);
-    let message = commit.message_raw_sloppy().to_str_lossy();
-    Some(CommitSummary {
-        short_id: short_id(hit),
-        date,
-        subject: message.lines().next().unwrap_or("").to_string(),
     })
+}
+
+/// Newest non-merge commit reachable from `HEAD` that changes how often `needle` occurs in a file.
+#[must_use]
+pub fn last_count_change(repo: &gix::Repository, needle: &str) -> Option<CommitSummary> {
+    let hit = newest_count_change_id(repo, needle)?;
+    let commit = repo.find_commit(hit).ok()?;
+    commit_summary(&commit)
 }
 
 fn changes_count(repo: &gix::Repository, commit: &gix::Commit<'_>, needle: &str) -> bool {
@@ -385,25 +404,28 @@ pub fn newest_first() -> gix::revision::walk::Sorting {
     gix::revision::walk::Sorting::ByCommitTime(Default::default())
 }
 
+fn branch_merge_base(
+    repo: &gix::Repository,
+    branch: &str,
+) -> Option<(gix::ObjectId, gix::ObjectId)> {
+    let tip = revision_commit(repo, branch)?.id;
+    let head = repo.head_commit().ok()?.id;
+    let base = repo.merge_base(head, tip).ok().flatten()?.detach();
+    Some((base, tip))
+}
+
+fn ahead_count(repo: &gix::Repository, base: gix::ObjectId, tip: gix::ObjectId) -> Option<usize> {
+    repo.rev_walk([tip])
+        .with_hidden([base])
+        .all()
+        .ok()
+        .map(|walk| walk.filter(Result::is_ok).count())
+}
+
 /// Merge base of `HEAD` and `branch` plus the number of commits only `branch` has (`base..branch`).
 #[must_use]
 pub fn unmerged_commits(repo: &gix::Repository, branch: &str) -> Option<(String, usize)> {
-    let tip = repo
-        .rev_parse_single(branch)
-        .ok()?
-        .object()
-        .ok()?
-        .peel_to_commit()
-        .ok()?
-        .id;
-    let head = repo.head_commit().ok()?.id;
-    let base = repo.merge_base(head, tip).ok()??.detach();
-    let ahead = repo
-        .rev_walk([tip])
-        .with_hidden([base])
-        .all()
-        .ok()?
-        .filter(Result::is_ok)
-        .count();
+    let (base, tip) = branch_merge_base(repo, branch)?;
+    let ahead = ahead_count(repo, base, tip)?;
     Some((short_id(base), ahead))
 }

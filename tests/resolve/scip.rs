@@ -1,5 +1,7 @@
 use protobuf::Message;
-use ripwire_rs::cli::{NavMode, execute_nav_symbol_query};
+use ripwire_rs::query::navigation::{
+    NavContext, NavMode, execute_nav_symbol_query, execute_nav_symbol_query_in_root,
+};
 use ripwire_rs::resolve::scip_sites;
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, PageRankConfig, ingest_in_memory_files};
 use scip::types::{Document, Index, Occurrence, SymbolRole};
@@ -106,4 +108,163 @@ fn non_scip_bytes_are_rejected() {
     let interner = Interner::new();
     let ingest = ingest_in_memory_files(SOURCES, &registry, &interner);
     assert!(scip_sites(b"\xff\xff\xff\xff", &ingest, &interner).is_err());
+}
+
+#[test]
+fn multiline_member_calls_use_identifier_lines_without_moving_reported_sites() {
+    let sources: &[(&str, Lang, &[u8])] = &[
+        SOURCES[0],
+        SOURCES[1],
+        (
+            "c/use.py",
+            Lang::Python,
+            b"def go(o):\n    return (o\n        .run())\n",
+        ),
+    ];
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let mut ingest = ingest_in_memory_files(sources, &registry, &interner);
+    let bytes = Index {
+        documents: vec![
+            document("b/y.py", vec![occurrence(Y_RUN, 0, true)]),
+            document("c/use.py", vec![occurrence(Y_RUN, 2, false)]),
+        ],
+        ..Index::default()
+    }
+    .write_to_bytes()
+    .unwrap();
+    ingest.scip_sites = scip_sites(&bytes, &ingest, &interner).unwrap();
+    let graph = Graph::build(&ingest, &interner);
+    let ranks = graph.page_rank(&PageRankConfig::default()).ranks;
+    let mut out = Vec::new();
+    execute_nav_symbol_query(
+        "run",
+        NavMode::Callers,
+        &ingest,
+        &graph,
+        &ranks,
+        &interner,
+        &mut out,
+    )
+    .unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(
+        xml.contains("n=\"go\" p=\"c/use.py:1\" of_def=\"2\" sites_at=\"c/use.py:2\""),
+        "{xml}"
+    );
+    assert!(!xml.contains("declined_calls=\""), "{xml}");
+    assert!(
+        graph
+            .out_prov
+            .contains(&ripwire_rs::resolve::EdgeProv::Scip)
+    );
+}
+
+#[test]
+fn shared_navigation_reports_keep_scip_groups_and_unbound_sites_with_paging() {
+    let sources: &[(&str, Lang, &[u8])] = &[
+        SOURCES[0],
+        SOURCES[1],
+        (
+            "c/use.py",
+            Lang::Python,
+            b"def go(o):\n    return o.run()\n\ndef unpinned(o):\n    return o.run()\n",
+        ),
+    ];
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let mut ingest = ingest_in_memory_files(sources, &registry, &interner);
+    let bytes = Index {
+        documents: vec![
+            document("a/x.py", vec![occurrence(X_RUN, 0, true)]),
+            document("b/y.py", vec![occurrence(Y_RUN, 0, true)]),
+            document("c/use.py", vec![occurrence(Y_RUN, 1, false)]),
+        ],
+        ..Index::default()
+    }
+    .write_to_bytes()
+    .unwrap();
+    ingest.scip_sites = scip_sites(&bytes, &ingest, &interner).unwrap();
+    let graph = Graph::build(&ingest, &interner);
+    let ranks = graph.page_rank(&PageRankConfig::default()).ranks;
+    let mut ctx = NavContext {
+        ingest: &ingest,
+        graph: &graph,
+        ranks: &ranks,
+        interner: &interner,
+        page: ripwire_rs::serialize::PageRequest {
+            limit: Some(1),
+            offset: Some(0),
+        },
+        max_depth: None,
+        pr_iters: None,
+    };
+    let render = |sym, mode, ctx: &NavContext<'_>| {
+        let mut out = Vec::new();
+        execute_nav_symbol_query_in_root("repo&root", sym, mode, ctx, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    };
+
+    let callers = render("run", NavMode::Callers, &ctx);
+    assert!(callers.contains("defs=\"2\" count=\"1\""), "{callers}");
+    assert!(callers.contains("root=\"repo&amp;root\""), "{callers}");
+    assert!(callers.contains("<def ix=\"1\""), "{callers}");
+    assert!(callers.contains("<def ix=\"2\""), "{callers}");
+    assert!(
+        callers.contains("n=\"go\" p=\"c/use.py:1\" of_def=\"2\" sites_at=\"c/use.py:2\""),
+        "{callers}"
+    );
+    assert!(
+        callers.contains(
+            "<dc in=\"unpinned\" p=\"c/use.py:5\" cands=\"2\" via=\"declined\" of_def=\"1~d 2~d\"/>"
+        ),
+        "{callers}"
+    );
+    let callees = render("go", NavMode::Callees, &ctx);
+    assert!(
+        callees.contains("<s t=\"fn\" n=\"run\" p=\"b/y.py:1\" prov=\"scip\"/>"),
+        "{callees}"
+    );
+    let unpinned = render("unpinned", NavMode::Callees, &ctx);
+    assert!(unpinned.contains("count=\"0\""), "{unpinned}");
+    assert!(unpinned.contains("declined_calls=\"1\""), "{unpinned}");
+
+    let found = render("run", NavMode::FindSymbol, &ctx);
+    assert!(found.contains("root=\"repo&amp;root\""), "{found}");
+    assert!(found.contains("defs=\"2\" groups=\"2\""), "{found}");
+    assert!(
+        found.contains("<def ix=\"1\" t=\"fn\" p=\"a/x.py:1\"/>"),
+        "{found}"
+    );
+    assert!(
+        found.contains("<def ix=\"2\" t=\"fn\" p=\"b/y.py:1\"/>"),
+        "{found}"
+    );
+    assert!(
+        found.contains("n=\"go\" p=\"c/use.py:1\" of_def=\"2\" sites_at=\"c/use.py:2\""),
+        "{found}"
+    );
+    assert!(
+        found.contains(
+            "<dc in=\"unpinned\" p=\"c/use.py:5\" cands=\"2\" via=\"declined\" of_def=\"1~d 2~d\"/>"
+        ),
+        "{found}"
+    );
+    let found_go = render("go", NavMode::FindSymbol, &ctx);
+    assert!(found_go.contains("defs=\"1\" groups=\"1\""), "{found_go}");
+    assert!(
+        found_go.contains("<def ix=\"1\" t=\"fn\" p=\"c/use.py:1\"/>"),
+        "{found_go}"
+    );
+    assert!(
+        found_go.contains("<s t=\"fn\" n=\"run\" p=\"b/y.py:1\" prov=\"scip\"/>"),
+        "{found_go}"
+    );
+
+    ctx.page.offset = Some(1);
+    let later = render("run", NavMode::Callers, &ctx);
+    assert!(!later.contains("<s t="), "{later}");
+    assert!(later.contains("<def ix=\"2\""), "{later}");
+    assert!(later.contains("<dc in=\"unpinned\""), "{later}");
+    assert!(later.contains("offset=\"1\" limit=\"1\""), "{later}");
 }

@@ -114,4 +114,16 @@ impl LanguageSemantics for MetalLanguage {
     ) -> Option<u32> {
         resolve_c_family_include(importer_path, raw_target, file_index)
     }
+    fn supports_internal_linkage(&self) -> bool {
+        true
+    }
+
+    fn is_internal_function(
+        &self,
+        root: tree_sitter::Node<'_>,
+        name_byte: usize,
+        source: &[u8],
+    ) -> bool {
+        super::c::is_c_internal_function(root, name_byte, source, true)
+    }
 }

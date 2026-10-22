@@ -1,9 +1,15 @@
 use std::collections::HashMap;
 use tree_sitter::Node;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BindingSpan {
+    pub range: std::ops::Range<usize>,
+    pub ty: Option<String>,
+}
+
 #[derive(Default)]
 pub struct ReadBindings<'a> {
-    scopes: HashMap<&'a str, Vec<std::ops::Range<usize>>>,
+    scopes: HashMap<&'a str, Vec<BindingSpan>>,
 }
 
 impl<'a> ReadBindings<'a> {
@@ -19,11 +25,7 @@ impl<'a> ReadBindings<'a> {
             if let Some(scope) = binding_scope(node)
                 && let Ok(name) = node.utf8_text(source)
             {
-                let spans = result.scopes.entry(name).or_default();
-                let span = scope;
-                if !spans.contains(&span) {
-                    spans.push(span);
-                }
+                result.insert(name, scope, None);
             }
             if !advance(&mut cursor) {
                 return result;
@@ -31,14 +33,34 @@ impl<'a> ReadBindings<'a> {
         }
     }
 
+    pub fn insert(&mut self, name: &'a str, range: std::ops::Range<usize>, ty: Option<String>) {
+        let spans = self.scopes.entry(name).or_default();
+        if let Some(existing) = spans.iter_mut().find(|s| s.range == range) {
+            if existing.ty.is_none() {
+                existing.ty = ty;
+            }
+        } else {
+            spans.push(BindingSpan { range, ty });
+        }
+    }
+
     pub fn shadows(&self, name: &str, byte: usize) -> bool {
         self.scopes
             .get(name)
-            .is_some_and(|spans| spans.iter().any(|span| span.contains(&byte)))
+            .is_some_and(|spans| spans.iter().any(|span| span.range.contains(&byte)))
+    }
+
+    pub fn type_at(&self, name: &str, byte: usize) -> Option<&str> {
+        let spans = self.scopes.get(name)?;
+        spans
+            .iter()
+            .filter(|span| span.range.contains(&byte))
+            .max_by_key(|span| span.range.start)
+            .and_then(|span| span.ty.as_deref())
     }
 }
 
-fn advance(cursor: &mut tree_sitter::TreeCursor<'_>) -> bool {
+pub(super) fn advance(cursor: &mut tree_sitter::TreeCursor<'_>) -> bool {
     if cursor.goto_first_child() {
         return true;
     }
@@ -48,6 +70,19 @@ fn advance(cursor: &mut tree_sitter::TreeCursor<'_>) -> bool {
         }
     }
     true
+}
+
+pub(super) fn nodes(root: Node<'_>) -> impl Iterator<Item = Node<'_>> {
+    let mut cursor = root.walk();
+    let mut done = false;
+    std::iter::from_fn(move || {
+        if done {
+            return None;
+        }
+        let node = cursor.node();
+        done = !advance(&mut cursor);
+        Some(node)
+    })
 }
 
 pub(super) fn in_field(parent: Node<'_>, node: Node<'_>, field: &str) -> bool {

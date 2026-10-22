@@ -3,33 +3,48 @@ use crate::domain::{IngestResult, Interner, NodeId};
 use crate::graph::Graph;
 use std::io::{self, Write};
 
-pub fn sig_has_static_token(source: &[u8], start: u32, end: u32) -> bool {
-    let s = (start as usize).min(source.len());
-    let e = (end as usize).min(source.len());
-    if s >= e {
-        return false;
-    }
-    source[s..e]
-        .split(|&b| !b.is_ascii_alphanumeric() && b != b'_')
-        .any(|token| token == b"static")
+struct CachedFile<'a> {
+    source: std::borrow::Cow<'a, [u8]>,
+    tree: Option<tree_sitter::Tree>,
+}
+
+fn parse_file_tree(
+    lang: crate::domain::Lang,
+    path: &str,
+    source: &[u8],
+) -> Option<tree_sitter::Tree> {
+    let grammar = lang.semantics().source_grammar(path)?;
+    crate::ingest::registry::PARSER_STATE.with(|state| {
+        let mut borrowed = state.borrow_mut();
+        let (parser, _) = &mut *borrowed;
+        parser.set_language(grammar).ok()?;
+        parser.parse(source, None)
+    })
+}
+
+pub struct DeadCodeContext<'a> {
+    pub root: &'a str,
+    pub sources: &'a dyn crate::query::SourceReader,
+    pub ingest: &'a IngestResult,
+    pub graph: &'a Graph,
+    pub interner: &'a Interner,
+    pub page: &'a dyn super::args::Paginated,
 }
 
 pub fn execute_dead_code_query_paged<W: Write>(
-    root: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    page: &dyn super::args::Paginated,
+    ctx: &DeadCodeContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
     use crate::domain::CorpusView;
-    let view = (ingest, interner);
-    let mut file_cache: std::collections::HashMap<u32, Vec<u8>> = std::collections::HashMap::new();
+    let view = (ctx.ingest, ctx.interner);
+    let mut file_cache: std::collections::HashMap<u32, CachedFile<'_>> =
+        std::collections::HashMap::new();
     let mut dead = Vec::new();
-    for sym in &ingest.symbols {
+    for sym in &ctx.ingest.symbols {
         if sym.kind != crate::domain::SymKind::Function
+            || !sym.lang.semantics().supports_internal_linkage()
             || sym.sig_end_byte >= sym.end_byte
-            || graph.in_degree(sym.id) != 0
+            || ctx.graph.in_degree(sym.id) != 0
         {
             continue;
         }
@@ -37,10 +52,22 @@ pub fn execute_dead_code_query_paged<W: Write>(
         if sym.lang.semantics().is_header_file(p) {
             continue;
         }
-        let src = file_cache
-            .entry(sym.file_id)
-            .or_insert_with(|| crate::domain::read_rel_bytes(root, p).unwrap_or_default());
-        if sig_has_static_token(src, sym.sig_start_byte, sym.sig_end_byte) {
+        let cached = file_cache.entry(sym.file_id).or_insert_with(|| {
+            let source = ctx
+                .sources
+                .read(p)
+                .unwrap_or(std::borrow::Cow::Borrowed(&[]));
+            let tree = parse_file_tree(sym.lang, p, source.as_ref());
+            CachedFile { source, tree }
+        });
+        let is_internal = cached.tree.as_ref().is_some_and(|tree| {
+            sym.lang.semantics().is_internal_function(
+                tree.root_node(),
+                sym.sig_start_byte as usize,
+                cached.source.as_ref(),
+            )
+        });
+        if is_internal {
             dead.push((view.sym_name(sym), sym.kind.tag(), p, sym.line));
         }
     }
@@ -50,11 +77,11 @@ pub fn execute_dead_code_query_paged<W: Write>(
             .then_with(|| a.0.cmp(b.0))
     });
     crate::serialize::query_xml::serialize_dead_code_paged_xml(
-        root,
+        ctx.root,
         &dead,
-        graph.gauges(),
-        page.limit_opt(),
-        page.offset_opt(),
+        ctx.graph.gauges(),
+        ctx.page.limit_opt(),
+        ctx.page.offset_opt(),
         out,
     )
 }

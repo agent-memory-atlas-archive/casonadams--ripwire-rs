@@ -1,5 +1,5 @@
-use ripwire_rs::mcp::graph_tools::call_uses;
-use ripwire_rs::mcp::grep::{TierCounts, enclosing_metadata, tier_attrs};
+use ripwire_rs::query::graph::call_uses;
+use ripwire_rs::query::grep::{TierCounts, enclosing_metadata, tier_attrs};
 use ripwire_rs::serialize::serialize_grep_xml;
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
 use serde_json::{Value, json};
@@ -185,4 +185,24 @@ fn test_python_default_value_is_outside_the_function_local_binding_scope() {
     let source = b"LIMIT = 10\ndef sample(value=LIMIT):\n    LIMIT = 3\n    return LIMIT\n";
     let (uses, _) = semantic_read_report("src/sample.py", Lang::Python, source);
     assert_read_sites(&uses, &[2]);
+}
+
+#[test]
+fn oversized_grep_context_is_clamped_to_the_available_source_lines() {
+    let source = b"fn first() {}\nfn needle() {}\nfn last() {}\n".as_slice();
+    let sources = [("src/lib.rs", source)];
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest =
+        ingest_in_memory_files(&[("src/lib.rs", Lang::Rust, source)], &registry, &interner);
+    let request = ripwire_rs::query::retrieval::GrepRequest {
+        before: usize::MAX,
+        after: usize::MAX,
+        ..ripwire_rs::query::retrieval::GrepRequest::new(":memory:", "needle", &sources)
+    };
+    let report = ripwire_rs::query::grep::call_grep(&ingest, &interner, &request);
+    assert_eq!(report["context"], true);
+    assert_eq!(report["hits"][0]["line"], 2);
+    assert_eq!(report["hits"][0]["before"], json!(["fn first() {}"]));
+    assert_eq!(report["hits"][0]["after"], json!(["fn last() {}"]));
 }

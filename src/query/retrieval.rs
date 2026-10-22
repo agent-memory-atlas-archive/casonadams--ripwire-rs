@@ -311,20 +311,26 @@ fn extract_normalized_sig(
     sym.extract_signature(bytes, fallback_name)
 }
 
-fn read_file_cached<'a>(
-    root: &str,
+fn read_file_cached<'a, 's>(
+    sources: &'s dyn crate::query::SourceReader,
     rel_path: &str,
     file_id: u32,
-    cache: &'a mut std::collections::HashMap<u32, Vec<u8>>,
+    cache: &'a mut std::collections::HashMap<u32, std::borrow::Cow<'s, [u8]>>,
 ) -> &'a [u8] {
     cache
         .entry(file_id)
-        .or_insert_with(|| crate::domain::read_rel_bytes(root, rel_path).unwrap_or_default())
+        .or_insert_with(|| sources.read(rel_path).unwrap_or_default())
 }
 
 #[derive(Default, Clone, Copy)]
 pub struct ForTaskOptions<'a> {
     pub root: &'a str,
+    pub at: Option<&'a str>,
+    pub sources: Option<&'a dyn crate::query::SourceReader>,
+    pub in_scope: Option<&'a str>,
+    pub sections: Option<&'a str>,
+    pub signatures_only: bool,
+    pub auto_bodies: bool,
     pub graph: Option<&'a Graph>,
     pub budget_tokens: Option<usize>,
     pub detail: Option<usize>,
@@ -383,43 +389,26 @@ pub fn compute_adaptive_cut(scores: &[f64], floor: usize, ceiling: usize) -> (us
     }
 }
 
-pub fn call_for_task(
-    ingest: &IngestResult,
-    interner: &Interner,
-    ranks: &[f64],
-    task: &str,
-    budget_tokens: Option<usize>,
-    detail: Option<usize>,
-    adaptive: bool,
-) -> Value {
-    call_for_task_with_options(
-        ingest,
-        interner,
-        ranks,
-        task,
-        ForTaskOptions {
-            root: ".",
-            graph: None,
-            budget_tokens,
-            detail,
-            adaptive,
-        },
-    )
-}
-
-fn build_for_symbol_entry(
+fn build_for_symbol_entry<'s>(
     idx: usize,
     score: f64,
     sym: &crate::domain::Symbol,
     view: &dyn crate::domain::CorpusView<'_>,
     is_tested: bool,
-    opts: ForTaskOptions<'_>,
-    file_cache: &mut std::collections::HashMap<u32, Vec<u8>>,
+    opts: ForTaskOptions<'s>,
+    file_cache: &mut std::collections::HashMap<u32, std::borrow::Cow<'s, [u8]>>,
 ) -> Value {
     let name = view.sym_name(sym);
     let path = view.sym_path(sym);
-    let detail_count = opts.detail.unwrap_or(0);
-    let bytes = read_file_cached(opts.root, path, sym.file_id, file_cache);
+    let detail_count = if opts.signatures_only {
+        0
+    } else {
+        opts.detail.or(opts.auto_bodies.then_some(6)).unwrap_or(0)
+    };
+    let bytes = opts
+        .sources
+        .map(|sources| read_file_cached(sources, path, sym.file_id, file_cache))
+        .unwrap_or_default();
     let sig = extract_normalized_sig(sym, bytes, name);
     let in_deg = opts.graph.map_or(0, |g| g.in_degree(sym.id));
     let end_line = sym.line.saturating_add(sym.loc.saturating_sub(1));
@@ -550,6 +539,10 @@ pub fn call_for_task_with_options(
     task: &str,
     opts: ForTaskOptions<'_>,
 ) -> Value {
+    let sections = match opts.sections.map(parse_for_sections).transpose() {
+        Ok(sections) => sections,
+        Err(error) => return json!({ "error": error }),
+    };
     let all_terms: Vec<&str> = task
         .split_whitespace()
         .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()))
@@ -570,6 +563,12 @@ pub fn call_for_task_with_options(
     let idf_weights = compute_term_idf_weights(ingest, interner, &raw_terms);
     let mut scored = Vec::new();
     for sym in &ingest.symbols {
+        if opts
+            .in_scope
+            .is_some_and(|scope| !ingest.sym_file_path(sym, interner).contains(scope))
+        {
+            continue;
+        }
         let score = score_candidate_symbol(
             sym,
             ingest,
@@ -594,7 +593,14 @@ pub fn call_for_task_with_options(
         adaptive_info = Some((kept, scored.len(), gap));
         limit = kept;
     }
-    let detail_count = opts.detail.unwrap_or(0).min(limit);
+    let detail_count = if opts.signatures_only {
+        0
+    } else {
+        opts.detail
+            .or(opts.auto_bodies.then_some(6))
+            .unwrap_or(0)
+            .min(limit)
+    };
     let mut file_cache = std::collections::HashMap::new();
     use crate::domain::CorpusView;
     let view = (ingest, interner);
@@ -630,6 +636,7 @@ pub fn call_for_task_with_options(
     json!({
         "task": task,
         "root": opts.root,
+        "at": opts.at,
         "route": route,
         "confidence": confidence,
         "margin_pct": margin_pct,
@@ -638,6 +645,7 @@ pub fn call_for_task_with_options(
         "symbols": symbols_json,
         "count": symbols_json.len(),
         "detail": detail_count,
+        "sections": sections,
         "lego": lego,
         "compose": compose,
         "hops": hops,
@@ -805,50 +813,4 @@ fn collect_for_doc_mentions(
         .take(4)
         .map(|(p, m)| json!({ "path": p, "mentions": m }))
         .collect()
-}
-
-pub fn call_fetch_body_in_root(
-    root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
-    symbol_name: &str,
-    path_hint: Option<&str>,
-    start_line: Option<usize>,
-    end_line: Option<usize>,
-) -> Value {
-    use crate::domain::CorpusView;
-    let view = (ingest, interner);
-    let Some(sym) = view.find_symbol_with_hint(symbol_name, path_hint) else {
-        return json!({ "error": format!("symbol '{symbol_name}' not found") });
-    };
-    let file_path = view.sym_path(sym);
-    if file_path.is_empty() {
-        return json!({ "error": "file info missing" });
-    }
-    let bytes = match view.read_sym_bytes(root, sym) {
-        Ok(b) => b,
-        Err(e) => return json!({ "error": format!("cannot read file '{file_path}': {e}") }),
-    };
-    let body_str = sym.source_text(&bytes).unwrap_or_default();
-    let lines: Vec<&str> = body_str.lines().collect();
-    let total_lines = lines.len();
-
-    let s_line = start_line.unwrap_or(1).saturating_sub(1);
-    let e_line = end_line.unwrap_or(total_lines).min(total_lines);
-
-    let content = if s_line < e_line && s_line < lines.len() {
-        lines[s_line..e_line].join("\n")
-    } else {
-        body_str.to_string()
-    };
-
-    json!({
-        "symbol": symbol_name,
-        "path": file_path,
-        "line": sym.line,
-        "total_lines": total_lines,
-        "start_line": s_line + 1,
-        "end_line": e_line,
-        "body": content
-    })
 }

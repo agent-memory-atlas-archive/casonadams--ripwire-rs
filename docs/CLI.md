@@ -8,7 +8,7 @@
 # Generate ranked symbol call graph map (default 64 KB budget)
 ripwire-rs .
 
-# Select ranking signal (pagerank, authority, hub)
+# Select ranking signal (pagerank, authority, hub, degree, ccx, stable)
 ripwire-rs . --rank-by=authority
 
 # Set explicit streaming pack budget in bytes or tokens
@@ -20,10 +20,14 @@ ripwire-rs . --top-k=200
 # Control schema legend comment posture (compact or none) and formatting (--pretty, --json)
 ripwire-rs . --legend=compact --pretty
 ripwire-rs . --top-k=20 --json
+
+# Maps default to 200 symbols and 65536 bytes; unknown rank signals are errors.
 # Query symbol relationships by bare name, scoped name, or file:name
 ripwire-rs . --callers="Interner::len"
 ripwire-rs . --callees="src/domain.rs:new"
 ripwire-rs . --impact="Type.method"
+# Optional traversal cap (also global with navigate --impact)
+ripwire-rs . --impact="Type.method" --impact-depth=3
 
 # Query static use-sites (call, read, write, import, extends)
 ripwire-rs . --uses="Interner"
@@ -102,7 +106,7 @@ ripwire-rs . --affected="src/lib.rs"
 # Name tests to run and untested blast radius (exit 4 if non-empty obligations)
 ripwire-rs . --test-gate
 
-# Situational awareness report for working tree diff: blast radius, tests, co-change
+# Canonical ripwire-rs.situ/v1 XML: blast radius, tests, co-change
 ripwire-rs . --situ
 
 # Safe delete assessment joining callers, blast radius, tests, and history
@@ -287,6 +291,11 @@ ripwire-rs . --callers="Interner::len" --json
 
 # Execute up to 16 heterogeneous sub-queries in a single turn
 ripwire-rs . --batch=queries.txt
+# Lines: name:argument or name:{JSON arguments}; blank/comment lines ignored.
+# More than 16 queries errors; recursive batch/writes error per item.
+# --json preserves report hierarchy, text/CDATA, and interleaved mixed content.
+# Root tag/attributes/items remain; leaf text uses "text". Reserved-name attributes
+# use "attributes"; namespaced names use {uri}local. Malformed reports error.
 
 # Resolve innermost symbol chain enclosing FILE:LINE
 ripwire-rs . --at="src/main.rs:25"
@@ -391,14 +400,16 @@ binding or alias analysis.
 ---
 ## Workflow Subcommands
 
-- `ripwire-rs orient [PATH] [--for <TASK>]`: Codebase orientation and task-ranked summaries.
-- `ripwire-rs navigate [PATH] --symbol <SYM> [--callers|--callees|--impact]`: Symbol neighborhood analysis.
+- `ripwire-rs orient [PATH] [--for <TASK>] [--scip <FILE>]`: Codebase orientation and task-ranked summaries.
+- `ripwire-rs navigate [PATH] --symbol <SYM> [--callers|--callees|--impact] [--scip <FILE>]`: Symbol neighborhood analysis.
 - `ripwire-rs gate [PATH] [--edit-check|--affected|--quality-delta|--test-gate]`: Verification safety gates.
 - `ripwire-rs metrics [PATH] [--hotspots|--complexity|--clones]`: Code health metrics.
 - `ripwire-rs slice [PATH] <SYM:VAR> [--flow <fwd|back|both>]`: Intra-procedural slicing.
-- `ripwire-rs mcp [PATH]`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
+- `ripwire-rs mcp [PATH] [--scip <FILE>]`: Launch native JSON-RPC Model Context Protocol (MCP) server over stdio.
 - `ripwire-rs [PATH] --lsp`: Launch stdio JSON-RPC Language Server Protocol (LSP) server bridge.
 - `ripwire-rs [PATH] [--cache <PATH>] [--no-cache]`: Persistent binary on-disk caching in TMPDIR (or custom path) for sub-second repeat queries.
 - `ripwire-rs [PATH] --scip=<index.scip>`: Overlay a compiler-backed SCIP index: the call sites it resolves bind exactly (`prov="scip"`, map header `precise=K`) and sites it resolves outside the index count as external; other sites keep name resolution. Bypasses the cache.
+  The same `--scip=PATH` overlay works with `navigate`, plain and task-ranked `orient`, and `mcp` (also `[PATH] --mcp --scip=PATH`). MCP retains the loaded overlay for the session. Unreadable or malformed indexes fail explicitly without an unpinned fallback.
+  `--scip` is global: it can appear before or after the subcommand. Multiline calls match the callee identifier's line in the index; reported call-site lines stay at the call expression's start.
 - `make bench [REPO=<PATH>]`: Multi-metric performance and resident set size (RSS) benchmark against C++ `ripwire`.
 - `make bench-pipeline`: Native in-memory Cargo micro-benchmarks (`cargo bench --bench bench_pipeline`).

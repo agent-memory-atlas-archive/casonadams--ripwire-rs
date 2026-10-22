@@ -1,0 +1,472 @@
+use ripwire_rs::cli::{
+    NavigateArgs, build_community_module, compute_deps_report, execute_external_surface_query,
+    execute_navigate_with,
+};
+use ripwire_rs::query::map::{MapRequest, execute_stream_xml_ranked};
+use ripwire_rs::query::navigation::NavContext;
+use ripwire_rs::{
+    Graph, IngestResult, Interner, Lang, LanguageRegistry, PageRankConfig, find_symbols_by_name,
+    ingest_in_memory_files,
+};
+
+fn corpus(files: &[(&str, Lang, &[u8])]) -> (IngestResult, Graph, Interner) {
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(files, &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    (ingest, graph, interner)
+}
+
+fn attr<'a>(element: &'a str, name: &str) -> &'a str {
+    let key = format!("{name}=\"");
+    element
+        .strip_prefix(&key)
+        .or_else(|| {
+            element
+                .split_once(&format!(" {key}"))
+                .map(|(_, value)| value)
+        })
+        .unwrap_or_else(|| panic!("missing {name} in {element}"))
+        .split_once('"')
+        .unwrap()
+        .0
+}
+
+fn symbol_names(xml: &str) -> Vec<&str> {
+    xml.split("<s ").skip(1).map(|row| attr(row, "n")).collect()
+}
+
+#[test]
+fn external_surface_counts_calls_but_excludes_definitions_builtins_and_value_uses() {
+    let (ingest, _, interner) = corpus(&[(
+        "src/lib.rs",
+        Lang::Rust,
+        b"fn local() {}\nfn run(values: Vec<u8>) {\n    local();\n    vendor_send();\n    vendor_send();\n    vendor_flush();\n    values.len();\n    let callback = vendor_callback;\n}\n",
+    )]);
+    let mut out = Vec::new();
+    execute_external_surface_query("memory", &ingest, &interner, &mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    let body = xml
+        .split_once("<external-surface ")
+        .unwrap()
+        .1
+        .split_once('>')
+        .unwrap()
+        .1;
+    let rows: Vec<_> = body
+        .split("<x ")
+        .skip(1)
+        .map(|row| row.split_once('>').unwrap().0)
+        .collect();
+    assert_eq!(
+        rows.iter().map(|row| attr(row, "n")).collect::<Vec<_>>(),
+        ["vendor_send", "vendor_flush"],
+        "{xml}"
+    );
+    assert_eq!(attr(rows[0], "calls"), "2");
+    assert_eq!(attr(rows[0], "refs"), "2");
+    assert_eq!(attr(rows[1], "calls"), "1");
+}
+
+#[test]
+fn community_anchor_prefers_production_code_then_substantial_callable() {
+    let (ingest, _, interner) = corpus(&[
+        (
+            "tests/check.rs",
+            Lang::Rust,
+            b"fn test_large() {\n if true {\n if true {\n if true {\n panic!();\n }\n }\n }\n}\n",
+        ),
+        ("docs/guide.md", Lang::Markdown, b"# Overview\n\nText.\n"),
+        (
+            "src/lib.rs",
+            Lang::Rust,
+            b"fn small() {}\nfn substantial(flag: bool) {\n if flag {\n small();\n } else {\n small();\n }\n}\n",
+        ),
+    ]);
+    let ids: Vec<_> = ["Overview", "test_large", "small", "substantial"]
+        .iter()
+        .map(|name| find_symbols_by_name(name, &ingest, &interner)[0])
+        .collect();
+    let module = build_community_module(7, &ids, &ingest, &interner);
+    assert_eq!(module.label, "substantial");
+    assert_eq!(module.dir, "src/lib.rs");
+    assert_eq!(module.size, 4);
+    assert_eq!(
+        module
+            .members
+            .iter()
+            .map(|member| member.1)
+            .collect::<Vec<_>>(),
+        ["Overview", "test_large", "small", "substantial"]
+    );
+
+    let module = build_community_module(7, &ids[..3], &ingest, &interner);
+    assert_eq!(
+        module.label, "small",
+        "test size must not displace production code"
+    );
+}
+
+#[test]
+fn community_summary_partitions_isolated_documents_declarations_and_bodies() {
+    let (ingest, graph, interner) = corpus(&[
+        (
+            "src/lib.rs",
+            Lang::Rust,
+            b"fn entry() { linked(); }\nfn linked() {}\nfn unused() {}\n",
+        ),
+        ("include/api.h", Lang::C, b"void declared(void);\n"),
+        (
+            "docs/guide.md",
+            Lang::Markdown,
+            b"An isolated document without headings.\n",
+        ),
+    ]);
+    let mut out = Vec::new();
+    let ctx = ripwire_rs::query::safety::SafetyContext {
+        root: "memory",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
+    let args = ripwire_rs::cli::TopSafetyArgs {
+        partition: Some(Some(2)),
+        ..Default::default()
+    };
+    ripwire_rs::cli::safety::execute_safety_dispatch(&args, &ctx, &mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    let summary = xml.split_once("<communities ").unwrap().1;
+    assert_eq!(attr(summary, "isolated"), "3", "{xml}");
+    assert_eq!(attr(summary, "isolated_source"), "1", "{xml}");
+    assert_eq!(attr(summary, "isolated_decl"), "1", "{xml}");
+    assert_eq!(attr(summary, "isolated_doc"), "1", "{xml}");
+    assert!(xml.contains("n=\"entry\""), "{xml}");
+    assert!(xml.contains("n=\"linked\""), "{xml}");
+}
+
+#[test]
+fn dependency_report_deduplicates_file_edges_and_detects_transitive_cycles() {
+    let (ingest, graph, interner) = corpus(&[
+        (
+            "src/a.rs",
+            Lang::Rust,
+            b"fn start() { middle(); middle(); }\n",
+        ),
+        ("src/b.rs", Lang::Rust, b"fn middle() { finish(); }\n"),
+        ("src/c.rs", Lang::Rust, b"fn finish() { middle(); }\n"),
+        ("src/alone.rs", Lang::Rust, b"fn alone() {}\n"),
+    ]);
+    let report = compute_deps_report(&ingest, &graph, &interner);
+    let row = |path| report.rows.iter().find(|row| row.path == path).unwrap();
+    assert_eq!((row("src/a.rs").efferent, row("src/a.rs").afferent), (1, 0));
+    // Component dependency counts include the file itself.
+    assert_eq!(row("src/a.rs").transitive, 3);
+    assert_eq!((row("src/b.rs").efferent, row("src/b.rs").afferent), (1, 2));
+    assert_eq!(row("src/b.rs").transitive, 2);
+    assert_eq!(row("src/c.rs").transitive, 2);
+    assert_eq!(
+        (row("src/alone.rs").efferent, row("src/alone.rs").transitive),
+        (0, 1)
+    );
+    assert_eq!(report.ccd, 8);
+    assert_eq!(report.cycles.len(), 1);
+    let mut cycle = report.cycles[0].clone();
+    cycle.sort_unstable();
+    assert_eq!(cycle, ["src/b.rs", "src/c.rs"]);
+}
+
+#[test]
+fn ranked_stream_selects_authorities_hubs_and_preserves_complete_rows_at_budget() {
+    let (ingest, graph, interner) = corpus(&[(
+        "src/lib.rs",
+        Lang::Rust,
+        b"fn entry() { sink_a(); sink_b(); }\nfn sink_a() {}\nfn sink_b() {}\nfn isolated() {}\n",
+    )]);
+    let pr = graph.page_rank(&PageRankConfig::default());
+    let mut args = MapRequest {
+        root: "memory",
+        rank_by: "authority",
+        pack_budget: None,
+        top_k: Some(2),
+        emit_legend: false,
+        legend_full: false,
+        map_diff: None,
+        no_inventory: true,
+    };
+    let mut out = Vec::new();
+    execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    let mut names = symbol_names(&xml);
+    names.sort_unstable();
+    assert_eq!(names, ["sink_a", "sink_b"], "{xml}");
+
+    args.rank_by = "hub";
+    args.top_k = Some(1);
+    let mut out = Vec::new();
+    execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert_eq!(symbol_names(&xml), ["entry"], "{xml}");
+    assert!(xml.contains("<c n=\"sink_a\""), "{xml}");
+    assert!(xml.contains("<c n=\"sink_b\""), "{xml}");
+
+    args.rank_by = "pagerank";
+    args.top_k = None;
+    let mut out = Vec::new();
+    execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut out).unwrap();
+    let full = String::from_utf8(out).unwrap();
+    let mut top_names = symbol_names(&full)[..2].to_vec();
+    top_names.sort_unstable();
+    assert_eq!(top_names, ["sink_a", "sink_b"], "{full}");
+    let first_row_end = full.find("</s>").unwrap() + "</s>".len();
+    args.pack_budget = Some(first_row_end - full.find("<f ").unwrap());
+    let mut out = Vec::new();
+    execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut out).unwrap();
+    let limited = String::from_utf8(out).unwrap();
+    assert_eq!(
+        symbol_names(&limited),
+        &symbol_names(&full)[..1],
+        "{limited}"
+    );
+    assert_eq!(limited.matches("</s>").count(), 1);
+    assert!(limited.ends_with("</s></f></r>\n"), "{limited}");
+
+    args.pack_budget = Some(0);
+    let mut out = Vec::new();
+    execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut out).unwrap();
+    assert!(symbol_names(&String::from_utf8(out).unwrap()).is_empty());
+
+    args.rank_by = "stable";
+    args.pack_budget = None;
+    args.top_k = Some(2);
+    let mut out = Vec::new();
+    execute_stream_xml_ranked(&args, &ingest, &graph, &pr, &interner, &mut out).unwrap();
+    let stable = String::from_utf8(out).unwrap();
+    assert_eq!(symbol_names(&stable), ["entry", "sink_a"], "{stable}");
+    assert!(!stable.contains(" k=\""), "{stable}");
+}
+
+#[test]
+fn navigation_reports_direct_neighbors_and_transitive_impact_without_reversing_edges() {
+    let (ingest, graph, interner) = corpus(&[
+        ("src/entry.rs", Lang::Rust, b"fn entry() { middle(); }\n"),
+        ("src/middle.rs", Lang::Rust, b"fn middle() { leaf(); }\n"),
+        (
+            "src/leaf.rs",
+            Lang::Rust,
+            b"fn leaf() {}\nfn unrelated() {}\n",
+        ),
+    ]);
+    let pr = graph.page_rank(&PageRankConfig::default());
+
+    let ctx = NavContext {
+        ingest: &ingest,
+        graph: &graph,
+        ranks: &pr.ranks,
+        pr_iters: Some(pr.iterations),
+        interner: &interner,
+        page: Default::default(),
+        max_depth: None,
+    };
+    for (callers, callees, impact, target, expected) in [
+        (false, false, false, "middle", vec!["entry", "leaf"]),
+        (true, false, false, "middle", vec!["entry"]),
+        (false, true, false, "middle", vec!["leaf"]),
+        (false, false, true, "leaf", vec!["entry", "middle"]),
+    ] {
+        let args = NavigateArgs {
+            symbol: Some(target.to_string()),
+            callers,
+            callees,
+            impact,
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        execute_navigate_with(".", &args, &ctx, &mut out).unwrap();
+        let xml = String::from_utf8(out).unwrap();
+        let mut names = symbol_names(&xml);
+        names.sort_unstable();
+        assert_eq!(names, expected, "{xml}");
+        assert!(!names.contains(&"unrelated"));
+    }
+}
+
+#[test]
+fn mermaid_aggregates_cross_directory_calls_without_internal_or_isolated_edges() {
+    let (ingest, graph, interner) = corpus(&[
+        (
+            "src/ui/entry.rs",
+            Lang::Rust,
+            b"fn entry() { first(); second(); local(); }\nfn local() {}\n",
+        ),
+        (
+            "src/core/logic.rs",
+            Lang::Rust,
+            b"fn first() {}\nfn second() {}\n",
+        ),
+        ("src/unused/alone.rs", Lang::Rust, b"fn alone() {}\n"),
+    ]);
+    let mut out = Vec::new();
+    ripwire_rs::graph::generate_mermaid_diagram(&ingest, &graph, &interner, &mut out).unwrap();
+    let diagram = String::from_utf8(out).unwrap();
+    let edges: Vec<_> = diagram
+        .lines()
+        .filter(|line| line.contains("-->"))
+        .collect();
+    assert_eq!(
+        edges,
+        ["  src_ui[\"src/ui\"] -->|2| src_core[\"src/core\"]"]
+    );
+    assert!(!diagram.contains("unused"));
+}
+
+#[test]
+fn dead_code_excludes_public_called_and_header_functions() {
+    let source_c = b"static int unused_helper(void) {\nreturn 1;\n}\nint public_entry(void) {\nreturn 2;\n}\nstatic int used_helper(void) {\nreturn 3;\n}\nint caller(void) {\nreturn used_helper();\n}\n";
+    let source_h = b"static int header_helper(void) {\nreturn 4;\n}\n";
+    let (ingest, graph, interner) = corpus(&[
+        ("src/main.c", Lang::C, source_c.as_slice()),
+        ("src/header.h", Lang::C, source_h.as_slice()),
+    ]);
+    let sources: &[(&str, &[u8])] = &[("src/main.c", source_c), ("src/header.h", source_h)];
+    let page = ripwire_rs::cli::TopModifierArgs {
+        limit: Some(10),
+        offset: Some(0),
+        ..Default::default()
+    };
+    let mut out = Vec::new();
+    let ctx = ripwire_rs::cli::arch::DeadCodeContext {
+        root: ":memory:",
+        sources: &sources,
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+        page: &page,
+    };
+    ripwire_rs::cli::arch::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(xml.contains("schema=\"ripwire-rs.dead-code/v1\""), "{xml}");
+    assert!(xml.contains("n=\"unused_helper\""), "{xml}");
+    assert!(!xml.contains("n=\"public_entry\""), "{xml}");
+    assert!(!xml.contains("n=\"used_helper\""), "{xml}");
+    assert!(!xml.contains("n=\"header_helper\""), "{xml}");
+}
+
+#[test]
+fn dead_code_ignores_comments_containing_static_and_detects_multiline_declaration() {
+    let source_c = b"/* static function */\nint comment_fake_static(void) {\nreturn 10;\n}\n// static int line_fake_static(void)\nint line_fake_static(void) {\nreturn 20;\n}\nstatic\nint\nmultiline_unused(void) {\nreturn 30;\n}\n";
+    let (ingest, graph, interner) = corpus(&[("src/lib.c", Lang::C, source_c.as_slice())]);
+    let sources: &[(&str, &[u8])] = &[("src/lib.c", source_c)];
+    let page = ripwire_rs::cli::TopModifierArgs::default();
+    let mut out = Vec::new();
+    let ctx = ripwire_rs::cli::arch::DeadCodeContext {
+        root: ":memory:",
+        sources: &sources,
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+        page: &page,
+    };
+    ripwire_rs::cli::arch::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(xml.contains("n=\"multiline_unused\""), "{xml}");
+    assert!(!xml.contains("n=\"comment_fake_static\""), "{xml}");
+    assert!(!xml.contains("n=\"line_fake_static\""), "{xml}");
+}
+
+#[test]
+fn dead_code_pagination_selects_expected_slice_of_static_functions() {
+    let source_c = b"static int first_unused(void) {\nreturn 1;\n}\nstatic int second_unused(void) {\nreturn 2;\n}\nstatic int third_unused(void) {\nreturn 3;\n}\n";
+    let (ingest, graph, interner) = corpus(&[("src/paged.c", Lang::C, source_c.as_slice())]);
+    let sources: &[(&str, &[u8])] = &[("src/paged.c", source_c)];
+    let query_page = |offset, limit| {
+        let page = ripwire_rs::cli::TopModifierArgs {
+            limit: Some(limit),
+            offset: Some(offset),
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        let ctx = ripwire_rs::cli::arch::DeadCodeContext {
+            root: ":memory:",
+            sources: &sources,
+            ingest: &ingest,
+            graph: &graph,
+            interner: &interner,
+            page: &page,
+        };
+        ripwire_rs::cli::arch::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    };
+
+    let xml_p1 = query_page(0, 1);
+    let xml_p2 = query_page(1, 1);
+    let xml_p3 = query_page(2, 1);
+    let xml_p4 = query_page(3, 1);
+
+    assert!(xml_p1.contains("n=\"first_unused\""), "{xml_p1}");
+    assert!(!xml_p1.contains("n=\"second_unused\""), "{xml_p1}");
+    assert!(!xml_p1.contains("n=\"third_unused\""), "{xml_p1}");
+
+    assert!(xml_p2.contains("n=\"second_unused\""), "{xml_p2}");
+    assert!(!xml_p2.contains("n=\"first_unused\""), "{xml_p2}");
+    assert!(!xml_p2.contains("n=\"third_unused\""), "{xml_p2}");
+
+    assert!(xml_p3.contains("n=\"third_unused\""), "{xml_p3}");
+    assert!(!xml_p3.contains("n=\"first_unused\""), "{xml_p3}");
+    assert!(!xml_p3.contains("n=\"second_unused\""), "{xml_p3}");
+
+    let exhausted = roxmltree::Document::parse(&xml_p4).unwrap();
+    assert!(!exhausted.descendants().any(|node| node.has_tag_name("d")));
+}
+
+#[test]
+fn dead_code_detects_static_prototype_linkage_inheritance() {
+    let source_c =
+        b"static int inherited_helper(void);\n\nint inherited_helper(void) {\nreturn 42;\n}\n";
+    let (ingest, graph, interner) = corpus(&[("src/inherited.c", Lang::C, source_c.as_slice())]);
+    let sources: &[(&str, &[u8])] = &[("src/inherited.c", source_c)];
+    let page = ripwire_rs::cli::TopModifierArgs::default();
+    let mut out = Vec::new();
+    let ctx = ripwire_rs::cli::arch::DeadCodeContext {
+        root: ":memory:",
+        sources: &sources,
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+        page: &page,
+    };
+    ripwire_rs::cli::arch::execute_dead_code_query_paged(&ctx, &mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(xml.contains("n=\"inherited_helper\""), "{xml}");
+}
+
+#[test]
+fn dead_code_does_not_inherit_linkage_from_parameter_names_or_other_overloads() {
+    let c = b"static int unrelated(int public_worker);\nint public_worker(void) {\nreturn 1;\n}\nstatic int c_dead(void) {\nreturn 2;\n}\n";
+    let cpp = b"static int select_value(int value);\nint select_value(double value) {\nreturn 0;\n}\nstatic int cpp_dead(void) {\nreturn 2;\n}\n";
+    let (ingest, graph, interner) = corpus(&[
+        ("src/linkage.c", Lang::C, c.as_slice()),
+        ("src/linkage.cpp", Lang::Cpp, cpp.as_slice()),
+    ]);
+    let sources = [
+        ("src/linkage.c", c.as_slice()),
+        ("src/linkage.cpp", cpp.as_slice()),
+    ];
+    let page = ripwire_rs::cli::TopModifierArgs::default();
+    let context = ripwire_rs::cli::arch::DeadCodeContext {
+        root: ":memory:",
+        sources: &sources,
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+        page: &page,
+    };
+    let mut out = Vec::new();
+    ripwire_rs::cli::arch::execute_dead_code_query_paged(&context, &mut out).unwrap();
+    let report = roxmltree::Document::parse(std::str::from_utf8(&out).unwrap()).unwrap();
+    let dead: Vec<_> = report
+        .descendants()
+        .filter(|node| node.has_tag_name("d"))
+        .map(|node| node.attribute("n").unwrap())
+        .collect();
+    assert_eq!(dead, ["c_dead", "cpp_dead"]);
+}

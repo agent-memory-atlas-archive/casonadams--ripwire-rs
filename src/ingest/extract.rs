@@ -25,6 +25,7 @@ pub struct RawRef {
     pub callee_name: String,
     pub qualifier: Option<String>,
     pub line: u32,
+    pub name_line: u32,
     pub start_byte: usize,
     pub role: RefRole,
     pub arg_count: u16,
@@ -33,6 +34,8 @@ pub struct RawRef {
     pub lang: Option<crate::domain::Lang>,
     /// Bare identifier receiver (`x` in `x.f()`) not kept as the qualifier.
     pub receiver: Option<String>,
+    pub receiver_type: Option<String>,
+    pub callable_field: bool,
 }
 
 /// Parsed facts from a single file.
@@ -43,6 +46,8 @@ pub struct FileParseResult {
     pub defs: Vec<RawDef>,
     pub refs: Vec<RawRef>,
     pub foreign_exports: Vec<crate::languages::ForeignExport>,
+    pub callable_bindings: Vec<crate::languages::CallableBinding>,
+    pub implementations: Vec<crate::languages::Implementation>,
 }
 
 pub enum Capture {
@@ -232,7 +237,7 @@ fn extract_member_receiver_qualifier(
 ) -> Option<String> {
     let recv = member_access_receiver(parent, name_node, lang)?;
     let text = recv.utf8_text(source_bytes).ok()?.trim();
-    if lang.semantics().self_receivers().contains(&text) {
+    if lang != Lang::Rust && lang.semantics().self_receivers().contains(&text) {
         return find_enclosing_scope(name_node, source_bytes, lang);
     }
     let keep = is_pascal_type_ident(text) || lang.semantics().is_std_or_builtin_qualifier(text);
@@ -270,10 +275,20 @@ fn find_call_qualifier(
             .or_else(|| parent.child_by_field_name("scope"))
         && let Ok(text) = path_node.utf8_text(source_bytes)
     {
-        let last = text.rsplit("::").next().unwrap_or(text);
-        let base = last.split('<').next().unwrap_or(last).trim();
-        if !base.is_empty() {
-            return Some(base.to_string());
+        if lang == Lang::Rust
+            && text.trim() == "Self"
+            && let Some(scope) = find_enclosing_scope(name_node, source_bytes, lang)
+        {
+            return Some(scope);
+        }
+        let clean = if lang == Lang::Rust {
+            text.split('<').next().unwrap_or(text).trim()
+        } else {
+            let last = text.rsplit("::").next().unwrap_or(text);
+            last.split('<').next().unwrap_or(last).trim()
+        };
+        if !clean.is_empty() {
+            return Some(clean.to_string());
         }
     }
     extract_member_receiver_qualifier(parent, name_node, source_bytes, lang)
@@ -493,6 +508,79 @@ fn record_def_item(
     });
 }
 
+fn ref_is_skipped(ext: &MatchExtract<'_>, name: &str, role: RefRole, lang: Lang) -> bool {
+    let is_pkg_prefix_extends = role == RefRole::Extends
+        && ext
+            .name_node
+            .and_then(|n| n.next_sibling())
+            .is_some_and(|s| s.kind() == ".");
+    is_pkg_prefix_extends
+        || lang.semantics().is_builtin_keyword(name)
+        || (role == RefRole::Call && lang.semantics().should_ignore_call(ext.name_node, name))
+        || (role == RefRole::Read
+            && ext
+                .name_node
+                .is_some_and(|node| !lang.semantics().is_read_capture_allowed(node)))
+}
+
+fn ref_qualifiers(
+    ext: &MatchExtract<'_>,
+    inline_qual: Option<String>,
+    role: RefRole,
+    lang: Lang,
+    source_bytes: &[u8],
+) -> (Option<String>, Option<String>) {
+    if role == RefRole::Extends && lang == Lang::Rust {
+        let recv_ty = ext
+            .name_node
+            .and_then(|n| find_enclosing_scope(n, source_bytes, lang));
+        let qual = inline_qual.or_else(|| {
+            ext.name_node
+                .and_then(|n| find_call_qualifier(n, source_bytes, lang))
+        });
+        return (qual, recv_ty);
+    }
+    let qual = inline_qual.or_else(|| {
+        ext.name_node.and_then(|n| {
+            if role == RefRole::Extends {
+                find_enclosing_scope(n, source_bytes, lang)
+            } else {
+                find_call_qualifier(n, source_bytes, lang)
+            }
+        })
+    });
+    (qual, None)
+}
+
+fn is_shadowed_by_parameter(
+    ext: &MatchExtract<'_>,
+    name: &str,
+    role: RefRole,
+    lang: Lang,
+    source_bytes: &[u8],
+) -> bool {
+    let shadow_applies = role == RefRole::Read
+        || (role == RefRole::Call && lang.semantics().parameters_shadow_calls());
+    shadow_applies
+        && ext
+            .name_node
+            .is_some_and(|n| !is_member_access(n) && is_enclosing_parameter(n, name, source_bytes))
+}
+
+fn callable_field_access(name_node: Option<tree_sitter::Node<'_>>) -> bool {
+    name_node.is_some_and(|n| {
+        n.parent().is_some_and(|p| {
+            p.kind() == "field_expression"
+                && p.parent().is_some_and(|pp| {
+                    pp.kind() == "parenthesized_expression"
+                        && pp
+                            .parent()
+                            .is_some_and(|ppp| ppp.kind() == "call_expression")
+                })
+        })
+    })
+}
+
 fn record_ref_item(
     ext: &MatchExtract<'_>,
     source_bytes: &[u8],
@@ -507,31 +595,13 @@ fn record_ref_item(
     } else {
         split_top_level_qualified(raw_name)
     };
-    let is_pkg_prefix_extends = role == RefRole::Extends
-        && ext
-            .name_node
-            .and_then(|n| n.next_sibling())
-            .is_some_and(|s| s.kind() == ".");
-    if is_pkg_prefix_extends
-        || lang.semantics().is_builtin_keyword(name)
-        || (role == RefRole::Call && lang.semantics().should_ignore_call(ext.name_node, name))
-        || (role == RefRole::Read
-            && ext
-                .name_node
-                .is_some_and(|node| !lang.semantics().is_read_capture_allowed(node)))
-    {
+    if ref_is_skipped(ext, name, role, lang) {
         return;
     }
-
-    let qualifier = inline_qual.or_else(|| {
-        ext.name_node.and_then(|n| {
-            if role == RefRole::Extends {
-                find_enclosing_scope(n, source_bytes, lang)
-            } else {
-                find_call_qualifier(n, source_bytes, lang)
-            }
-        })
-    });
+    let (qualifier, receiver_type) = ref_qualifiers(ext, inline_qual, role, lang, source_bytes);
+    if qualifier.is_none() && is_shadowed_by_parameter(ext, name, role, lang, source_bytes) {
+        return;
+    }
     let receiver = qualifier
         .is_none()
         .then(|| {
@@ -539,21 +609,10 @@ fn record_ref_item(
                 .and_then(|n| bare_member_receiver(n, source_bytes, lang))
         })
         .flatten();
-    let shadow_applies = role == RefRole::Read
-        || (role == RefRole::Call && lang.semantics().parameters_shadow_calls());
-    if qualifier.is_none()
-        && shadow_applies
-        && ext
-            .name_node
-            .is_some_and(|n| !is_member_access(n) && is_enclosing_parameter(n, name, source_bytes))
-    {
-        return;
-    }
     let (arg_count, arg_count_known) = ext
         .name_node
         .map(count_call_arguments)
         .unwrap_or((0, false));
-
     let callee_name = if role == RefRole::Call {
         lang.semantics()
             .format_callee_name(name, arg_count, arg_count_known)
@@ -564,12 +623,17 @@ fn record_ref_item(
         callee_name,
         qualifier,
         line,
+        name_line: ext
+            .name_node
+            .map_or(line, |n| n.start_position().row as u32 + 1),
         start_byte: start,
         role,
         arg_count,
         arg_count_known,
         lang: None,
         receiver,
+        receiver_type,
+        callable_field: callable_field_access(ext.name_node),
     });
 }
 
@@ -659,12 +723,15 @@ fn scan_macro_body_calls(
                 callee_name: ident.to_string(),
                 qualifier: None,
                 line,
+                name_line: line,
                 start_byte: start_byte.saturating_add(1),
                 role: RefRole::Call,
                 arg_count: 0,
                 arg_count_known: false,
                 lang: None,
                 receiver: None,
+                receiver_type: None,
+                callable_field: false,
             });
         }
     }
@@ -806,12 +873,15 @@ fn scan_sql_tokens_in_literal(text: &str, start_byte: usize, line: u32, refs: &m
                     callee_name: table.to_string(),
                     qualifier: None,
                     line,
+                    name_line: line,
                     start_byte,
                     role,
                     arg_count: 0,
                     arg_count_known: false,
                     lang: Some(Lang::Sql),
                     receiver: None,
+                    receiver_type: None,
+                    callable_field: false,
                 });
             }
         }
@@ -914,6 +984,14 @@ pub fn parse_file_tree(
             reference.role != RefRole::Read
                 || !bindings.shadows(&reference.callee_name, reference.start_byte)
         });
+        for r in &mut refs {
+            if r.receiver_type.is_none()
+                && let Some(receiver) = &r.receiver
+                && let Some(ty) = bindings.type_at(receiver, r.start_byte)
+            {
+                r.receiver_type = Some(ty.to_string());
+            }
+        }
         if lang.semantics().supports_embedded_sql() && has_sql_dml_anchor_bytes(source_bytes) {
             extract_embedded_sql_refs(tree.root_node(), source_bytes, &mut refs);
         }
@@ -939,6 +1017,12 @@ pub fn parse_file_tree(
             foreign_exports: lang
                 .semantics()
                 .foreign_exports(tree.root_node(), source_bytes),
+            callable_bindings: lang
+                .semantics()
+                .callable_bindings(tree.root_node(), source_bytes),
+            implementations: lang
+                .semantics()
+                .implementations(tree.root_node(), source_bytes),
         }
     })
 }

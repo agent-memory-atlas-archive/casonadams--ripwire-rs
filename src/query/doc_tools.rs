@@ -1,9 +1,26 @@
 pub use super::branch_tools::*;
 
 use crate::domain::{IngestResult, Interner};
+use crate::query::{FileSources, SourceReader};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::fs;
+
+pub fn execute_mentions_query<W: std::io::Write>(
+    root: &str,
+    ingest: &IngestResult,
+    interner: &Interner,
+    symbol: &str,
+    out: &mut W,
+) -> std::io::Result<()> {
+    if crate::navigate::find_symbols_by_name(symbol, ingest, interner).is_empty() {
+        return Err(std::io::Error::other(format!(
+            "ripwire-rs: --mentions symbol not found: {symbol}"
+        )));
+    }
+    let report = call_mentions_in_root(root, ingest, interner, symbol);
+    crate::serialize::serialize_mentions_xml(&report, out)
+}
 
 pub fn call_mentions_in_root(
     root: &str,
@@ -11,14 +28,30 @@ pub fn call_mentions_in_root(
     interner: &Interner,
     symbol_name: &str,
 ) -> Value {
+    mentions_from_sources(
+        &FileSources {
+            root: std::path::Path::new(root),
+        },
+        ingest,
+        interner,
+        symbol_name,
+    )
+}
+
+pub fn mentions_from_sources(
+    sources: &(impl SourceReader + ?Sized),
+    ingest: &IngestResult,
+    interner: &Interner,
+    symbol_name: &str,
+) -> Value {
     let mut matching_docs = Vec::new();
     let backtick_target = format!("`{symbol_name}`");
-    let root_path = std::path::Path::new(root);
 
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
         if file.lang.semantics().is_prose_document()
-            && let Ok(content) = crate::domain::read_rel_string(root_path, path)
+            && let Ok(bytes) = sources.read(path)
+            && let Ok(content) = std::str::from_utf8(&bytes)
         {
             let occurrences = content.matches(&backtick_target).count();
             if occurrences > 0 {
@@ -466,27 +499,43 @@ pub fn collect_file_wanted_tokens(
     found
 }
 
-fn extend_from_scm_queries(
-    root_path: &std::path::Path,
-    wants_first: &[bool; 256],
-    wanted: &std::collections::HashSet<String>,
-    found_in_code: &mut std::collections::HashSet<String>,
-) {
-    let Ok(entries) = fs::read_dir(root_path.join("src/queries")) else {
-        return;
+fn scm_query_paths(root: &std::path::Path) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(root.join("src/queries")) else {
+        return Vec::new();
     };
-    for entry in entries.flatten() {
-        let scm_path = entry.path().join("tags.scm");
-        if let Ok(bytes) = fs::read(&scm_path) {
-            found_in_code.extend(collect_file_wanted_tokens(&bytes, wants_first, wanted));
-        }
-    }
+    entries
+        .flatten()
+        .filter_map(|entry| {
+            entry
+                .path()
+                .join("tags.scm")
+                .strip_prefix(root)
+                .ok()
+                .map(|path| path.to_string_lossy().into_owned())
+        })
+        .collect()
 }
 
 pub fn filter_present_in_code_drift(
     root_path: &std::path::Path,
     ingest: &IngestResult,
     interner: &Interner,
+    drift_items: &mut Vec<Value>,
+) {
+    filter_present_in_sources_drift(
+        &FileSources { root: root_path },
+        ingest,
+        interner,
+        &scm_query_paths(root_path),
+        drift_items,
+    );
+}
+
+pub fn filter_present_in_sources_drift(
+    sources: &(impl SourceReader + ?Sized),
+    ingest: &IngestResult,
+    interner: &Interner,
+    extra_paths: &[String],
     drift_items: &mut Vec<Value>,
 ) {
     use rayon::prelude::*;
@@ -510,12 +559,17 @@ pub fn filter_present_in_code_drift(
         .filter(|f| !f.lang.semantics().is_prose_document())
         .flat_map_iter(|f| {
             let rel = interner.resolve(&f.path);
-            crate::domain::read_rel_bytes(root_path, rel)
+            sources
+                .read(rel)
                 .map(|bytes| collect_file_wanted_tokens(&bytes, &wants_first, &wanted))
                 .unwrap_or_default()
         })
         .collect();
-    extend_from_scm_queries(root_path, &wants_first, &wanted, &mut found_in_code);
+    for path in extra_paths {
+        if let Ok(bytes) = sources.read(path) {
+            found_in_code.extend(collect_file_wanted_tokens(&bytes, &wants_first, &wanted));
+        }
+    }
     drift_items.retain(|d| {
         if d["kind"].as_str() == Some("symbol")
             && let Some(sym) = d["referenced"].as_str()
@@ -537,7 +591,7 @@ struct CorpusDocSummary {
 }
 
 fn scan_corpus_markdown_docs(
-    root_path: &std::path::Path,
+    sources: &(impl SourceReader + ?Sized),
     ingest: &IngestResult,
     interner: &Interner,
     file_map: &HashMap<&str, u32>,
@@ -550,15 +604,18 @@ fn scan_corpus_markdown_docs(
         if !file.lang.semantics().is_prose_document() {
             continue;
         }
-        let Ok(text) = crate::domain::read_rel_string(root_path, doc_path) else {
+        let Ok(bytes) = sources.read(doc_path) else {
+            continue;
+        };
+        let Ok(text) = std::str::from_utf8(&bytes) else {
             continue;
         };
         summary.docs_scanned += 1;
-        if is_dated_or_historical_doc(doc_path, &text) {
+        if is_dated_or_historical_doc(doc_path, text) {
             summary.dated_docs += 1;
         } else {
             let c = scan_doc_text_for_drift(
-                &text,
+                text,
                 doc_path,
                 file_map,
                 sym_set,
@@ -580,6 +637,49 @@ pub fn call_doc_drift_with_history(
     interner: &Interner,
     with_history: bool,
 ) -> Value {
+    doc_drift_with_sources_and_history(
+        root,
+        &FileSources {
+            root: std::path::Path::new(root),
+        },
+        ingest,
+        interner,
+        with_history,
+    )
+}
+
+pub fn doc_drift_with_sources_and_history(
+    root: &str,
+    sources: &(impl SourceReader + ?Sized),
+    ingest: &IngestResult,
+    interner: &Interner,
+    with_history: bool,
+) -> Value {
+    let mut result = doc_drift_from_sources(
+        root,
+        sources,
+        ingest,
+        interner,
+        &scm_query_paths(std::path::Path::new(root)),
+    );
+    if with_history {
+        let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
+        if let Some(items) = result["drift"].as_array_mut() {
+            for item in items {
+                enrich_drift_item_history(root, item, &head_sha);
+            }
+        }
+    }
+    result
+}
+
+pub fn doc_drift_from_sources(
+    root: &str,
+    sources: &(impl SourceReader + ?Sized),
+    ingest: &IngestResult,
+    interner: &Interner,
+    extra_paths: &[String],
+) -> Value {
     let mut drift_items = Vec::new();
     let file_map: HashMap<&str, u32> = ingest
         .files
@@ -587,22 +687,15 @@ pub fn call_doc_drift_with_history(
         .map(|f| (interner.resolve(&f.path), f.line_count))
         .collect();
     let sym_set = build_known_code_ident_set(ingest, interner);
-    let root_path = std::path::Path::new(root);
     let summary = scan_corpus_markdown_docs(
-        root_path,
+        sources,
         ingest,
         interner,
         &file_map,
         &sym_set,
         &mut drift_items,
     );
-    filter_present_in_code_drift(root_path, ingest, interner, &mut drift_items);
-    if with_history {
-        let head_sha = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
-        for item in &mut drift_items {
-            enrich_drift_item_history(root, item, &head_sha);
-        }
-    }
+    filter_present_in_sources_drift(sources, ingest, interner, extra_paths, &mut drift_items);
     let drifted_docs: std::collections::HashSet<&str> = drift_items
         .iter()
         .filter_map(|d| d["doc"].as_str())
@@ -946,12 +1039,15 @@ impl FlagsScanTally {
 }
 
 fn scan_file_flags(
-    root_path: &std::path::Path,
+    sources: &(impl SourceReader + ?Sized),
     path: &str,
     lang: crate::domain::Lang,
     tally: &mut FlagsScanTally,
 ) {
-    let Ok(text) = crate::domain::read_rel_string(root_path, path) else {
+    let Ok(bytes) = sources.read(path) else {
+        return;
+    };
+    let Ok(text) = std::str::from_utf8(&bytes) else {
         return;
     };
     let lines: Vec<&str> = text.lines().collect();
@@ -1017,26 +1113,39 @@ fn literal_block_lines(lines: &[&str], lang: crate::domain::Lang) -> Vec<bool> {
     literal
 }
 
-fn scan_cmake_flag_files(root_path: &std::path::Path, tally: &mut FlagsScanTally) {
+fn scan_cmake_flag_files(sources: &(impl SourceReader + ?Sized), tally: &mut FlagsScanTally) {
     for cmake_rel in ["CMakeLists.txt", "cmake/options.cmake"] {
-        if root_path.join(cmake_rel).is_file() {
-            let lang = crate::domain::Lang::from_path(std::path::Path::new(cmake_rel));
-            scan_file_flags(root_path, cmake_rel, lang, tally);
-        }
+        let lang = crate::domain::Lang::from_path(std::path::Path::new(cmake_rel));
+        scan_file_flags(sources, cmake_rel, lang, tally);
     }
 }
 
 pub fn call_flags_in_root(root: &str, ingest: &IngestResult, interner: &Interner) -> Value {
-    let root_path = std::path::Path::new(root);
+    flags_from_sources(
+        root,
+        &FileSources {
+            root: std::path::Path::new(root),
+        },
+        ingest,
+        interner,
+    )
+}
+
+pub fn flags_from_sources(
+    root: &str,
+    sources: &(impl SourceReader + ?Sized),
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> Value {
     let mut tally = FlagsScanTally::default();
 
     for file in &ingest.files {
         if !file.lang.semantics().is_prose_document() {
             let path = interner.resolve(&file.path);
-            scan_file_flags(root_path, path, file.lang, &mut tally);
+            scan_file_flags(sources, path, file.lang, &mut tally);
         }
     }
-    scan_cmake_flag_files(root_path, &mut tally);
+    scan_cmake_flag_files(sources, &mut tally);
     tally.resolve_settings_gates();
 
     let mut flags = Vec::with_capacity(tally.by_key.len());

@@ -71,7 +71,7 @@ coverage: ## Generate LCOV and nextest JUnit reports with quiet test output
 .PHONY: crap
 crap: coverage ## Evaluate CRAP metrics and gate on functions exceeding threshold 30 or emitting warnings
 	@err=$$(mktemp); \
-	$(CARGO) crap --path . --lcov target/lcov.info --threshold 30 --fail-above >/dev/null 2>"$$err" || { cat "$$err" >&2; rm -f "$$err"; exit 1; }; \
+	$(CARGO) crap --path . --lcov target/lcov.info --threshold 30 --fail-above --format github >/dev/null 2>"$$err" || { cat "$$err" >&2; rm -f "$$err"; exit 1; }; \
 	if [ -s "$$err" ]; then cat "$$err" >&2; rm -f "$$err"; exit 1; fi; \
 	rm -f "$$err"
 

@@ -321,7 +321,7 @@ fn serve_headless(c: &Candidate<'_>, allowance: usize) -> ServedDoc {
         return doc;
     }
     let (part, _) = truncate_lines(text, allowance);
-    doc.body = format!("{part}…");
+    doc.body = format!("{part}\u{2026}");
     doc.truncated = Some((part.len(), text.len()));
     doc
 }
@@ -355,7 +355,7 @@ fn serve_sections(c: &Candidate<'_>, allowance: usize) -> ServedDoc {
             .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
         let s = c.sections[top.map_or(0, |h| h.0)];
         let (part, lines) = truncate_lines(&text[s.start_byte..s.end_byte], allowance);
-        doc.body = format!("{part}…");
+        doc.body = format!("{part}\u{2026}");
         doc.truncated = Some((part.len(), s.bytes()));
         spans.push((s.start_line, s.start_line + lines - 1));
     } else {

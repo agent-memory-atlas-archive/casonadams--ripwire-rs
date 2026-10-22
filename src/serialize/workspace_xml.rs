@@ -528,23 +528,76 @@ pub fn serialize_expand_xml<W: Write>(
     items: &[(&crate::domain::Symbol, &str, &str, &str)],
     out: &mut W,
 ) -> io::Result<()> {
-    writeln!(
+    let items: Vec<_> = items
+        .iter()
+        .map(|(symbol, name, path, body)| BodyItem {
+            symbol,
+            name,
+            path,
+            body,
+            range: None,
+        })
+        .collect();
+    crate::serialize::XmlReport::render_envelope(
+        &BodyReport {
+            root,
+            items: &items,
+        },
         out,
-        "<ctx schema=\"ripwire-rs.expand/v1\" root=\"{root}\"><bodies shown=\"{}\" total=\"{}\">",
-        items.len(),
-        items.len()
-    )?;
-    for (sym, name, path, body) in items {
+    )
+}
+
+pub struct BodyItem<'a> {
+    pub symbol: &'a crate::domain::Symbol,
+    pub name: &'a str,
+    pub path: &'a str,
+    pub body: &'a str,
+    pub range: Option<(usize, usize, usize)>,
+}
+
+pub struct BodyReport<'a> {
+    pub root: &'a str,
+    pub items: &'a [BodyItem<'a>],
+}
+
+impl crate::serialize::XmlReport for BodyReport<'_> {
+    fn schema_tag(&self) -> &'static str {
+        "ctx"
+    }
+    fn schema_version(&self) -> &'static str {
+        "ripwire-rs.expand/v1"
+    }
+    fn root_path(&self) -> &str {
+        self.root
+    }
+    fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         writeln!(
             out,
-            "  <b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\"><![CDATA[{body}]]></b>",
-            sym.kind,
-            sym.line,
-            path.xml_escaped(),
-            name.xml_escaped()
+            "<bodies shown=\"{}\" total=\"{}\">",
+            self.items.len(),
+            self.items.len()
         )?;
+        for item in self.items {
+            write!(
+                out,
+                "  <b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\"",
+                item.symbol.kind,
+                item.symbol.line,
+                item.path.xml_escaped(),
+                item.name.xml_escaped()
+            )?;
+            if let Some((total, start, end)) = item.range {
+                write!(
+                    out,
+                    " total_lines=\"{total}\" start_line=\"{start}\" end_line=\"{end}\""
+                )?;
+            }
+            out.write_all(b">")?;
+            crate::serialize::write_cdata(out, item.body)?;
+            writeln!(out, "</b>")?;
+        }
+        writeln!(out, "</bodies>")
     }
-    writeln!(out, "</bodies></ctx>")
 }
 
 /// Top symbol representation in tree view.

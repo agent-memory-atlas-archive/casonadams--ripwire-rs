@@ -62,7 +62,6 @@ fn write_for_inner_body<W: Write>(
     task: &str,
     raw_task: &str,
 ) -> io::Result<()> {
-    let mut bodies_to_show = Vec::new();
     let items = val["symbols"].as_array();
     let sig_cnt = items.map_or(0, Vec::len);
     if sig_cnt >= 25 {
@@ -76,15 +75,6 @@ fn write_for_inner_body<W: Write>(
     if let Some(items) = items {
         for (idx, it) in items.iter().enumerate() {
             write_for_sig_row(out, idx, it)?;
-            let raw_name = it.str_or("name", "");
-            let b_str = it.str_any(&["body", "sig"], raw_name).to_string();
-            if bodies_to_show.is_empty() {
-                let kind = it.str_or("kind", "fn").to_string();
-                let line = it.u64_or("line", 0);
-                let path = escape_xml_str(it.str_or("path", ""));
-                let name = escape_xml_str(raw_name);
-                bodies_to_show.push((kind, line, path, name, b_str));
-            }
         }
     }
     write!(out, "</sigs>")?;
@@ -92,13 +82,23 @@ fn write_for_inner_body<W: Write>(
     write_for_compose_section(out, val, raw_task)?;
     write_for_tree_and_docs(out, val)?;
     write_for_hops_section(out, val)?;
-    let n = bodies_to_show.len();
+    let n = items.map_or(0, |items| {
+        items.iter().filter(|item| item["body"].is_string()).count()
+    });
     write!(out, "<bodies shown=\"{n}\" total=\"{n}\" capped=\"0\">")?;
-    for (k, l, p, name, b) in bodies_to_show {
-        write!(
-            out,
-            "<b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{name}\"><![CDATA[{b}]]></b>"
-        )?;
+    for item in items.into_iter().flatten() {
+        if let Some(body) = item["body"].as_str() {
+            write!(
+                out,
+                "<b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\">",
+                item.str_or("kind", "fn").xml_escaped(),
+                item.u64_or("line", 0),
+                item.str_or("path", "").xml_escaped(),
+                item.str_or("name", "").xml_escaped()
+            )?;
+            crate::serialize::write_cdata(out, body)?;
+            write!(out, "</b>")?;
+        }
     }
     writeln!(out, "</bodies>")
 }
@@ -111,24 +111,28 @@ pub struct ForReport<'a> {
 impl crate::serialize::XmlReport for ForReport<'_> {
     crate::xml_report_meta!("ctx", "ripwire-rs.for/v1", root: false);
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        use crate::serialize::GitStampExt;
         let raw_task = self.val.str_or("task", "");
         let task = escape_xml_str(raw_task);
         let default_route = format!("name-exact({raw_task})");
         let route = escape_xml_str(self.val.str_or("route", &default_route));
         let raw_root = self.val.str_or("root", ".");
         let root = escape_xml_str(raw_root);
-        let at_stamp = raw_root.git_at_or_head();
         let confidence = escape_xml_str(self.val.str_or("confidence", "high"));
         let margin_pct = self.val.u64_or("margin_pct", 0);
         let coverage = self.val.u64_or("coverage", 100);
-        let bodies_cnt = self.val.u64_or("detail", 1).max(1);
+        let bodies_cnt = self.val["symbols"].as_array().map_or(0, |items| {
+            items.iter().filter(|item| item["body"].is_string()).count()
+        });
         let computed_tokens = ((self.inner.len() + 180) / 4).max(1) as u64;
         let est_tokens = self.val.u64_or("est_tokens", computed_tokens);
         write!(
             out,
-            " task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" at=\"{at_stamp}\" bundle=\"auto\" bodies=\"{bodies_cnt}\" est_tokens=\"{est_tokens}\""
-        )
+            " task=\"{task}\" route=\"{route}\" root=\"{root}\" confidence=\"{confidence}\" margin_pct=\"{margin_pct}\" coverage=\"{coverage}\" bundle=\"auto\" bodies=\"{bodies_cnt}\" est_tokens=\"{est_tokens}\""
+        )?;
+        if let Some(at) = self.val["at"].as_str() {
+            write!(out, " at=\"{}\"", at.xml_escaped())?;
+        }
+        Ok(())
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
         out.write_all(&self.inner)
@@ -277,7 +281,9 @@ fn write_grep_context<W: Write>(
     rows: Option<&Vec<Value>>,
 ) -> io::Result<()> {
     for t in rows.into_iter().flatten().filter_map(Value::as_str) {
-        write!(out, "<{tag}><![CDATA[{t}]]></{tag}>")?;
+        write!(out, "<{tag}>")?;
+        crate::serialize::write_cdata(out, t)?;
+        write!(out, "</{tag}>")?;
     }
     Ok(())
 }
@@ -299,7 +305,7 @@ fn write_grep_hit<W: Write>(out: &mut W, run: &[&Value]) -> io::Result<()> {
     };
     write!(out, "<hit l=\"{line}\"{enc}{n}>")?;
     write_grep_context(out, "b", h["before"].as_array())?;
-    write!(out, "<![CDATA[{}]]>", h.str_or("text", ""))?;
+    crate::serialize::write_cdata(out, h.str_or("text", ""))?;
     write_grep_context(out, "a", h["after"].as_array())?;
     for _ in &run[1..] {
         write!(out, "<at l=\"{line}\"{enc}/>")?;
@@ -577,9 +583,12 @@ impl crate::serialize::XmlReport for ConnectReport<'_> {
             .array_any(&["edges", "connections"])
             .map_or(0, Vec::len);
         let nodes = t_cnt + s_cnt;
+        let radius = self.val["radius"]
+            .as_u64()
+            .unwrap_or(u64::from(crate::query::graph::DEFAULT_CONNECT_RADIUS));
         write!(
             out,
-            " root=\"{root}\" symbols=\"{count}\" terminals=\"{t_cnt}\" nodes=\"{nodes}\" edges=\"{e_cnt}\" radius=\"6\""
+            " root=\"{root}\" symbols=\"{count}\" terminals=\"{t_cnt}\" nodes=\"{nodes}\" edges=\"{e_cnt}\" radius=\"{radius}\""
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -681,8 +690,8 @@ fn write_exemplar_calls_xml<W: Write>(out: &mut W, ex: &Value) -> io::Result<()>
 pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) -> io::Result<()> {
     let ex = val.get("exemplar").unwrap_or(val);
     let k = val.str_any(&["kind", "role"], "fn");
-    let n = ex.str_or("name", "");
-    let p = ex.str_or("path", "");
+    let n = ex.str_or("name", "").xml_escaped();
+    let p = ex.str_or("path", "").xml_escaped();
     let l = ex.u64_or("line", 1);
     let c = ex.u64_any(&["callers", "in"], 0);
     let cx = ex.u64_or("ccx", 0);
@@ -692,11 +701,13 @@ pub fn serialize_exemplar_xml<W: Write>(root: &str, val: &Value, out: &mut W) ->
     };
     let tested = ex.u64_or("tested", 0);
     let b = ex.str_or("body", "");
+    let root = root.xml_escaped();
 
     write!(
         out,
-        "<!-- ripwire-rs exemplar schema=ripwire-rs.exemplar/v1: the best-in-class instance of kind= for the task. -->\n<exemplar schema=\"ripwire-rs.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\"><![CDATA[{b}]]>",
+        "<!-- ripwire-rs exemplar schema=ripwire-rs.exemplar/v1: the best-in-class instance of kind= for the task. -->\n<exemplar schema=\"ripwire-rs.exemplar/v1\"{cand_attr} kind=\"{k}\" n=\"{n}\" p=\"{p}:{l}\" in=\"{c}\" ccx=\"{cx}\" root=\"{root}\" tested=\"{tested}\"><bodies shown=\"1\" total=\"1\" capped=\"0\"><b t=\"{k}\" l=\"{l}\" p=\"{p}\" n=\"{n}\">",
     )?;
+    crate::serialize::write_cdata(out, b)?;
     write_exemplar_calls_xml(out, ex)?;
     writeln!(out, "</b></bodies></exemplar>")
 }

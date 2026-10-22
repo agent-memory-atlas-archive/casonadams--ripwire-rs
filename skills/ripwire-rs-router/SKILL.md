@@ -90,7 +90,7 @@ Match the **default you were about to use**, not a moment:
 | `Grep` a concept ("where do we retry") | `--for="<the concept in words>"` — matches doc-comments and bodies, not just identifiers |
 | `Glob` for candidate files by name | `--for=` ranks by what the code DOES; a glob only knows paths |
 | paste a stack trace and hand-pick frames | `--from-trace=FILE` (`-` = stdin) — verbatim, ranked innermost-first |
-| `git diff` / `git log` to judge a change | `--situ` (blast radius + tests) · `--rank-by=churn` |
+| `git diff` / `git log` to judge a change | `--situ` (canonical XML: blast radius + tests) · `--hotspots` (change-frequency risk) |
 
 The discipline behind this row set is **ripwire-rs-orient**'s companion `map-before-you-read.md`; it is worth entering even mid-task, because
 less context is measurably MORE accurate, not merely cheaper (29% → 3% code-repair accuracy as context

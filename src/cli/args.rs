@@ -52,7 +52,7 @@ pub struct Cli {
     /// Node coloring mode for --html: lang, community, cx, churn, tested
     #[arg(long, default_value = "lang")]
     pub color_by: String,
-    /// Ranking signal: pagerank, authority, hub
+    /// Ranking signal: pagerank, authority, hub, degree, ccx, stable
     #[arg(long, default_value = "pagerank")]
     pub rank_by: String,
     /// Streaming budget in bytes (default 65536)
@@ -75,7 +75,7 @@ pub struct Cli {
     #[arg(long, default_value = "compact")]
     pub legend: String,
     /// Overlay SCIP compiler-backed index
-    #[arg(long = "scip", value_name = "FILE")]
+    #[arg(long = "scip", global = true, value_name = "FILE")]
     pub scip: Option<String>,
 
     /// Top-level symbol navigation flags
@@ -126,6 +126,9 @@ pub struct TopNavArgs {
     /// Query transitive impact blast radius of a symbol
     #[arg(long, value_name = "SYM")]
     pub impact: Option<String>,
+    /// Limit transitive impact traversal to N call hops
+    #[arg(long = "impact-depth", global = true, value_name = "N")]
+    pub impact_depth: Option<u32>,
     /// Query all static use-sites of a symbol
     #[arg(long, value_name = "SYM")]
     pub uses: Option<String>,
@@ -409,7 +412,7 @@ pub struct TopModifierArgs {
     /// Emit deterministic path-ordered map without volatile rank scores
     #[arg(long = "stable", overrides_with = "stable")]
     pub stable: bool,
-    /// Disable stable dependency violation section in --deps or opt out of MCP stable order
+    /// Disable the stable dependency violation section in --deps
     #[arg(long = "no-stable", overrides_with = "no_stable")]
     pub no_stable: bool,
     /// Drop unranked <inv> file inventory tier from map and metrics output
@@ -433,9 +436,6 @@ pub struct TopModifierArgs {
     /// Require authentication token for MCP transport
     #[arg(long = "mcp-token", value_name = "TOKEN")]
     pub mcp_token: Option<String>,
-    /// Legend posture for stdio MCP server (session|inline)
-    #[arg(long = "mcp-legend", value_name = "MODE")]
-    pub mcp_legend: Option<String>,
     /// Restrict exposed MCP tools to comma-separated list or profile (core|full)
     #[arg(long = "mcp-tools", value_name = "LIST")]
     pub mcp_tools: Option<String>,
@@ -587,8 +587,8 @@ pub struct TopRetrievalArgs {
     #[arg(long = "signatures-only")]
     pub signatures_only: bool,
     /// Connecting radius for --connect
-    #[arg(long = "connect-radius", default_value_t = 2)]
-    pub connect_radius: u32,
+    #[arg(long = "connect-radius", value_name = "N")]
+    pub connect_radius: Option<u32>,
     /// Lines before grep hit
     #[arg(long = "grep-before", value_name = "N")]
     pub grep_before: Option<usize>,
@@ -670,19 +670,19 @@ pub struct TopWorkspaceArgs {
 
 impl TopWorkspaceArgs {
     #[must_use]
-    pub fn active_edit_op(&self) -> Option<(&str, crate::mcp::edit::EditOp)> {
+    pub fn active_edit_op(&self) -> Option<(&str, crate::query::edit::EditOp)> {
         self.replace_symbol_body
             .as_deref()
-            .map(|s| (s, crate::mcp::edit::EditOp::ReplaceBody))
+            .map(|s| (s, crate::query::edit::EditOp::ReplaceBody))
             .or_else(|| {
                 self.insert_before_symbol
                     .as_deref()
-                    .map(|s| (s, crate::mcp::edit::EditOp::InsertBefore))
+                    .map(|s| (s, crate::query::edit::EditOp::InsertBefore))
             })
             .or_else(|| {
                 self.insert_after_symbol
                     .as_deref()
-                    .map(|s| (s, crate::mcp::edit::EditOp::InsertAfter))
+                    .map(|s| (s, crate::query::edit::EditOp::InsertAfter))
             })
     }
 }
@@ -947,8 +947,8 @@ pub trait VerbGroup {
 
 impl TopNavArgs {
     #[must_use]
-    pub fn active_query(&self) -> Option<(&str, super::queries::NavMode)> {
-        use super::queries::NavMode;
+    pub fn active_query(&self) -> Option<(&str, crate::query::navigation::NavMode)> {
+        use crate::query::navigation::NavMode;
         self.callers
             .as_deref()
             .map(|s| (s, NavMode::Callers))

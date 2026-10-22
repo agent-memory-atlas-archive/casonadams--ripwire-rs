@@ -68,6 +68,24 @@ pub mod python;
 pub mod reads;
 pub mod ruby;
 pub mod rust;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallableBinding {
+    pub owner: String,
+    pub field: String,
+    pub target: Option<String>,
+    pub start_byte: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Implementation {
+    pub subject: String,
+    pub trait_path: Option<String>,
+    pub subject_bound: Option<String>,
+    pub generic_subject: bool,
+    pub start_byte: usize,
+    pub end_byte: usize,
+}
 pub mod scala;
 pub mod solidity;
 pub mod source;
@@ -248,6 +266,19 @@ pub trait LanguageSemantics: Sync {
         reads::ReadBindings::default()
     }
 
+    fn callable_bindings(
+        &self,
+        _root: tree_sitter::Node<'_>,
+        _source: &[u8],
+    ) -> Vec<CallableBinding> {
+        Vec::new()
+    }
+
+    /// Impl blocks with exact byte spans, used to attribute body methods to their subject and trait.
+    fn implementations(&self, _root: tree_sitter::Node<'_>, _source: &[u8]) -> Vec<Implementation> {
+        Vec::new()
+    }
+
     /// True if `--layout` C-family byte-layout modeling is supported.
     fn supports_c_layout(&self) -> bool {
         false
@@ -359,6 +390,19 @@ pub trait LanguageSemantics: Sync {
     /// Format a call reference's target name (e.g., Elixir `name/arity`).
     fn format_callee_name(&self, name: &str, _arg_count: u16, _arg_count_known: bool) -> String {
         name.to_string()
+    }
+
+    fn supports_internal_linkage(&self) -> bool {
+        false
+    }
+
+    fn is_internal_function(
+        &self,
+        _root: tree_sitter::Node<'_>,
+        _name_byte: usize,
+        _source: &[u8],
+    ) -> bool {
+        false
     }
 
     /// Optional language-specific enclosing scope extractor for non-standard container AST shapes.

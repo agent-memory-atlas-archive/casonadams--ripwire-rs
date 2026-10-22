@@ -34,6 +34,15 @@ pub fn attach_test_runners(
     ingest: &IngestResult,
     interner: &Interner,
 ) {
+    attach_test_runners_from_sources(tests, &crate::query::FileSources { root }, ingest, interner);
+}
+
+pub fn attach_test_runners_from_sources(
+    tests: &mut [AffectedTest],
+    sources: &(impl crate::query::SourceReader + ?Sized),
+    ingest: &IngestResult,
+    interner: &Interner,
+) {
     let indexed: HashMap<&str, Lang> = ingest
         .files
         .iter()
@@ -44,13 +53,19 @@ pub fn attach_test_runners(
             continue;
         };
         let semantics = lang.semantics();
-        let Ok(source) = crate::domain::read_rel_string(root, &test.path) else {
+        let Ok(bytes) = sources.read(&test.path) else {
+            continue;
+        };
+        let Ok(source) = std::str::from_utf8(&bytes) else {
             continue;
         };
         let manifest = semantics
             .test_runner_manifest()
             .and_then(|name| nearest_manifest(&test.path, name, &indexed))
-            .and_then(|p| crate::domain::read_rel_string(root, p).ok());
-        test.run = semantics.test_run_command(&test.path, &source, manifest.as_deref());
+            .and_then(|p| sources.read(p).ok());
+        let manifest = manifest
+            .as_deref()
+            .and_then(|bytes| std::str::from_utf8(bytes).ok());
+        test.run = semantics.test_run_command(&test.path, source, manifest);
     }
 }

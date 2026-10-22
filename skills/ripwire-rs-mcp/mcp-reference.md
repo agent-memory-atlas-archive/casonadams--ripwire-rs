@@ -16,10 +16,8 @@ printf '%s' "$BLOCK" | ripwire-rs ROOT --insert-before-symbol=SYM --edit-payload
 These flags and the MCP verbs below call the same transaction-safe edit engine. MCP is useful when its
 workspace is already warm or the client has no shell.
 
-`replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol` — ripwire's WRITE verbs (33
-verbs total: the 17 read verbs incl. `fetch_body`/`slice`/`rank_by` + the 13 flagship-reflex verbs (incl.
-`explore`/`from_trace`/`edit_check`/`affected`) + these 3 edit). Each locates a symbol's definition in the
-already-parsed index and splices text at its byte span:
+`replace_symbol_body`, `insert_before_symbol`, `insert_after_symbol` are ripwire's WRITE verbs.
+Each locates a symbol's definition in the already-parsed index and splices text at its byte span:
 
 | Verb | Args | Does |
 |---|---|---|
@@ -74,7 +72,7 @@ signature-through-closing-brace or nothing).
 
 ## Server Behavior Worth Knowing
 
-- **Single `McpToolHandler` registry**: all 35 tools (`33` tools + `callers`/`callees` aliases) implement the `McpToolHandler` trait in `src/mcp/schema.rs` and `src/mcp/dispatch.rs`, guaranteeing 1:1 parity between `tools/list` schemas and `tools/call` execution.
-- **Session legend deduplication**: the first tool response in an MCP session attaches `"dictv": "ripwire-rs.legend-dict/v1"`, and subsequent responses attach `"about": { "legend": "ref", "dictv": "ripwire-rs.legend-dict/v1" }` unless `"legend": "compact"` is passed explicitly.
+- **Single `McpToolHandler` registry**: tool schemas and dispatch share the registry in `src/mcp/schema.rs` and `src/mcp/dispatch.rs`.
+- **Canonical read reports**: overlapping tools return the CLI XML/text in `result.content[0].text`, including canonical XML legend metadata rather than JSON summary objects.
 - **Automatic cache invalidation on edit**: `replace_symbol_body`, `insert_before_symbol`, and `insert_after_symbol` perform atomic write-rename operations and keep the workspace consistent.
 - **Graceful JSON-RPC errors**: unknown tools, missing parameters, or unresolvable symbols return structured JSON-RPC `-32602` / `-32603` error objects without terminating the stdio server.

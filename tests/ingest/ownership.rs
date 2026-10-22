@@ -1,4 +1,4 @@
-use ripwire_rs::cli::{NavMode, execute_nav_symbol_query};
+use ripwire_rs::query::navigation::{NavMode, execute_nav_symbol_query};
 use ripwire_rs::{
     Graph, IngestResult, Interner, Lang, LanguageRegistry, MODULE_SCOPE_NAME, NO_NODE,
     PageRankConfig, SymKind, find_affected_tests, ingest_in_memory_files, navigate_1hop,

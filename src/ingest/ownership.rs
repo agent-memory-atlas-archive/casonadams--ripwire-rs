@@ -47,7 +47,12 @@ pub fn build_file_references(
             if let Some(q) = &r.qualifier {
                 reference.qualifier = Some(interner.intern(q));
             }
+            if let Some(rt) = &r.receiver_type {
+                reference.receiver_type = Some(interner.intern(rt));
+            }
+            reference.callable_field = r.callable_field;
             reference.start_byte = r.start_byte as u32;
+            reference.name_line = r.name_line;
             reference.arg_count = r.arg_count;
             reference.arg_count_known = r.arg_count_known;
             reference

@@ -96,19 +96,8 @@ fn select_best_exemplar<'a>(
     best.map(|(sym, in_deg, r)| (sym, in_deg, candidate_count, r, low_conf))
 }
 
-/// Execute `exemplar` tool: get top-ranked symbol of a given kind to imitate.
-pub fn call_exemplar(
-    ingest: &IngestResult,
-    interner: &Interner,
-    ranks: &[f64],
-    role: &str,
-    graph: Option<&Graph>,
-) -> Value {
-    call_exemplar_in_root(".", ingest, interner, ranks, role, graph)
-}
-
 fn collect_exemplar_calls(
-    root: &str,
+    sources: &dyn crate::query::SourceReader,
     ingest: &IngestResult,
     interner: &Interner,
     graph: Option<&Graph>,
@@ -122,7 +111,10 @@ fn collect_exemplar_calls(
     g.callees(sym_id)
         .filter_map(|(cid, _)| ingest.symbols.get(cid as usize))
         .map(|csym| {
-            let sig = view.read_sym_signature(root, csym).unwrap_or_default();
+            let sig = sources
+                .read(view.sym_path(csym))
+                .map(|bytes| csym.extract_signature(&bytes, view.sym_name(csym)))
+                .unwrap_or_default();
             json!({
                 "name": view.sym_name(csym),
                 "line": csym.line,
@@ -133,7 +125,7 @@ fn collect_exemplar_calls(
 }
 
 pub fn call_exemplar_in_root(
-    root: &str,
+    sources: &dyn crate::query::SourceReader,
     ingest: &IngestResult,
     interner: &Interner,
     ranks: &[f64],
@@ -149,8 +141,14 @@ pub fn call_exemplar_in_root(
     let view = (ingest, interner);
     let name = view.sym_name(sym);
     let file_path = view.sym_path(sym);
-    let body = view.read_sym_source(root, sym);
-    let calls = collect_exemplar_calls(root, ingest, interner, graph, sym.id);
+    let body = match sources.read(file_path) {
+        Ok(bytes) => sym
+            .source_text(&bytes)
+            .map(std::borrow::Cow::into_owned)
+            .unwrap_or_default(),
+        Err(error) => return json!({ "error": format!("cannot read file '{file_path}': {error}") }),
+    };
+    let calls = collect_exemplar_calls(sources, ingest, interner, graph, sym.id);
     json!({
         "role": role,
         "kind": sym.kind.tag(),
@@ -164,7 +162,7 @@ pub fn call_exemplar_in_root(
         "ccx": sym.ccx,
         "tested": usize::from(in_deg > 0),
         "rank": (rank * 10000.0).round() / 10000.0,
-        "body": body.unwrap_or_default(),
+        "body": body,
         "calls": calls
     })
 }
@@ -181,7 +179,7 @@ fn resolve_implementor_symbol<'a>(
     {
         return Some(src_sym);
     }
-    let q_spur = r.qualifier?;
+    let q_spur = r.receiver_type.or(r.qualifier)?;
     ingest.symbols.iter().find(|s| {
         s.name == q_spur
             && (s.kind == SymKind::Class
@@ -219,32 +217,97 @@ fn collect_interface_methods(
     methods
 }
 
-pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &str) -> Value {
-    let iface_defs: Vec<&crate::domain::Symbol> = ingest
+fn rust_interface_methods(
+    ingest: &IngestResult,
+    interner: &Interner,
+    iface: Option<&crate::domain::Symbol>,
+) -> Vec<Value> {
+    let Some(iface) = iface else {
+        return Vec::new();
+    };
+    ingest
         .symbols
         .iter()
+        .filter(|symbol| {
+            symbol.file_id == iface.file_id
+                && symbol.lang == crate::domain::Lang::Rust
+                && symbol.kind == SymKind::Method
+                && symbol.sig_start_byte >= iface.sig_start_byte
+                && symbol.sig_start_byte < iface.end_byte
+        })
+        .map(|symbol| {
+            json!({
+                "name": interner.resolve(&symbol.name),
+                "line": symbol.line,
+                "params": symbol.params
+            })
+        })
+        .collect()
+}
+
+pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &str) -> Value {
+    let selected = crate::navigate::find_symbols_by_name(interface_name, ingest, interner);
+    if selected.is_empty() {
+        return json!({ "error": format!("ripwire-rs: --lego type not found: {interface_name}") });
+    }
+    let iface_defs: Vec<&crate::domain::Symbol> = selected
+        .iter()
+        .filter_map(|&id| ingest.symbols.get(id as usize))
         .filter(|s| {
-            interner.resolve(&s.name) == interface_name
-                && (s.kind == SymKind::Interface
-                    || s.kind == SymKind::Class
-                    || s.kind == SymKind::Struct)
+            matches!(
+                s.kind,
+                SymKind::Interface | SymKind::Class | SymKind::Struct
+            )
         })
         .collect();
     use crate::domain::CorpusView;
     let view = (ingest, interner);
     let iface_sym = iface_defs.first().copied();
     let iface_path = iface_sym.map_or("", |s| view.sym_path(s));
-    let methods = collect_interface_methods(
-        ingest,
-        interner,
-        iface_sym.map(|s| s.file_id),
-        iface_defs.len() <= 1,
-        interface_name,
-    );
+    let methods = if iface_sym.is_some_and(|s| s.lang == crate::domain::Lang::Rust) {
+        rust_interface_methods(ingest, interner, iface_sym)
+    } else {
+        collect_interface_methods(
+            ingest,
+            interner,
+            iface_sym.map(|s| s.file_id),
+            iface_defs.len() <= 1,
+            interface_name,
+        )
+    };
+    if let [iface] = iface_defs.as_slice()
+        && iface.lang == crate::domain::Lang::Rust
+        && iface.kind == SymKind::Interface
+    {
+        let index = crate::resolve::ResolutionIndex::build(ingest, interner);
+        let implementors = index
+            .rust_implementors(iface.id)
+            .into_iter()
+            .map(|id| {
+                let symbol = &ingest.symbols[id as usize];
+                json!({
+                    "name": view.sym_name(symbol),
+                    "kind": symbol.kind.tag(),
+                    "path": view.sym_path(symbol),
+                    "line": symbol.line
+                })
+            })
+            .collect::<Vec<_>>();
+        return json!({
+            "interface": interface_name,
+            "defined": true,
+            "defs": 1,
+            "path": iface_path,
+            "methods": methods,
+            "count": implementors.len(),
+            "implementors": implementors
+        });
+    }
     let mut implementors = Vec::new();
     let mut seen_impls = std::collections::HashSet::new();
     for r in &ingest.references {
         if r.role == RefRole::Extends
+            && r.lang != crate::domain::Lang::Rust
             && interner.resolve(&r.callee_name) == interface_name
             && let Some(src_sym) = resolve_implementor_symbol(ingest, r)
             && seen_impls.insert(src_sym.id)
@@ -271,7 +334,7 @@ pub fn call_lego(ingest: &IngestResult, interner: &Interner, interface_name: &st
     })
 }
 
-fn collect_recall_inputs(root_path: &std::path::Path) -> Vec<super::recall::RecallInput> {
+pub fn collect_recall_inputs(root_path: &std::path::Path) -> Vec<super::recall::RecallInput> {
     let mut inputs = Vec::new();
     for entry in ignore::WalkBuilder::new(root_path)
         .sort_by_file_path(Ord::cmp)
@@ -299,19 +362,18 @@ fn collect_recall_inputs(root_path: &std::path::Path) -> Vec<super::recall::Reca
 }
 
 /// Execute `memory_recall`: BM25-ranked document sections under a token ceiling.
-pub fn call_memory_recall_in_root(
-    root: &str,
+pub fn call_memory_recall(
+    inputs: &[super::recall::RecallInput],
     task: &str,
     top_k: Option<usize>,
     max_tokens: Option<usize>,
 ) -> Value {
-    let inputs = collect_recall_inputs(std::path::Path::new(root));
     let defaults = super::recall::RecallOptions::default();
     let opts = super::recall::RecallOptions {
         top_k: top_k.unwrap_or(defaults.top_k),
         max_tokens: max_tokens.unwrap_or(defaults.max_tokens),
     };
-    super::recall::recall(&inputs, task, opts).to_json(task)
+    super::recall::recall(inputs, task, opts).to_json(task)
 }
 
 fn line_matches_tokens(line: &str, tokens: &[&str]) -> bool {
@@ -341,7 +403,7 @@ pub fn match_pattern_on_text(text: &str, tokens: &[&str]) -> Vec<(u32, String)> 
 
 /// Execute `pattern` structural code-shaped search with `$NAME` / `$$$` wildcards.
 pub fn call_pattern_search(
-    root: &str,
+    sources: &dyn crate::query::SourceReader,
     ingest: &IngestResult,
     interner: &Interner,
     pattern: &str,
@@ -352,14 +414,13 @@ pub fn call_pattern_search(
         .filter(|t| !t.starts_with('$'))
         .collect();
     let mut hits = Vec::new();
-    let root_path = std::path::Path::new(root);
 
     for file in &ingest.files {
         let path = interner.resolve(&file.path);
         if path_filter.is_some_and(|pf| !path.contains(pf)) {
             continue;
         }
-        let Ok(bytes) = crate::domain::read_rel_bytes(root_path, path) else {
+        let Ok(bytes) = sources.read(path) else {
             continue;
         };
         let Ok(text) = std::str::from_utf8(&bytes) else {
@@ -435,7 +496,7 @@ pub fn collect_query_file_hits(
 }
 
 pub fn call_ast_match(
-    root: &str,
+    sources: &dyn crate::query::SourceReader,
     ingest: &IngestResult,
     interner: &Interner,
     query_str: &str,
@@ -443,7 +504,6 @@ pub fn call_ast_match(
     let Ok(reg) = crate::ingest::LanguageRegistry::new() else {
         return Err("failed to initialize language registry".to_string());
     };
-    let root_path = std::path::Path::new(root);
     let mut hits = Vec::new();
     let mut compiled_any = false;
 
@@ -454,7 +514,7 @@ pub fn call_ast_match(
             compiled_any = true;
         }
         let path = interner.resolve(&file.path);
-        let Ok(bytes) = crate::domain::read_rel_bytes(root_path, path) else {
+        let Ok(bytes) = sources.read(path) else {
             continue;
         };
         if let Some(file_hits) = collect_query_file_hits(file, &bytes, query_str, ingest, interner)

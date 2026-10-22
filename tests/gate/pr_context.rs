@@ -1,5 +1,6 @@
 use ripwire_rs::gate::pr_context::{
-    PrContextReport, PrFileContext, compute_pr_context, serialize_pr_context_xml,
+    PrContextReport, PrContextRequest, PrFileContext, compute_pr_context_from_facts,
+    serialize_pr_context_xml,
 };
 use ripwire_rs::serialize::GraphGauges;
 use ripwire_rs::{FileInfo, Graph, IngestResult, Interner, Lang, SymKind, Symbol};
@@ -60,13 +61,13 @@ fn test_compute_pr_context_report() {
         5,
     ));
     let graph = Graph::build(&ingest, &interner);
-    let report = compute_pr_context(
-        &["src/worker.rs".to_string()],
-        &ingest,
-        &graph,
-        &interner,
-        "HEAD~1",
-    );
+    let files = ["src/worker.rs".to_string()];
+    let req = PrContextRequest {
+        changed_files: &files,
+        base_ref: "HEAD~1",
+        commits: &[],
+    };
+    let report = compute_pr_context_from_facts(&req, &ingest, &graph, &interner);
     assert_eq!(report.base_ref, "HEAD~1");
     assert_eq!(report.files_count, 1);
     assert_eq!(report.files[0].path, "src/worker.rs");

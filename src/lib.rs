@@ -11,11 +11,13 @@ pub mod languages;
 pub mod mcp;
 pub mod metrics;
 pub mod navigate;
+pub mod query;
 pub mod rank;
 pub mod resolve;
 pub mod serialize;
 pub mod skills;
 pub mod slice;
+pub mod workspace;
 pub use cli::{Cli, Commands, run_cli, run_cli_args};
 pub use clones::{
     CloneGroup, CloneIdiom, CloneType, DEFAULT_MIN_CLONE_TOKENS, execute_clones_command,
@@ -47,15 +49,14 @@ pub use git::history::{
 };
 pub use graph::{CsrMatrix, Graph};
 pub use ingest::{LanguageRegistry, ingest_crawled_files, ingest_in_memory_files};
-pub use mcp::{McpState, dispatch_json_rpc, run_mcp_stdio, run_mcp_stream};
+pub use mcp::{dispatch_json_rpc, run_mcp_stdio, run_mcp_stream};
 pub use metrics::{
     ComplexityMetrics, HotspotFile, HotspotsReport, NESTING_BAR, ReadabilityMetrics,
     compute_complexity, compute_hotspots, compute_readability, posnett_score,
 };
 pub use navigate::{
     ImpactNode, NavNeighborhood, SymbolLookup, SymbolNavInfo, find_symbols_by_name,
-    get_symbol_nav_info, navigate_1hop, serialize_find_symbol_xml, serialize_uses_xml,
-    transitive_impact,
+    get_symbol_nav_info, navigate_1hop, serialize_uses_xml, transitive_impact,
 };
 pub use rank::{
     HitsConfig, HitsResult, PageRankConfig, PageRankResult, biased_teleport, compute_hits,
@@ -77,6 +78,7 @@ pub use serialize::{
 };
 pub use skills::{SkillInstallReport, default_skills_dir, install_skills, resolve_skills_dir};
 pub use slice::{
-    OccRole, SliceFlowDir, SliceStep, VariableOcc, compute_dataflow_slice, execute_slice,
-    parse_slice_target,
+    OccRole, SliceContext, SliceFlowDir, SliceRequest, SliceStep, VariableOcc,
+    compute_dataflow_slice, parse_slice_target, query_slice,
 };
+pub use workspace::Workspace;

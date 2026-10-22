@@ -13,6 +13,11 @@ const UNINDEXED_CANDIDATE_CAP: usize = 500;
 #[derive(Clone, Copy)]
 pub struct GrepRequest<'a> {
     pub root: &'a str,
+    pub sources: &'a dyn crate::query::SourceReader,
+    pub corpus_paths: &'a [String],
+    pub pruned_dirs: usize,
+    pub limit: Option<usize>,
+    pub offset: usize,
     pub pattern: &'a str,
     pub verb: &'a str,
     pub path_filter: Option<&'a str>,
@@ -25,11 +30,31 @@ pub struct GrepRequest<'a> {
     pub graph: Option<&'a Graph>,
 }
 
+pub fn parse_any_tier(value: Option<&str>) -> std::io::Result<bool> {
+    match value {
+        None | Some("code") => Ok(false),
+        Some("any") => Ok(true),
+        Some(value) => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("unsupported grep tier: {value}"),
+        )),
+    }
+}
+
 impl<'a> GrepRequest<'a> {
     #[must_use]
-    pub const fn new(root: &'a str, pattern: &'a str) -> Self {
+    pub const fn new(
+        root: &'a str,
+        pattern: &'a str,
+        sources: &'a dyn crate::query::SourceReader,
+    ) -> Self {
         Self {
             root,
+            sources,
+            corpus_paths: &[],
+            pruned_dirs: 0,
+            limit: None,
+            offset: 0,
             pattern,
             verb: "grep",
             path_filter: None,
@@ -114,7 +139,6 @@ fn scan_indexed<'a>(
     interner: &Interner,
     req: &GrepRequest<'_>,
 ) -> Vec<HitFile<'a>> {
-    let root_path = std::path::Path::new(req.root);
     let mut syms_by_file: HashMap<u32, Vec<&Symbol>> = HashMap::new();
     for s in ingest
         .symbols
@@ -129,10 +153,10 @@ fn scan_indexed<'a>(
         if !req.path_passes(path) {
             continue;
         }
-        let Ok(bytes) = crate::domain::read_rel_bytes(root_path, path) else {
+        let Ok(bytes) = req.sources.read(path) else {
             continue;
         };
-        let Ok(text) = String::from_utf8(bytes) else {
+        let Ok(text) = String::from_utf8(bytes.into_owned()) else {
             continue;
         };
         if !text.contains(req.pattern) || !req.file_passes(&text) {
@@ -274,7 +298,9 @@ fn hit_json(file: &HitFile<'_>, h: &LineHit, req: &GrepRequest<'_>, interner: &I
         obj["before"] = json!(context_rows(&file.text, &file.lines[start..h.line_idx]));
     }
     if req.after > 0 {
-        let end = (h.line_idx + 1 + req.after).min(file.lines.len());
+        let end = (h.line_idx + 1)
+            .saturating_add(req.after)
+            .min(file.lines.len());
         obj["after"] = json!(context_rows(&file.text, &file.lines[h.line_idx + 1..end]));
     }
     obj
@@ -385,8 +411,8 @@ pub fn enclosing_metadata(
         .collect()
 }
 
-fn unindexed_text_hits(root: &std::path::Path, rel: &str, req: &GrepRequest<'_>) -> Vec<Value> {
-    let Ok(bytes) = crate::domain::read_rel_bytes(root, rel) else {
+fn unindexed_text_hits(rel: &str, req: &GrepRequest<'_>) -> Vec<Value> {
+    let Ok(bytes) = req.sources.read(rel) else {
         return Vec::new();
     };
     if bytes.len() as u64 > crate::crawler::DEFAULT_MAX_FILE_SIZE
@@ -405,14 +431,13 @@ fn unindexed_text_hits(root: &std::path::Path, rel: &str, req: &GrepRequest<'_>)
 }
 
 fn scan_unindexed(ingest: &IngestResult, interner: &Interner, req: &GrepRequest<'_>) -> Value {
-    let walk = crate::crawler::walk_corpus(req.root, &crate::crawler::CrawlerOptions::default());
     let indexed: HashSet<&str> = ingest
         .files
         .iter()
         .map(|f| interner.resolve(&f.path))
         .collect();
-    let candidates: Vec<&String> = walk
-        .rel_paths
+    let candidates: Vec<&String> = req
+        .corpus_paths
         .iter()
         .filter(|rel| {
             std::path::Path::new(rel).extension().is_some()
@@ -421,13 +446,12 @@ fn scan_unindexed(ingest: &IngestResult, interner: &Interner, req: &GrepRequest<
         })
         .collect();
     let scanned = &candidates[..candidates.len().min(UNINDEXED_CANDIDATE_CAP)];
-    let root = std::path::Path::new(req.root);
     let hits: Vec<Value> = scanned
         .iter()
-        .flat_map(|rel| unindexed_text_hits(root, rel, req))
+        .flat_map(|rel| unindexed_text_hits(rel, req))
         .collect();
     let mut obj = json!({
-        "corpus_pruned_dirs": walk.pruned_dirs,
+        "corpus_pruned_dirs": req.pruned_dirs,
         "unindexed": hits,
         "unindexed_files_scanned": scanned.len(),
     });
@@ -446,7 +470,13 @@ pub fn call_grep(ingest: &IngestResult, interner: &Interner, req: &GrepRequest<'
     obj.insert("root".into(), json!(req.root));
     obj.insert("verb".into(), json!(req.verb));
     obj.insert("literal".into(), json!(req.verb == "grep"));
-    obj.insert("context".into(), json!(req.before + req.after > 0));
+    if let Some(limit) = req.limit {
+        obj.insert("limit".into(), json!(limit));
+    }
+    if req.offset > 0 {
+        obj.insert("offset".into(), json!(req.offset));
+    }
+    obj.insert("context".into(), json!(req.before > 0 || req.after > 0));
     obj.extend(tier_attrs(
         TierCounts::of(&files),
         files.len(),

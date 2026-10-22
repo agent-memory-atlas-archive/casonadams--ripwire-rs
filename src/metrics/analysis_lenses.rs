@@ -368,6 +368,10 @@ fn is_comment_line(trimmed: &str) -> bool {
         || trimmed.starts_with('#')
 }
 
+fn is_doc_boundary_line(trimmed: &str) -> bool {
+    trimmed.is_empty() || trimmed.starts_with("#[") || trimmed.starts_with('@')
+}
+
 fn extract_preceding_doc_words(bytes: &[u8], sig_start: u32) -> Vec<String> {
     let end = (sig_start as usize).min(bytes.len());
     let Ok(prefix) = std::str::from_utf8(&bytes[..end]) else {
@@ -376,15 +380,13 @@ fn extract_preceding_doc_words(bytes: &[u8], sig_start: u32) -> Vec<String> {
     let mut doc_lines = Vec::new();
     for line in prefix.lines().rev() {
         let trimmed = line.trim();
-        let is_attr = trimmed.is_empty() || trimmed.starts_with("#[") || trimmed.starts_with('@');
-        if is_attr && doc_lines.is_empty() {
+        if doc_lines.is_empty() && is_doc_boundary_line(trimmed) {
             continue;
         }
-        if is_comment_line(trimmed) {
-            doc_lines.push(trimmed);
-        } else {
+        if !is_comment_line(trimmed) {
             break;
         }
+        doc_lines.push(trimmed);
     }
     doc_lines.reverse();
     doc_lines
@@ -459,7 +461,17 @@ pub fn compute_comment_coherence_in_root(
     ingest: &IngestResult,
     interner: &Interner,
 ) -> CommentCoherenceReport {
-    let root_path = std::path::Path::new(root);
+    let sources = crate::query::FileSources {
+        root: std::path::Path::new(root),
+    };
+    compute_comment_coherence_with_sources(&sources, ingest, interner)
+}
+
+pub fn compute_comment_coherence_with_sources<S: crate::query::SourceReader + ?Sized>(
+    sources: &S,
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> CommentCoherenceReport {
     let mut rows = Vec::new();
     let mut documented = 0usize;
     let mut no_comment = 0usize;
@@ -478,7 +490,7 @@ pub fn compute_comment_coherence_in_root(
         let name = view.sym_name(sym);
         let file_bytes = file_cache
             .entry(sym.file_id)
-            .or_insert_with(|| crate::domain::read_rel_bytes(root_path, file_path).ok())
+            .or_insert_with(|| sources.read(file_path).ok().map(|c| c.into_owned()))
             .as_deref();
         if let Some(row) = measure_comment_coherence_row(sym, file_path, name, file_bytes) {
             documented += 1;

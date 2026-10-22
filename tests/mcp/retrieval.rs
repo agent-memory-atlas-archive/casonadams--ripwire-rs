@@ -1,5 +1,5 @@
-use ripwire_rs::mcp::retrieval::{
-    ForTaskOptions, call_exemplar, call_for_task, call_for_task_with_options, call_lego,
+use ripwire_rs::query::retrieval::{
+    ForTaskOptions, call_exemplar_in_root, call_for_task_with_options, call_lego,
     collect_query_file_hits, compute_adaptive_cut, match_pattern_on_text, parse_for_sections,
 };
 use ripwire_rs::{
@@ -29,7 +29,7 @@ fn test_parse_for_sections_is_a_closed_set() {
 }
 
 #[test]
-fn test_for_lego_section_stub_by_default_full_on_request() {
+fn test_for_sections_expand_available_results() {
     let mut val = json!({
         "task": "parse flags",
         "symbols": [],
@@ -83,6 +83,10 @@ fn test_for_lego_section_stub_by_default_full_on_request() {
 fn test_call_exemplar_roles() {
     let interner = Interner::new();
     let ingest = IngestResult::new();
+    let sources = [(
+        "src/lib.rs",
+        &b"fn caller_fn() { callee_fn(); }\nfn callee_fn() {}\n"[..],
+    )];
     for role in [
         "fn",
         "method",
@@ -92,7 +96,7 @@ fn test_call_exemplar_roles() {
         "section",
         "other",
     ] {
-        let res = call_exemplar(&ingest, &interner, &[], role, None);
+        let res = call_exemplar_in_root(&sources, &ingest, &interner, &[], role, None);
         assert!(res.get("error").is_some());
     }
     let mut ing = IngestResult::new();
@@ -112,7 +116,7 @@ fn test_call_exemplar_roles() {
         0,
         1,
     );
-    s0.end_byte = 50;
+    s0.end_byte = sources[0].1.len() as u32;
     ing.symbols.push(s0);
     ing.symbols.push(Symbol::new(
         1,
@@ -132,7 +136,7 @@ fn test_call_exemplar_roles() {
         RefRole::Call,
     ));
     let g = Graph::build(&ing, &interner);
-    let ex = call_exemplar(&ing, &interner, &[0.8, 0.2], "fn", Some(&g));
+    let ex = call_exemplar_in_root(&sources, &ing, &interner, &[0.8, 0.2], "fn", Some(&g));
     assert_eq!(ex["calls"].as_array().unwrap().len(), 1);
     let mut xml_buf = Vec::new();
     serialize_exemplar_xml(".", &ex, &mut xml_buf).unwrap();
@@ -157,7 +161,16 @@ fn test_call_for_task_with_detail() {
         1,
     );
     ingest.symbols.push(sym);
-    let res = call_for_task(&ingest, &interner, &[1.0], "test fn", None, Some(1), false);
+    let res = call_for_task_with_options(
+        &ingest,
+        &interner,
+        &[1.0],
+        "test fn",
+        ForTaskOptions {
+            detail: Some(1),
+            ..Default::default()
+        },
+    );
     assert_eq!(res["count"], 1);
     assert_eq!(res["detail"], 1);
 
@@ -182,14 +195,12 @@ fn test_call_for_task_with_detail() {
         10,
     ));
     let ranks = vec![1.0; ingest.symbols.len()];
-    let div_res = call_for_task(
+    let div_res = call_for_task_with_options(
         &ingest,
         &interner,
         &ranks,
         "lsp manager session secret",
-        None,
-        None,
-        false,
+        ForTaskOptions::default(),
     );
     let top_names: Vec<&str> = div_res["symbols"]
         .as_array()
@@ -281,6 +292,7 @@ fn test_pattern_and_ast_match() {
     ));
     let graph = Graph::build(&ingest, &interner);
     let pr = graph.page_rank(&PageRankConfig::default());
+    let sources = [("src/lib.rs", &code[..]), ("src/url.ts", &ts_code[..])];
     let res = call_for_task_with_options(
         &ingest,
         &interner,
@@ -288,10 +300,12 @@ fn test_pattern_and_ast_match() {
         "Widget build",
         ForTaskOptions {
             root: ".",
+            sources: Some(&sources),
             graph: Some(&graph),
             budget_tokens: None,
             detail: Some(1),
             adaptive: false,
+            ..Default::default()
         },
     );
     assert!(!res["compose"].as_array().unwrap().is_empty());
@@ -334,14 +348,12 @@ fn test_camel_case_and_derivational_stem_scoring() {
         1,
         1,
     ));
-    let res = call_for_task(
+    let res = call_for_task_with_options(
         &ingest,
         &interner,
         &[0.001, 0.001],
         "ast node cache tree discovery validation resolution",
-        None,
-        None,
-        false,
+        ForTaskOptions::default(),
     );
     let syms = res["symbols"].as_array().unwrap();
     assert_eq!(syms[0]["name"], "discoverAndLoadASTNodes");
@@ -402,4 +414,73 @@ fn test_call_lego_includes_out_of_line_methods_for_unique_class() {
     let lego = call_lego(&ingest, &interner, "ConsoleLog");
     let methods = lego["methods"].as_array().unwrap();
     assert_eq!(methods.len(), 2);
+}
+
+#[test]
+fn rust_lego_lists_the_implemented_subject_and_default_contract() {
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let source = br#"
+trait Processor {
+    fn perform(&self);
+    fn run(&self) { self.perform(); }
+}
+struct Worker;
+impl Processor for Worker { fn perform(&self) {} }
+trait Other { fn perform(&self); }
+struct Unrelated;
+impl Other for Unrelated { fn perform(&self) {} }
+"#;
+    let ingest = ingest_in_memory_files(
+        &[("src/process.rs", Lang::Rust, source.as_slice())],
+        &registry,
+        &interner,
+    );
+    let result = call_lego(&ingest, &interner, "Processor");
+    let names: Vec<_> = result["implementors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["Worker"]);
+    let mut methods: Vec<_> = result["methods"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|value| value["name"].as_str().unwrap())
+        .collect();
+    methods.sort_unstable();
+    assert_eq!(methods, ["perform", "run"]);
+}
+
+#[test]
+fn rust_lego_keeps_inline_trait_contracts_and_implementors_separate() {
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[(
+            "src/lib.rs",
+            Lang::Rust,
+            br#"
+mod alpha {
+    pub trait Processor { fn perform(&self); }
+    pub struct Worker;
+    impl Processor for Worker { fn perform(&self) {} }
+}
+mod beta {
+    pub trait Processor { fn perform(&self); fn extra(&self); }
+    pub struct Worker;
+    impl Processor for Worker { fn perform(&self) {} fn extra(&self) {} }
+}
+"#,
+        )],
+        &registry,
+        &interner,
+    );
+    let result = call_lego(&ingest, &interner, "alpha::Processor");
+    assert_eq!(result["count"], 1);
+    assert_eq!(result["implementors"][0]["name"], "Worker");
+    assert_eq!(result["methods"].as_array().unwrap().len(), 1);
+    assert_eq!(result["methods"][0]["name"], "perform");
 }

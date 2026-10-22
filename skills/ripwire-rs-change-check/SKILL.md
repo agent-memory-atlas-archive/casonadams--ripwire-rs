@@ -68,7 +68,7 @@ On a large diff the bundle can be huge — cap it with `--max-tokens=N` (e.g. `r
 callers), the deep detail trims deepest-first, and `truncated=`/`est_tokens=` on the header report the fit.
 1. **Situational awareness on the diff** — `ripwire-rs <dir> --situ`
    (Reads `git diff` against HEAD; or `--situ=fileA.cpp,fileB.h` to name the changed set explicitly.)
-   One pass, plain text:
+   One pass, canonical `ripwire-rs.situ/v1` XML:
    - changed file count + the symbols they contain
    - **transitive blast radius** — everything that reaches the changed symbols
    - **tests to run** (`--affected` under the hood) — empty = no test cover for the changed code, **flag it**.
@@ -100,9 +100,9 @@ callers), the deep detail trims deepest-first, and `truncated=`/`est_tokens=` on
 
 5. **The diff's structural footprint** — `ripwire-rs <dir> --map-diff --legend=compact`
    Emits ONLY the symbols changed vs git HEAD, ranked — the change's footprint in one screen, without the
-   rest of the map as noise. Add `--rank-by=churn` to order those symbols by git change-frequency instead of
-   PageRank: what floats to the top is the code that changes *all the time* — a change touching it again is
-   following (or feeding) a churn pattern worth asking about.
+   rest of the map as noise. Use `--rank-by=ccx` to prioritize cognitive complexity;
+   use `--hotspots` separately for git change-frequency risk. Supported map signals
+   are pagerank, authority, hub, degree, ccx, and stable; unknown signals error.
 
 6. **Read the numbers on what you touched** — `ripwire-rs <dir> --metrics --legend=compact` (also carried inline by `--for`/
    `--around --metrics`). Cross these against your changed set:

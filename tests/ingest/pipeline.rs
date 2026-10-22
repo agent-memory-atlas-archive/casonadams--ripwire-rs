@@ -1,15 +1,14 @@
-use ripwire_rs::cli::{
-    AroundConfig, NavMode, execute_around_query, execute_connect_query, execute_nav_symbol_query,
-    execute_safe_delete_query,
-};
+use ripwire_rs::cli::{AroundConfig, execute_around_query, execute_safe_delete_query};
 use ripwire_rs::gate::contract::{ContractStatus, SignatureContract, is_symbol_name_public};
 use ripwire_rs::gate::edit_check::check_symbol_contract;
 use ripwire_rs::ingest::{Capture, classify_capture, parse_file_content};
-use ripwire_rs::mcp::graph_tools::{call_path_between, call_uses};
-use ripwire_rs::mcp::retrieval::{ForTaskOptions, call_for_task_with_options, call_lego};
+use ripwire_rs::query::graph::{call_path_between, call_uses, execute_connect_query};
+use ripwire_rs::query::navigation::{NavMode, execute_nav_symbol_query};
+use ripwire_rs::query::retrieval::{ForTaskOptions, call_for_task_with_options, call_lego};
 use ripwire_rs::{
-    Graph, Interner, Lang, LanguageRegistry, PageRankConfig, SliceFlowDir, SymKind, execute_slice,
-    ingest_in_memory_files, navigate_1hop, serialize_lego_xml, serialize_uses_xml,
+    Graph, Interner, Lang, LanguageRegistry, PageRankConfig, SliceContext, SliceFlowDir,
+    SliceRequest, SymKind, ingest_in_memory_files, navigate_1hop, query_slice, serialize_lego_xml,
+    serialize_uses_xml,
 };
 
 #[test]
@@ -194,14 +193,20 @@ class WorkerService {
         .any(|s| s.kind == SymKind::Class && interner.resolve(&s.name) == "div");
     assert!(!has_div_cls);
 
-    let slice_xml = execute_slice(
-        &ingest,
-        &reg,
-        &interner,
-        "dispatchBatch:normalized",
-        SliceFlowDir::Fwd,
-        8,
-        Some(svc_code),
+    let slice_xml = query_slice(
+        SliceRequest {
+            root: ":memory:",
+            target: "dispatchBatch:normalized",
+            flow: SliceFlowDir::Fwd,
+            max_depth: 8,
+            at: None,
+        },
+        SliceContext {
+            ingest: &ingest,
+            registry: &reg,
+            interner: &interner,
+        },
+        &[("src/service/worker.dart", svc_code.as_slice())],
     )
     .unwrap();
     assert!(slice_xml.contains("v=\"normalized\""));
@@ -221,6 +226,12 @@ class WorkerService {
     let sig_str = String::from_utf8_lossy(sig_slice);
     assert!(sig_str.contains("Future<void> executeAction(String taskId, String mode)"));
 
+    let sources = [
+        ("src/domain/outcomes.dart", &shapes_code[..]),
+        ("src/api/controller.dart", &ctrl_code[..]),
+        ("src/service/worker.dart", &svc_code[..]),
+        ("src/views/manifest.json", &json_code[..]),
+    ];
     let for_val = call_for_task_with_options(
         &ingest,
         &interner,
@@ -228,6 +239,7 @@ class WorkerService {
         "Worker executeAction",
         ForTaskOptions {
             root: ".",
+            sources: Some(&sources),
             graph: Some(&graph),
             ..Default::default()
         },

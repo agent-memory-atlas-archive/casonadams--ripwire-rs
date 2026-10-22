@@ -1,4 +1,4 @@
-use ripwire_rs::mcp::graph_tools::call_path_between;
+use ripwire_rs::query::graph::call_path_between;
 use ripwire_rs::{Graph, IngestResult, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
 
 #[test]

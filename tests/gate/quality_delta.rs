@@ -1,20 +1,20 @@
-use ripwire_rs::cli::{GateDispatchArgs, execute_quality_delta_with_args};
 use ripwire_rs::gate::baseline::{
     QualitySnapshot, compute_snapshot, parse_snapshot_from_str, serialize_snapshot_to_string,
 };
 use ripwire_rs::gate::quality_delta::{
-    QualityRegression, StaleAck, ack_matching_regressions, body_text_kinds,
+    DeltaCliOptions, QualityDeltaFacts, QualityRegression, StaleAck, ack_matching_regressions,
+    apply_cli_delta_options_with_writer, assemble_quality_delta_report, body_text_kinds,
     collect_changed_clone_regressions, compute_quality_delta, compute_quality_delta_with_acks,
-    content_id, is_changed_callable, parse_acks_content, split_ack_patterns, stale_replay_for,
-    symbol_matches_and_changed,
+    content_id, is_changed_callable, parse_acks_content, resolve_delta_head_sha,
+    split_ack_patterns, stale_replay_for, symbol_matches_and_changed,
 };
 use ripwire_rs::metrics::source_mask::mask_source;
+use ripwire_rs::query::commands::QueryContext;
+use ripwire_rs::query::safety::{SafetyContext, baseline_from_facts};
 use ripwire_rs::{
-    CloneGroup, CloneIdiom, CloneType, FileInfo, Graph, IngestResult, Interner, Lang, McpState,
-    SymKind, Symbol, ToXmlString, dispatch_json_rpc,
+    CloneGroup, CloneIdiom, CloneType, FileInfo, Graph, IngestResult, Interner, Lang, SymKind,
+    Symbol, ToXmlString,
 };
-use serde_json::Value;
-use std::io::Cursor;
 
 fn setup_baseline_repository(interner: &Interner) -> (IngestResult, Graph) {
     let mut ingest = IngestResult::new();
@@ -126,37 +126,40 @@ fn test_quality_delta_new_symbol_and_dead_code() {
 }
 
 #[test]
-fn test_cli_quality_delta_xml_execution() {
+fn test_quality_baseline_rejects_absorbing_findings_unless_allowed() {
     let interner = Interner::new();
-    let (ingest, _graph) = setup_baseline_repository(&interner);
-    let state = McpState::from_ingest(".", ingest, interner);
+    let (ingest, graph) = setup_baseline_repository(&interner);
+    let state = SafetyContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
+    let absorbed = Some((2, "complexity evaluate src/calc.rs:10 was=5 now=10"));
+    let error = baseline_from_facts(&state, "fixture-head", absorbed, false)
+        .expect_err("refuse to absorb supplied gating findings");
+    assert!(error.to_string().contains("2 gating finding(s)"));
+    assert!(error.to_string().contains("--allow-dirty"));
 
-    let mut out = Cursor::new(Vec::new());
-    let has_failures =
-        execute_quality_delta_with_args(GateDispatchArgs::default(), &state, &mut out)
-            .expect("execute quality-delta");
-    assert!(!has_failures);
+    let snapshot = baseline_from_facts(&state, "fixture-head", absorbed, true).unwrap();
+    assert_eq!(snapshot.head_sha, "fixture-head");
+    assert!(snapshot.dirty);
+    assert_eq!(snapshot.absorbed, 2);
+    assert_eq!(snapshot.ccx_by_sym["src/calc.rs::evaluate"], 10);
 
-    let xml = String::from_utf8(out.into_inner()).unwrap();
-    assert!(xml.contains("<quality-delta"));
-}
-
-#[test]
-fn test_mcp_quality_delta_json_rpc() {
-    let interner = Interner::new();
-    let (ingest, _graph) = setup_baseline_repository(&interner);
-    let mut state = Some(McpState::from_ingest(".", ingest, interner));
-
-    let req =
-        r#"{"jsonrpc":"2.0","id":100,"method":"tools/call","params":{"name":"quality_delta"}}"#;
-    let resp = dispatch_json_rpc(req, &mut state, ".").expect("reply to quality_delta");
-    let val: Value = serde_json::from_str(&resp).unwrap();
-    assert_eq!(val["id"], 100);
-
-    let text = val["result"]["content"][0]["text"].as_str().unwrap();
-    let data: Value = serde_json::from_str(text).unwrap();
-    assert_eq!(data["gating_count"], 0);
-    assert_eq!(data["has_gating_failures"], false);
+    let baseline = baseline_from_facts(&state, "fixture-head", None, false).unwrap();
+    assert!(!baseline.dirty);
+    assert_eq!(baseline.absorbed, 0);
+    let mut working = baseline.clone();
+    working
+        .ccx_by_sym
+        .insert("src/calc.rs::evaluate".to_string(), 25);
+    let report = compute_quality_delta(&working, &baseline, "fixture-head");
+    assert!(report.has_gating_failures());
+    assert_eq!(report.gating_count, 1);
+    assert!(report.to_xml_string().contains(
+        "<r kind=\"complexity\" sym=\"evaluate\" p=\"src/calc.rs:10\" was=\"10\" now=\"25\" gating=\"1\" bar=\"15\"/>"
+    ));
 }
 
 #[test]
@@ -183,7 +186,19 @@ fn test_changed_callable_and_clone_regressions_in_memory() {
     let changed = vec!["src/a.rs".to_string()];
     assert!(is_changed_callable(&sym, "src/a.rs", &changed));
     assert!(!is_changed_callable(&sym, "src/b.rs", &changed));
-    let state = McpState::from_ingest(":memory:", ingest, interner);
+    let graph = Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&ripwire_rs::PageRankConfig::default());
+    let sources = [("src/a.rs", b"fn dup_fn() {}\n".as_slice())];
+    let state = QueryContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        pr: &pr,
+        interner: &interner,
+        sources: &sources,
+        commits: None,
+        at: None,
+    };
     let cg = CloneGroup {
         members: vec![0],
         clone_type: CloneType::Type1,
@@ -417,4 +432,156 @@ fn test_symbol_matches_and_changed() {
     };
     let changed = symbol_matches_and_changed(&sym, "src/math.rs", &ingest, &interner, &baseline);
     assert!(changed.is_some());
+}
+
+#[test]
+fn test_resolve_delta_head_sha_variants() {
+    assert_eq!(resolve_delta_head_sha("1234567+dirty"), "1234567");
+    assert_eq!(resolve_delta_head_sha(""), "HEAD");
+    assert_eq!(resolve_delta_head_sha("abcdef1"), "abcdef1");
+}
+
+#[test]
+fn test_apply_cli_delta_options_with_in_memory_writer() {
+    let interner = Interner::new();
+    let (ingest, graph) = setup_baseline_repository(&interner);
+    let sources: [(&str, &[u8]); 0] = [];
+    let pr = graph.page_rank(&ripwire_rs::PageRankConfig::default());
+    let qc = QueryContext {
+        root: ".",
+        ingest: &ingest,
+        graph: &graph,
+        pr: &pr,
+        interner: &interner,
+        commits: None,
+        sources: &sources,
+        at: None,
+    };
+
+    let snap = compute_snapshot(&ingest, &graph, &interner, "HEAD");
+    let mut report = compute_quality_delta_with_acks(&snap, &snap, "git-HEAD", None);
+    report.regressions.push(QualityRegression {
+        kind: "complexity".to_string(),
+        sym_name: "evaluate".to_string(),
+        file_path: "src/calc.rs".to_string(),
+        line: 10,
+        was_val: 1,
+        now_val: 10,
+        is_gating: true,
+        is_new_symbol: false,
+    });
+    report.gating_count = 1;
+
+    let mut written_bytes = Vec::new();
+    let opts = DeltaCliOptions {
+        scope: Some("src/calc.rs"),
+        quality_ack: Some("testing ack writer"),
+        ack_only: Some("src/calc.rs"),
+        show_stale: false,
+    };
+
+    let res =
+        apply_cli_delta_options_with_writer(&qc, &mut report, opts, || Ok(&mut written_bytes));
+    assert!(res.is_ok());
+    assert!(report.stale_collapse_replay.is_some());
+    assert_eq!(report.gating_count, 0, "regression should be acknowledged");
+    assert!(
+        !written_bytes.is_empty(),
+        "ack ledger entry should be written"
+    );
+}
+
+#[test]
+fn test_assemble_quality_delta_report_from_facts() {
+    let interner = Interner::new();
+    let (ingest, graph) = setup_baseline_repository(&interner);
+    let calc_code = b"pub fn evaluate(a: i32, b: i32) -> i32 { a + b }\n".as_slice();
+    let sources = [("src/calc.rs", calc_code)];
+    let commit = ripwire_rs::git::history::CommitInfo {
+        id: "c1".to_string(),
+        author: "test".to_string(),
+        timestamp: 1000,
+        changed_files: vec!["src/calc.rs".to_string()],
+    };
+    let commits = vec![commit.clone(), commit];
+    let pr = graph.page_rank(&ripwire_rs::PageRankConfig::default());
+    let qc = QueryContext {
+        root: ".",
+        ingest: &ingest,
+        graph: &graph,
+        pr: &pr,
+        interner: &interner,
+        commits: Some(&commits),
+        sources: &sources,
+        at: None,
+    };
+
+    let snap = compute_snapshot(&ingest, &graph, &interner, "HEAD");
+    let mut baseline = snap.clone();
+    baseline
+        .ccx_by_sym
+        .insert("src/calc.rs::evaluate".to_string(), 5);
+    let changed_files = vec!["src/calc.rs".to_string()];
+    let facts = QualityDeltaFacts {
+        working: &snap,
+        baseline: &baseline,
+        source_name: "git-HEAD",
+        head_basis: Some("identity"),
+        at_stamp: "abc1234",
+        changed_files: &changed_files,
+        acks: None,
+        clones: &[],
+    };
+    let report = assemble_quality_delta_report(&qc, &facts);
+    assert_eq!(report.head_basis, Some("identity"));
+    assert_eq!(report.baseline_source, "git-HEAD");
+    assert_eq!(report.at_stamp, "abc1234");
+    assert_eq!(report.gating_count, 0);
+    assert!(
+        report
+            .regressions
+            .iter()
+            .any(|r| r.kind == "short-horizon-churn")
+    );
+    assert!(report.regressions.iter().any(|r| r.kind == "complexity"));
+}
+
+#[test]
+fn quality_report_preserves_borrowed_type_names_and_quoted_paths() {
+    let key = "src/a&\"b.rs::&View<T>::item";
+    let mut baseline = QualitySnapshot::default();
+    baseline.ccx_by_sym.insert(key.into(), 10);
+    let mut working = baseline.clone();
+    working.dead_symbols.insert(key.into());
+    working.line_by_sym.insert(key.into(), 7);
+    let mut report = compute_quality_delta(&working, &baseline, "base<&");
+    report.at_stamp = "revision<&".into();
+    report.stale_acks.push(StaleAck {
+        kind: "complexity".into(),
+        key: key.into(),
+        why: "missing",
+        sym: "&View<T>::item".into(),
+        path: "src/a&\"b.rs".into(),
+    });
+    let xml = report.to_xml_string();
+    let document = roxmltree::Document::parse(&xml).unwrap();
+    assert_eq!(
+        document.root_element().attribute("baseline"),
+        Some("base<&")
+    );
+    assert_eq!(document.root_element().attribute("at"), Some("revision<&"));
+    let regression = document
+        .descendants()
+        .find(|node| node.has_tag_name("r"))
+        .unwrap();
+    assert_eq!(regression.attribute("kind"), Some("dead-code"));
+    assert_eq!(regression.attribute("sym"), Some(key));
+    assert_eq!(regression.attribute("p"), Some("src/a&\"b.rs:7"));
+    let stale = document
+        .descendants()
+        .find(|node| node.has_tag_name("sa"))
+        .unwrap();
+    assert_eq!(stale.attribute("key"), Some(key));
+    assert_eq!(stale.attribute("sym"), Some("&View<T>::item"));
+    assert_eq!(stale.attribute("p"), Some("src/a&\"b.rs"));
 }

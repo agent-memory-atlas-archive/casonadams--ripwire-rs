@@ -1,7 +1,8 @@
 use super::args::TopSafetyArgs;
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
-use crate::serialize::{ToXmlString, XmlEscapeExt};
+use crate::query::safety::SafetyContext;
+use crate::serialize::ToXmlString;
 use std::io::{self, Write};
 use std::path::Path;
 #[derive(Default, Clone, Copy)]
@@ -30,8 +31,8 @@ impl GateDispatchArgs<'_> {
 
 pub fn execute_gate_action<W: Write>(
     args: GateDispatchArgs<'_>,
-    state: &crate::mcp::McpState,
-    out: &mut W,
+    state: &crate::Workspace,
+    out: &mut crate::serialize::XmlWriter<'_, W>,
 ) -> Option<io::Result<()>> {
     if let Some(sym) = args.edit_check {
         let page = args.limit.map(|l| (args.offset.unwrap_or(0), l));
@@ -51,12 +52,12 @@ pub fn execute_gate_action<W: Write>(
 
 pub fn run_quality_delta_gate_with_args<W: Write>(
     args: GateDispatchArgs<'_>,
-    state: &crate::mcp::McpState,
-    out: &mut W,
+    state: &crate::Workspace,
+    out: &mut crate::serialize::XmlWriter<'_, W>,
 ) -> io::Result<()> {
     match execute_quality_delta_with_args(args, state, out) {
         Ok(has_failures) if has_failures => {
-            let _ = out.flush();
+            out.finish()?;
             std::process::exit(2);
         }
         Ok(_) => Ok(()),
@@ -64,13 +65,15 @@ pub fn run_quality_delta_gate_with_args<W: Write>(
     }
 }
 
-fn load_gate_state(root: &str, is_delta: bool) -> io::Result<crate::mcp::McpState> {
-    let state_opt = if is_delta {
-        crate::mcp::McpState::load_uncached(root)
-    } else {
-        crate::mcp::McpState::load(root)
-    };
-    let mut state = state_opt.ok_or_else(|| io::Error::other("failed to load repository"))?;
+fn load_gate_state(
+    cli: &super::args::Cli,
+    root: &str,
+    is_delta: bool,
+) -> io::Result<crate::Workspace> {
+    let (ingest, graph, pr, interner) =
+        super::dispatch::load_repo_analysis_for_cli(cli, root, is_delta)?;
+    let mut state = crate::Workspace::from_analysis(root, ingest, graph, pr, interner);
+    state.at = crate::git::history::compute_git_at_stamp(root);
     if is_delta && !get_working_tree_changed_files(root).is_empty() {
         let cutoff = crate::git::history::resolve_cutoff_timestamp(None, 1);
         state.commits = crate::git::history::walk_repository_history_scoped(root, cutoff).ok();
@@ -93,22 +96,25 @@ pub fn validate_gate_modifiers(args: &GateDispatchArgs<'_>) -> io::Result<()> {
     Ok(())
 }
 
-pub fn dispatch_gate_command(root: &str, args: GateDispatchArgs<'_>) -> Option<io::Result<()>> {
+pub fn dispatch_gate_command(
+    root: &str,
+    args: GateDispatchArgs<'_>,
+    cli: &super::args::Cli,
+) -> Option<io::Result<()>> {
     if let Err(e) = validate_gate_modifiers(&args) {
         return Some(Err(e));
     }
     if !args.is_active() {
         return None;
     }
-    let state = match load_gate_state(root, args.quality_delta) {
+    let state = match load_gate_state(cli, root, args.quality_delta) {
         Ok(s) => s,
         Err(e) => return Some(Err(e)),
     };
     let mut stdout_lock = io::stdout().lock();
-    let mut stdout = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
+    let mut stdout = super::args::OutputDialect::wrap_xml_writer(cli, &mut stdout_lock, false);
     let res = execute_gate_action(args, &state, &mut stdout);
-    let _ = stdout.flush();
-    res
+    res.map(|result| result.and_then(|()| stdout.finish()))
 }
 
 pub fn execute_with_git_state_fmt<F>(
@@ -121,18 +127,18 @@ pub fn execute_with_git_state_fmt<F>(
 where
     F: FnOnce(
         &[crate::git::history::CommitInfo],
-        &crate::mcp::McpState,
+        &crate::Workspace,
         &mut crate::serialize::XmlWriter<'_, io::StdoutLock<'_>>,
     ) -> io::Result<()>,
 {
     let commits_vec = crate::git::history::walk_repository_history_scoped(root, cutoff).ok();
     let commits = commits_vec.as_deref().unwrap_or(&[]);
-    let state = crate::mcp::McpState::load(root)
+    let state = crate::Workspace::load(root)
         .ok_or_else(|| io::Error::other("failed to load repository"))?;
     let mut stdout_lock = io::stdout().lock();
     let mut stdout = crate::serialize::XmlWriter::with_format(&mut stdout_lock, pretty, json_out);
     runner(commits, &state, &mut stdout)?;
-    stdout.flush()
+    stdout.finish()
 }
 
 #[derive(Default, Clone, Copy)]
@@ -180,7 +186,7 @@ pub fn get_working_tree_changed_files(root: &str) -> Vec<String> {
     crate::git::repo::working_tree_changes(root)
 }
 
-fn resolve_changed_or_spec_files(root: &str, files_spec: Option<&str>) -> Vec<String> {
+pub fn resolve_changed_or_spec_files(root: &str, files_spec: Option<&str>) -> Vec<String> {
     match files_spec {
         Some(f) => f
             .split(',')
@@ -211,6 +217,68 @@ pub fn execute_test_gate_query<W: Write>(
     )
 }
 
+#[derive(Clone, Copy)]
+pub struct TestGateRequest<'a> {
+    pub files: &'a [String],
+    pub at_stamp: &'a str,
+    pub page: crate::serialize::PageRequest,
+    pub sources: &'a dyn crate::query::SourceReader,
+    pub gates: &'a crate::gate::script_gates::ScriptGates,
+}
+
+pub fn execute_test_gate_from_facts<W: Write>(
+    ctx: &SafetyContext<'_>,
+    req: &TestGateRequest<'_>,
+    out: &mut W,
+) -> io::Result<bool> {
+    use crate::domain::CorpusView;
+    use crate::serialize::XmlReport;
+    let specs: Vec<&str> = req.files.iter().map(String::as_str).collect();
+    let mut report =
+        crate::gate::affected::find_affected_tests(&specs, ctx.ingest, ctx.graph, ctx.interner);
+    let gate_rows = req.gates.covering_rows(req.files, &report.tests);
+    report.tests.extend(gate_rows);
+    crate::gate::runners::attach_test_runners_from_sources(
+        &mut report.tests,
+        req.sources,
+        ctx.ingest,
+        ctx.interner,
+    );
+    let tested = crate::navigate::compute_tested_node_mask(ctx.ingest, ctx.graph, ctx.interner);
+    let sum = crate::gate::summarize_test_gate(&report, &tested, ctx.ingest, ctx.interner);
+    let view = (ctx.ingest, ctx.interner);
+    let untested: Vec<crate::serialize::arch_xml::UntestedSymbol<'_>> = sum
+        .untested
+        .iter()
+        .map(|&id| {
+            let sym = &ctx.ingest[id];
+            crate::serialize::arch_xml::UntestedSymbol {
+                name: view.sym_name(sym),
+                path: view.sym_path(sym),
+                line: sym.line,
+                ccx: sym.ccx,
+            }
+        })
+        .collect();
+    crate::serialize::arch_xml::TestGateReport {
+        root: ctx.root,
+        at_stamp: req.at_stamp,
+        changed: req.files.len(),
+        impacted: sum.impacted,
+        tests: &report.tests,
+        untested: &untested,
+        untested_modscope: sum.untested_modscope,
+        run_first: sum.run_first,
+        script_gates_unmodelled: req.gates.unmodelled,
+        script_gates_registered: req.gates.registered.len(),
+        script_gates_mapped: req.gates.mapped(),
+        page: req.page,
+        gauge_attrs: &ctx.graph.xml_gauge_attrs(),
+    }
+    .render_envelope(out)?;
+    Ok(!report.tests.is_empty() || !sum.untested.is_empty())
+}
+
 pub fn execute_test_gate_query_paged<W: Write>(
     root: &str,
     files_spec: Option<&str>,
@@ -220,68 +288,42 @@ pub fn execute_test_gate_query_paged<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<bool> {
-    use crate::domain::CorpusView;
-    use crate::serialize::{GitStampExt, XmlReport};
+    use crate::serialize::GitStampExt;
     let files = resolve_changed_or_spec_files(root, files_spec);
-    let specs: Vec<&str> = files.iter().map(String::as_str).collect();
-    let mut report = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
-    let gates = crate::gate::script_gates::collect_script_gates(root, ingest, interner);
-    let gate_rows = gates.covering_rows(&files, &report.tests);
-    report.tests.extend(gate_rows);
-    crate::gate::attach_test_runners(
-        &mut report.tests,
-        std::path::Path::new(root),
-        ingest,
-        interner,
-    );
-    let tested = crate::navigate::compute_tested_node_mask(ingest, graph, interner);
-    let sum = crate::gate::summarize_test_gate(&report, &tested, ingest, interner);
-    let view = (ingest, interner);
-    let untested: Vec<crate::serialize::arch_xml::UntestedSymbol<'_>> = sum
-        .untested
-        .iter()
-        .map(|&id| {
-            let sym = &ingest[id];
-            crate::serialize::arch_xml::UntestedSymbol {
-                name: view.sym_name(sym),
-                path: view.sym_path(sym),
-                line: sym.line,
-                ccx: sym.ccx,
-            }
-        })
-        .collect();
     let at_stamp = root.git_at_or_head();
-    crate::serialize::arch_xml::TestGateReport {
+    let ctx = SafetyContext {
         root,
+        ingest,
+        graph,
+        interner,
+    };
+    let sources = crate::query::FileSources {
+        root: Path::new(root),
+    };
+    let gates = crate::gate::script_gates::collect_script_gates(root, ingest, interner);
+    let req = TestGateRequest {
+        files: &files,
         at_stamp: &at_stamp,
-        changed: files.len(),
-        impacted: sum.impacted,
-        tests: &report.tests,
-        untested: &untested,
-        untested_modscope: sum.untested_modscope,
-        run_first: sum.run_first,
-        script_gates_unmodelled: gates.unmodelled,
-        script_gates_registered: gates.registered.len(),
-        script_gates_mapped: gates.mapped(),
         page,
-        gauge_attrs: &graph.xml_gauge_attrs(),
-    }
-    .render_envelope(out)?;
-    Ok(!report.tests.is_empty() || !sum.untested.is_empty())
+        sources: &sources,
+        gates: &gates,
+    };
+    execute_test_gate_from_facts(&ctx, &req, out)
 }
 
-pub fn format_situ_list<W: Write>(
+pub fn execute_situ_from_facts<W: Write>(
+    ctx: &SafetyContext<'_>,
+    files: &[String],
+    commits: Option<&[crate::git::history::CommitInfo]>,
     out: &mut W,
-    title: &str,
-    items: Option<&Vec<serde_json::Value>>,
 ) -> io::Result<()> {
-    let empty = Vec::new();
-    let list = items.unwrap_or(&empty);
-    writeln!(out, "  {title} ({})", list.len())?;
-    for item in list {
-        writeln!(out, "        {}", item.as_str().unwrap_or(""))?;
+    crate::query::safety::SituationalReport {
+        root: ctx.root,
+        files,
+        commits,
+        context: *ctx,
     }
-    Ok(())
+    .write_xml(out)
 }
 
 pub fn execute_situ_query<W: Write>(
@@ -294,26 +336,13 @@ pub fn execute_situ_query<W: Write>(
 ) -> io::Result<()> {
     let files = resolve_changed_or_spec_files(root, files_spec);
     let commits = crate::git::history::walk_repository_history(root).ok();
-    let val = crate::mcp::graph_tools::call_situational_awareness(
+    let ctx = SafetyContext {
+        root,
         ingest,
         graph,
         interner,
-        &files,
-        commits.as_deref(),
-    );
-    writeln!(
-        out,
-        "ripwire-rs situational-awareness — {} changed file(s)",
-        files.len()
-    )?;
-    writeln!(out, "root: {root}")?;
-    writeln!(out, "  [1] blast radius: {} symbols", val["blast_radius"])?;
-    format_situ_list(out, "[2] tests to run", val["tests_to_run"].as_array())?;
-    format_situ_list(
-        out,
-        "[3] co-change — usually edited with these",
-        val["forgotten_partners"].as_array(),
-    )
+    };
+    execute_situ_from_facts(&ctx, &files, commits.as_deref(), out)
 }
 
 pub fn execute_safe_delete_query<W: Write>(
@@ -385,7 +414,7 @@ pub fn execute_exercises_query<W: Write>(
     crate::serialize::serialize_exercises_xml(root, test_path, &reached, out)
 }
 
-fn validate_merge_scout_branches(root: &str, branches: &str) -> bool {
+pub fn validate_merge_scout_branches(root: &str, branches: &str) -> bool {
     for branch in branches.split(',').map(str::trim).filter(|b| !b.is_empty()) {
         let git_ok = gix::open(root).is_ok_and(|repo| {
             repo.rev_parse_single(branch).is_ok() || repo.find_reference(branch).is_ok()
@@ -398,7 +427,24 @@ fn validate_merge_scout_branches(root: &str, branches: &str) -> bool {
     true
 }
 
-fn execute_merge_scout_dispatch<W: Write>(
+pub fn execute_merge_scout_from_facts<W: Write>(
+    branches: &str,
+    dirty: bool,
+    ingest: &IngestResult,
+    interner: &Interner,
+    out: &mut W,
+) -> io::Result<crate::gate::merge_scout::MergeScoutReport> {
+    let eff_branches = if dirty && !branches.contains(',') {
+        format!("{branches},working-tree")
+    } else {
+        branches.to_string()
+    };
+    let rep = crate::gate::merge_scout::evaluate_merge_scout(&eff_branches, ingest, interner);
+    crate::gate::merge_scout::serialize_merge_scout_xml(&rep, out)?;
+    Ok(rep)
+}
+
+pub fn execute_merge_scout_dispatch<W: Write>(
     root: &str,
     branches: &str,
     ingest: &IngestResult,
@@ -409,17 +455,26 @@ fn execute_merge_scout_dispatch<W: Write>(
         return Ok(Some(1));
     }
     let dirty = !get_working_tree_changed_files(root).is_empty();
-    let eff_branches = if dirty && !branches.contains(',') {
-        format!("{branches},working-tree")
-    } else {
-        branches.to_string()
-    };
-    let rep = crate::gate::merge_scout::evaluate_merge_scout(&eff_branches, ingest, interner);
-    crate::gate::merge_scout::serialize_merge_scout_xml(&rep, out)?;
+    execute_merge_scout_from_facts(branches, dirty, ingest, interner, out)?;
     Ok(None)
 }
 
-fn execute_pr_context_dispatch<W: Write>(
+pub fn execute_pr_context_from_facts<W: Write>(
+    ctx: &SafetyContext<'_>,
+    req: &crate::gate::pr_context::PrContextRequest<'_>,
+    out: &mut W,
+) -> io::Result<crate::gate::pr_context::PrContextReport> {
+    let rep = crate::gate::pr_context::compute_pr_context_from_facts(
+        req,
+        ctx.ingest,
+        ctx.graph,
+        ctx.interner,
+    );
+    crate::gate::pr_context::serialize_pr_context_xml(&rep, out)?;
+    Ok(rep)
+}
+
+pub fn execute_pr_context_dispatch<W: Write>(
     root: &str,
     ref_opt: Option<&str>,
     ingest: &IngestResult,
@@ -429,14 +484,24 @@ fn execute_pr_context_dispatch<W: Write>(
 ) -> io::Result<()> {
     let base_ref = ref_opt.filter(|s| !s.is_empty()).unwrap_or("working-tree");
     let changed = get_working_tree_changed_files(root);
-    let rep = crate::gate::pr_context::compute_pr_context_in_root(
-        root, &changed, ingest, graph, interner, base_ref,
-    );
-    crate::gate::pr_context::serialize_pr_context_xml(&rep, out)
+    let commits = crate::git::history::walk_repository_history(root).unwrap_or_default();
+    let ctx = SafetyContext {
+        root,
+        ingest,
+        graph,
+        interner,
+    };
+    let req = crate::gate::pr_context::PrContextRequest {
+        changed_files: &changed,
+        base_ref,
+        commits: &commits,
+    };
+    execute_pr_context_from_facts(&ctx, &req, out)?;
+    Ok(())
 }
 
-fn execute_scan_skills_dispatch<W: Write>(raw: &str, out: &mut W) -> io::Result<i32> {
-    let scan_dir = if !raw.is_empty() {
+pub fn resolve_scan_skills_dir(raw: &str) -> std::path::PathBuf {
+    if !raw.is_empty() {
         crate::skills::resolve_skills_dir(Some(raw))
     } else if let Ok(codex_home) = std::env::var("CODEX_HOME")
         && std::path::Path::new(&codex_home).join("skills").is_dir()
@@ -446,10 +511,14 @@ fn execute_scan_skills_dispatch<W: Write>(raw: &str, out: &mut W) -> io::Result<
         std::path::PathBuf::from("skills")
     } else {
         crate::skills::default_skills_dir()
-    };
-    let rep = crate::skills::scan_skills_directory(&scan_dir)?;
-    eprintln!("{} skill file(s) scanned", rep.files_scanned);
-    crate::skills::serialize_skill_scan_xml(&rep, out)?;
+    }
+}
+
+pub fn render_skill_scan_report<W: Write>(
+    rep: &crate::skills::SkillScanReport,
+    out: &mut W,
+) -> io::Result<i32> {
+    crate::skills::serialize_skill_scan_xml(rep, out)?;
     Ok(match rep.verdict {
         "critical" => 2,
         "warn" => 1,
@@ -457,12 +526,34 @@ fn execute_scan_skills_dispatch<W: Write>(raw: &str, out: &mut W) -> io::Result<
     })
 }
 
-fn execute_edit_plan_dispatch<W: Write>(
-    plan_spec: &str,
-    root: &str,
+pub fn execute_scan_skills_dispatch<W: Write>(raw: &str, out: &mut W) -> io::Result<i32> {
+    let scan_dir = resolve_scan_skills_dir(raw);
+    let rep = crate::skills::scan_skills_directory(&scan_dir)?;
+    eprintln!("{} skill file(s) scanned", rep.files_scanned);
+    render_skill_scan_report(&rep, out)
+}
+
+pub fn execute_edit_plan_from_facts<W: Write>(
+    ctx: &SafetyContext<'_>,
+    plan_raw: &str,
     dry_run: bool,
-    ingest: &IngestResult,
-    interner: &Interner,
+    out: &mut W,
+) -> io::Result<i32> {
+    let res = crate::query::edit::execute_edit_plan_json(
+        ctx.root,
+        plan_raw,
+        dry_run,
+        ctx.ingest,
+        ctx.interner,
+    );
+    writeln!(out, "{res}")?;
+    Ok(if res.get("error").is_some() { 1 } else { 0 })
+}
+
+pub fn execute_edit_plan_dispatch<W: Write>(
+    plan_spec: &str,
+    ctx: &SafetyContext<'_>,
+    dry_run: bool,
     out: &mut W,
 ) -> io::Result<i32> {
     let plan_raw = if plan_spec == "-" {
@@ -472,37 +563,52 @@ fn execute_edit_plan_dispatch<W: Write>(
     } else {
         std::fs::read_to_string(plan_spec).unwrap_or_else(|_| plan_spec.to_string())
     };
-    let res = crate::mcp::edit::execute_edit_plan_json(root, &plan_raw, dry_run, ingest, interner);
-    writeln!(out, "{res}")?;
-    Ok(if res.get("error").is_some() { 1 } else { 0 })
+    execute_edit_plan_from_facts(ctx, &plan_raw, dry_run, out)
 }
-
-fn execute_partition_or_baseline_queries<W: Write>(
-    s: &TopSafetyArgs,
-    root: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+pub fn execute_partition_from_facts<W: Write>(
+    ctx: &SafetyContext<'_>,
+    partition_k: usize,
+    task: Option<&str>,
     out: &mut W,
-) -> io::Result<Option<i32>> {
-    if let Some(part_opt) = s.partition {
-        let k = part_opt.unwrap_or(2);
-        if let Some(task) = s.task.as_deref() {
-            crate::navigate::execute_pack_task_partitioned(
-                task, root, k, ingest, graph, interner, out,
-            )?;
-            return Ok(Some(0));
-        }
+) -> io::Result<()> {
+    if let Some(task) = task {
+        crate::navigate::execute_pack_task_partitioned(
+            task,
+            ctx.root,
+            partition_k,
+            ctx.ingest,
+            ctx.graph,
+            ctx.interner,
+            out,
+        )
+    } else {
         let mut stdout_buf = Vec::new();
         crate::cli::queries::execute_communities_query(
-            root,
+            ctx.root,
             None,
-            ingest,
-            graph,
-            interner,
+            ctx.ingest,
+            ctx.graph,
+            ctx.interner,
             &mut stdout_buf,
         )?;
-        out.write_all(&stdout_buf)?;
+        out.write_all(&stdout_buf)
+    }
+}
+
+pub fn execute_partition_or_baseline_queries<W: Write>(
+    s: &TopSafetyArgs,
+    ctx: &SafetyContext<'_>,
+    out: &mut W,
+) -> io::Result<Option<i32>> {
+    let SafetyContext {
+        root,
+        ingest,
+        graph,
+        interner,
+    } = *ctx;
+    if let Some(part_opt) = s.partition {
+        let k = part_opt.unwrap_or(2);
+        execute_partition_from_facts(ctx, k, s.task.as_deref(), out)?;
         return Ok(Some(0));
     }
     if s.pin_census || s.baseline || s.baseline_update {
@@ -521,7 +627,19 @@ fn execute_partition_or_baseline_queries<W: Write>(
     Ok(None)
 }
 
-fn execute_dmm_query<W: Write>(
+pub fn compute_dmm_from_facts<W: Write>(
+    baseline_snap: &crate::gate::baseline::QualitySnapshot,
+    working_snap: &crate::gate::baseline::QualitySnapshot,
+    head_sha: &str,
+    out: &mut W,
+) -> io::Result<crate::metrics::DmmReport> {
+    let rep =
+        crate::metrics::compute_dmm_report(baseline_snap, working_snap, "working-tree", head_sha);
+    crate::metrics::serialize_dmm_xml(&rep, out)?;
+    Ok(rep)
+}
+
+pub fn execute_dmm_query<W: Write>(
     rev_opt: Option<&str>,
     root: &str,
     ingest: &IngestResult,
@@ -556,24 +674,54 @@ fn execute_dmm_query<W: Write>(
             short_sha,
         )
     };
-    let rep = crate::metrics::compute_dmm_report(
-        &baseline_snap,
-        &working_snap,
-        "working-tree",
-        &head_sha,
-    );
-    crate::metrics::serialize_dmm_xml(&rep, out)?;
+    compute_dmm_from_facts(&baseline_snap, &working_snap, &head_sha, out)?;
     Ok(0)
 }
 
-fn execute_tool_safety_queries<W: Write>(
+pub fn compute_plan_lanes_from_facts<W: Write>(
+    ctx: &SafetyContext<'_>,
+    requested: usize,
+    task: &str,
+    brief_lines: Option<&[String]>,
+    out: &mut W,
+) -> io::Result<serde_json::Value> {
+    let pr = ctx.graph.page_rank(&crate::rank::PageRankConfig::default());
+    let val = if let Some(lines) = brief_lines {
+        crate::gate::lanes::compute_plan_lanes_with_brief(
+            ctx.root,
+            lines,
+            ctx.ingest,
+            ctx.graph,
+            &pr,
+            ctx.interner,
+        )
+    } else {
+        crate::gate::lanes::compute_plan_lanes(
+            ctx.root,
+            requested,
+            task,
+            ctx.ingest,
+            ctx.graph,
+            &pr,
+            ctx.interner,
+        )
+    };
+    serde_json::to_writer(&mut *out, &val)?;
+    writeln!(out)?;
+    Ok(val)
+}
+
+pub fn execute_tool_safety_queries<W: Write>(
     s: &TopSafetyArgs,
-    root: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+    ctx: &SafetyContext<'_>,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
+    let SafetyContext {
+        root,
+        ingest,
+        graph,
+        interner,
+    } = *ctx;
     if let Some(range_opt) = &s.dmm {
         return execute_dmm_query(range_opt.as_deref(), root, ingest, graph, interner, out)
             .map(Some);
@@ -587,18 +735,7 @@ fn execute_tool_safety_queries<W: Write>(
             .filter(|p| !p.is_empty())
             .and_then(|p| std::fs::read_to_string(p).ok())
             .map(|c| c.lines().map(str::to_string).collect::<Vec<_>>());
-        let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
-        let val = if let Some(lines) = brief_lines.as_deref() {
-            crate::gate::lanes::compute_plan_lanes_with_brief(
-                root, lines, ingest, graph, &pr, interner,
-            )
-        } else {
-            crate::gate::lanes::compute_plan_lanes(
-                root, requested, task, ingest, graph, &pr, interner,
-            )
-        };
-        serde_json::to_writer(&mut *out, &val)?;
-        writeln!(out)?;
+        compute_plan_lanes_from_facts(ctx, requested, task, brief_lines.as_deref(), out)?;
         return Ok(Some(0));
     }
     if let Some(dir_opt) = &s.scan_skills {
@@ -606,20 +743,22 @@ fn execute_tool_safety_queries<W: Write>(
         return execute_scan_skills_dispatch(raw, out).map(Some);
     }
     if let Some(plan_spec) = s.edit_plan.as_deref().or(s.edit_payload.as_deref()) {
-        return execute_edit_plan_dispatch(plan_spec, root, s.dry_run, ingest, interner, out)
-            .map(Some);
+        return execute_edit_plan_dispatch(plan_spec, ctx, s.dry_run, out).map(Some);
     }
-    execute_partition_or_baseline_queries(s, root, ingest, graph, interner, out)
+    execute_partition_or_baseline_queries(s, ctx, out)
 }
 
-fn execute_verification_queries<W: Write>(
+pub fn execute_verification_queries<W: Write>(
     s: &TopSafetyArgs,
-    root: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+    ctx: &SafetyContext<'_>,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
+    let SafetyContext {
+        root,
+        ingest,
+        graph,
+        interner,
+    } = *ctx;
     if let Some(files_opt) = &s.test_gate {
         let has_failures =
             execute_test_gate_query(root, files_opt.as_deref(), ingest, graph, interner, out)?;
@@ -646,365 +785,117 @@ fn execute_verification_queries<W: Write>(
 
 pub fn execute_safety_dispatch<W: Write>(
     s: &TopSafetyArgs,
-    root: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+    ctx: &SafetyContext<'_>,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
-    if let Some(code) = execute_verification_queries(s, root, ingest, graph, interner, out)? {
-        if code > 0 {
-            return Ok(Some(code));
-        }
-        return Ok(None);
+    if let Some(code) = execute_verification_queries(s, ctx, out)? {
+        return Ok((code > 0).then_some(code));
     }
     if let Some(branches) = s.merge_scout.as_deref() {
-        return execute_merge_scout_dispatch(root, branches, ingest, interner, out);
+        return execute_merge_scout_dispatch(ctx.root, branches, ctx.ingest, ctx.interner, out);
     }
-    if let Some(code) = execute_tool_safety_queries(s, root, ingest, graph, interner, out)? {
-        if code > 0 {
-            return Ok(Some(code));
-        }
-        return Ok(None);
+    Ok(execute_tool_safety_queries(s, ctx, out)?.filter(|code| *code > 0))
+}
+
+fn safety_context(state: &crate::Workspace) -> crate::query::safety::SafetyContext<'_> {
+    crate::query::safety::SafetyContext {
+        root: &state.root,
+        ingest: &state.ingest,
+        graph: &state.graph,
+        interner: &state.interner,
     }
-    Ok(None)
 }
 
 pub fn execute_hotspots_with<W: Write>(
-    since_str: Option<&str>,
+    since: Option<&str>,
     commits: &[crate::git::history::CommitInfo],
-    state: &crate::mcp::McpState,
+    state: &crate::Workspace,
     out: &mut W,
 ) -> io::Result<()> {
-    let anchor_epoch = commits.first().map(|c| c.timestamp).unwrap_or(0);
-    let scope = crate::git::history::parse_since_scope(since_str, anchor_epoch);
-    let filtered = crate::git::history::filter_commits_by_scope(commits, &scope);
-    let churn_map = crate::git::history::compute_file_churn(
-        filtered,
-        anchor_epoch,
-        crate::git::history::MERGE_BOMB_MAX_FILES,
-    );
-    let counts: std::collections::HashMap<String, u32> = churn_map
-        .into_iter()
-        .map(|(path, fc)| (path, fc.commits))
-        .collect();
-    let report = crate::metrics::compute_hotspots(&state.ingest, &state.interner, &counts)
-        .with_root(&state.root);
-    report.write_xml(out)
-}
-
-pub fn print_cochange_partners<W: Write>(
-    file: &str,
-    partners: &[crate::git::cochange::CoPartner],
-    out: &mut W,
-) -> io::Result<()> {
-    writeln!(out, "<f path=\"{}\" partners=\"{}\">", file, partners.len())?;
-    for p in partners {
-        let attr = if !p.dep_capable {
-            " dep_capable=\"0\""
-        } else if p.surprising {
-            " surprising=\"1\""
-        } else {
-            ""
-        };
-        writeln!(
-            out,
-            "  <partner path=\"{}\" together=\"{}\" deg=\"{:.2}\" deg_rev=\"{:.2}\" recur=\"{}\"{} />",
-            p.file_path, p.together, p.deg, p.deg_rev, p.recur, attr
-        )?;
-    }
-    writeln!(out, "</f>")
-}
-
-fn format_copair_row(p: &crate::git::cochange::CoPair) -> String {
-    let surp = usize::from(p.surprising);
-    let mut row = format!(
-        "  <pair a=\"{}\" b=\"{}\" together=\"{}\" deg=\"{:.2}\" conf_ab=\"{:.2}\" conf_ba=\"{:.2}\" driver=\"{}\" recur=\"{}\" surprising=\"{surp}\"",
-        p.file_a.xml_escaped(),
-        p.file_b.xml_escaped(),
-        p.together,
-        p.deg,
-        p.conf_ab,
-        p.conf_ba,
-        p.driver,
-        p.recur
-    );
-    if !p.dep_capable {
-        row.push_str(" dep_capable=\"0\"");
-    }
-    row.push_str("/>");
-    row
-}
-
-pub fn print_cochange_pairs_paged<W: Write>(
-    root: &str,
-    pairs: &[crate::git::cochange::CoPair],
-    limit: Option<usize>,
-    offset: Option<usize>,
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::{GitStampExt, PaginateSlice};
-    let at_attr = root.git_at_xml_attr();
-    let total = pairs.len();
-    let (pw, page) = pairs.paginate(30, limit, offset);
-    let page_attrs = pw.xml_attrs();
-    writeln!(
-        out,
-        "<cochange schema=\"ripwire-rs.cochange/v1\" pairs=\"{total}\" window=\"18mo@HEAD\" sub_windows=\"3\"{page_attrs} root=\"{root}\"{at_attr}>",
-    )?;
-    for p in page {
-        writeln!(out, "{}", format_copair_row(p))?;
-    }
-    writeln!(out, "</cochange>")
-}
-
-pub fn print_cochange_groups_paged<W: Write>(
-    root: &str,
-    groups: &[crate::git::cochange::CoGroup],
-    limit: Option<usize>,
-    offset: Option<usize>,
-    out: &mut W,
-) -> io::Result<()> {
-    use crate::serialize::{GitStampExt, PaginateSlice};
-    let at_attr = root.git_at_xml_attr();
-    let total = groups.len();
-    let (pw, page) = groups.paginate(30, limit, offset);
-    let page_attrs = pw.xml_attrs();
-    writeln!(
-        out,
-        "<cochange-groups schema=\"ripwire-rs.cochange-groups/v1\" groups=\"{total}\" window=\"18mo@HEAD\"{page_attrs} root=\"{root}\"{at_attr}>",
-    )?;
-    for g in page {
-        let partners_joined = g
-            .partners
-            .iter()
-            .map(|p| p.xml_escaped().to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-        writeln!(
-            out,
-            "  <group core=\"{}\" partners=\"{partners_joined}\" size=\"{}\" together=\"{}\" deg=\"{:.2}\"/>",
-            g.core.xml_escaped(),
-            g.partners.len() + 1,
-            g.max_together,
-            g.max_deg
-        )?;
-    }
-    writeln!(out, "</cochange-groups>")
+    crate::query::safety::execute_hotspots_with(since, commits, &safety_context(state), out)
 }
 
 pub fn execute_cochange_with<W: Write>(
-    probed_file: Option<&str>,
-    since_str: Option<&str>,
+    file: Option<&str>,
+    since: Option<&str>,
     commits: &[crate::git::history::CommitInfo],
-    state: &crate::mcp::McpState,
+    state: &crate::Workspace,
     out: &mut W,
 ) -> io::Result<()> {
-    execute_cochange_with_options(
-        probed_file,
-        GitMetricsFlags {
-            since: since_str,
-            ..Default::default()
-        },
+    crate::query::safety::execute_cochange_with(file, since, commits, &safety_context(state), out)
+}
+
+pub fn execute_cochange_with_options<W: Write>(
+    file: Option<&str>,
+    flags: GitMetricsFlags<'_>,
+    commits: &[crate::git::history::CommitInfo],
+    state: &crate::Workspace,
+    out: &mut W,
+) -> io::Result<()> {
+    let options = crate::query::safety::CochangeOptions {
+        since: flags.since,
+        cochange_recur: flags.cochange_recur,
+        cochange_groups: flags.cochange_groups,
+        limit: flags.limit,
+        offset: flags.offset,
+    };
+    crate::query::safety::execute_cochange_with_options(
+        file,
+        options,
         commits,
-        state,
+        &safety_context(state),
         out,
     )
 }
 
-pub fn execute_cochange_with_options<W: Write>(
-    probed_file: Option<&str>,
-    flags: GitMetricsFlags<'_>,
-    commits: &[crate::git::history::CommitInfo],
-    state: &crate::mcp::McpState,
-    out: &mut W,
-) -> io::Result<()> {
-    let anchor_epoch = commits.first().map(|c| c.timestamp).unwrap_or(0);
-    let scope = crate::git::history::parse_since_scope(flags.since, anchor_epoch);
-    let filtered = crate::git::history::filter_commits_by_scope(commits, &scope);
-    let coupling = crate::git::cochange::StaticCouplingMap::build(
-        &state.ingest,
-        &state.interner,
-        Some(&state.graph),
-    );
-    let opts = crate::git::cochange::CochangeOptions::default();
-
-    let target_file =
-        probed_file.filter(|f| !f.is_empty() && *f != "." && !std::path::Path::new(f).is_dir());
-    if let Some(file) = target_file {
-        let mut partners = crate::git::cochange::mine_cochange_for_file(
-            file,
-            filtered,
-            Some(&coupling),
-            Some(&state.ingest),
-            Some(&state.interner),
-            &opts,
-        );
-        if let Some(mr) = flags.cochange_recur {
-            partners.retain(|p| p.recur >= mr);
-        }
-        print_cochange_partners(file, &partners, out)
-    } else {
-        let mut pairs = crate::git::cochange::mine_repo_cochange_pairs(
-            filtered,
-            Some(&coupling),
-            Some(&state.ingest),
-            Some(&state.interner),
-            &opts,
-        );
-        if let Some(mr) = flags.cochange_recur {
-            pairs.retain(|p| p.recur >= mr);
-        }
-        if flags.cochange_groups {
-            let groups = crate::git::cochange::cluster_cochange_groups(&pairs);
-            print_cochange_groups_paged(&state.root, &groups, flags.limit, flags.offset, out)
-        } else {
-            print_cochange_pairs_paged(&state.root, &pairs, flags.limit, flags.offset, out)
-        }
-    }
-}
-
 pub fn execute_edit_check_with<W: Write>(
-    sym_name: &str,
+    symbol: &str,
     page: Option<(usize, usize)>,
-    state: &crate::mcp::McpState,
+    state: &crate::Workspace,
     out: &mut W,
 ) -> io::Result<()> {
-    let ids = crate::navigate::find_symbols_by_name(sym_name, &state.ingest, &state.interner);
-    let Some(&sym_id) = ids.first() else {
-        writeln!(out, "Symbol '{}' not found", sym_name)?;
-        return Ok(());
-    };
-
-    let sym = &state.ingest.symbols[sym_id as usize];
-    let rel_path = state
-        .interner
-        .resolve(&state.ingest.files[sym.file_id as usize].path);
-    let head_contract =
-        crate::gate::contract::load_head_symbol_contract(&state.root, rel_path, sym_name, sym.lang)
-            .ok()
-            .flatten();
-
-    if let Some(mut report) = crate::gate::edit_check::check_symbol_contract(
-        sym_id,
-        head_contract.as_ref(),
-        &state.ingest,
-        &state.graph,
-        &state.interner,
-    ) {
-        if let Some(stamp) = crate::git::history::compute_git_at_stamp(&state.root) {
-            report.at_stamp = stamp;
-        }
-        report.page = page;
-        report.write_xml(out)?;
-    }
-    Ok(())
+    crate::query::safety::execute_edit_check_with(symbol, page, &safety_context(state), out)
 }
 
 pub fn execute_affected_with<W: Write>(
-    specs_str: &str,
-    state: &crate::mcp::McpState,
+    specs: &str,
+    state: &crate::Workspace,
     out: &mut W,
 ) -> io::Result<()> {
-    let specs: Vec<&str> = specs_str.split(',').map(str::trim).collect();
-    let mut report = crate::gate::affected::find_affected_tests(
-        &specs,
-        &state.ingest,
-        &state.graph,
-        &state.interner,
-    );
-    crate::gate::attach_test_runners(
-        &mut report.tests,
-        std::path::Path::new(&state.root),
-        &state.ingest,
-        &state.interner,
-    );
-    report.write_xml(out)
-}
-
-fn dirty_pin_absorbed_gating(state: &crate::mcp::McpState) -> io::Result<Option<(usize, String)>> {
-    if get_working_tree_changed_files(&state.root).is_empty() {
-        return Ok(None);
-    }
-    let rep = crate::gate::quality_delta::evaluate_quality_delta_with_basis(
-        &state.root,
-        state,
-        crate::gate::quality_delta::DeltaBasis::HeadOnly,
-    )?;
-    let mut gating = rep.regressions.iter().filter(|r| r.is_gating);
-    let Some(first) = gating.next() else {
-        return Ok(None);
-    };
-    let first_row = format!(
-        "{} {} {}:{} was={} now={}",
-        first.kind, first.sym_name, first.file_path, first.line, first.was_val, first.now_val
-    );
-    Ok(Some((1 + gating.count(), first_row)))
+    crate::query::safety::execute_affected_with(specs, &safety_context(state), out)
 }
 
 pub fn execute_quality_baseline_with<W: Write>(
-    state: &crate::mcp::McpState,
+    state: &crate::Workspace,
     allow_dirty: bool,
     out: &mut W,
 ) -> io::Result<()> {
-    let in_memory = state.root == ":memory:" || state.root.is_empty();
-    let head_sha = if in_memory {
-        String::new()
-    } else {
-        crate::git::history::resolve_head_sha(&state.root).unwrap_or_default()
+    let sources = crate::query::FileSources {
+        root: Path::new(&state.root),
     };
-    let stamp_label = if head_sha.is_empty() {
-        "no git HEAD"
-    } else {
-        head_sha.as_str()
-    };
-    let mut snap = crate::gate::baseline::compute_snapshot(
-        &state.ingest,
-        &state.graph,
-        &state.interner,
-        &head_sha,
-    );
-    if !in_memory && let Some((absorbed, first_row)) = dirty_pin_absorbed_gating(state)? {
-        if !allow_dirty {
-            return Err(io::Error::other(format!(
-                "ripwire-rs: --quality-baseline: this tree already holds {absorbed} gating finding(s) against HEAD; pinning here would absorb them into the floor. First: {first_row}\n  Commit the tree first, or pass --allow-dirty to pin anyway (the sidecar then records absorbed={absorbed})."
-            )));
-        }
-        snap.dirty = true;
-        snap.absorbed = absorbed;
-    }
-    if in_memory {
-        writeln!(
-            out,
-            "ripwire-rs: pinned quality baseline stamped at {stamp_label} -> in-memory"
-        )?;
-        return Ok(());
-    }
-    let baseline_path = Path::new(&state.root).join(crate::gate::baseline::DEFAULT_BASELINE_FILE);
-    crate::gate::baseline::write_baseline_file(&snap, &baseline_path)?;
-    writeln!(
+    crate::query::safety::execute_quality_baseline_with(
+        &state.query_context(&sources),
+        allow_dirty,
         out,
-        "ripwire-rs: pinned quality baseline stamped at {stamp_label} -> {}",
-        baseline_path.display()
-    )?;
-    Ok(())
+    )
 }
+
 pub fn execute_quality_delta_with_args<W: Write>(
     args: GateDispatchArgs<'_>,
-    state: &crate::mcp::McpState,
+    state: &crate::Workspace,
     out: &mut W,
 ) -> io::Result<bool> {
-    let mut report = crate::gate::quality_delta::evaluate_quality_delta(&state.root, state)?;
-    crate::gate::quality_delta::apply_cli_delta_options(
-        state,
-        &mut report,
+    let sources = crate::query::FileSources {
+        root: Path::new(&state.root),
+    };
+    crate::query::safety::execute_quality_delta_with_args(
         crate::gate::quality_delta::DeltaCliOptions {
             scope: args.scope,
             quality_ack: args.quality_ack,
             ack_only: args.ack_only,
             show_stale: args.show_stale,
         },
-    )?;
-    report.write_xml(out)?;
-    Ok(report.has_gating_failures())
+        &state.query_context(&sources),
+        out,
+    )
 }

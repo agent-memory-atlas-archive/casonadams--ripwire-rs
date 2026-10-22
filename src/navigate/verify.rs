@@ -63,15 +63,14 @@ fn write_sym_witness<W: Write>(
 fn collect_literal_hits(
     file_pat: &str,
     lit: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
+    ctx: &VerifyContext<'_>,
 ) -> Vec<(String, u32, String, String)> {
-    let req = crate::mcp::retrieval::GrepRequest {
+    let req = crate::query::retrieval::GrepRequest {
         path_filter: Some(file_pat),
         any_tier: true,
-        ..crate::mcp::retrieval::GrepRequest::new(".", lit)
+        ..crate::query::retrieval::GrepRequest::new(ctx.root, lit, ctx.sources)
     };
-    let val = crate::mcp::retrieval::call_grep(ingest, interner, &req);
+    let val = crate::query::retrieval::call_grep(ctx.ingest, ctx.interner, &req);
     let mut hits = Vec::new();
     if let Some(arr) = val["hits"].as_array() {
         for h in arr {
@@ -87,9 +86,9 @@ fn collect_literal_hits(
     if !hits.is_empty() {
         return hits;
     }
-    for sym in &ingest.symbols {
-        let path = ingest.sym_file_path(sym, interner);
-        let name = interner.resolve(&sym.name);
+    for sym in &ctx.ingest.symbols {
+        let path = ctx.ingest.sym_file_path(sym, ctx.interner);
+        let name = ctx.interner.resolve(&sym.name);
         if path.contains(file_pat) && name.contains(lit) {
             hits.push((
                 path.to_string(),
@@ -102,17 +101,78 @@ fn collect_literal_hits(
     hits
 }
 
+/// Borrowed analysis context for evaluating verification claims.
+pub struct VerifyContext<'a> {
+    pub root: &'a str,
+    pub ingest: &'a IngestResult,
+    pub graph: &'a Graph,
+    pub interner: &'a Interner,
+    pub sources: &'a dyn crate::query::SourceReader,
+}
+
+impl<'a> VerifyContext<'a> {
+    pub fn new(
+        root: &'a str,
+        ingest: &'a IngestResult,
+        graph: &'a Graph,
+        interner: &'a Interner,
+        sources: &'a dyn crate::query::SourceReader,
+    ) -> Self {
+        Self {
+            root,
+            ingest,
+            graph,
+            interner,
+            sources,
+        }
+    }
+}
+
+impl<'a> From<&'a crate::query::commands::QueryContext<'a>> for VerifyContext<'a> {
+    fn from(ctx: &'a crate::query::commands::QueryContext<'a>) -> Self {
+        Self {
+            root: ctx.root,
+            ingest: ctx.ingest,
+            graph: ctx.graph,
+            interner: ctx.interner,
+            sources: ctx.sources,
+        }
+    }
+}
+
+impl<'a> From<crate::query::commands::QueryContext<'a>> for VerifyContext<'a> {
+    fn from(ctx: crate::query::commands::QueryContext<'a>) -> Self {
+        Self {
+            root: ctx.root,
+            ingest: ctx.ingest,
+            graph: ctx.graph,
+            interner: ctx.interner,
+            sources: ctx.sources,
+        }
+    }
+}
+
+impl<'a> CorpusView<'a> for &VerifyContext<'a> {
+    fn ingest(&self) -> &'a IngestResult {
+        self.ingest
+    }
+    fn interner(&self) -> &'a Interner {
+        self.interner
+    }
+}
+
 fn write_hit_witness<W: Write>(
     (path, line, enc, text): &(String, u32, String, String),
     out: &mut W,
 ) -> io::Result<()> {
-    let safe = text.replace("]]>", "]]]]><![CDATA[>");
     write!(
         out,
-        "<hit p=\"{}:{line}\" in=\"{}\"><m><![CDATA[{safe}]]></m></hit>",
+        "<hit p=\"{}:{line}\" in=\"{}\"><m>",
         path.xml_escaped(),
         enc.xml_escaped()
-    )
+    )?;
+    crate::serialize::write_cdata(out, text)?;
+    write!(out, "</m></hit>")
 }
 
 pub enum VerifyWitness<'a> {
@@ -240,17 +300,10 @@ fn parse_verify_claim(claim: &str) -> Option<(&str, &str, &str, bool)> {
     ))
 }
 
-fn eval_calls<'a>(
-    claim: &'a str,
-    a: &str,
-    b: &str,
-    ingest: &'a IngestResult,
-    graph: &Graph,
-    interner: &'a Interner,
-) -> VerifyReport<'a> {
-    let from_ids = find_symbols_by_name(a, ingest, interner);
-    let to_ids = find_symbols_by_name(b, ingest, interner);
-    let path = bfs_shortest_path(graph, &from_ids, &to_ids);
+fn eval_calls<'a>(claim: &'a str, a: &str, b: &str, ctx: &VerifyContext<'a>) -> VerifyReport<'a> {
+    let from_ids = find_symbols_by_name(a, ctx.ingest, ctx.interner);
+    let to_ids = find_symbols_by_name(b, ctx.ingest, ctx.interner);
+    let path = bfs_shortest_path(ctx.graph, &from_ids, &to_ids);
     let ok = !path.is_empty();
     let hops = if ok {
         format!(" hops=\"{}\"", path.len() - 1)
@@ -269,9 +322,9 @@ fn eval_calls<'a>(
         limit: (!ok).then_some("call-graph-floor"),
         complete: false,
         witness: VerifyWitness::Nodes(path),
-        ingest,
-        interner,
-        gauges: graph.gauges(),
+        ingest: ctx.ingest,
+        interner: ctx.interner,
+        gauges: ctx.graph.gauges(),
     }
 }
 
@@ -279,12 +332,10 @@ fn eval_uses<'a>(
     claim: &'a str,
     sym: &str,
     is_unused: bool,
-    ingest: &'a IngestResult,
-    graph: &Graph,
-    interner: &'a Interner,
+    ctx: &VerifyContext<'a>,
 ) -> VerifyReport<'a> {
-    let defs = find_symbols_by_name(sym, ingest, interner);
-    let sites = (ingest, interner).collect_symbol_uses(sym);
+    let defs = find_symbols_by_name(sym, ctx.ingest, ctx.interner);
+    let sites = (ctx.ingest, ctx.interner).collect_symbol_uses(sym);
     let total = sites.len();
     let verdict = match (is_unused, total > 0) {
         (false, true) => "confirmed",
@@ -303,9 +354,9 @@ fn eval_uses<'a>(
         limit: (total == 0).then_some("reference-floor"),
         complete: false,
         witness: VerifyWitness::Uses(sites),
-        ingest,
-        interner,
-        gauges: graph.gauges(),
+        ingest: ctx.ingest,
+        interner: ctx.interner,
+        gauges: ctx.graph.gauges(),
     }
 }
 
@@ -313,18 +364,16 @@ fn eval_defines<'a>(
     claim: &'a str,
     file_pat: &str,
     sym: &str,
-    ingest: &'a IngestResult,
-    graph: &Graph,
-    interner: &'a Interner,
+    ctx: &VerifyContext<'a>,
 ) -> VerifyReport<'a> {
-    let defs_of_name = find_symbols_by_name(sym, ingest, interner);
+    let defs_of_name = find_symbols_by_name(sym, ctx.ingest, ctx.interner);
     let in_file: Vec<NodeId> = defs_of_name
         .iter()
         .copied()
         .filter(|&id| {
-            ingest
+            ctx.ingest
                 .sym(id)
-                .is_some_and(|s| ingest.sym_file_path(s, interner).contains(file_pat))
+                .is_some_and(|s| ctx.ingest.sym_file_path(s, ctx.interner).contains(file_pat))
         })
         .collect();
     if !in_file.is_empty() {
@@ -340,12 +389,12 @@ fn eval_defines<'a>(
             limit: None,
             complete: false,
             witness: VerifyWitness::Nodes(in_file),
-            ingest,
-            interner,
-            gauges: graph.gauges(),
+            ingest: ctx.ingest,
+            interner: ctx.interner,
+            gauges: ctx.graph.gauges(),
         };
     }
-    let hits = collect_literal_hits(file_pat, sym, ingest, interner);
+    let hits = collect_literal_hits(file_pat, sym, ctx);
     let occ = hits.len();
     VerifyReport {
         claim,
@@ -362,9 +411,9 @@ fn eval_defines<'a>(
         limit: (occ > 0).then_some("extraction-floor"),
         complete: occ == 0,
         witness: VerifyWitness::Hits(hits),
-        ingest,
-        interner,
-        gauges: graph.gauges(),
+        ingest: ctx.ingest,
+        interner: ctx.interner,
+        gauges: ctx.graph.gauges(),
     }
 }
 
@@ -373,13 +422,18 @@ fn eval_reaches<'a>(
     sym: &str,
     target: &str,
     is_quoted: bool,
-    ingest: &'a IngestResult,
-    graph: &Graph,
-    interner: &'a Interner,
+    ctx: &VerifyContext<'a>,
 ) -> VerifyReport<'a> {
-    let target_defs = find_symbols_by_name(sym, ingest, interner);
-    let ranks = vec![0.0; ingest.symbols.len()];
-    let impact = transitive_impact_multi(&target_defs, ingest, graph, &ranks, interner, None);
+    let target_defs = find_symbols_by_name(sym, ctx.ingest, ctx.interner);
+    let ranks = vec![0.0; ctx.ingest.symbols.len()];
+    let impact = transitive_impact_multi(
+        &target_defs,
+        ctx.ingest,
+        ctx.graph,
+        &ranks,
+        ctx.interner,
+        None,
+    );
     let mut nodes = Vec::new();
     let mut first_hops = None;
     for node in &impact {
@@ -412,25 +466,23 @@ fn eval_reaches<'a>(
         limit: nodes.is_empty().then_some("call-graph-floor"),
         complete: false,
         witness: VerifyWitness::Nodes(nodes),
-        ingest,
-        interner,
-        gauges: graph.gauges(),
+        ingest: ctx.ingest,
+        interner: ctx.interner,
+        gauges: ctx.graph.gauges(),
     }
 }
 
 pub fn evaluate_verify_claim<W: Write>(
     claim: &str,
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
+    ctx: &VerifyContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
     let rep = match parse_verify_claim(claim) {
-        Some(("calls", a, b, _)) => eval_calls(claim, a, b, ingest, graph, interner),
-        Some(("uses", sym, _, _)) => eval_uses(claim, sym, false, ingest, graph, interner),
-        Some(("unused", sym, _, _)) => eval_uses(claim, sym, true, ingest, graph, interner),
+        Some(("calls", a, b, _)) => eval_calls(claim, a, b, ctx),
+        Some(("uses", sym, _, _)) => eval_uses(claim, sym, false, ctx),
+        Some(("unused", sym, _, _)) => eval_uses(claim, sym, true, ctx),
         Some(("contains", f, lit, _)) => {
-            let hits = collect_literal_hits(f, lit, ingest, interner);
+            let hits = collect_literal_hits(f, lit, ctx);
             let total = hits.len();
             VerifyReport {
                 claim,
@@ -440,15 +492,13 @@ pub fn evaluate_verify_claim<W: Write>(
                 limit: None,
                 complete: total <= 20,
                 witness: VerifyWitness::Hits(hits),
-                ingest,
-                interner,
-                gauges: graph.gauges(),
+                ingest: ctx.ingest,
+                interner: ctx.interner,
+                gauges: ctx.graph.gauges(),
             }
         }
-        Some(("defines", f, sym, _)) => eval_defines(claim, f, sym, ingest, graph, interner),
-        Some(("reaches", sym, target, q)) => {
-            eval_reaches(claim, sym, target, q, ingest, graph, interner)
-        }
+        Some(("defines", f, sym, _)) => eval_defines(claim, f, sym, ctx),
+        Some(("reaches", sym, target, q)) => eval_reaches(claim, sym, target, q, ctx),
         _ => VerifyReport {
             claim,
             shape: "calls",
@@ -457,9 +507,9 @@ pub fn evaluate_verify_claim<W: Write>(
             limit: Some("call-graph-floor"),
             complete: false,
             witness: VerifyWitness::Nodes(Vec::new()),
-            ingest,
-            interner,
-            gauges: graph.gauges(),
+            ingest: ctx.ingest,
+            interner: ctx.interner,
+            gauges: ctx.graph.gauges(),
         },
     };
     rep.render_envelope(out)

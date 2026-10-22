@@ -1,6 +1,7 @@
 use super::{find_symbols_by_name, navigate_1hop};
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
+use crate::query::commands::QueryContext;
 use crate::serialize::XmlEscapeExt;
 use std::io::{self, Write};
 
@@ -301,9 +302,11 @@ fn write_pack_task_ctx<W: Write>(
     for b in &bodies {
         write!(
             out,
-            "<b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\"><![CDATA[{}]]></b>",
-            b.kind, b.line, b.path_esc, b.name_esc, b.body
+            "<b t=\"{}\" l=\"{}\" p=\"{}\" n=\"{}\">",
+            b.kind, b.line, b.path_esc, b.name_esc
         )?;
+        crate::serialize::write_cdata(out, &b.body)?;
+        write!(out, "</b>")?;
     }
     write!(
         out,
@@ -344,35 +347,34 @@ fn write_pack_task_ctx<W: Write>(
 
 pub fn execute_pack_task<W: Write>(
     task: &str,
-    root: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
+    ctx: &QueryContext<'_>,
     out: &mut W,
 ) -> io::Result<()> {
-    let graph = Graph::build(ingest, interner);
-    let pr = graph.page_rank(&crate::rank::PageRankConfig::default());
-    let for_val = crate::mcp::retrieval::call_for_task_with_options(
-        ingest,
-        interner,
-        &pr.ranks,
+    let for_val = crate::query::retrieval::call_for_task_with_options(
+        ctx.ingest,
+        ctx.interner,
+        &ctx.pr.ranks,
         task,
-        crate::mcp::retrieval::ForTaskOptions {
-            root,
-            graph: Some(&graph),
+        crate::query::retrieval::ForTaskOptions {
+            root: ctx.root,
+            sources: Some(ctx.sources),
+            graph: Some(ctx.graph),
             budget_tokens: Some(10),
             detail: Some(3),
             adaptive: false,
+            at: ctx.at,
+            ..Default::default()
         },
     );
     let empty = Vec::new();
     let syms = for_val["symbols"].as_array().unwrap_or(&empty);
     let env = PackRenderEnv {
         task,
-        root,
-        ingest,
-        graph: &graph,
-        ranks: &pr.ranks,
-        interner,
+        root: ctx.root,
+        ingest: ctx.ingest,
+        graph: ctx.graph,
+        ranks: &ctx.pr.ranks,
+        interner: ctx.interner,
     };
     let _ = write_pack_task_ctx(&env, syms, 6000, true, out)?;
     Ok(())

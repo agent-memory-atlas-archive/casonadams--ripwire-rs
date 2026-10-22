@@ -79,38 +79,47 @@ fn list_span_locals(
     ))
 }
 
-/// Render XML for sliceable locals inventory when no variable was given.
-fn render_locals_xml(
-    root: &str,
-    sym_name: &str,
-    path_line: &str,
-    symbol: &crate::domain::Symbol,
-    locals: &[(String, u32, OccRole)],
-) -> String {
-    let kind_tag = symbol.kind.tag();
-    let lang_tag = symbol.lang.tag();
-    use crate::serialize::GitStampExt;
-    let at_stamp = root.git_at_or_head();
+struct SliceReportContext<'a> {
+    request: &'a SliceRequest<'a>,
+    symbol: &'a crate::domain::Symbol,
+    sym_name: &'a str,
+    path_line: &'a str,
+}
+
+impl SliceReportContext<'_> {
+    fn at_attr(&self) -> String {
+        self.request
+            .at
+            .map(|value| format!(" at=\"{}\"", crate::serialize::escape_xml_str(value)))
+            .unwrap_or_default()
+    }
+}
+
+fn render_locals_xml(report: &SliceReportContext<'_>, locals: &[(String, u32, OccRole)]) -> String {
+    let kind_tag = report.symbol.kind.tag();
+    let lang_tag = report.symbol.lang.tag();
+    use crate::serialize::escape_xml_str;
+    let at_attr = report.at_attr();
+    let root = escape_xml_str(report.request.root);
+    let sym_name = escape_xml_str(report.sym_name);
+    let path_line = escape_xml_str(report.path_line);
     let mut out = format!(
-        "<!-- ripwire-rs slice schema=ripwire-rs.slice/v1: name-based def-use rows of one variable in one definition. -->\n<slice schema=\"ripwire-rs.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" t=\"{kind_tag}\" lang=\"{lang_tag}\" vars=\"{}\" at=\"{at_stamp}\" root=\"{root}\" counts=\"as-classified\">\n",
+        "<!-- ripwire-rs slice schema=ripwire-rs.slice/v1: name-based def-use rows of one variable in one definition. -->\n<slice schema=\"ripwire-rs.slice/v1\" sym=\"{sym_name}\" p=\"{path_line}\" t=\"{kind_tag}\" lang=\"{lang_tag}\" vars=\"{}\"{at_attr} root=\"{root}\" counts=\"as-classified\">\n",
         locals.len()
     );
     for (name, line, role) in locals {
-        out.push_str(&format!("  <v n=\"{name}\" l=\"{line}\" t=\"{role}\" />\n"));
+        out.push_str(&format!(
+            "  <v n=\"{}\" l=\"{line}\" t=\"{role}\" />\n",
+            escape_xml_str(name)
+        ));
     }
     out.push_str("</slice>\n");
     out
 }
 
 struct FlowRenderCtx<'a> {
-    sym_name: &'a str,
+    report: &'a SliceReportContext<'a>,
     var_name: &'a str,
-    path_line: &'a str,
-    kind_tag: &'a str,
-    lang_tag: &'a str,
-    root: &'a str,
-    dir: SliceFlowDir,
-    depth: u32,
     source_bytes: &'a [u8],
 }
 
@@ -129,35 +138,40 @@ fn format_step_xml(s: &SliceStep, lines: &[&str]) -> String {
     if line_text.is_empty() {
         format!(
             "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\"{from_attrs} />\n",
-            s.line, s.role, s.var_name, s.depth
+            s.line,
+            s.role,
+            crate::serialize::escape_xml_str(&s.var_name),
+            s.depth
         )
     } else {
         format!(
             "  <s l=\"{}\" k=\"{}\" v=\"{}\" d=\"{}\"{from_attrs}><![CDATA[{line_text}]]></s>\n",
-            s.line, s.role, s.var_name, s.depth
+            s.line,
+            s.role,
+            crate::serialize::escape_xml_str(&s.var_name),
+            s.depth
         )
     }
 }
 
-/// Render XML for transitive dataflow slice.
 fn render_flow_xml(ctx: &FlowRenderCtx<'_>, steps: &[SliceStep]) -> String {
     let src_text = String::from_utf8_lossy(ctx.source_bytes);
     let lines: Vec<&str> = src_text.lines().collect();
     let defs_cnt = steps.iter().filter(|s| s.role.is_def()).count();
     let uses_cnt = steps.iter().filter(|s| s.role.is_use()).count();
-    use crate::serialize::GitStampExt;
-    let at_stamp = ctx.root.git_at_or_head();
+    use crate::serialize::escape_xml_str;
+    let at_attr = ctx.report.at_attr();
     let mut out = format!(
-        "<slice schema=\"ripwire-rs.slice/v1\" sym=\"{}\" var=\"{}\" p=\"{}\" t=\"{}\" lang=\"{}\" defs=\"{defs_cnt}\" uses=\"{uses_cnt}\" flow=\"{}\" depth=\"{}\" steps=\"{}\" at=\"{at_stamp}\" root=\"{}\" counts=\"as-classified\">\n",
-        ctx.sym_name,
-        ctx.var_name,
-        ctx.path_line,
-        ctx.kind_tag,
-        ctx.lang_tag,
-        ctx.dir,
-        ctx.depth,
+        "<slice schema=\"ripwire-rs.slice/v1\" sym=\"{}\" var=\"{}\" p=\"{}\" t=\"{}\" lang=\"{}\" defs=\"{defs_cnt}\" uses=\"{uses_cnt}\" flow=\"{}\" depth=\"{}\" steps=\"{}\"{at_attr} root=\"{}\" counts=\"as-classified\">\n",
+        escape_xml_str(ctx.report.sym_name),
+        escape_xml_str(ctx.var_name),
+        escape_xml_str(ctx.report.path_line),
+        escape_xml_str(ctx.report.symbol.kind.tag()),
+        escape_xml_str(ctx.report.symbol.lang.tag()),
+        ctx.report.request.flow,
+        ctx.report.request.max_depth,
         steps.len(),
-        ctx.root
+        escape_xml_str(ctx.report.request.root)
     );
     for s in steps {
         out.push_str(&format_step_xml(s, &lines));
@@ -198,16 +212,20 @@ fn collect_slice_candidates<'a>(
     cands
 }
 
-fn read_slice_candidate_bytes(
-    root: &str,
-    file_path: &str,
-    custom_source: Option<&[u8]>,
-) -> Result<Vec<u8>, String> {
-    if let Some(b) = custom_source {
-        return Ok(b.to_vec());
-    }
-    crate::domain::read_rel_bytes(root, file_path)
-        .map_err(|e| format!("cannot read file {file_path}: {e}"))
+/// Transport-independent inputs for a slice report.
+pub struct SliceRequest<'a> {
+    pub root: &'a str,
+    pub at: Option<&'a str>,
+    pub target: &'a str,
+    pub flow: SliceFlowDir,
+    pub max_depth: u32,
+}
+
+/// Shared repository analysis used to resolve slice definitions.
+pub struct SliceContext<'a> {
+    pub ingest: &'a IngestResult,
+    pub interner: &'a Interner,
+    pub registry: &'a LanguageRegistry,
 }
 
 fn parse_candidate_variables(
@@ -236,91 +254,76 @@ fn parse_candidate_variables(
 }
 
 fn select_best_slice_candidate<'a>(
-    root: &str,
     var_opt: Option<&str>,
-    custom_source: Option<&[u8]>,
     candidates: &[&'a crate::domain::Symbol],
-    ingest: &'a IngestResult,
-    interner: &Interner,
-    registry: &LanguageRegistry,
-) -> &'a crate::domain::Symbol {
+    context: &SliceContext<'_>,
+    sources: &(impl crate::query::SourceReader + ?Sized),
+) -> Result<&'a crate::domain::Symbol, String> {
     let first = candidates[0];
-    let Some(var_name) = var_opt.filter(|_| candidates.len() > 1 && custom_source.is_none()) else {
-        return first;
+    let Some(var_name) = var_opt.filter(|_| candidates.len() > 1) else {
+        return Ok(first);
     };
+    let mut first_error = None;
     for &cand in candidates {
         if !cand.is_callable() || !cand.lang.semantics().supports_slice() {
             continue;
         }
-        let fpath = ingest.sym_file_path(cand, interner);
-        if let Ok(bytes) = read_slice_candidate_bytes(root, fpath, None)
-            && let Ok((_, occs)) = parse_candidate_variables(cand, &bytes, registry)
-            && occs.iter().any(|o| o.var_name == var_name)
-        {
-            return cand;
+        let path = context.ingest.sym_file_path(cand, context.interner);
+        let parsed = sources
+            .read(path)
+            .map_err(|e| format!("cannot read file {path}: {e}"))
+            .and_then(|bytes| parse_candidate_variables(cand, &bytes, context.registry));
+        match parsed {
+            Ok((_, occs)) if occs.iter().any(|o| o.var_name == var_name) => return Ok(cand),
+            Ok(_) => {}
+            Err(error) => {
+                first_error.get_or_insert(error);
+            }
         }
     }
-    first
-}
-
-/// Execute intra-procedural def-use variable slicing on a symbol target.
-pub fn execute_slice(
-    ingest: &IngestResult,
-    registry: &LanguageRegistry,
-    interner: &Interner,
-    target: &str,
-    flow_dir: SliceFlowDir,
-    max_depth: u32,
-    custom_source: Option<&[u8]>,
-) -> Result<String, String> {
-    execute_slice_with_root(
-        ".",
-        (ingest, interner),
-        registry,
-        target,
-        flow_dir,
-        max_depth,
-        custom_source,
-    )
-}
-
-fn execute_slice_with_root(
-    root: &str,
-    corpus: (&IngestResult, &Interner),
-    registry: &LanguageRegistry,
-    target: &str,
-    flow_dir: SliceFlowDir,
-    max_depth: u32,
-    custom_source: Option<&[u8]>,
-) -> Result<String, String> {
-    let (ingest, interner) = corpus;
-    let (sym_query, var_opt) = parse_slice_target(target);
-    let candidates = collect_slice_candidates(sym_query, ingest, interner);
-    let first = candidates
-        .first()
-        .copied()
-        .ok_or_else(|| format!("symbol not found: {sym_query}"))?;
-    if !first.lang.semantics().supports_slice() || first.kind == crate::domain::SymKind::Section {
-        return Err(format!(
-            "--slice: slice not served for {} yet — the def-use classification requires a verified per-grammar local variable AST",
-            first.lang.tag()
-        ));
+    if let Some(error) = first_error {
+        return Err(error);
     }
+    Ok(first)
+}
 
-    let chosen = select_best_slice_candidate(
-        root,
-        var_opt,
-        custom_source,
-        &candidates,
+/// Query intra-procedural slicing using only the supplied source provider.
+pub fn query_slice(
+    request: SliceRequest<'_>,
+    context: SliceContext<'_>,
+    sources: &(impl crate::query::SourceReader + ?Sized),
+) -> Result<String, String> {
+    let SliceContext {
         ingest,
         interner,
         registry,
-    );
+    } = context;
+    let (sym_query, var_opt) = parse_slice_target(request.target);
+    let candidates = collect_slice_candidates(sym_query, ingest, interner);
+    candidates
+        .first()
+        .ok_or_else(|| format!("symbol not found: {sym_query}"))?;
+    let chosen = select_best_slice_candidate(var_opt, &candidates, &context, sources)?;
+    if !chosen.lang.semantics().supports_slice() || chosen.kind == crate::domain::SymKind::Section {
+        return Err(format!(
+            "--slice: slice not served for {} yet — the def-use classification requires a verified per-grammar local variable AST",
+            chosen.lang.tag()
+        ));
+    }
     let file_path = ingest.sym_file_path(chosen, interner);
-    let source_bytes = read_slice_candidate_bytes(root, file_path, custom_source)?;
+    let source_bytes = sources
+        .read(file_path)
+        .map_err(|e| format!("cannot read file {file_path}: {e}"))?;
     let (tree, all_occs) = parse_candidate_variables(chosen, &source_bytes, registry)?;
     let sym_name = interner.resolve(&chosen.name);
     let path_line = format!("{file_path}:{}", chosen.line);
+
+    let report = SliceReportContext {
+        request: &request,
+        symbol: chosen,
+        sym_name,
+        path_line: &path_line,
+    };
 
     match var_opt {
         None => {
@@ -331,61 +334,17 @@ fn execute_slice_with_root(
                 &source_bytes,
                 chosen.lang.semantics().syntax_kinds(),
             );
-            Ok(render_locals_xml(
-                root, sym_name, &path_line, chosen, &locals,
-            ))
+            Ok(render_locals_xml(&report, &locals))
         }
         Some(var_name) => {
-            let steps = compute_dataflow_slice(&all_occs, var_name, flow_dir, max_depth);
+            let steps =
+                compute_dataflow_slice(&all_occs, var_name, request.flow, request.max_depth);
             let ctx = FlowRenderCtx {
-                sym_name,
+                report: &report,
                 var_name,
-                path_line: &path_line,
-                kind_tag: chosen.kind.tag(),
-                lang_tag: chosen.lang.tag(),
-                root,
-                dir: flow_dir,
-                depth: max_depth,
                 source_bytes: &source_bytes,
             };
             Ok(render_flow_xml(&ctx, &steps))
-        }
-    }
-}
-
-pub fn execute_slice_command_with_depth(
-    root: &str,
-    target: Option<&str>,
-    flow_str: &str,
-    max_depth: u32,
-) -> std::io::Result<()> {
-    let Some(target) = target else {
-        eprintln!("ripwire-rs: target required (e.g. ripwire-rs slice sym:var)");
-        return Ok(());
-    };
-
-    let (ingest, _graph, _pr, interner) = crate::cli::load_repo_analysis(root)?;
-    let registry = LanguageRegistry::new().map_err(|e| std::io::Error::other(e.to_string()))?;
-    let flow_dir = flow_str.parse::<SliceFlowDir>().unwrap_or_default();
-    match execute_slice_with_root(
-        root,
-        (&ingest, &interner),
-        &registry,
-        target,
-        flow_dir,
-        max_depth,
-        None,
-    ) {
-        Ok(out) => {
-            use std::io::Write;
-            let mut stdout_lock = std::io::stdout().lock();
-            let mut writer = crate::serialize::XmlWriter::new(&mut stdout_lock, false);
-            writer.write_all(out.as_bytes())?;
-            writer.flush()
-        }
-        Err(e) => {
-            eprintln!("ripwire-rs: {e}");
-            Ok(())
         }
     }
 }

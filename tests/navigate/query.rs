@@ -1,7 +1,9 @@
 use ripwire_rs::navigate::{
-    evaluate_verify_claim, execute_graph_query_expr, execute_graph_query_expr_paged,
+    VerifyContext, evaluate_verify_claim, execute_graph_query_expr, execute_graph_query_expr_paged,
     execute_pack_task, execute_pack_task_partitioned, truncate_body_to_budget,
 };
+use ripwire_rs::query::commands::QueryContext;
+use ripwire_rs::rank::PageRankConfig;
 use ripwire_rs::serialize::PathLayerExt;
 use ripwire_rs::{
     FileInfo, Graph, IngestResult, Interner, Lang, RefRole, Reference, SymKind, Symbol,
@@ -115,6 +117,19 @@ fn test_graph_query_execution() {
     assert!(truncated.len() < 600);
     assert!(truncated.contains("truncated to fit pack-task budget"));
 
+    let sources = [("src/test.rs", &b"fn foo() { bar(); }\nfn bar() {}\n"[..])];
+    let pr = graph.page_rank(&PageRankConfig::default());
+    let query_ctx = QueryContext {
+        root: ".",
+        ingest: &ingest,
+        graph: &graph,
+        pr: &pr,
+        interner: &interner,
+        sources: &sources,
+        commits: None,
+        at: None,
+    };
+    let v_ctx = VerifyContext::from(&query_ctx);
     for (claim, expected) in [
         ("calls(foo,bar)", "confirmed"),
         ("calls(bar,foo)", "not-established"),
@@ -130,7 +145,7 @@ fn test_graph_query_execution() {
         ("invalid_claim", "not-established"),
     ] {
         let mut v_out = Vec::new();
-        evaluate_verify_claim(claim, &ingest, &graph, &interner, &mut v_out).unwrap();
+        evaluate_verify_claim(claim, &v_ctx, &mut v_out).unwrap();
         let v_str = String::from_utf8(v_out).unwrap();
         assert!(
             v_str.contains(&format!("verdict=\"{expected}\"")),
@@ -138,7 +153,7 @@ fn test_graph_query_execution() {
         );
     }
     let mut p_out = Vec::new();
-    execute_pack_task("search", ".", &ingest, &interner, &mut p_out).unwrap();
+    execute_pack_task("search", &query_ctx, &mut p_out).unwrap();
     assert!(String::from_utf8(p_out).unwrap().contains("<sigs>"));
     let mut pp_out = Vec::new();
     execute_pack_task_partitioned("foo bar", ".", 2, &ingest, &graph, &interner, &mut pp_out)

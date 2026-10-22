@@ -146,12 +146,15 @@ fn scan_line_links(line: &str, line_num: u32, line_start: usize, refs: &mut Vec<
                     callee_name: clean_target.to_string(),
                     qualifier: None,
                     line: line_num,
+                    name_line: line_num,
                     start_byte: line_start + b,
                     role: RefRole::Call,
                     arg_count: 0,
                     arg_count_known: false,
                     lang: None,
                     receiver: None,
+                    receiver_type: None,
+                    callable_field: false,
                 });
             }
             b = rp + 1;
@@ -255,5 +258,7 @@ pub fn extract_markdown(
         defs,
         refs,
         foreign_exports: Vec::new(),
+        callable_bindings: Vec::new(),
+        implementations: Vec::new(),
     }
 }

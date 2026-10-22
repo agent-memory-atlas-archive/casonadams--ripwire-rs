@@ -1,7 +1,7 @@
 use crate::domain::Lang;
 use crate::ingest::LanguageRegistry;
 use crate::languages::SyntaxKinds;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use streaming_iterator::StreamingIterator;
 
 /// Function signature contract defining parameter count and public visibility.
@@ -67,22 +67,26 @@ pub fn compare_contracts(
     }
 }
 
-pub(crate) fn read_head_blob_bytes(repo_path: &Path, rel_path: &str) -> Option<Vec<u8>> {
-    let repo = gix::discover(repo_path).ok()?;
-    let head = repo.head_commit().ok()?;
-    let tree = head.tree().ok()?;
-    if let Ok(Some(entry)) = tree.lookup_entry_by_path(rel_path)
-        && let Ok(obj) = entry.object()
-    {
-        return Some(obj.data.to_vec());
-    }
-    let workdir = repo.workdir()?;
+fn tree_entry_blob(tree: &gix::Tree<'_>, path: impl AsRef<Path>) -> Option<Vec<u8>> {
+    let entry = tree.lookup_entry_by_path(path).ok()??;
+    let obj = entry.object().ok()?;
+    Some(obj.data.to_vec())
+}
+
+fn resolve_repo_relative_path(repo_path: &Path, workdir: &Path, rel_path: &str) -> Option<PathBuf> {
     let full_target = repo_path.canonicalize().ok()?.join(rel_path);
     let canon_workdir = workdir.canonicalize().ok()?;
     let repo_rel = full_target.strip_prefix(&canon_workdir).ok()?;
-    let entry = tree.lookup_entry_by_path(repo_rel).ok()??;
-    let obj = entry.object().ok()?;
-    Some(obj.data.to_vec())
+    Some(repo_rel.to_path_buf())
+}
+
+pub(crate) fn read_head_blob_bytes(repo_path: &Path, rel_path: &str) -> Option<Vec<u8>> {
+    let repo = gix::discover(repo_path).ok()?;
+    let tree = repo.head_commit().ok()?.tree().ok()?;
+    tree_entry_blob(&tree, rel_path).or_else(|| {
+        let repo_rel = resolve_repo_relative_path(repo_path, repo.workdir()?, rel_path)?;
+        tree_entry_blob(&tree, repo_rel)
+    })
 }
 
 fn resolve_head_visibility(
@@ -125,17 +129,12 @@ pub fn parse_head_signature_match(
     Some((n, params, is_pub))
 }
 
-/// Load a symbol's contract from the git HEAD commit.
-pub fn load_head_symbol_contract<P: AsRef<Path>>(
-    repo_path: P,
-    rel_path: &str,
+/// Parse a symbol's contract from source bytes in memory.
+pub fn parse_symbol_contract_from_bytes(
+    bytes: &[u8],
     sym_name: &str,
     lang: Lang,
 ) -> Result<Option<SignatureContract>, String> {
-    let Some(bytes) = read_head_blob_bytes(repo_path.as_ref(), rel_path) else {
-        return Ok(None);
-    };
-
     let registry = LanguageRegistry::new().map_err(|e| e.to_string())?;
     let Some((ts_lang, query)) = registry.get(lang) else {
         return Ok(None);
@@ -146,15 +145,15 @@ pub fn load_head_symbol_contract<P: AsRef<Path>>(
         return Ok(None);
     }
 
-    let Some(tree) = parser.parse(&bytes, None) else {
+    let Some(tree) = parser.parse(bytes, None) else {
         return Ok(None);
     };
 
     let mut cursor = tree_sitter::QueryCursor::new();
-    let mut matches = cursor.matches(query, tree.root_node(), bytes.as_slice());
+    let mut matches = cursor.matches(query, tree.root_node(), bytes);
 
     while let Some(m) = matches.next() {
-        if let Some((n, params, is_public)) = parse_head_signature_match(m, query, &bytes, lang)
+        if let Some((n, params, is_public)) = parse_head_signature_match(m, query, bytes, lang)
             && n == sym_name
         {
             return Ok(Some(SignatureContract {
@@ -166,6 +165,19 @@ pub fn load_head_symbol_contract<P: AsRef<Path>>(
     }
 
     Ok(None)
+}
+
+/// Load a symbol's contract from the git HEAD commit.
+pub fn load_head_symbol_contract<P: AsRef<Path>>(
+    repo_path: P,
+    rel_path: &str,
+    sym_name: &str,
+    lang: Lang,
+) -> Result<Option<SignatureContract>, String> {
+    let Some(bytes) = read_head_blob_bytes(repo_path.as_ref(), rel_path) else {
+        return Ok(None);
+    };
+    parse_symbol_contract_from_bytes(&bytes, sym_name, lang)
 }
 
 fn is_variadic_param_kind(kind: &str) -> bool {
