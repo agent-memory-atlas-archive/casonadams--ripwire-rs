@@ -186,6 +186,10 @@ impl LanguageSemantics for TypeScriptLanguage {
         true
     }
 
+    fn interfaces_are_structural(&self) -> bool {
+        true
+    }
+
     fn member_receiver_type(&self, receiver_type: &str, member: &str) -> Option<String> {
         types::object_member_type(receiver_type, member)
     }

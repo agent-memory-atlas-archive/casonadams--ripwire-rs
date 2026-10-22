@@ -553,6 +553,10 @@ pub trait LanguageSemantics: Sync {
     fn interface_calls_keep_declaration(&self) -> bool {
         false
     }
+    /// True where interfaces are satisfied by shape, so a class conforms without declaring it (TypeScript).
+    fn interfaces_are_structural(&self) -> bool {
+        false
+    }
     /// The module an import specifier names and the identifier it binds in the importing file, when
     /// calls qualified by that identifier resolve into the module (Python `import x as y` -> `("x", "y")`).
     fn import_binding<'a>(&self, _raw_target: &'a str) -> Option<(&'a str, &'a str)> {

@@ -73,6 +73,7 @@ impl TraitIndex {
         for imp in implementations {
             index.add_implementation(imp, env, &methods);
         }
+        index.add_structural_implementors(env);
         index
     }
 
@@ -226,6 +227,61 @@ impl TraitIndex {
                 self.trait_members.entry(trait_id).or_default().push(m);
                 if env.symbols[m as usize].has_body() {
                     self.trait_defaults.entry(trait_id).or_default().push(m);
+                }
+            }
+        }
+    }
+
+    /// Classes that satisfy a structurally typed interface by shape: each interface method has a
+    /// same-named method with the same parameter count on the class. Such a class is recorded as an
+    /// implementor of the interface (dispatch only), never as a subject, so `implements` checks and
+    /// unrelated classes stay as declared.
+    fn add_structural_implementors(&mut self, env: &TraitEnv<'_>) {
+        let symbols = env.symbols;
+        let mut interfaces: Vec<NodeId> = self
+            .nominals_by_name
+            .values()
+            .flatten()
+            .copied()
+            .filter(|&id| {
+                let sym = &symbols[id as usize];
+                sym.kind == SymKind::Interface && sym.lang.semantics().interfaces_are_structural()
+            })
+            .collect();
+        interfaces.sort_unstable();
+        let mut subjects: Vec<NodeId> = self.by_subject.keys().copied().collect();
+        subjects.sort_unstable();
+        for iface in interfaces {
+            let required: Vec<(Spur, u16)> = self
+                .trait_members
+                .get(&iface)
+                .into_iter()
+                .flatten()
+                .map(|&m| (symbols[m as usize].name, symbols[m as usize].params))
+                .collect();
+            if required.is_empty() {
+                continue;
+            }
+            for &subject in &subjects {
+                let methods: Vec<NodeId> = self.by_subject[&subject]
+                    .iter()
+                    .flat_map(|&i| self.impls[i].methods.iter().copied())
+                    .collect();
+                let conforms = required.iter().all(|&(name, params)| {
+                    methods.iter().any(|&m| {
+                        let sym = &symbols[m as usize];
+                        sym.name == name && sym.params == params && sym.has_body()
+                    })
+                });
+                if conforms {
+                    let idx = self.impls.len();
+                    self.impls.push(TraitImpl {
+                        trait_id: Some(iface),
+                        subject: Some(subject),
+                        bound: None,
+                        methods,
+                    });
+                    self.by_trait.entry(iface).or_default().push(idx);
                 }
             }
         }

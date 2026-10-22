@@ -1,8 +1,9 @@
 use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, NodeId, Symbol, ingest_in_memory_files};
 
 const TASKS: &str = "export interface Task {\n  id: string;\n}\n\
-export interface TaskEnqueuer {\n  enqueue(payload: Task): Promise<string>;\n}\n\
-export class ReviewTaskQueue implements TaskEnqueuer {\n  async enqueue(payload: Task): Promise<string> {\n    return payload.id;\n  }\n}\n\
+export interface TaskEnqueuer {\n  enqueue(payload: Task): Promise<string>;\n  close(): void;\n}\n\
+export class ReviewTaskQueue implements TaskEnqueuer {\n  async enqueue(payload: Task): Promise<string> {\n    return payload.id;\n  }\n  close(): void {}\n}\n\
+export class ShapedQueue {\n  async enqueue(payload: Task): Promise<string> {\n    return payload.id;\n  }\n  close(): void {}\n}\n\
 export class OtherQueue {\n  enqueue(payload: Task): number {\n    return payload.id.length;\n  }\n}\n";
 
 const WEBHOOK: &str = "import type { Task, TaskEnqueuer } from \"../gcp/tasks\";\n\
@@ -77,6 +78,12 @@ fn all_files() -> Fixture {
         ("src/service/webhook.ts", WEBHOOK),
         ("tests/tasks.test.ts", CALLERS),
     ])
+}
+#[test]
+fn class_satisfying_the_interface_shape_without_declaring_it_is_reached() {
+    let fx = all_files();
+    let shaped = fx.caller_names(fx.method("ShapedQueue", "enqueue"));
+    assert!(shaped.contains(&"acceptEvent".to_string()), "{shaped:?}");
 }
 
 #[test]
