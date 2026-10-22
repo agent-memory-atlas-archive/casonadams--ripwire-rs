@@ -1,34 +1,25 @@
 //! `--ensemble`: four orthogonal evidence families joined and ranked.
-use super::{Plugin, Run, SharedOption};
+use super::plugin::report_command;
+use super::SharedOption;
 use crate::commands::context::{ExecutionContext, Paginated};
 use crate::serialize::XmlWriter;
-use clap::Args;
-use std::io;
+use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct EnsembleArgs {
+report_command! {
+    name: "ensemble",
+    args: EnsembleArgs,
+    static: ENSEMBLE,
+    options: [SharedOption::Paged],
+    run: report(render),
     /// Four orthogonal evidence families joined, ranked by distinct families fired
     #[arg(long = "ensemble")]
-    pub ensemble: bool,
+    ensemble: bool,
 }
 
-pub static ENSEMBLE: Plugin<EnsembleArgs> = Plugin {
-    name: "ensemble",
-    options: &[SharedOption::Paged],
-    selected: |a| a.ensemble,
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, args: &EnsembleArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub fn render(
+pub fn render<W: Write>(
     ctx: &ExecutionContext<'_>,
     _args: &EnsembleArgs,
-    out: &mut XmlWriter<'_, impl std::io::Write>,
+    out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
     let rep = crate::metrics::compute_ensemble(
         ctx.ingest,

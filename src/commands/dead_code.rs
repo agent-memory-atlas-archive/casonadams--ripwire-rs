@@ -1,18 +1,22 @@
 //! `--dead-code`: internal functions with zero incoming callers; honors `--limit` / `--offset`.
-use super::{Plugin, Run, SharedOption};
+use super::SharedOption;
+use super::plugin::report_command;
 use crate::commands::context::ExecutionContext;
 use crate::domain::{IngestResult, Interner};
 use crate::graph::Graph;
 use crate::serialize::XmlWriter;
-use clap::Args;
 use std::io::{self, Write};
 use std::path::Path;
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct DeadCodeArgs {
+report_command! {
+    name: "dead-code",
+    args: DeadCodeArgs,
+    static: DEAD_CODE,
+    options: [SharedOption::Paged],
+    run: report(render),
     /// Internal functions with zero incoming callers across the repository
     #[arg(long = "dead-code")]
-    pub dead_code: bool,
+    dead_code: bool,
 }
 
 struct CachedFile<'a> {
@@ -116,16 +120,3 @@ pub fn render<W: Write>(
         out,
     )
 }
-
-fn run(run: &Run<'_>, args: &DeadCodeArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub static DEAD_CODE: Plugin<DeadCodeArgs> = Plugin {
-    name: "dead-code",
-    options: &[SharedOption::Paged],
-    selected: |args| args.dead_code,
-    run,
-    check: None,
-    tools: &[],
-};

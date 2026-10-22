@@ -1,4 +1,4 @@
-use ripwire_rs::commands::context::{ExecutionContext, Paginated};
+use ripwire_rs::commands::context::ExecutionContext;
 use ripwire_rs::commands::{
     around, biggest_first, communities, context_ratio, external_surface, layout,
     naming_calibration, naming_consistency, quality_panel, report, symbol_metrics, tree,
@@ -60,7 +60,7 @@ fn names(xml: &str) -> BTreeSet<String> {
 #[test]
 fn file_tree_retains_definitions_without_inventing_call_edges() {
     let output = render(&["--tree"], |ctx, out| {
-        tree::render(ctx, ctx.cli.page_request(), out)
+        tree::render(ctx, &tree::TreeArgs::default(), out)
     })
     .unwrap();
     assert_eq!(

@@ -1,33 +1,37 @@
 //! `--skipped`: list files skipped due to size limits, unsupported extensions, or unindexed extensions.
-use super::{Plugin, Run, SharedOption};
+use super::SharedOption;
+use super::plugin::report_command;
+use crate::commands::context::{ExecutionContext, Paginated};
 use crate::domain::IngestResult;
-use crate::serialize::{PageRequest, Paged, XmlEscapeExt, row_bytes};
-use clap::Args;
+use crate::serialize::{PageRequest, Paged, XmlEscapeExt, XmlWriter, row_bytes};
 use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct SkippedArgs {
+report_command! {
+    name: "skipped",
+    args: SkippedArgs,
+    static: SKIPPED,
+    options: [SharedOption::Paged],
+    run: report(render),
     /// List files skipped due to size limits
     #[arg(long = "skipped")]
-    pub skipped: bool,
+    skipped: bool,
 }
 
-pub static SKIPPED: Plugin<SkippedArgs> = Plugin {
-    name: "skipped",
-    options: &[SharedOption::Paged],
-    selected: |args| args.skipped,
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, _: &SkippedArgs) -> io::Result<()> {
-    let page = run.page();
-    run.report(|ctx, out| {
-        let opts = crate::crawler::CrawlerOptions::default();
-        let census = crate::crawler::scan_skipped_census(ctx.root, &opts);
-        render_skipped_census_xml(ctx.root, &census, &opts, ctx.ingest, page, out)
-    })
+fn render<W: Write>(
+    ctx: &ExecutionContext<'_>,
+    _args: &SkippedArgs,
+    out: &mut XmlWriter<'_, W>,
+) -> io::Result<()> {
+    let opts = crate::crawler::CrawlerOptions::default();
+    let census = crate::crawler::scan_skipped_census(ctx.root, &opts);
+    render_skipped_census_xml(
+        ctx.root,
+        &census,
+        &opts,
+        ctx.ingest,
+        ctx.cli.page_request(),
+        out,
+    )
 }
 
 pub fn render_skipped_census_xml<W: Write>(

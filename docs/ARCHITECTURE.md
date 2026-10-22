@@ -121,8 +121,11 @@ composition roots pass `crate::commands::tools()`. Metric analysis that a plugin
 
 ### Adding a command
 
-1. Create `src/commands/<name>.rs` with a derive `Args` (the primary flag plus any modifier only this command
-   uses), a handler `fn(&Run, &Args) -> io::Result<()>` and `pub static NAME: Plugin<Args> = Plugin { .. }`.
+1. Create `src/commands/<name>.rs`. A command with one flag and a report body is one `report_command!` declaration
+   (`src/commands/plugin.rs`): its `name`, derive `Args` struct, `static` name, `options`, `tools`, the `run` mode
+   (`report(render)`, `query(execute)` or `nav(mode)`) and the flag with its doc comment and `#[arg]`, then a
+   `pub fn render` for the body. Any other command writes the derive `Args` (the primary flag plus any modifier only
+   this command uses), a handler `fn(&Run, &Args) -> io::Result<()>` and `pub static NAME: Plugin<Args> = Plugin { .. }`.
 2. Add `<name>::NAME,` to `register_commands!` in `src/commands/mod.rs` (position = dispatch precedence).
 3. Use `run.report(|ctx, out| ..)` for the analysis and output dialect (`--json`, `--pretty`, `--legend`) and
    `run.page()` for the `--limit/--offset` window. Attach MCP tools in `tools:`.

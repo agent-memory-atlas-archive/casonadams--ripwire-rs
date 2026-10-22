@@ -1,15 +1,17 @@
 //! `--arch RULES_FILE`: enforce architectural layering rules; exits 2 when any rule is violated.
-use super::{Plugin, Run};
+use super::plugin::report_command;
 use crate::commands::context::ExecutionContext;
 use crate::serialize::XmlWriter;
-use clap::Args;
 use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct ArchArgs {
+report_command! {
+    name: "arch",
+    args: ArchArgs,
+    static: ARCH,
+    run: report(render),
     /// Enforce architectural layering rules from file (exits 2 on violation)
     #[arg(long = "arch", value_name = "RULES_FILE")]
-    pub arch: Option<String>,
+    arch: Option<String>,
 }
 
 pub fn render<W: Write>(
@@ -28,16 +30,3 @@ pub fn render<W: Write>(
     }
     Ok(())
 }
-
-fn run(run: &Run<'_>, args: &ArchArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub static ARCH: Plugin<ArchArgs> = Plugin {
-    name: "arch",
-    options: &[],
-    selected: |args| args.arch.is_some(),
-    run,
-    check: None,
-    tools: &[],
-};

@@ -1,34 +1,25 @@
 //! `--naming-calibration`: calibrates naming lens rules against git rename history.
-use super::{Plugin, Run, SharedOption};
+use super::plugin::report_command;
+use super::SharedOption;
 use crate::commands::context::{ExecutionContext, Paginated};
 use crate::serialize::XmlWriter;
-use clap::Args;
-use std::io;
+use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct NamingCalibrationArgs {
+report_command! {
+    name: "naming-calibration",
+    args: NamingCalibrationArgs,
+    static: NAMING_CALIBRATION,
+    options: [SharedOption::Paged],
+    run: report(render),
     /// Calibrate naming lens rules against git rename history
     #[arg(long = "naming-calibration")]
-    pub naming_calibration: bool,
+    naming_calibration: bool,
 }
 
-pub static NAMING_CALIBRATION: Plugin<NamingCalibrationArgs> = Plugin {
-    name: "naming-calibration",
-    options: &[SharedOption::Paged],
-    selected: |a| a.naming_calibration,
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, args: &NamingCalibrationArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub fn render(
+pub fn render<W: Write>(
     ctx: &ExecutionContext<'_>,
     _args: &NamingCalibrationArgs,
-    out: &mut XmlWriter<'_, impl std::io::Write>,
+    out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
     crate::metrics::serialize_naming_calibration_xml(
         ctx.root,

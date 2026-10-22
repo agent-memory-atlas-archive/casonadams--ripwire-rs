@@ -1,29 +1,23 @@
 //! `--lint-catalog`: the built-in AST code smell rule catalog.
-use super::{Plugin, Run};
+use super::plugin::report_command;
+use crate::commands::context::ExecutionContext;
 use crate::serialize::XmlWriter;
-use clap::Args;
 use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct LintCatalogArgs {
+report_command! {
+    name: "lint-catalog",
+    args: LintCatalogArgs,
+    static: LINT_CATALOG,
+    run: report(render),
     /// Print built-in AST code smell catalog
     #[arg(long = "lint-catalog")]
-    pub lint_catalog: bool,
+    lint_catalog: bool,
 }
 
-pub fn render(out: &mut XmlWriter<'_, impl Write>) -> io::Result<()> {
+pub fn render<W: Write>(
+    _ctx: &ExecutionContext<'_>,
+    _args: &LintCatalogArgs,
+    out: &mut XmlWriter<'_, W>,
+) -> io::Result<()> {
     crate::metrics::lint::serialize_lint_catalog(out)
 }
-
-fn run(run: &Run<'_>, _args: &LintCatalogArgs) -> io::Result<()> {
-    run.report(|_, out| render(out))
-}
-
-pub static LINT_CATALOG: Plugin<LintCatalogArgs> = Plugin {
-    name: "lint-catalog",
-    options: &[],
-    selected: |args| args.lint_catalog,
-    run,
-    check: None,
-    tools: &[],
-};

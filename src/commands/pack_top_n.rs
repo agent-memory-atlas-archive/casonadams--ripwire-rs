@@ -1,17 +1,19 @@
 //! `--pack-top-n N`: bodies of the top N highest-ranked symbols.
-use super::{Plugin, Run};
+use super::plugin::report_command;
 use crate::commands::context::ExecutionContext;
 use crate::domain::{IngestResult, Interner};
 use crate::rank::PageRankResult;
 use crate::serialize::XmlWriter;
-use clap::Args;
 use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct PackTopNArgs {
+report_command! {
+    name: "pack-top-n",
+    args: PackTopNArgs,
+    static: PACK_TOP_N,
+    run: report(render),
     /// Pack bodies of the top N highest-ranked symbols
     #[arg(long = "pack-top-n", value_name = "N")]
-    pub pack_top_n: Option<usize>,
+    pack_top_n: Option<usize>,
 }
 
 fn execute_pack_top_n_query<W: Write>(
@@ -47,10 +49,10 @@ fn execute_pack_top_n_query<W: Write>(
     crate::serialize::serialize_pack_top_n_xml(root, &bodies_slice, out)
 }
 
-pub fn render(
+pub fn render<W: Write>(
     ctx: &ExecutionContext<'_>,
     args: &PackTopNArgs,
-    out: &mut XmlWriter<'_, impl Write>,
+    out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
     execute_pack_top_n_query(
         ctx.root,
@@ -61,16 +63,3 @@ pub fn render(
         out,
     )
 }
-
-fn run(run: &Run<'_>, args: &PackTopNArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub static PACK_TOP_N: Plugin<PackTopNArgs> = Plugin {
-    name: "pack-top-n",
-    options: &[],
-    selected: |args| args.pack_top_n.is_some(),
-    run,
-    check: None,
-    tools: &[],
-};

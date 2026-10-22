@@ -1,22 +1,24 @@
 //! `--outline SYMS`: definition skeletons of symbols; reads `--compress` through `--expand`.
-use super::{Plugin, Run};
+use super::plugin::report_command;
 use crate::commands::common::ladder::execute_expand_or_outline_compressed;
 use crate::commands::context::ExecutionContext;
 use crate::commands::expand;
 use crate::serialize::XmlWriter;
-use clap::Args;
 use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct OutlineArgs {
+report_command! {
+    name: "outline",
+    args: OutlineArgs,
+    static: OUTLINE,
+    run: report(render),
     #[arg(long, value_name = "SYMS")]
-    pub outline: Option<String>,
+    outline: Option<String>,
 }
 
-pub fn render(
+pub fn render<W: Write>(
     ctx: &ExecutionContext<'_>,
     args: &OutlineArgs,
-    out: &mut XmlWriter<'_, impl Write>,
+    out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
     execute_expand_or_outline_compressed(
         ctx.root,
@@ -28,16 +30,3 @@ pub fn render(
         out,
     )
 }
-
-fn run(run: &Run<'_>, args: &OutlineArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub static OUTLINE: Plugin<OutlineArgs> = Plugin {
-    name: "outline",
-    options: &[],
-    selected: |args| args.outline.is_some(),
-    run,
-    check: None,
-    tools: &[],
-};

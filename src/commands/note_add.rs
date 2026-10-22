@@ -1,28 +1,27 @@
 //! `--note-add NOTE`: pin a gotcha note to `.ripwire-rs_notes`.
-use super::{Plugin, Run};
-use clap::Args;
+use super::plugin::report_command;
+use crate::commands::context::ExecutionContext;
+use crate::serialize::XmlWriter;
 use std::io::{self, Write};
 use std::path::Path;
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct NoteAddArgs {
+report_command! {
+    name: "note-add",
+    args: NoteAddArgs,
+    static: NOTE_ADD,
+    run: report(render),
     /// Pin gotcha note to .ripwire-rs_notes (e.g. --note-add="SYM: text")
     #[arg(long = "note-add", value_name = "NOTE")]
-    pub note_add: Option<String>,
+    note_add: Option<String>,
 }
 
-pub static NOTE_ADD: Plugin<NoteAddArgs> = Plugin {
-    name: "note-add",
-    options: &[],
-    selected: |args| args.note_add.is_some(),
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, args: &NoteAddArgs) -> io::Result<()> {
+pub fn render<W: Write>(
+    ctx: &ExecutionContext<'_>,
+    args: &NoteAddArgs,
+    out: &mut XmlWriter<'_, W>,
+) -> io::Result<()> {
     let note = args.note_add.as_deref().unwrap_or_default();
-    run.report(|ctx, out| execute_note_append(ctx.root, note, out))
+    execute_note_append(ctx.root, note, out)
 }
 
 fn execute_note_append<W: Write>(root: &str, note: &str, out: &mut W) -> io::Result<()> {

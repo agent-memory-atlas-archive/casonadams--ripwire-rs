@@ -1,31 +1,23 @@
 //! `--owners`: authorship and bus-factor analysis.
 use super::common::mcp::mcp_tool;
-use super::{Plugin, Run, SharedOption};
-use crate::commands::context::Paginated;
+use super::SharedOption;
+use super::plugin::report_command;
+use crate::commands::context::{ExecutionContext, Paginated};
 use crate::commands::for_task;
 use crate::git::history::{compute_git_at_stamp, resolve_cutoff_timestamp, walk_repository_history_scoped};
 use crate::query::commands::{render_query_value, resolve_state_commits};
 use crate::query::doc_tools;
-use crate::serialize::{JsonValueExt, serialize_owners_xml};
-use clap::Args;
+use crate::serialize::{JsonValueExt, XmlWriter, serialize_owners_xml};
 use serde_json::Value;
 use std::collections::HashSet;
-use std::io;
+use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct OwnersArgs {
-    /// Authorship and bus-factor analysis
-    #[arg(long)]
-    pub owners: bool,
-}
-
-pub static OWNERS: Plugin<OwnersArgs> = Plugin {
+report_command! {
     name: "owners",
-    options: &[SharedOption::Paged],
-    selected: |args| args.owners,
-    run,
-    check: None,
-    tools: &[mcp_tool!(
+    args: OwnersArgs,
+    static: OWNERS,
+    options: [SharedOption::Paged],
+    tools: [mcp_tool!(
         "owners",
         "Bus-factor: recency-weighted author ownership per file",
         &[
@@ -55,30 +47,36 @@ pub static OWNERS: Plugin<OwnersArgs> = Plugin {
             render_query_value(value, a, serialize_owners_xml)
         }
     )],
-};
+    run: report(render),
+    /// Authorship and bus-factor analysis
+    #[arg(long)]
+    owners: bool,
+}
 
-fn run(run: &Run<'_>, _: &OwnersArgs) -> io::Result<()> {
-    run.report(|ctx, out| {
-        let cutoff = resolve_cutoff_timestamp(None, 12);
-        let commits = walk_repository_history_scoped(ctx.root, cutoff).ok();
-        let at_stamp = compute_git_at_stamp(ctx.root);
-        let known_files: HashSet<String> = ctx
-            .ingest
-            .files
-            .iter()
-            .map(|f| ctx.interner.resolve(&f.path).to_string())
-            .collect();
-        let mut val = doc_tools::call_owners(
-            commits.as_deref(),
-            None,
-            at_stamp.as_deref(),
-            Some(&known_files),
-        );
-        val["root"] = Value::String(ctx.root.to_string());
-        ctx.apply_pagination_to_json(&mut val);
-        if for_task::detail(ctx.cli).is_some_and(|d| d > 0) {
-            val["detail"] = Value::Bool(true);
-        }
-        serialize_owners_xml(&val, out)
-    })
+pub fn render<W: Write>(
+    ctx: &ExecutionContext<'_>,
+    _: &OwnersArgs,
+    out: &mut XmlWriter<'_, W>,
+) -> io::Result<()> {
+    let cutoff = resolve_cutoff_timestamp(None, 12);
+    let commits = walk_repository_history_scoped(ctx.root, cutoff).ok();
+    let at_stamp = compute_git_at_stamp(ctx.root);
+    let known_files: HashSet<String> = ctx
+        .ingest
+        .files
+        .iter()
+        .map(|f| ctx.interner.resolve(&f.path).to_string())
+        .collect();
+    let mut val = doc_tools::call_owners(
+        commits.as_deref(),
+        None,
+        at_stamp.as_deref(),
+        Some(&known_files),
+    );
+    val["root"] = Value::String(ctx.root.to_string());
+    ctx.apply_pagination_to_json(&mut val);
+    if for_task::detail(ctx.cli).is_some_and(|d| d > 0) {
+        val["detail"] = Value::Bool(true);
+    }
+    serialize_owners_xml(&val, out)
 }

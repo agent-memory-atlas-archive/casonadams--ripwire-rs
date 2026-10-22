@@ -1,37 +1,33 @@
 //! `--flip GATE`: scan the blast radius of toggling a feature flag.
-use super::{Plugin, Run};
+use super::plugin::report_command;
+use crate::commands::context::ExecutionContext;
 use crate::query::FileSources;
 use crate::query::doc_tools;
-use crate::serialize::XmlEscapeExt;
-use clap::Args;
+use crate::serialize::{XmlEscapeExt, XmlWriter};
 use std::io::{self, Write};
 use std::path::Path;
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct FlipArgs {
+report_command! {
+    name: "flip",
+    args: FlipArgs,
+    static: FLIP,
+    run: report(render),
     /// Scan blast radius of toggling a feature flag
     #[arg(long = "flip", value_name = "GATE")]
-    pub flip: Option<String>,
+    flip: Option<String>,
 }
 
-pub static FLIP: Plugin<FlipArgs> = Plugin {
-    name: "flip",
-    options: &[],
-    selected: |args| args.flip.is_some(),
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, args: &FlipArgs) -> io::Result<()> {
+pub fn render<W: Write>(
+    ctx: &ExecutionContext<'_>,
+    args: &FlipArgs,
+    out: &mut XmlWriter<'_, W>,
+) -> io::Result<()> {
     let gate = args.flip.as_deref().unwrap_or_default();
-    run.report(|ctx, out| {
-        let sources = FileSources {
-            root: Path::new(ctx.root),
-        };
-        let val = doc_tools::flags_from_sources(ctx.root, &sources, ctx.ingest, ctx.interner);
-        render_flip_xml(gate, ctx.root, &val, out)
-    })
+    let sources = FileSources {
+        root: Path::new(ctx.root),
+    };
+    let val = doc_tools::flags_from_sources(ctx.root, &sources, ctx.ingest, ctx.interner);
+    render_flip_xml(gate, ctx.root, &val, out)
 }
 
 pub fn render_flip_xml<W: Write>(

@@ -1,34 +1,25 @@
 //! `--naming-consistency`: naming convention consistency check.
-use super::{Plugin, Run, SharedOption};
+use super::SharedOption;
+use super::plugin::report_command;
 use crate::commands::context::{ExecutionContext, Paginated};
 use crate::serialize::XmlWriter;
-use clap::Args;
-use std::io;
+use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct NamingConsistencyArgs {
+report_command! {
+    name: "naming-consistency",
+    args: NamingConsistencyArgs,
+    static: NAMING_CONSISTENCY,
+    options: [SharedOption::Paged],
+    run: report(render),
     /// Naming convention consistency check
     #[arg(long = "naming-consistency")]
-    pub naming_consistency: bool,
+    naming_consistency: bool,
 }
 
-pub static NAMING_CONSISTENCY: Plugin<NamingConsistencyArgs> = Plugin {
-    name: "naming-consistency",
-    options: &[SharedOption::Paged],
-    selected: |a| a.naming_consistency,
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, args: &NamingConsistencyArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub fn render(
+pub fn render<W: Write>(
     ctx: &ExecutionContext<'_>,
     _args: &NamingConsistencyArgs,
-    out: &mut XmlWriter<'_, impl std::io::Write>,
+    out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
     crate::metrics::serialize_naming_consistency_xml(
         crate::metrics::NamingScope { root: ctx.root, include_locals: false },

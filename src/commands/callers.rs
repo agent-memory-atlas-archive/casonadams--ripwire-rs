@@ -1,24 +1,15 @@
 //! `--callers SYM`: direct (1-hop) callers of a symbol.
-use super::nav::{nav_tool, run_nav};
-use super::{Plugin, Run, SharedOption};
+use super::SharedOption;
+use super::nav::nav_tool;
+use super::plugin::report_command;
 use crate::query::navigation::NavMode;
-use clap::Args;
-use std::io;
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct CallersArgs {
-    /// Query 1-hop callers of a symbol
-    #[arg(long, value_name = "SYM")]
-    pub callers: Option<String>,
-}
-
-pub static CALLERS: Plugin<CallersArgs> = Plugin {
+report_command! {
     name: "callers",
-    options: &[SharedOption::Paged],
-    selected: |args| args.callers.is_some(),
-    run,
-    check: None,
-    tools: &[
+    args: CallersArgs,
+    static: CALLERS,
+    options: [SharedOption::Paged],
+    tools: [
         nav_tool!(
             "callers",
             "Direct (1-hop) callers of a symbol (alias for find_referencing_symbols)",
@@ -32,8 +23,8 @@ pub static CALLERS: Plugin<CallersArgs> = Plugin {
             NavMode::Callers
         ),
     ],
-};
-
-fn run(run: &Run<'_>, args: &CallersArgs) -> io::Result<()> {
-    run_nav(run, args.callers.as_deref().unwrap_or_default(), NavMode::Callers)
+    run: nav(NavMode::Callers),
+    /// Query 1-hop callers of a symbol
+    #[arg(long, value_name = "SYM")]
+    callers: Option<String>,
 }

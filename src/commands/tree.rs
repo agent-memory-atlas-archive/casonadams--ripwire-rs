@@ -1,18 +1,22 @@
 //! `--tree`: one row per file with symbols, files ordered by their best-ranked symbol.
-use super::{Plugin, Run, SharedOption};
-use crate::commands::context::ExecutionContext;
+use super::SharedOption;
+use super::plugin::report_command;
+use crate::commands::context::{ExecutionContext, Paginated};
 use crate::domain::{CorpusView, IngestResult, Interner};
 use crate::rank::PageRankResult;
 use crate::serialize::query_xml::TreeReport;
-use crate::serialize::{PageRequest, TreeFileSymbols, XmlReport, XmlWriter};
-use clap::Args;
+use crate::serialize::{TreeFileSymbols, XmlReport, XmlWriter};
 use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct TreeArgs {
+report_command! {
+    name: "tree",
+    args: TreeArgs,
+    static: TREE,
+    options: [SharedOption::Paged],
+    run: report(render),
     /// Orient file by file showing each file's top symbols
     #[arg(long)]
-    pub tree: bool,
+    tree: bool,
 }
 
 #[must_use]
@@ -45,10 +49,10 @@ fn tree_file_symbols<'a>(
         .collect()
 }
 
-pub fn render(
+pub fn render<W: Write>(
     ctx: &ExecutionContext<'_>,
-    page: PageRequest,
-    out: &mut XmlWriter<'_, impl Write>,
+    _args: &TreeArgs,
+    out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
     let file_symbols = tree_file_symbols(ctx.ingest, ctx.pr, ctx.interner);
     TreeReport {
@@ -56,20 +60,7 @@ pub fn render(
         files_unlisted: ctx.ingest.files.len().saturating_sub(file_symbols.len()),
         file_symbols: &file_symbols,
         pr_iters: ctx.pr.iterations,
-        page,
+        page: ctx.cli.page_request(),
     }
     .render_envelope(out)
 }
-
-fn run(run: &Run<'_>, _args: &TreeArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, run.page(), out))
-}
-
-pub static TREE: Plugin<TreeArgs> = Plugin {
-    name: "tree",
-    options: &[SharedOption::Paged],
-    selected: |args| args.tree,
-    run,
-    check: None,
-    tools: &[],
-};

@@ -1,15 +1,17 @@
 //! `--layout STRUCT`: one struct's memory layout with computed field offsets and padding.
-use super::{Plugin, Run};
+use super::plugin::report_command;
 use crate::commands::context::ExecutionContext;
 use crate::serialize::XmlWriter;
-use clap::Args;
 use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct LayoutArgs {
+report_command! {
+    name: "layout",
+    args: LayoutArgs,
+    static: LAYOUT,
+    run: report(render),
     /// Show one struct's memory layout with computed field offsets and padding
     #[arg(long = "layout", value_name = "STRUCT")]
-    pub layout: Option<String>,
+    layout: Option<String>,
 }
 
 pub fn render<W: Write>(
@@ -32,16 +34,3 @@ pub fn render<W: Write>(
     let rep = crate::metrics::compute_layout_report(sym, ctx.ingest, ctx.interner, ctx.root);
     ctx.write_report(&rep, out).map(|_| ())
 }
-
-fn run(run: &Run<'_>, args: &LayoutArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub static LAYOUT: Plugin<LayoutArgs> = Plugin {
-    name: "layout",
-    options: &[],
-    selected: |args| args.layout.is_some(),
-    run,
-    check: None,
-    tools: &[],
-};

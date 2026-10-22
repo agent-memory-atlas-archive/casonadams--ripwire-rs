@@ -1,7 +1,7 @@
-use super::{Plugin, Run};
-use clap::Args;
+use super::plugin::report_command;
+use crate::commands::context::ExecutionContext;
 use crate::ingest::LanguageRegistry;
-use crate::serialize::XmlEscapeExt;
+use crate::serialize::{XmlEscapeExt, XmlWriter};
 use std::borrow::Cow;
 use std::collections::{BTreeSet, HashSet};
 use std::io::{self, Read, Write};
@@ -386,22 +386,20 @@ fn check_layout() -> DoctorCheck {
         .attr("units", 0)
 }
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct DoctorArgs {
+report_command! {
+    name: "doctor",
+    args: DoctorArgs,
+    static: DOCTOR,
+    run: report(render),
     /// Environment and dependency health diagnostics
     #[arg(long)]
-    pub doctor: bool,
+    doctor: bool,
 }
 
-pub static DOCTOR: Plugin<DoctorArgs> = Plugin {
-    name: "doctor",
-    options: &[],
-    selected: |args| args.doctor,
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, _: &DoctorArgs) -> io::Result<()> {
-    run.report(|ctx, out| collect_doctor_report(ctx.root).write_xml(out))
+pub fn render<W: Write>(
+    ctx: &ExecutionContext<'_>,
+    _: &DoctorArgs,
+    out: &mut XmlWriter<'_, W>,
+) -> io::Result<()> {
+    collect_doctor_report(ctx.root).write_xml(out)
 }

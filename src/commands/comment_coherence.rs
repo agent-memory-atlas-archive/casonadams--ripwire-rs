@@ -1,34 +1,25 @@
 //! `--comment-coherence`: comment-to-identifier coherence check.
-use super::{Plugin, Run, SharedOption};
+use super::plugin::report_command;
+use super::SharedOption;
 use crate::commands::context::{ExecutionContext, Paginated};
 use crate::serialize::XmlWriter;
-use clap::Args;
-use std::io;
+use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct CommentCoherenceArgs {
+report_command! {
+    name: "comment-coherence",
+    args: CommentCoherenceArgs,
+    static: COMMENT_COHERENCE,
+    options: [SharedOption::Paged],
+    run: report(render),
     /// Comment-to-identifier coherence check
     #[arg(long = "comment-coherence")]
-    pub comment_coherence: bool,
+    comment_coherence: bool,
 }
 
-pub static COMMENT_COHERENCE: Plugin<CommentCoherenceArgs> = Plugin {
-    name: "comment-coherence",
-    options: &[SharedOption::Paged],
-    selected: |a| a.comment_coherence,
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, args: &CommentCoherenceArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub fn render(
+pub fn render<W: Write>(
     ctx: &ExecutionContext<'_>,
     _args: &CommentCoherenceArgs,
-    out: &mut XmlWriter<'_, impl std::io::Write>,
+    out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
     let rep = crate::metrics::analysis_lenses::compute_comment_coherence_in_root(
         ctx.root,

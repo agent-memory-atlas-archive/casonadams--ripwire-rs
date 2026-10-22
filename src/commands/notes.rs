@@ -1,31 +1,28 @@
 //! `--notes`: view pinned session gotchas and invariants (`.ripwire-rs_notes`).
-use super::{Plugin, Run};
-use clap::Args;
+use super::plugin::report_command;
+use crate::commands::context::ExecutionContext;
+use crate::serialize::XmlWriter;
 use std::io::{self, Write};
 use std::path::Path;
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct NotesArgs {
+report_command! {
+    name: "notes",
+    args: NotesArgs,
+    static: NOTES,
+    run: report(render),
     /// View pinned session gotchas and invariants (.ripwire-rs_notes)
     #[arg(long)]
-    pub notes: bool,
+    notes: bool,
 }
 
-pub static NOTES: Plugin<NotesArgs> = Plugin {
-    name: "notes",
-    options: &[],
-    selected: |args| args.notes,
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, _: &NotesArgs) -> io::Result<()> {
-    run.report(|ctx, out| {
-        let content = std::fs::read_to_string(Path::new(ctx.root).join(".ripwire-rs_notes"))
-            .unwrap_or_default();
-        render_notes_xml(&content, out)
-    })
+pub fn render<W: Write>(
+    ctx: &ExecutionContext<'_>,
+    _: &NotesArgs,
+    out: &mut XmlWriter<'_, W>,
+) -> io::Result<()> {
+    let content = std::fs::read_to_string(Path::new(ctx.root).join(".ripwire-rs_notes"))
+        .unwrap_or_default();
+    render_notes_xml(&content, out)
 }
 
 pub fn render_notes_xml<W: Write>(content: &str, out: &mut W) -> io::Result<()> {

@@ -1,16 +1,18 @@
 //! `--field-affinity [STRUCT]`: cache-conscious field affinity analysis.
-use super::{Plugin, Run};
+use super::plugin::report_command;
 use crate::commands::context::ExecutionContext;
 use crate::commands::context::Paginated;
 use crate::serialize::XmlWriter;
-use clap::Args;
 use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct FieldAffinityArgs {
+report_command! {
+    name: "field-affinity",
+    args: FieldAffinityArgs,
+    static: FIELD_AFFINITY,
+    run: report(render),
     /// Cache-conscious field affinity analysis
     #[arg(long = "field-affinity", num_args = 0..=1, default_missing_value = "", value_name = "STRUCT")]
-    pub field_affinity: Option<Option<String>>,
+    field_affinity: Option<Option<String>>,
 }
 
 pub fn render<W: Write>(
@@ -30,16 +32,3 @@ pub fn render<W: Write>(
     }
     Ok(())
 }
-
-fn run(run: &Run<'_>, args: &FieldAffinityArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub static FIELD_AFFINITY: Plugin<FieldAffinityArgs> = Plugin {
-    name: "field-affinity",
-    options: &[],
-    selected: |args| args.field_affinity.is_some(),
-    run,
-    check: None,
-    tools: &[],
-};

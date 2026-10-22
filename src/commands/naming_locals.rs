@@ -1,34 +1,25 @@
 //! `--naming-locals`: local-variable naming consistency check.
-use super::{Plugin, Run, SharedOption};
+use super::SharedOption;
+use super::plugin::report_command;
 use crate::commands::context::{ExecutionContext, Paginated};
 use crate::serialize::XmlWriter;
-use clap::Args;
-use std::io;
+use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct NamingLocalsArgs {
+report_command! {
+    name: "naming-locals",
+    args: NamingLocalsArgs,
+    static: NAMING_LOCALS,
+    options: [SharedOption::Paged],
+    run: report(render),
     /// Check local-variable naming consistency
     #[arg(long = "naming-locals")]
-    pub naming_locals: bool,
+    naming_locals: bool,
 }
 
-pub static NAMING_LOCALS: Plugin<NamingLocalsArgs> = Plugin {
-    name: "naming-locals",
-    options: &[SharedOption::Paged],
-    selected: |a| a.naming_locals,
-    run,
-    check: None,
-    tools: &[],
-};
-
-fn run(run: &Run<'_>, args: &NamingLocalsArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub fn render(
+pub fn render<W: Write>(
     ctx: &ExecutionContext<'_>,
     _args: &NamingLocalsArgs,
-    out: &mut XmlWriter<'_, impl std::io::Write>,
+    out: &mut XmlWriter<'_, W>,
 ) -> io::Result<()> {
     crate::metrics::serialize_naming_consistency_xml(
         crate::metrics::NamingScope { root: ctx.root, include_locals: true },

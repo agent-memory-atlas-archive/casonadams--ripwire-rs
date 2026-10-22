@@ -132,3 +132,71 @@ where
         self.tools
     }
 }
+
+/// Whether a flag's parsed value selects its command: a switch when set, an option when given.
+pub trait Selected {
+    fn is_selected(&self) -> bool;
+}
+
+impl Selected for bool {
+    fn is_selected(&self) -> bool {
+        *self
+    }
+}
+
+impl<T> Selected for Option<T> {
+    fn is_selected(&self) -> bool {
+        self.is_some()
+    }
+}
+
+/// Declares a single-flag report command: its derive `Args` (the one flag, with the caller's doc and `#[arg]`),
+/// the `selected` predicate of that flag, the `run` wrapper and the `Plugin` static.
+///
+/// `run` picks how the command executes: `report(render)` calls `render(ctx, args, out)` through
+/// [`Run::report`]; `query(execute)` calls `execute(query, value, out)` through `report_query` and `nav(mode)`
+/// calls `run_nav(run, value, mode)`. `query` and `nav` read the `Option<String>` flag's value.
+macro_rules! report_command {
+    (
+        name: $name:literal,
+        args: $args:ident,
+        static: $static:ident,
+        $(options: [$($option:expr),* $(,)?],)?
+        $(tools: [$($tool:expr),* $(,)?],)?
+        run: $mode:ident($target:expr),
+        $(#[$attr:meta])*
+        $field:ident: $ty:ty $(,)?
+    ) => {
+        #[derive(clap::Args, Debug, Clone, Default, PartialEq)]
+        pub struct $args {
+            $(#[$attr])*
+            pub $field: $ty,
+        }
+
+        fn run(run: &$crate::commands::Run<'_>, args: &$args) -> std::io::Result<()> {
+            report_command!(@run $mode $target, run, args, $field)
+        }
+
+        pub static $static: $crate::commands::Plugin<$args> = $crate::commands::Plugin {
+            name: $name,
+            options: &[$($($option),*)?],
+            selected: |args| $crate::commands::plugin::Selected::is_selected(&args.$field),
+            run,
+            check: None,
+            tools: &[$($($tool),*)?],
+        };
+    };
+    (@run report $render:expr, $run:ident, $args:ident, $field:ident) => {
+        $run.report(|ctx, out| $render(ctx, $args, out))
+    };
+    (@run query $execute:expr, $run:ident, $args:ident, $field:ident) => {
+        $crate::commands::common::retrieval::report_query($run, |query, out| {
+            $execute(query, $args.$field.as_deref().unwrap_or_default(), out)
+        })
+    };
+    (@run nav $mode:expr, $run:ident, $args:ident, $field:ident) => {
+        $crate::commands::nav::run_nav($run, $args.$field.as_deref().unwrap_or_default(), $mode)
+    };
+}
+
+pub(crate) use report_command;

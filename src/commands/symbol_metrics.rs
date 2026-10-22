@@ -1,15 +1,17 @@
 //! `--metrics`: annotate every symbol with fan-in, fan-out, complexity, and change-amplification.
-use super::{Plugin, Run};
+use super::plugin::report_command;
 use crate::commands::context::ExecutionContext;
 use crate::serialize::XmlWriter;
-use clap::Args;
 use std::io::{self, Write};
 
-#[derive(Args, Debug, Clone, Default, PartialEq)]
-pub struct SymbolMetricsArgs {
+report_command! {
+    name: "metrics",
+    args: SymbolMetricsArgs,
+    static: SYMBOL_METRICS,
+    run: report(render),
     /// Annotate every symbol with fan-in, fan-out, complexity, and change-amplification
     #[arg(long = "metrics")]
-    pub metrics: bool,
+    metrics: bool,
 }
 
 pub fn render<W: Write>(
@@ -30,16 +32,3 @@ pub fn render<W: Write>(
     };
     crate::serialize::serialize_xml(ctx.ingest, ctx.graph, ctx.pr, ctx.interner, out, &opts)
 }
-
-fn run(run: &Run<'_>, args: &SymbolMetricsArgs) -> io::Result<()> {
-    run.report(|ctx, out| render(ctx, args, out))
-}
-
-pub static SYMBOL_METRICS: Plugin<SymbolMetricsArgs> = Plugin {
-    name: "metrics",
-    options: &[],
-    selected: |args| args.metrics,
-    run,
-    check: None,
-    tools: &[],
-};
