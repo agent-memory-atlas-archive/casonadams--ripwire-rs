@@ -155,6 +155,7 @@ impl EdgeProv {
 pub enum Narrowing {
     None,
     CallerScope,
+    Owner,
     FinalSegment,
     Import,
 }
@@ -449,7 +450,9 @@ fn edge_prov(target_count: usize, narrowing: Narrowing, tier: Tier) -> EdgeProv 
     match (narrowing, tier) {
         (Narrowing::Import, _) => EdgeProv::Import,
         (Narrowing::FinalSegment, _) => EdgeProv::FinalSegment,
-        (Narrowing::CallerScope, _) | (Narrowing::None, Tier::SameFile) => EdgeProv::Local,
+        (Narrowing::CallerScope | Narrowing::Owner, _) | (Narrowing::None, Tier::SameFile) => {
+            EdgeProv::Local
+        }
         (Narrowing::None, Tier::SameDir | Tier::Global) => EdgeProv::Name,
     }
 }
@@ -555,10 +558,9 @@ pub trait ResolutionLookup {
         None
     }
 
-    /// Methods a receiver of a named owner type may reach. A trait owner dispatches to its
-    /// impls; a concrete owner prefers its inherent methods and otherwise uses trait impls.
+    /// The indexed type a receiver's declared type names, as seen from the reference's file.
     #[must_use]
-    fn owner_candidates(&self, r: &Reference, recv: Spur) -> Option<CandBuffer> {
+    fn receiver_owner(&self, r: &Reference, recv: Spur) -> Option<NodeId> {
         let interner = self.interner()?;
         let trait_idx = self.trait_index()?;
         let text = interner.try_resolve(&recv)?;
@@ -569,10 +571,35 @@ pub trait ResolutionLookup {
             interner,
             qualifier_file: &qualifier_file,
         };
-        let owner = trait_idx.resolve_receiver_owner(text, r.file_id, r.start_byte, &env)?;
+        trait_idx.resolve_receiver_owner(text, r.file_id, r.start_byte, &env)
+    }
+
+    /// True when a typed receiver names no indexed type and the language lets its call use names.
+    #[must_use]
+    fn untyped_receiver_uses_names(&self, r: &Reference, recv: Spur) -> bool {
+        let Some(text) = self.interner().and_then(|i| i.try_resolve(&recv)) else {
+            return false;
+        };
+        r.lang.semantics().unindexed_receiver_type_uses_names(text)
+            && self.receiver_owner(r, recv).is_none()
+    }
+
+    /// Methods a receiver of a named owner type may reach. An interface owner dispatches to its
+    /// implementors and keeps its own declaration; a concrete owner prefers its inherent methods
+    /// and otherwise uses trait impls. Same-named methods of unrelated types are never reached.
+    #[must_use]
+    fn owner_candidates(&self, r: &Reference, recv: Spur) -> Option<CandBuffer> {
+        let trait_idx = self.trait_index()?;
+        let owner = self.receiver_owner(r, recv)?;
         let symbols = self.symbols();
         let found: Vec<NodeId> = if symbols[owner as usize].kind == SymKind::Interface {
-            trait_idx.dispatch(owner, r.callee_name, symbols)
+            let mut found = trait_idx.dispatch(owner, r.callee_name, symbols);
+            if r.lang.semantics().interface_calls_keep_declaration() {
+                found.extend(trait_idx.declared_methods(owner, r.callee_name, symbols));
+            }
+            found.sort_unstable();
+            found.dedup();
+            found
         } else {
             let all = trait_idx.subject_targets(owner, r.callee_name, symbols);
             let compatible: Vec<NodeId> = all
@@ -689,9 +716,12 @@ pub trait ResolutionLookup {
         r: &Reference,
     ) -> Option<(CandBuffer, Narrowing)> {
         if let Some(recv) = r.receiver_type {
-            return self
-                .owner_candidates(r, recv)
-                .map(|cands| (cands, Narrowing::CallerScope));
+            if let Some(cands) = self.owner_candidates(r, recv) {
+                return Some((cands, Narrowing::Owner));
+            }
+            if !self.untyped_receiver_uses_names(r, recv) {
+                return None;
+            }
         }
         let symbols = self.symbols();
         let mut cands = CandBuffer::default();
@@ -843,7 +873,7 @@ pub trait ResolutionLookup {
         let Some((cands, narrowing)) = self.filter_ref_candidates(all_cands, r) else {
             return classify_rejected_candidates(r, self.interner());
         };
-        if r.receiver_type.is_some() {
+        if narrowing == Narrowing::Owner {
             let targets = cands
                 .iter()
                 .copied()

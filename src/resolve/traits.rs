@@ -28,6 +28,7 @@ pub struct TraitIndex {
     by_subject: HashMap<NodeId, Vec<usize>>,
     blankets: Vec<usize>,
     trait_defaults: HashMap<NodeId, Vec<NodeId>>,
+    trait_members: HashMap<NodeId, Vec<NodeId>>,
     nominals_by_name: HashMap<Spur, Vec<NodeId>>,
     scopes: RustScopes,
     crate_roots: Vec<Option<u32>>,
@@ -79,6 +80,25 @@ impl TraitIndex {
     #[must_use]
     pub fn is_non_inherent(&self, method: NodeId) -> bool {
         self.non_inherent.contains(&method)
+    }
+
+    /// Methods named `name` that trait `trait_id` declares in its own body (bodied or bodyless).
+    #[must_use]
+    pub fn declared_methods(
+        &self,
+        trait_id: NodeId,
+        name: Spur,
+        symbols: &[Symbol],
+    ) -> Vec<NodeId> {
+        self.trait_members
+            .get(&trait_id)
+            .map(|ids| {
+                ids.iter()
+                    .copied()
+                    .filter(|&m| symbols[m as usize].name == name)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// The type a receiver names (concrete or trait) as seen from `file_id`, or `None` when
@@ -203,6 +223,7 @@ impl TraitIndex {
             );
             for &m in members {
                 self.non_inherent.insert(m);
+                self.trait_members.entry(trait_id).or_default().push(m);
                 if env.symbols[m as usize].has_body() {
                     self.trait_defaults.entry(trait_id).or_default().push(m);
                 }
@@ -380,7 +401,7 @@ fn nominals_by_name(symbols: &[Symbol]) -> HashMap<Spur, Vec<NodeId>> {
     let mut map: HashMap<Spur, Vec<NodeId>> = HashMap::new();
     for s in symbols
         .iter()
-        .filter(|s| s.lang.semantics().has_trait_impls() && s.kind.is_type_container())
+        .filter(|s| s.lang.semantics().indexes_implementations() && s.kind.is_type_container())
     {
         map.entry(s.name).or_default().push(s.id);
     }
@@ -391,7 +412,7 @@ fn methods_by_file(symbols: &[Symbol]) -> MethodsByFile {
     let mut map: MethodsByFile = HashMap::new();
     for s in symbols
         .iter()
-        .filter(|s| s.kind == SymKind::Method && s.lang.semantics().has_trait_impls())
+        .filter(|s| s.kind == SymKind::Method && s.lang.semantics().indexes_implementations())
     {
         map.entry(s.file_id).or_default().push(s.id);
     }

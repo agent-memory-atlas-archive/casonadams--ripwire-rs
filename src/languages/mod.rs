@@ -533,6 +533,26 @@ pub trait LanguageSemantics: Sync {
     fn has_trait_impls(&self) -> bool {
         false
     }
+    /// True where declared implementations (Rust `impl`, TypeScript `class … implements`) feed the trait index.
+    fn indexes_implementations(&self) -> bool {
+        self.has_trait_impls()
+    }
+    /// True where a receiver whose declared type text is not an indexed type may use name resolution.
+    fn unindexed_receiver_type_uses_names(&self, _receiver_type: &str) -> bool {
+        false
+    }
+    /// True where a call receiver whose result type is not declared (`make().m()`) declines instead of name resolution.
+    fn undeclared_call_receiver_declines(&self) -> bool {
+        false
+    }
+    /// Declared type text of member `member` of a receiver whose declared type text is `receiver_type`.
+    fn member_receiver_type(&self, _receiver_type: &str, _member: &str) -> Option<String> {
+        None
+    }
+    /// True where a call through an interface also reaches the interface's own declaration of the method.
+    fn interface_calls_keep_declaration(&self) -> bool {
+        false
+    }
     /// The module an import specifier names and the identifier it binds in the importing file, when
     /// calls qualified by that identifier resolve into the module (Python `import x as y` -> `("x", "y")`).
     fn import_binding<'a>(&self, _raw_target: &'a str) -> Option<(&'a str, &'a str)> {

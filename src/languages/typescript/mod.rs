@@ -5,6 +5,7 @@ use super::javascript::{
 };
 use super::{ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds};
 use crate::domain::Lang;
+mod types;
 pub mod astro;
 
 use crate::ingest::{FileParseResult, parse_file_tree};
@@ -154,9 +155,39 @@ impl LanguageSemantics for TypeScriptLanguage {
         root: tree_sitter::Node<'_>,
         source: &'a [u8],
     ) -> super::reads::ReadBindings<'a> {
-        super::reads::ReadBindings::collect(root, source, |node| {
-            super::javascript::javascript_binding_scope(node).map(|scope| scope.byte_range())
-        })
+        types::typed_read_bindings(root, source)
+    }
+
+    fn implementations(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &[u8],
+    ) -> Vec<super::Implementation> {
+        types::class_implementations(root, source)
+    }
+
+    fn indexes_implementations(&self) -> bool {
+        true
+    }
+
+    fn unindexed_receiver_type_uses_names(&self, receiver_type: &str) -> bool {
+        // Object-literal and plain-name types the index does not know: name resolution, as before.
+        receiver_type.starts_with('{')
+            || receiver_type
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    }
+
+    fn undeclared_call_receiver_declines(&self) -> bool {
+        true
+    }
+
+    fn interface_calls_keep_declaration(&self) -> bool {
+        true
+    }
+
+    fn member_receiver_type(&self, receiver_type: &str, member: &str) -> Option<String> {
+        types::object_member_type(receiver_type, member)
     }
 
     fn lint_return_type<'a>(&self, sig: &'a str, _name: &str) -> Option<&'a str> {
