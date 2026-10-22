@@ -161,6 +161,10 @@ pub trait LanguageSemantics: Sync {
     fn crate_root_suffixes(&self) -> &'static [&'static str] {
         &[]
     }
+    /// True where the reference name is the field in a call of a parenthesized field read (Rust `(self.f)(x)`).
+    fn is_callable_field_access(&self, _name_node: tree_sitter::Node<'_>) -> bool {
+        false
+    }
 
     /// True if this language writes bodyless declarations of entities defined elsewhere
     /// (C prototypes, TypeScript overload signatures).

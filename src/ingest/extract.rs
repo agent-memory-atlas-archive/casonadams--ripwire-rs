@@ -566,20 +566,6 @@ fn is_shadowed_by_parameter(
             .is_some_and(|n| !is_member_access(n) && is_enclosing_parameter(n, name, source_bytes))
 }
 
-fn callable_field_access(name_node: Option<tree_sitter::Node<'_>>) -> bool {
-    name_node.is_some_and(|n| {
-        n.parent().is_some_and(|p| {
-            p.kind() == "field_expression"
-                && p.parent().is_some_and(|pp| {
-                    pp.kind() == "parenthesized_expression"
-                        && pp
-                            .parent()
-                            .is_some_and(|ppp| ppp.kind() == "call_expression")
-                })
-        })
-    })
-}
-
 fn record_ref_item(
     ext: &MatchExtract<'_>,
     source_bytes: &[u8],
@@ -632,7 +618,9 @@ fn record_ref_item(
         lang: None,
         receiver,
         receiver_type,
-        callable_field: callable_field_access(ext.name_node),
+        callable_field: ext
+            .name_node
+            .is_some_and(|n| lang.semantics().is_callable_field_access(n)),
     });
 }
 

@@ -307,6 +307,19 @@ impl LanguageSemantics for RustLanguage {
         &["src/lib.rs", "src/main.rs"]
     }
 
+    fn is_callable_field_access(&self, name_node: tree_sitter::Node<'_>) -> bool {
+        let kinds: Vec<&str> = std::iter::successors(name_node.parent(), |n| n.parent())
+            .take(3)
+            .map(|n| n.kind())
+            .collect();
+        kinds
+            == [
+                "field_expression",
+                "parenthesized_expression",
+                "call_expression",
+            ]
+    }
+
     fn visibility_mode(&self) -> VisibilityMode {
         VisibilityMode::ExplicitModifier
     }
