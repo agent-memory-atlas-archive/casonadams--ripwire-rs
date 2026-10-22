@@ -1,7 +1,9 @@
 use ripwire_rs::git::history::CommitInfo;
+use ripwire_rs::languages::flags::{
+    conditional_uses, extract_cmake_option, extract_env_identifiers, extract_settings_gate,
+};
 use ripwire_rs::query::doc_tools::{
-    WhereisFacts, call_owners, collect_file_wanted_tokens, conditional_uses, extract_cmake_option,
-    extract_env_identifiers, extract_settings_gate, filter_present_in_sources_drift,
+    WhereisFacts, call_owners, collect_file_wanted_tokens, filter_present_in_sources_drift,
     mentions_from_sources, scan_doc_text_for_drift, whereis_from_sources,
     whereis_from_sources_with_facts,
 };

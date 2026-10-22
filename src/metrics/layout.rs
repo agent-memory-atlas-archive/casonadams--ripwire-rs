@@ -65,72 +65,43 @@ pub struct StructLayoutReport {
 
 fn estimate_type_layout(ty: &str) -> (usize, usize) {
     let trimmed = ty.trim();
-    if trimmed.ends_with('*') || trimmed.starts_with('&') || trimmed.contains("::size_t") {
+    if trimmed.ends_with('*') || trimmed.contains("::size_t") {
         return (8, 8);
     }
     match trimmed {
-        "u64" | "i64" | "f64" | "usize" | "isize" | "uint64_t" | "int64_t" | "double" => (8, 8),
-        "u32" | "i32" | "f32" | "uint32_t" | "int32_t" | "int" | "float" | "unsigned" => (4, 4),
-        "u16" | "i16" | "uint16_t" | "int16_t" | "short" => (2, 2),
-        "u8" | "i8" | "bool" | "char" | "uint8_t" | "int8_t" => (1, 1),
+        "uint64_t" | "int64_t" | "double" => (8, 8),
+        "uint32_t" | "int32_t" | "int" | "float" | "unsigned" => (4, 4),
+        "uint16_t" | "int16_t" | "short" => (2, 2),
+        "bool" | "char" | "uint8_t" | "int8_t" => (1, 1),
         _ => (8, 8),
     }
 }
 
+/// Fields of a C-family aggregate body: one `Type name;` declaration per line.
 pub fn parse_struct_fields(body: &str) -> Vec<FieldLayout> {
     let mut fields = Vec::new();
     let mut curr_offset = 0usize;
-
     for line in body.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty()
-            || trimmed.starts_with("//")
-            || trimmed.starts_with('#')
-            || trimmed.starts_with("fn ")
-            || trimmed.starts_with("pub fn ")
-            || trimmed.ends_with('{')
-            || trimmed == "}"
-            || trimmed == "};"
-        {
+        let Some(decl) = line.trim().strip_suffix(';') else {
+            continue;
+        };
+        let Some((ty, name)) = decl.rsplit_once(' ') else {
+            continue;
+        };
+        let (ty, name) = (ty.trim(), name.trim());
+        if name.is_empty() || ty.is_empty() || ty.starts_with("return") || ty.ends_with(':') {
             continue;
         }
-
-        // Rust: pub name: Type, or C: Type name;
-        if let Some((name_part, ty_part)) = trimmed.split_once(':') {
-            let name = name_part
-                .trim()
-                .trim_start_matches("pub ")
-                .trim_start_matches("pub(crate) ")
-                .trim();
-            let ty = ty_part.trim().trim_end_matches(',').trim();
-            if !name.is_empty() && !ty.is_empty() && !name.contains(' ') {
-                let (sz, al) = estimate_type_layout(ty);
-                curr_offset = (curr_offset + al - 1) & !(al - 1);
-                fields.push(FieldLayout {
-                    name: name.to_string(),
-                    ty: ty.to_string(),
-                    size: sz,
-                    align: al,
-                    offset: curr_offset,
-                });
-                curr_offset += sz;
-            }
-        } else if let Some((ty_part, name_part)) = trimmed.rsplit_once(' ') {
-            let name = name_part.trim_end_matches(';').trim();
-            let ty = ty_part.trim();
-            if !name.is_empty() && !ty.is_empty() && !ty.starts_with("return") {
-                let (sz, al) = estimate_type_layout(ty);
-                curr_offset = (curr_offset + al - 1) & !(al - 1);
-                fields.push(FieldLayout {
-                    name: name.to_string(),
-                    ty: ty.to_string(),
-                    size: sz,
-                    align: al,
-                    offset: curr_offset,
-                });
-                curr_offset += sz;
-            }
-        }
+        let (size, align) = estimate_type_layout(ty);
+        curr_offset = (curr_offset + align - 1) & !(align - 1);
+        fields.push(FieldLayout {
+            name: name.to_string(),
+            ty: ty.to_string(),
+            size,
+            align,
+            offset: curr_offset,
+        });
+        curr_offset += size;
     }
     fields
 }

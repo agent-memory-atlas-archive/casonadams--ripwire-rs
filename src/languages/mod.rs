@@ -47,6 +47,7 @@ pub mod cuda;
 pub mod dart;
 pub mod elixir;
 pub mod erlang;
+pub mod flags;
 pub mod fortran;
 pub mod gdscript;
 pub mod go;

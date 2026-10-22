@@ -6,7 +6,7 @@ use ripwire_rs::metrics::{
 
 #[test]
 fn test_layout_parsing() {
-    let body = "struct Foo {\n  pub a: u64,\n  pub b: u32,\n  pub c: u8,\n}";
+    let body = "struct Foo {\n  uint64_t a;\n  uint32_t b;\n  uint8_t c;\n};";
     let fields = parse_struct_fields(body);
     assert_eq!(fields.len(), 3);
     assert_eq!(fields[0].offset, 0);

@@ -481,9 +481,7 @@ fn crate_root_of(id: u32, path: &str, roots: &[(u32, &str)]) -> Option<u32> {
     let containing: Vec<(usize, u32)> = roots
         .iter()
         .filter_map(|&(root, root_path)| {
-            let dir = root_path
-                .strip_suffix("lib.rs")
-                .or_else(|| root_path.strip_suffix("main.rs"))?;
+            let dir = &root_path[..=root_path.rfind('/')?];
             path.starts_with(dir).then_some((dir.len(), root))
         })
         .collect();
