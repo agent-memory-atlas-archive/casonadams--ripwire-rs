@@ -61,7 +61,7 @@ Enforces regression-free commits across 10 architectural quality dimensions agai
 10. **Baseline Regression Tracking** (supports `.ripwire-rs_quality_acks` suppression ledger)
 
 ```xml
-<quality-delta schema="ripwire-rs.quality-delta/v1" baseline="git-HEAD" regressions="0" minor="0" acked="0" stale="0" preexisting-worse="0" new-symbol="0" gating="0" register-macro-excluded="0" api-new-surface="0" at="9e5c9d5+dirty">
+<quality-delta schema="ripwire-rs.quality-delta/v1" baseline="git-HEAD" regressions="0" minor="0" acked="0" stale="0" preexisting-worse="0" new-symbol="0" gating="0" api-new-surface="0" at="9e5c9d5+dirty">
 </quality-delta>
 ```
 
@@ -99,6 +99,7 @@ Identifies call edges crossing module or directory boundaries that have zero dir
 </seams>
 ```
 
+- **Document Links**: `doc_links=N` counts Markdown links from a prose document to another indexed prose document in a different directory (anchors allowed; scheme links, same-directory links and links to unindexed files are not counted). Data-key links, which upstream also counts, are not modelled, so the number covers Markdown links only.
 - **Architecture Audit**: Pinpoints vulnerable boundary interfaces before integration testing.
 
 ---

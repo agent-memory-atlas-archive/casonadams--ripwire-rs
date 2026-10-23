@@ -899,9 +899,19 @@ pub fn parse_file_tree(
         let bindings = lang
             .semantics()
             .read_bindings(tree.root_node(), source_bytes);
+        let semantics = lang.semantics();
         refs.retain(|reference| {
-            !matches!(reference.role, RefRole::Read | RefRole::Write)
-                || !bindings.shadows(&reference.callee_name, reference.start_byte)
+            if !bindings.shadows(&reference.callee_name, reference.start_byte) {
+                return true;
+            }
+            match reference.role {
+                RefRole::Read | RefRole::Write => false,
+                RefRole::Call => !tree
+                    .root_node()
+                    .descendant_for_byte_range(reference.start_byte, reference.start_byte)
+                    .is_some_and(|node| semantics.is_macro_argument(node)),
+                _ => true,
+            }
         });
         for r in &mut refs {
             if r.receiver_type.is_none()

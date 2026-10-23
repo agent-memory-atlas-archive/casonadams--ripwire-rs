@@ -118,8 +118,10 @@ fn walk_markdown_tree<'a>(node: Node<'a>, source_bytes: &[u8], headings: &mut Ve
     }
 }
 
-fn scan_line_links(line: &str, line_num: u32, line_start: usize, refs: &mut Vec<RawRef>) {
+/// `[text](target)` links in one line: the byte offset of each opening `[` and its raw target.
+fn line_link_targets(line: &str) -> Vec<(usize, &str)> {
     let bytes = line.as_bytes();
+    let mut links = Vec::new();
     let mut b = 0;
     while b + 1 < bytes.len() {
         if bytes[b] != b'[' {
@@ -139,29 +141,45 @@ fn scan_line_links(line: &str, line_num: u32, line_start: usize, refs: &mut Vec<
             && let Some(rp_rel) = bytes[close + 2..].iter().position(|&c| c == b')')
         {
             let rp = close + 2 + rp_rel;
-            let target = line[close + 2..rp].trim();
-            let clean_target = target.trim_start_matches('#');
-            if !clean_target.is_empty() {
-                refs.push(RawRef {
-                    callee_name: clean_target.to_string(),
-                    qualifier: None,
-                    line: line_num,
-                    name_line: line_num,
-                    start_byte: line_start + b,
-                    role: RefRole::Call,
-                    arg_count: 0,
-                    arg_count_known: false,
-                    lang: None,
-                    receiver: None,
-                    receiver_type: None,
-                    callable_field: false,
-                    member_call: false,
-                });
-            }
+            links.push((b, line[close + 2..rp].trim()));
             b = rp + 1;
             continue;
         }
         b = close + 1;
+    }
+    links
+}
+
+/// Raw Markdown link targets in `text`, each including any `#anchor`.
+#[must_use]
+pub fn markdown_link_targets(text: &str) -> Vec<&str> {
+    text.lines()
+        .flat_map(line_link_targets)
+        .map(|(_, target)| target)
+        .collect()
+}
+
+fn scan_line_links(line: &str, line_num: u32, line_start: usize, refs: &mut Vec<RawRef>) {
+    for (b, target) in line_link_targets(line) {
+        let clean_target = target.trim_start_matches('#');
+        if clean_target.is_empty() {
+            continue;
+        }
+        refs.push(RawRef {
+            callee_name: clean_target.to_string(),
+            qualifier: None,
+            line: line_num,
+            name_line: line_num,
+            start_byte: line_start + b,
+            role: RefRole::Call,
+            arg_count: 0,
+            arg_count_known: false,
+            lang: None,
+            receiver: None,
+            receiver_type: None,
+            callable_field: false,
+            member_call: false,
+        });
     }
 }
 

@@ -231,8 +231,14 @@ pub struct SafeDeleteReport<'a> {
     pub sym_name: &'a str,
     pub kind_tag: &'a str,
     pub def_loc: &'a str,
+    pub defs: usize,
     pub callers: &'a [(&'a str, &'a str)],
-    pub blast_radius: usize,
+    pub ambiguous_callers: usize,
+    pub uses: usize,
+    pub tested_self: usize,
+    pub impact_reaches: usize,
+    pub radius_tested: usize,
+    pub radius_untested: usize,
     pub gauge_attrs: &'a str,
     pub page: crate::serialize::PageRequest,
 }
@@ -253,7 +259,7 @@ impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
         comment: "ripwire-rs safe-delete schema=ripwire-rs.safe-delete/v1: can sym= go: callers= impact_reaches= uses= tested_self= risk=."
     );
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
-        let risk = if self.callers.is_empty() && self.blast_radius == 0 {
+        let risk = if self.callers.is_empty() && self.impact_reaches == 0 {
             "low"
         } else {
             "uses-exist"
@@ -262,15 +268,20 @@ impl crate::serialize::XmlReport for SafeDeleteReport<'_> {
         let paged = self.callers_page();
         let shown = paged.window.shown;
         let capped = usize::from(paged.window.capped);
-        let dead_cand = usize::from(c_len == 0 && self.blast_radius == 0);
+        let dead_cand = usize::from(c_len == 0 && self.impact_reaches == 0);
         write!(
             out,
-            " sym=\"{}\" t=\"{}\" p=\"{}\" defs=\"1\" callers=\"{c_len}\" callers_floor=\"1\" ambiguous_callers=\"0\" impact_reaches=\"{}\" uses=\"{c_len}\" tested_self=\"0\" radius_tested=\"0\" radius_untested=\"{}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" {} root=\"{}\"",
+            " sym=\"{}\" t=\"{}\" p=\"{}\" defs=\"{}\" callers=\"{c_len}\" ambiguous_callers=\"{}\" impact_reaches=\"{}\" uses=\"{}\" tested_self=\"{}\" radius_tested=\"{}\" radius_untested=\"{}\" dead_code_candidate=\"{dead_cand}\" risk=\"{risk}\" shown=\"{shown}\" capped=\"{capped}\" {} root=\"{}\"",
             self.sym_name.xml_escaped(),
             self.kind_tag,
             self.def_loc.xml_escaped(),
-            self.blast_radius,
-            self.blast_radius,
+            self.defs,
+            self.ambiguous_callers,
+            self.impact_reaches,
+            self.uses,
+            self.tested_self,
+            self.radius_tested,
+            self.radius_untested,
             self.gauge_attrs,
             self.root
         )
@@ -398,7 +409,7 @@ impl crate::serialize::XmlReport for DeadCodeReport<'_> {
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         write!(
             out,
-            " count=\"{}\" evidence=\"internal-linkage+zero-callers\" register-macro-excluded=\"0\"",
+            " count=\"{}\" evidence=\"internal-linkage+zero-callers\"",
             self.items.len()
         )
     }

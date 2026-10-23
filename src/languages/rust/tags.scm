@@ -111,6 +111,12 @@
 (macro_invocation
     macro: (identifier) @name) @reference.call
 
+; M2: `assert_eq!(alpha(2), 4)` keeps its arguments as a token tree, so `alpha` is a bare identifier
+; followed by a parenthesized token tree, not a call_expression. Every token-tree identifier is captured
+; here and `should_ignore_call` keeps only the `name(` shape (see is_macro_argument_call).
+(token_tree
+    (identifier) @name @reference.call)
+
 (impl_item
     trait: (type_identifier) @name) @reference.implementation
 

@@ -441,3 +441,14 @@ pub fn transitive_impact_multi(
     });
     results
 }
+
+/// Split an impact reach into `(tested, untested)` counts. A node is tested when the test mask
+/// marked it or its file is a test path.
+#[must_use]
+pub fn radius_split(nodes: &[ImpactNode]) -> (usize, usize) {
+    let tested = nodes
+        .iter()
+        .filter(|n| n.tested || crate::gate::affected::is_test_path(&n.path))
+        .count();
+    (tested, nodes.len() - tested)
+}

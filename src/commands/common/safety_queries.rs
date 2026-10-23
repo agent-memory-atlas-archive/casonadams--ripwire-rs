@@ -143,24 +143,45 @@ pub fn execute_safe_delete_query<W: Write>(
     } = *facts;
     use crate::domain::CorpusView;
     use crate::navigate::SymbolLookup;
+    use crate::resolve::EdgeProv;
     let view = (ingest, interner);
     let sym = view.find_first_symbol(sym_name).ok_or_else(|| {
         io::Error::other(format!(
             "ripwire-rs: --safe-delete symbol not found: {sym_name}"
         ))
     })?;
-    let sym_id = sym.id;
     let def_loc = format!("{}:{}", view.sym_path(sym), sym.line);
-    let callers: Vec<(&str, &str)> = graph
-        .callers(sym_id)
-        .filter_map(|(cid, _)| {
-            let s = ingest.sym(cid)?;
-            Some((view.sym_path(s), view.sym_name(s)))
+    let ids = crate::navigate::find_symbols_by_name(sym_name, ingest, interner);
+    let tested_mask = crate::navigate::compute_tested_node_mask(ingest, graph, interner);
+    let mut seen = std::collections::HashSet::new();
+    let mut callers: Vec<(&str, &str)> = Vec::new();
+    let mut ambiguous_callers = 0usize;
+    for &id in &ids {
+        for (cid, _) in graph.callers(id) {
+            let Some(s) = ingest.sym(cid) else { continue };
+            if !seen.insert(cid) {
+                continue;
+            }
+            if graph.edge_prov(cid, id) == Some(EdgeProv::Split) {
+                ambiguous_callers += 1;
+            }
+            callers.push((view.sym_path(s), view.sym_name(s)));
+        }
+    }
+    let tested_self = ids
+        .iter()
+        .filter(|&&id| {
+            tested_mask.get(id as usize).copied().unwrap_or(false)
+                || ingest
+                    .sym(id)
+                    .is_some_and(|s| crate::gate::affected::is_test_path(view.sym_path(s)))
         })
-        .collect();
+        .count();
     let ranks = vec![0.0; ingest.symbols.len()];
-    let blast_radius =
-        crate::navigate::transitive_impact(sym_id, ingest, graph, &ranks, interner, Some(32)).len();
+    let impact =
+        crate::navigate::transitive_impact_multi(&ids, ingest, graph, &ranks, interner, None);
+    let (radius_tested, radius_untested) = crate::navigate::radius_split(&impact);
+    let uses = view.collect_symbol_uses(sym_name).len();
     let gauge_attrs = graph.xml_gauge_attrs();
     use crate::serialize::XmlReport;
     crate::serialize::query_xml::SafeDeleteReport {
@@ -168,8 +189,14 @@ pub fn execute_safe_delete_query<W: Write>(
         sym_name,
         kind_tag: sym.kind.tag(),
         def_loc: &def_loc,
+        defs: ids.len(),
         callers: &callers,
-        blast_radius,
+        ambiguous_callers,
+        uses,
+        tested_self,
+        impact_reaches: impact.len(),
+        radius_tested,
+        radius_untested,
         gauge_attrs: &gauge_attrs,
         page,
     }

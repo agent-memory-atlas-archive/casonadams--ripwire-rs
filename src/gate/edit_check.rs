@@ -29,6 +29,8 @@ pub struct EditCheckReport {
     pub symbol_name: String,
     pub file_path: String,
     pub line: u32,
+    pub kind_tag: &'static str,
+    pub defs: usize,
     pub status: ContractStatus,
     pub total_callers: usize,
     pub incompatible_callers: usize,
@@ -85,11 +87,13 @@ impl crate::serialize::XmlReport for EditCheckReport {
         let est_tokens = 60 + (self.incompatible_callers + shown) * 24;
         write!(
             out,
-            " sym=\"{}\" t=\"fn\" p=\"{}:{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\"{at_attr} root=\".\" next=\"--test-gate={}\"",
+            " sym=\"{}\" t=\"{}\" p=\"{}:{}\" status=\"{}\" defs=\"{}\" callers=\"{}\" incompatible=\"{}\"{at_attr} root=\".\" next=\"--test-gate={}\"",
             self.symbol_name.xml_escaped(),
+            self.kind_tag,
             self.file_path.xml_escaped(),
             self.line,
             self.status,
+            self.defs,
             self.total_callers,
             self.incompatible_callers,
             self.file_path.xml_escaped()
@@ -227,10 +231,13 @@ pub fn check_symbol_contract(
             .then_with(|| a.file_path.cmp(&b.file_path))
     });
 
+    let defs = crate::navigate::find_symbols_by_name(&sym_name, ingest, interner).len();
     Some(EditCheckReport {
         symbol_name: sym_name,
         file_path,
         line: sym.line,
+        kind_tag: sym.kind.tag(),
+        defs,
         status,
         total_callers,
         incompatible_callers,

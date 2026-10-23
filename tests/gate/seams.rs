@@ -152,3 +152,51 @@ fn test_seam_ignores_path_qualified_call_within_one_directory() {
     let rep = find_integration_seams(&ingest, &graph, &interner, PageRequest::default());
     assert!(rep.groups.is_empty());
 }
+
+#[test]
+fn test_seams_doc_links_count_cross_directory_indexed_document_links() {
+    use ripwire_rs::gate::seams::count_doc_links;
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let readme: &[u8] = b"[a](docs/A.md)\n[a2](docs/A.md#sec)\n[b](docs/B.md)\n[m](docs/Missing.md)\n[w](https://example.com/x.md)\n[self](#top)\n";
+    let a: &[u8] = b"[b](B.md)\n[r](../README.md)\n";
+    let b: &[u8] = b"[x](#top)\n";
+    let ingest = ingest_in_memory_files(
+        &[
+            ("README.md", Lang::Markdown, readme),
+            ("docs/A.md", Lang::Markdown, a),
+            ("docs/B.md", Lang::Markdown, b),
+        ],
+        &reg,
+        &interner,
+    );
+    let sources: [(&str, &[u8]); 3] = [("README.md", readme), ("docs/A.md", a), ("docs/B.md", b)];
+    assert_eq!(count_doc_links(&sources, &ingest, &interner), 4);
+}
+
+#[test]
+fn test_seams_doc_links_attribute_is_emitted_only_when_counted() {
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            (
+                "src/gate/seams.rs",
+                Lang::Rust,
+                b"pub fn caller_fn() { callee_fn(); }\n",
+            ),
+            ("lib.rs", Lang::Rust, b"pub fn callee_fn() {}\n"),
+        ],
+        &reg,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let mut rep = find_integration_seams(&ingest, &graph, &interner, PageRequest::default());
+    let mut out = Vec::new();
+    rep.render_envelope(&mut out).unwrap();
+    assert!(!String::from_utf8_lossy(&out).contains("doc_links"));
+    rep.doc_links = Some(4);
+    let mut out = Vec::new();
+    rep.render_envelope(&mut out).unwrap();
+    assert!(String::from_utf8_lossy(&out).contains(" doc_links=\"4\""));
+}

@@ -467,6 +467,11 @@ pub trait LanguageSemantics: Sync {
         self.is_builtin_keyword(name)
     }
 
+    /// True if this node is a value inside a macro argument, where a same-named local binding shadows a call.
+    fn is_macro_argument(&self, _node: tree_sitter::Node<'_>) -> bool {
+        false
+    }
+
     /// Standard library / builtin member names declined on untyped receivers.
     fn std_member_names(&self) -> &'static [&'static str] {
         &[]

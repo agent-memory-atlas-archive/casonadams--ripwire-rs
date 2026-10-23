@@ -395,12 +395,7 @@ impl crate::serialize::XmlReport for ImpactReport<'_> {
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let reaches = self.nodes.len();
-        let radius_tested = self
-            .nodes
-            .iter()
-            .filter(|n| n.tested || crate::gate::affected::is_test_path(&n.path))
-            .count();
-        let radius_untested = reaches.saturating_sub(radius_tested);
+        let (radius_tested, radius_untested) = super::radius_split(self.nodes);
         let of = self.sym_name.xml_escaped();
         write!(
             out,

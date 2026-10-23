@@ -219,3 +219,81 @@ fn seams_report_preserves_the_uncovered_edge() {
         ),
     );
 }
+
+fn safe_delete_xml(files: &[(&str, Lang, &[u8])], sym: &str) -> String {
+    let (ingest, graph, interner) = sample_corpus(files);
+    let facts = SafetyContext {
+        root: ":memory:",
+        ingest: &ingest,
+        graph: &graph,
+        interner: &interner,
+    };
+    let mut out = Vec::new();
+    execute_safe_delete_query(&facts, sym, PageRequest::default(), &mut out).unwrap();
+    String::from_utf8(out).unwrap()
+}
+
+#[test]
+fn test_safe_delete_radius_and_defs_come_from_the_graph() {
+    let xml = safe_delete_xml(
+        &[
+            (
+                "src/lib.rs",
+                Lang::Rust,
+                b"pub fn alpha(x: u8) -> u8 { x }\npub fn run() { let _ = alpha(1); }\n",
+            ),
+            (
+                "tests/check.rs",
+                Lang::Rust,
+                b"fn checks() { assert_eq!(alpha(2), 2); }\n",
+            ),
+        ],
+        "alpha",
+    );
+    assert!(xml.contains(" defs=\"1\""), "{xml}");
+    assert!(xml.contains(" callers=\"2\""), "{xml}");
+    assert!(xml.contains(" impact_reaches=\"2\""), "{xml}");
+    assert!(
+        xml.contains(" radius_tested=\"1\" radius_untested=\"1\""),
+        "{xml}"
+    );
+    assert!(xml.contains(" dead_code_candidate=\"0\""), "{xml}");
+}
+
+#[test]
+fn test_safe_delete_counts_each_definition_of_a_shared_name() {
+    let xml = safe_delete_xml(
+        &[
+            ("src/a.rs", Lang::Rust, b"pub fn helper() {}\n"),
+            (
+                "src/b.rs",
+                Lang::Rust,
+                b"pub fn helper() {}\npub fn caller() { helper(); }\n",
+            ),
+        ],
+        "helper",
+    );
+    assert!(xml.contains(" defs=\"2\""), "{xml}");
+}
+
+#[test]
+fn test_safe_delete_macro_argument_call_is_not_a_low_risk_dead_symbol() {
+    let xml = safe_delete_xml(
+        &[
+            (
+                "src/lib.rs",
+                Lang::Rust,
+                b"pub fn alpha(x: u8) -> u8 { x }\n",
+            ),
+            (
+                "tests/check.rs",
+                Lang::Rust,
+                b"fn checks_alpha() { assert_eq!(alpha(2), 4); }\n",
+            ),
+        ],
+        "alpha",
+    );
+    assert!(xml.contains(" callers=\"1\""), "{xml}");
+    assert!(xml.contains(" risk=\"uses-exist\""), "{xml}");
+    assert!(xml.contains(" dead_code_candidate=\"0\""), "{xml}");
+}

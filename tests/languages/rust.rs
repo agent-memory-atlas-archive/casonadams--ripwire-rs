@@ -450,3 +450,78 @@ fn test_rust_scoped_call_site_is_not_also_a_read() {
         .collect();
     assert_eq!(sites, vec![RefRole::Call]);
 }
+
+fn rust_callers_of(source: &[u8], name: &str) -> usize {
+    use ripwire_rs::{
+        Graph, Interner, LanguageRegistry, find_symbols_by_name, ingest_in_memory_files,
+    };
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest =
+        ingest_in_memory_files(&[("src/lib.rs", Lang::Rust, source)], &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let ids = find_symbols_by_name(name, &ingest, &interner);
+    assert_eq!(ids.len(), 1, "one definition of {name}");
+    graph.callers(ids[0]).count()
+}
+
+#[test]
+fn test_rust_call_inside_macro_argument_is_an_edge() {
+    let src = b"pub fn alpha(x: u8) -> u8 { x }\nfn checks() { assert_eq!(alpha(2), 2); }\n";
+    assert_eq!(rust_callers_of(src, "alpha"), 1);
+    let nested =
+        b"pub fn alpha(x: u8) -> u8 { x }\nfn checks() { assert!(vec![alpha(2)].len() > 0); }\n";
+    assert_eq!(rust_callers_of(nested, "alpha"), 1);
+}
+
+#[test]
+fn test_rust_macro_tokens_that_are_not_calls_stay_edge_free() {
+    let string_only = b"pub fn alpha(x: u8) -> u8 { x }\nfn checks() { println!(\"alpha(2)\"); }\n";
+    assert_eq!(rust_callers_of(string_only, "alpha"), 0);
+    let operator = b"pub fn alpha(x: u8) -> u8 { x }\nfn checks() { assert!(alpha + (2) > 0); }\n";
+    assert_eq!(rust_callers_of(operator, "alpha"), 0);
+    let rules = b"pub fn alpha(x: u8) -> u8 { x }\nmacro_rules! probe { () => { alpha(2) }; }\n";
+    assert_eq!(rust_callers_of(rules, "alpha"), 0);
+    let attribute =
+        b"pub fn derive(x: u8) -> u8 { x }\n#[cfg_attr(test, derive(Debug))]\nstruct Marker;\n";
+    assert_eq!(rust_callers_of(attribute, "derive"), 0);
+}
+
+#[test]
+fn test_rust_camel_case_pattern_in_macro_is_not_a_call() {
+    let pattern =
+        b"pub struct Mode(pub u8);\nfn checks(k: Kind) -> bool { matches!(k, Kind::Mode(_)) }\n";
+    assert_eq!(rust_callers_of(pattern, "Mode"), 0);
+}
+
+#[test]
+fn test_rust_method_and_path_calls_in_macro_are_not_bare_calls() {
+    let method =
+        b"pub fn alpha(x: u8) -> u8 { x }\nfn checks(v: V) { assert_eq!(v.alpha(2), 2); }\n";
+    assert_eq!(rust_callers_of(method, "alpha"), 0);
+    let path =
+        b"pub fn alpha(x: u8) -> u8 { x }\nfn checks() { assert_eq!(other::alpha(2), 2); }\n";
+    assert_eq!(rust_callers_of(path, "alpha"), 0);
+    let bare = b"pub fn alpha(x: u8) -> u8 { x }\nfn checks() { assert_eq!(alpha(2), 2); }\n";
+    assert_eq!(rust_callers_of(bare, "alpha"), 1);
+}
+
+#[test]
+fn test_rust_local_closure_called_in_macro_is_not_an_external_name() {
+    use ripwire_rs::{Interner, LanguageRegistry, ingest_in_memory_files, serialize::PageRequest};
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let src = b"fn checks() { let callers_of = |x: u8| x; assert_eq!(callers_of(2), 2); }\n";
+    let ingest = ingest_in_memory_files(&[("src/lib.rs", Lang::Rust, src)], &registry, &interner);
+    let mut out = Vec::new();
+    ripwire_rs::commands::external_surface::execute_external_surface_query(
+        ".",
+        &ingest,
+        &interner,
+        PageRequest::default(),
+        &mut out,
+    )
+    .unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(!xml.contains("n=\"callers_of\""), "{xml}");
+}

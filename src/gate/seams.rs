@@ -31,6 +31,8 @@ pub struct SeamsReport {
     pub untested_count: usize,
     pub test_files_count: usize,
     pub seam_pairs_count: usize,
+    /// Cross-directory document links; `None` until a source reader counts them.
+    pub doc_links: Option<usize>,
     pub groups: Vec<SeamGroup>,
     pub pr_iters: u32,
     pub gauges: crate::serialize::GraphGauges,
@@ -179,6 +181,7 @@ pub fn find_integration_seams(
         test_files_count: test_files.len(),
         seam_pairs_count: groups.len(),
         groups,
+        doc_links: None,
         pr_iters: graph
             .page_rank(&crate::rank::PageRankConfig::default())
             .iterations
@@ -186,6 +189,62 @@ pub fn find_integration_seams(
         gauges: graph.gauges(),
         page,
     }
+}
+
+/// Resolve a relative link target against the directory of `doc`, normalising `.` and `..`.
+fn resolve_doc_target(doc: &str, rel: &str) -> String {
+    let mut parts: Vec<&str> = if rel.starts_with('/') {
+        Vec::new()
+    } else {
+        doc.split('/').collect()
+    };
+    parts.pop();
+    for seg in rel.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            s => parts.push(s),
+        }
+    }
+    parts.join("/")
+}
+
+/// Markdown links from a prose document to another prose document in a different directory: the
+/// `doc_links=` fact. Scheme links and anchors-only links do not count; the target must be indexed.
+#[must_use]
+pub fn count_doc_links(
+    sources: &dyn crate::query::SourceReader,
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> usize {
+    let prose: BTreeSet<&str> = ingest
+        .files
+        .iter()
+        .filter(|f| f.lang.semantics().is_prose_document())
+        .map(|f| interner.resolve(&f.path))
+        .collect();
+    let mut total = 0usize;
+    for &doc in &prose {
+        let Ok(bytes) = sources.read(doc) else {
+            continue;
+        };
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            continue;
+        };
+        let doc_dir = compute_directory(doc);
+        total += crate::languages::markdown::extract::markdown_link_targets(text)
+            .into_iter()
+            .filter_map(|target| target.split('#').next())
+            .filter(|file| !file.is_empty() && !file.contains(':'))
+            .map(|file| resolve_doc_target(doc, file))
+            .filter(|target| {
+                prose.contains(target.as_str()) && compute_directory(target) != doc_dir
+            })
+            .count();
+    }
+    total
 }
 
 /// The edges of one seam group under `page`'s byte budget; `--limit`/`--offset` address groups, not edges.
@@ -260,9 +319,13 @@ impl crate::serialize::XmlReport for SeamsReport {
         Some(self.gauges)
     }
     fn write_extra_attrs<W: Write>(&self, w: &mut W) -> io::Result<()> {
+        let doc_links = self
+            .doc_links
+            .map(|n| format!(" doc_links=\"{n}\""))
+            .unwrap_or_default();
         write!(
             w,
-            " modules=\"{}\" bridges=\"{}\" untested=\"{}\" doc_links=\"0\" test_files=\"{}\" seam_pairs=\"{}\"",
+            " modules=\"{}\" bridges=\"{}\" untested=\"{}\"{doc_links} test_files=\"{}\" seam_pairs=\"{}\"",
             self.modules_count,
             self.bridges_count,
             self.untested_count,

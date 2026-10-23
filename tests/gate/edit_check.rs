@@ -311,3 +311,36 @@ fn test_edit_check_and_affected_from_in_memory_facts() {
     assert!(xml.contains("hops=\"2\""));
     assert!(xml.contains("run_unknown=\"1\""));
 }
+
+#[test]
+fn test_edit_check_reports_real_kind_and_definition_count() {
+    use ripwire_rs::{LanguageRegistry, ToXmlString, ingest_in_memory_files};
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            (
+                "src/a.rs",
+                Lang::Rust,
+                b"pub struct Pt { x: i32 }\npub fn helper() {}\n",
+            ),
+            ("src/b.rs", Lang::Rust, b"pub fn helper() {}\n"),
+        ],
+        &reg,
+        &interner,
+    );
+    let graph = Graph::build(&ingest, &interner);
+    let pt = ripwire_rs::find_symbols_by_name("Pt", &ingest, &interner)[0];
+    let xml = check_symbol_contract(pt, None, &ingest, &graph, &interner)
+        .unwrap()
+        .to_xml_string();
+    assert!(xml.contains(" t=\"cls\""), "{xml}");
+    assert!(xml.contains(" defs=\"1\""), "{xml}");
+
+    let helper = ripwire_rs::find_symbols_by_name("helper", &ingest, &interner)[0];
+    let xml = check_symbol_contract(helper, None, &ingest, &graph, &interner)
+        .unwrap()
+        .to_xml_string();
+    assert!(xml.contains(" t=\"fn\""), "{xml}");
+    assert!(xml.contains(" defs=\"2\""), "{xml}");
+}

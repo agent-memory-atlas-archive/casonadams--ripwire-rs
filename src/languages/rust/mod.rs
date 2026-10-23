@@ -336,10 +336,18 @@ impl LanguageSemantics for RustLanguage {
     }
 
     fn should_ignore_call(&self, name_node: Option<tree_sitter::Node<'_>>, name: &str) -> bool {
-        let is_macro_inv = name_node
-            .and_then(|n| n.parent())
-            .is_some_and(|p| p.kind() == "macro_invocation");
-        is_macro_inv && RUST_BUILTIN_MACROS.contains(&name)
+        let Some(node) = name_node else {
+            return false;
+        };
+        match node.parent().map(|p| p.kind()) {
+            Some("macro_invocation") => RUST_BUILTIN_MACROS.contains(&name),
+            Some("token_tree") => !(is_macro_argument_call(node) && is_function_name(name)),
+            _ => false,
+        }
+    }
+
+    fn is_macro_argument(&self, node: tree_sitter::Node<'_>) -> bool {
+        std::iter::successors(Some(node), |n| n.parent()).any(|n| n.kind() == "token_tree")
     }
 
     fn std_member_names(&self) -> &'static [&'static str] {
@@ -708,6 +716,36 @@ fn rust_binding_scope(node: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'
         ancestor = parent.parent();
     }
     None
+}
+
+/// Function names are snake_case. CamelCase names in macro arguments are often patterns
+/// (`matches!(x, Kind::Mode(_))`) or constructors, so only snake_case names count as calls.
+fn is_function_name(name: &str) -> bool {
+    name.starts_with(|c: char| c.is_ascii_lowercase() || c == '_')
+}
+
+/// A bare call written inside a macro argument list: an identifier directly followed by a parenthesized
+/// token tree, as in `assert_eq!(alpha(2), 4)`. Attribute arguments (`derive(Debug)`), `macro_rules!`
+/// bodies (no call until expansion), declarations (`fn name(`, `struct Name(`), and method or path
+/// calls (`x.name(`, `m::name(`, whose receiver or module the token tree does not type) are not calls.
+fn is_macro_argument_call(node: tree_sitter::Node<'_>) -> bool {
+    let parenthesized = node.next_sibling().is_some_and(|next| {
+        next.kind() == "token_tree" && next.child(0).is_some_and(|open| open.kind() == "(")
+    });
+    let declared = node.prev_sibling().is_some_and(|prev| {
+        matches!(
+            prev.kind(),
+            "fn" | "struct" | "enum" | "union" | "." | "::"
+        )
+    });
+    let mut ancestor = node.parent();
+    let in_metadata_or_rules = std::iter::from_fn(|| {
+        let current = ancestor?;
+        ancestor = current.parent();
+        Some(current.kind())
+    })
+    .any(|kind| matches!(kind, "attribute_item" | "inner_attribute_item" | "macro_definition"));
+    parenthesized && !declared && !in_metadata_or_rules
 }
 
 fn rust_non_value(parent: tree_sitter::Node<'_>, node: tree_sitter::Node<'_>) -> bool {
