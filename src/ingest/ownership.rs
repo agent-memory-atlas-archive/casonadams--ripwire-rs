@@ -51,6 +51,7 @@ pub fn build_file_references(
                 reference.receiver_type = Some(interner.intern(rt));
             }
             reference.callable_field = r.callable_field;
+            reference.macro_arg = r.macro_arg;
             reference.member_call = r.member_call;
             reference.start_byte = r.start_byte as u32;
             reference.name_line = r.name_line;

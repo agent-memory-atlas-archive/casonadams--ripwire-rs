@@ -35,6 +35,7 @@ pub fn execute_external_surface_query<W: Write>(
         let name = interner.resolve(&r.callee_name);
         if is_call
             && !r.callable_field
+            && !r.macro_arg
             && !r.lang.semantics().is_prose_document()
             && !by_name.contains_key(&r.callee_name)
             && !r.lang.semantics().is_std_or_builtin_member(name)

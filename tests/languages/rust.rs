@@ -525,3 +525,51 @@ fn test_rust_local_closure_called_in_macro_is_not_an_external_name() {
     let xml = String::from_utf8(out).unwrap();
     assert!(!xml.contains("n=\"callers_of\""), "{xml}");
 }
+
+#[test]
+fn test_rust_unresolved_macro_dsl_token_is_not_an_external_name() {
+    use ripwire_rs::{Interner, LanguageRegistry, ingest_in_memory_files, serialize::PageRequest};
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let src = b"command! { run: nav(Mode::Callers) }\nfn other() { vendor_send(1); }\n";
+    let ingest = ingest_in_memory_files(&[("src/lib.rs", Lang::Rust, src)], &registry, &interner);
+    let mut out = Vec::new();
+    ripwire_rs::commands::external_surface::execute_external_surface_query(
+        ".",
+        &ingest,
+        &interner,
+        PageRequest::default(),
+        &mut out,
+    )
+    .unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(
+        !xml.contains("n=\"nav\""),
+        "a DSL token is not a call: {xml}"
+    );
+    assert!(
+        xml.contains("n=\"vendor_send\""),
+        "a real unresolved call outside a macro stays external: {xml}"
+    );
+}
+
+#[test]
+fn test_rust_macro_argument_call_resolves_across_files() {
+    use ripwire_rs::{
+        Graph, Interner, LanguageRegistry, find_symbols_by_name, ingest_in_memory_files,
+    };
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let files: [(&str, Lang, &[u8]); 2] = [
+        ("src/a.rs", Lang::Rust, b"pub fn alpha(x: u8) -> u8 { x }\n"),
+        (
+            "src/b.rs",
+            Lang::Rust,
+            b"fn checks() { assert_eq!(alpha(2), 2); }\n",
+        ),
+    ];
+    let ingest = ingest_in_memory_files(&files, &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let ids = find_symbols_by_name("alpha", &ingest, &interner);
+    assert_eq!(graph.callers(ids[0]).count(), 1);
+}

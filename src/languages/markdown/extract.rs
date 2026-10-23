@@ -178,6 +178,7 @@ fn scan_line_links(line: &str, line_num: u32, line_start: usize, refs: &mut Vec<
             receiver: None,
             receiver_type: None,
             callable_field: false,
+            macro_arg: false,
             member_call: false,
         });
     }

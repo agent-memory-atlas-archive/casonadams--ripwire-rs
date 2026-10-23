@@ -19,6 +19,16 @@ fn sample_report() -> DoctorReport {
 }
 
 #[test]
+fn test_doctor_report_with_legend_is_well_formed_xml() {
+    let mut out = Vec::new();
+    sample_report().write_xml(&mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(xml.starts_with("<!--"), "the legend is part of the report");
+    let doc = roxmltree::Document::parse(&xml).unwrap_or_else(|e| panic!("{e}: {xml}"));
+    assert_eq!(doc.root_element().tag_name().name(), "doctor");
+}
+
+#[test]
 fn test_doctor_report_omits_at_outside_git() {
     let report = DoctorReport {
         at: None,

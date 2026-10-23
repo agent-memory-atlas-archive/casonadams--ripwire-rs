@@ -42,6 +42,7 @@ pub struct RawRef {
     pub receiver: Option<String>,
     pub receiver_type: Option<String>,
     pub callable_field: bool,
+    pub macro_arg: bool,
     /// The reference is written as a member access (`x.f()`), not a bare or path name.
     pub member_call: bool,
 }
@@ -703,6 +704,10 @@ fn record_ref_item(
         callable_field: ext
             .name_node
             .is_some_and(|n| lang.semantics().is_callable_field_access(n)),
+        macro_arg: role == RefRole::Call
+            && ext
+                .name_node
+                .is_some_and(|n| lang.semantics().is_macro_argument(n)),
         member_call: ext.name_node.is_some_and(is_member_access),
     });
 }
@@ -802,6 +807,7 @@ fn scan_macro_body_calls(
                 receiver: None,
                 receiver_type: None,
                 callable_field: false,
+                macro_arg: false,
                 member_call: false,
             });
         }
@@ -899,17 +905,13 @@ pub fn parse_file_tree(
         let bindings = lang
             .semantics()
             .read_bindings(tree.root_node(), source_bytes);
-        let semantics = lang.semantics();
         refs.retain(|reference| {
             if !bindings.shadows(&reference.callee_name, reference.start_byte) {
                 return true;
             }
             match reference.role {
                 RefRole::Read | RefRole::Write => false,
-                RefRole::Call => !tree
-                    .root_node()
-                    .descendant_for_byte_range(reference.start_byte, reference.start_byte)
-                    .is_some_and(|node| semantics.is_macro_argument(node)),
+                RefRole::Call => !reference.macro_arg,
                 _ => true,
             }
         });

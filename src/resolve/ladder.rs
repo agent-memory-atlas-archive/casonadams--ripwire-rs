@@ -840,7 +840,12 @@ pub trait ResolutionLookup {
             RefOutcome::External
             | RefOutcome::Unresolved
             | RefOutcome::Declined
-            | RefOutcome::Builtin => self.classify_foreign(r).unwrap_or(outcome),
+            | RefOutcome::Builtin => {
+                if r.macro_arg {
+                    return RefOutcome::Ignored;
+                }
+                self.classify_foreign(r).unwrap_or(outcome)
+            }
             RefOutcome::Ignored | RefOutcome::Resolved(_) => outcome,
         }
     }
