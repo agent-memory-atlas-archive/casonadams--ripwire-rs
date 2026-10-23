@@ -418,12 +418,19 @@ pub fn compute_plan_lanes_from_facts(
     page: crate::serialize::PageRequest,
 ) -> serde_json::Value {
     let pr = ctx.graph.page_rank(&crate::rank::PageRankConfig::default());
+    let churn = crate::git::history::walk_repository_history_scoped(
+        ctx.root,
+        crate::git::history::resolve_cutoff_timestamp(None, 12),
+    )
+    .ok()
+    .map(|commits| crate::git::history::file_commit_counts(&commits));
     let corpus = crate::gate::lanes::LaneCorpus {
         root: ctx.root,
         ingest: ctx.ingest,
         graph: ctx.graph,
         pr: &pr,
         interner: ctx.interner,
+        churn: churn.as_ref(),
     };
     if let Some(lines) = brief_lines {
         crate::gate::lanes::compute_plan_lanes_with_brief(corpus, lines, page)

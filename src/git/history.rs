@@ -263,6 +263,16 @@ where
     churn_map
 }
 
+/// Per-file commit counts over `commits` (merge bombs excluded): the churn `--hotspots` ranks by.
+#[must_use]
+pub fn file_commit_counts(commits: &[CommitInfo]) -> HashMap<String, u32> {
+    let anchor = commits.first().map_or(0, |c| c.timestamp);
+    compute_file_churn(commits, anchor, MERGE_BOMB_MAX_FILES)
+        .into_iter()
+        .map(|(path, fc)| (path, fc.commits))
+        .collect()
+}
+
 struct RawCommitMeta {
     id: gix::ObjectId,
     timestamp: i64,

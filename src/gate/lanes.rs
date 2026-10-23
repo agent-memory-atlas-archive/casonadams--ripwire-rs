@@ -1,9 +1,9 @@
-use crate::domain::{IngestResult, Interner, NodeId};
+use crate::domain::{IngestResult, Interner, NodeId, SymKind};
 use crate::graph::{Graph, community::Communities};
 use crate::rank::PageRankResult;
 use crate::serialize::{PageRequest, Paged, text_bytes};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 #[derive(Debug, Clone, Default)]
 pub struct PartitionPlan {
@@ -306,16 +306,74 @@ struct LaneBuildEnv<'a> {
     graph: &'a Graph,
     ranks: &'a [f64],
     interner: &'a Interner,
-    tested_mask: &'a [bool],
+    churn: Option<&'a HashMap<String, u32>>,
+    index: &'a LaneIndex,
     page: PageRequest,
 }
 
-fn build_lane_claims_and_files(
-    node_ids: &[NodeId],
-    ingest: &IngestResult,
-    interner: &Interner,
-    tested_mask: &[bool],
-) -> LaneClaimsSummary {
+/// Corpus-wide tables every lane reads: test reach, file hotspot ranks, and definitions per `(scope, name)`.
+struct LaneIndex {
+    tested_mask: Vec<bool>,
+    hot_ranks: HashMap<String, usize>,
+    id_defs: HashMap<(String, String), usize>,
+}
+
+fn lane_index(corpus: LaneCorpus<'_>) -> LaneIndex {
+    let mut id_defs: HashMap<(String, String), usize> = HashMap::new();
+    for sym in corpus
+        .ingest
+        .symbols
+        .iter()
+        .filter(|s| s.kind != SymKind::Section && s.kind != SymKind::ModuleScope)
+    {
+        let scope = sym
+            .scope
+            .map_or("", |sc| corpus.interner.resolve(&sc))
+            .to_string();
+        let name = corpus.interner.resolve(&sym.name).to_string();
+        *id_defs.entry((scope, name)).or_insert(0) += 1;
+    }
+    let hot_ranks = corpus.churn.map_or_else(HashMap::new, |churn| {
+        crate::metrics::compute_hotspots(corpus.ingest, corpus.interner, churn)
+            .files
+            .iter()
+            .enumerate()
+            .map(|(i, f)| (f.file_path.clone(), i + 1))
+            .collect()
+    });
+    LaneIndex {
+        tested_mask: crate::navigate::compute_tested_node_mask(
+            corpus.ingest,
+            corpus.graph,
+            corpus.interner,
+        ),
+        hot_ranks,
+        id_defs,
+    }
+}
+
+fn lane_env<'a>(
+    corpus: LaneCorpus<'a>,
+    index: &'a LaneIndex,
+    page: PageRequest,
+) -> LaneBuildEnv<'a> {
+    LaneBuildEnv {
+        ingest: corpus.ingest,
+        graph: corpus.graph,
+        ranks: &corpus.pr.ranks,
+        interner: corpus.interner,
+        churn: corpus.churn,
+        index,
+        page,
+    }
+}
+
+fn ambiguity_of(graph: &Graph, id: NodeId) -> usize {
+    graph.amb_out.get(id as usize).map_or(0, |&n| n as usize)
+}
+
+fn build_lane_claims_and_files(node_ids: &[NodeId], env: &LaneBuildEnv<'_>) -> LaneClaimsSummary {
+    let (ingest, interner) = (env.ingest, env.interner);
     let mut sym_rows = Vec::new();
     let mut claim_keys = BTreeMap::new();
     let mut file_stats: BTreeMap<String, (usize, u32)> = BTreeMap::new();
@@ -330,7 +388,12 @@ fn build_lane_claims_and_files(
         let name = interner.resolve(&sym.name).to_string();
         let scope = sym.scope.map_or("", |sc| interner.resolve(&sc)).to_string();
         let key = fnv1a64_claim_key(&path, &scope, &name);
-        let is_tested = tested_mask.get(id as usize).copied().unwrap_or(false)
+        let is_tested = env
+            .index
+            .tested_mask
+            .get(id as usize)
+            .copied()
+            .unwrap_or(false)
             || crate::gate::affected::is_test_path(&path);
         if !is_tested {
             untested += 1;
@@ -341,23 +404,36 @@ fn build_lane_claims_and_files(
         let entry = file_stats.entry(path.clone()).or_insert((0, 0));
         entry.0 += 1;
         entry.1 = entry.1.saturating_add(sym.ccx);
-        sym_rows.push(json!({
+        let defs = env
+            .index
+            .id_defs
+            .get(&(scope.clone(), name.clone()))
+            .copied()
+            .unwrap_or(1);
+        let churn = env.churn.map(|c| c.get(&path).copied().unwrap_or(0));
+        let addressable = !scope.is_empty();
+        let mut row = json!({
             "p": path,
             "n": name,
             "scope": scope,
             "key": format!("{key:016x}"),
-            "id": if scope.is_empty() { Value::Null } else { json!(format!("{scope}::{name}")) },
-            "id_addressable": !scope.is_empty(),
-            "id_collides_with": 0,
+            "id": if addressable { json!(format!("{scope}::{name}")) } else { Value::Null },
+            "id_addressable": addressable,
             "l": sym.line,
             "ord": ord,
-            "overloads": 1,
-            "amb": 0,
+            "overloads": defs,
+            "amb": ambiguity_of(env.graph, id),
             "cx": sym.cx.max(1),
             "ccx": sym.ccx,
-            "churn": 0,
             "tested": usize::from(is_tested),
-        }));
+        });
+        if addressable {
+            row["id_collides_with"] = json!(defs - 1);
+        }
+        if let Some(churn) = churn {
+            row["churn"] = json!(churn);
+        }
+        sym_rows.push(row);
     }
     let file_counts: BTreeMap<String, usize> = file_stats
         .iter()
@@ -366,13 +442,14 @@ fn build_lane_claims_and_files(
     let file_rows: Vec<Value> = file_stats
         .into_iter()
         .map(|(p, (cnt, ccx))| {
-            json!({
-                "p": p,
-                "symbols": cnt,
-                "churn": 0,
-                "ccx": ccx,
-                "hotspot_rank": Value::Null,
-            })
+            let churn = env.churn.map(|c| c.get(&p).copied().unwrap_or(0));
+            let rank = env.index.hot_ranks.get(&p).copied();
+            let mut row = json!({ "p": p, "symbols": cnt, "ccx": ccx });
+            if let Some(churn) = churn {
+                row["churn"] = json!(churn);
+                row["hotspot_rank"] = json!(rank);
+            }
+            row
         })
         .collect();
     LaneClaimsSummary {
@@ -402,7 +479,7 @@ fn build_single_lane(
         max_ccx,
         sum_ccx,
         untested,
-    } = build_lane_claims_and_files(&node_ids, env.ingest, env.interner, env.tested_mask);
+    } = build_lane_claims_and_files(&node_ids, env);
     let impact = crate::navigate::transitive_impact_multi(
         &node_ids,
         env.ingest,
@@ -468,10 +545,8 @@ fn build_single_lane(
                 "module_span": module_span.max(1),
                 "max_ccx": max_ccx,
                 "sum_ccx": sum_ccx,
-                "ambiguous_calls": 0,
+                "ambiguous_calls": node_ids.iter().map(|&id| ambiguity_of(env.graph, id)).sum::<usize>(),
                 "blast_reaches": impact.len(),
-                "contract_touches": 0,
-                "conflicts": 0,
                 "untested": untested,
                 "tests_total": aff.tests.len(),
                 "blast_capped": blast_win.capped,
@@ -515,8 +590,6 @@ fn compute_lane_pair_row(a: &BuiltLane, b: &BuiltLane) -> (Value, usize, usize) 
                 "key": format!("{k:016x}"),
                 "p": path,
                 "n": name,
-                "overloads": 1,
-                "id": Value::Null,
             })
         })
         .collect();
@@ -554,7 +627,7 @@ fn compute_lane_pair_row(a: &BuiltLane, b: &BuiltLane) -> (Value, usize, usize) 
     (row, conflict_count, touch_count)
 }
 
-fn compute_pairs_and_landing_order(lanes: &[BuiltLane]) -> (Vec<Value>, Vec<String>) {
+fn compute_pairs_and_landing_order(lanes: &mut [BuiltLane]) -> (Vec<Value>, Vec<String>) {
     let mut pairs = Vec::new();
     let mut conflict_deg = vec![0usize; lanes.len()];
     let mut touch_deg = vec![0usize; lanes.len()];
@@ -567,6 +640,11 @@ fn compute_pairs_and_landing_order(lanes: &[BuiltLane]) -> (Vec<Value>, Vec<Stri
             touch_deg[j] += t_cnt;
             pairs.push(row);
         }
+    }
+    for (i, lane) in lanes.iter_mut().enumerate() {
+        let signals = &mut lane.json_val["execution"]["signals"];
+        signals["conflicts"] = json!(conflict_deg[i]);
+        signals["contract_touches"] = json!(touch_deg[i]);
     }
     let mut order_indices: Vec<usize> = (0..lanes.len()).collect();
     order_indices.sort_by_key(|&i| {
@@ -615,10 +693,10 @@ fn assemble_plan_lanes_envelope(
     requested: usize,
     carve_val: Value,
     core_val: Value,
-    built_lanes: Vec<BuiltLane>,
+    mut built_lanes: Vec<BuiltLane>,
 ) -> Value {
     let at_stamp = crate::git::history::compute_git_at_stamp(root);
-    let (pairs, landing_order) = compute_pairs_and_landing_order(&built_lanes);
+    let (pairs, landing_order) = compute_pairs_and_landing_order(&mut built_lanes);
     let lanes_json: Vec<Value> = built_lanes.into_iter().map(|l| l.json_val).collect();
     json!({
         "v": 1,
@@ -654,7 +732,8 @@ fn attach_corpus_stats(mut val: Value, ingest: &IngestResult, graph: &Graph) -> 
     val
 }
 
-/// The indexed corpus a plan-lanes run reads: the repository root for the envelope, the index, and PageRank ranks.
+/// The indexed corpus a plan-lanes run reads: the root for the envelope, the index, PageRank ranks, and the
+/// per-file commit counts over the git history window (`None` when the root is not a git repository).
 #[derive(Clone, Copy)]
 pub struct LaneCorpus<'a> {
     pub root: &'a str,
@@ -662,6 +741,7 @@ pub struct LaneCorpus<'a> {
     pub graph: &'a Graph,
     pub pr: &'a PageRankResult,
     pub interner: &'a Interner,
+    pub churn: Option<&'a HashMap<String, u32>>,
 }
 
 #[must_use]
@@ -670,22 +750,9 @@ pub fn compute_plan_lanes_with_brief(
     brief_lines: &[String],
     page: PageRequest,
 ) -> Value {
-    let LaneCorpus {
-        root,
-        ingest,
-        graph,
-        pr,
-        interner,
-    } = corpus;
-    let tested_mask = crate::navigate::compute_tested_node_mask(ingest, graph, interner);
-    let env = LaneBuildEnv {
-        ingest,
-        graph,
-        ranks: &pr.ranks,
-        interner,
-        tested_mask: &tested_mask,
-        page,
-    };
+    let index = lane_index(corpus);
+    let env = lane_env(corpus, &index, page);
+    let communities: Communities = corpus.graph.communities();
     let non_blank: Vec<&str> = brief_lines
         .iter()
         .map(String::as_str)
@@ -694,11 +761,19 @@ pub fn compute_plan_lanes_with_brief(
         .collect();
     let mut built_lanes = Vec::new();
     for (idx, &line_task) in non_blank.iter().enumerate() {
-        let nodes = rank_task_surface_nodes(line_task, 15, ingest, &pr.ranks, interner);
-        built_lanes.push(build_single_lane(idx, line_task, nodes, 1, &env));
+        let nodes = rank_task_surface_nodes(
+            line_task,
+            15,
+            corpus.ingest,
+            &corpus.pr.ranks,
+            corpus.interner,
+        );
+        let module_span =
+            group_assignable_by_community(&nodes, corpus.ingest, corpus.graph, &communities).len();
+        built_lanes.push(build_single_lane(idx, line_task, nodes, module_span, &env));
     }
     let base = assemble_plan_lanes_envelope(
-        root,
+        corpus.root,
         Value::Null,
         "brief",
         non_blank.len(),
@@ -706,7 +781,7 @@ pub fn compute_plan_lanes_with_brief(
         json!({ "files": [], "symbols": [] }),
         built_lanes,
     );
-    attach_corpus_stats(base, ingest, graph)
+    attach_corpus_stats(base, corpus.ingest, corpus.graph)
 }
 
 #[must_use]
@@ -716,24 +791,17 @@ pub fn compute_plan_lanes(
     task: &str,
     page: PageRequest,
 ) -> Value {
-    let LaneCorpus {
-        root,
-        ingest,
-        graph,
-        pr,
-        interner,
-    } = corpus;
-    let tested_mask = crate::navigate::compute_tested_node_mask(ingest, graph, interner);
-    let env = LaneBuildEnv {
-        ingest,
-        graph,
-        ranks: &pr.ranks,
-        interner,
-        tested_mask: &tested_mask,
-        page,
-    };
+    let index = lane_index(corpus);
+    let env = lane_env(corpus, &index, page);
     let n = requested.clamp(1, 16);
-    let plan = plan_task_partition(task, n, ingest, graph, &pr.ranks, interner);
+    let plan = plan_task_partition(
+        task,
+        n,
+        corpus.ingest,
+        corpus.graph,
+        &corpus.pr.ranks,
+        corpus.interner,
+    );
     let mut built_lanes = Vec::new();
     for (idx, grp) in plan.groups.iter().enumerate() {
         let mod_span = plan.group_module_count.get(idx).copied().unwrap_or(1);
@@ -762,9 +830,9 @@ pub fn compute_plan_lanes(
         "overlap_surface": "claims-plus-blast-radius",
         "overlap_is_ceiling": true,
     });
-    let core_val = build_core_json(&plan.core_ids, ingest, interner);
+    let core_val = build_core_json(&plan.core_ids, corpus.ingest, corpus.interner);
     let base = assemble_plan_lanes_envelope(
-        root,
+        corpus.root,
         json!(task),
         "partition",
         n,
@@ -772,5 +840,5 @@ pub fn compute_plan_lanes(
         core_val,
         built_lanes,
     );
-    attach_corpus_stats(base, ingest, graph)
+    attach_corpus_stats(base, corpus.ingest, corpus.graph)
 }

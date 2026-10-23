@@ -393,7 +393,7 @@ capping the number of reported violations.
   ripwire-rs . --verify="calls(main,run_cli)"
   ```
 
-- **Session Handoff & Symbol Notes**: Package verified changes and co-change partners for subsequent agents, or persist symbol-level gotchas.
+- **Session Handoff & Symbol Notes**: Package verified changes and co-change partners for subsequent agents, or persist symbol-level gotchas. Co-change partners are mined from the 18-month git window of the first changed file (`score` = co-changes / commits touching that file); `blast_files` counts files outside the changed set that transitively call changed symbols. Branch, subject, and `at` appear only inside a git repository.
   ```bash
   ripwire-rs . --handoff
   ripwire-rs . --note-add="Interner: Spur IDs are 1-based; never index directly without resolve()"
@@ -402,6 +402,6 @@ capping the number of reported violations.
 
 ### Benefits
 - **Zero Redundant Orientation**: `--pack-task --partition=N` carves the task surface along Louvain call-graph communities (with file-level fallback for edgeless data types and median splitting when $K < N$), emitting a `<ctx-partitions>` bundle with a shared core plus $N$ disjoint subagent `<bundle>` slices and Jaccard overlap telemetry (`overlap_mean`, `overlap_max`, `core_overlap`).
-- **Pre-Hoc Collision Prevention**: `--plan-lanes` keys claims on path-qualified `fnv1a64(path\0scope\0name)` identities to separate true symbol `conflicts`, `same_file_risk`, and `contract_touch` (a lane's claim sitting inside another lane's transitive caller blast radius), computing a greedy fewest-conflicts-first `landing_order`.
+- **Pre-Hoc Collision Prevention**: `--plan-lanes` keys claims on path-qualified `fnv1a64(path\0scope\0name)` identities to separate true symbol `conflicts`, `same_file_risk`, and `contract_touch` (a lane's claim sitting inside another lane's transitive caller blast radius), computing a greedy fewest-conflicts-first `landing_order`. Per-lane `conflicts` and `contract_touches` are sums of those pair results; `ambiguous_calls` sums call-graph ambiguity over the lane's claims; `churn` and `hotspot_rank` come from the 12-month git window and are omitted outside a git repository.
 - **Epistemic Honesty**: `--help-task` inspects live repository facts (`git`, `dirty`, `trace`, `resolved_symbols`) and abstains when evidence is thin; `--verify` distinguishes `confirmed`, `refuted` (only under complete evidence), and `not-established` (when bounded by the static call-graph or reference floor).
 - **Fleet Governance Contract**: For drop-in configuration of autonomous subagents with deterministic static analysis gates, see the [AGENTS.md Integration Guide](AGENTS_GUIDE.md).

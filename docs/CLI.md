@@ -322,6 +322,10 @@ ripwire-rs . --pack-task="search" --partition=4
 # Pre-hoc parallel worktree lane planner (auto-carved by community or from explicit --brief=FILE)
 ripwire-rs . --plan-lanes=3 --task="refactor serialization"
 ripwire-rs . --plan-lanes --brief=lanes.txt
+
+# Reach of one feature flag: the symbols reading it, their transitive callers, and affected tests.
+# GATE must name a flag exactly as --flags lists it; an empty or unknown gate exits nonzero.
+ripwire-rs . --flip=FEATURE_X
 # Functional graph query DSL
 ripwire-rs . --graph-query="callers(main)"
 

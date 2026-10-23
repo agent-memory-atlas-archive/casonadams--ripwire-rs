@@ -2,7 +2,9 @@ use ripwire_rs::commands::common::edit::{resolve_edit_spec, resolve_edit_spec_wi
 use ripwire_rs::commands::common::ladder::execute_expand_or_outline_compressed;
 use ripwire_rs::commands::doc_drift::{DOC_DRIFT, DocDriftArgs};
 use ripwire_rs::commands::flags_report::{FLAGS, FlagsArgs};
-use ripwire_rs::commands::flip::{FLIP, FlipArgs, render_flip_xml};
+use ripwire_rs::commands::flip::{
+    FLIP, FlipArgs, FlipReach, flag_entries, flip_reach, render_flip_xml,
+};
 use ripwire_rs::commands::handoff::build_handoff_verified_rows;
 use ripwire_rs::commands::mentions::{MENTIONS, MentionsArgs};
 use ripwire_rs::commands::notes::{NOTES, NotesArgs, render_notes_xml};
@@ -11,7 +13,9 @@ use ripwire_rs::commands::skipped::render_skipped_census_xml;
 use ripwire_rs::commands::whereis::{WHEREIS, WhereisArgs};
 use ripwire_rs::crawler::{CrawlerOptions, SkippedCensus};
 use ripwire_rs::query::detail::skeletonize_body;
-use ripwire_rs::query::doc_tools::{WhereisFacts, whereis_from_sources_with_facts};
+use ripwire_rs::query::doc_tools::{
+    WhereisFacts, flags_from_sources, whereis_from_sources_with_facts,
+};
 use ripwire_rs::serialize::{PageRequest, serialize_whereis_xml};
 use ripwire_rs::{IngestResult, Interner, Lang, LanguageRegistry, ingest_in_memory_files};
 
@@ -66,14 +70,81 @@ fn test_handoff_xml_branches() {
         &interner,
         ripwire_rs::serialize::PageRequest::default(),
     );
-    assert!(empty_rows.contains("src/lib.rs"));
+    assert!(empty_rows.is_empty());
     let ch_rows = build_handoff_verified_rows(
         &["src/lib.rs".to_string()],
         &ingest,
         &interner,
         ripwire_rs::serialize::PageRequest::default(),
     );
-    assert!(ch_rows.contains("overview"));
+    assert!(ch_rows.contains("<s n=\"overview\"/>"));
+    let unindexed = build_handoff_verified_rows(
+        &["docs/notes.txt".to_string()],
+        &ingest,
+        &interner,
+        ripwire_rs::serialize::PageRequest::default(),
+    );
+    assert_eq!(unindexed, "<f p=\"docs/notes.txt\"/>");
+    assert!(!unindexed.contains("main"));
+}
+
+#[test]
+fn test_handoff_blast_and_tests_follow_the_changed_symbols() {
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(
+        &[
+            ("src/lib.rs", Lang::Rust, b"pub fn alpha() -> u32 { 1 }\n"),
+            (
+                "src/caller.rs",
+                Lang::Rust,
+                b"pub fn use_alpha() -> u32 { alpha() }\n",
+            ),
+            (
+                "tests/lib_test.rs",
+                Lang::Rust,
+                b"fn test_alpha() { alpha(); }\n",
+            ),
+            ("src/unrelated.rs", Lang::Rust, b"pub fn idle() {}\n"),
+        ],
+        &reg,
+        &interner,
+    );
+    let graph = ripwire_rs::Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&ripwire_rs::PageRankConfig::default());
+    let changed = ["src/lib.rs".to_string()];
+    assert_eq!(
+        ripwire_rs::commands::handoff::handoff_blast_files(
+            &changed, &ingest, &graph, &pr.ranks, &interner
+        ),
+        2
+    );
+    assert_eq!(
+        ripwire_rs::commands::handoff::handoff_affected_tests(&changed, &ingest, &graph, &interner),
+        1
+    );
+
+    let idle = ["src/unrelated.rs".to_string()];
+    assert_eq!(
+        ripwire_rs::commands::handoff::handoff_blast_files(
+            &idle, &ingest, &graph, &pr.ranks, &interner
+        ),
+        0
+    );
+    assert_eq!(
+        ripwire_rs::commands::handoff::handoff_affected_tests(&idle, &ingest, &graph, &interner),
+        0
+    );
+    assert_eq!(
+        ripwire_rs::commands::handoff::handoff_blast_files(
+            &[],
+            &ingest,
+            &graph,
+            &pr.ranks,
+            &interner
+        ),
+        0
+    );
 }
 
 #[test]
@@ -139,16 +210,77 @@ fn test_render_plan_lint_xml() {
 fn test_render_flip_xml() {
     let flags_val = serde_json::json!({
         "flags": [
-            { "name": "gate_deploy", "path": "src/deploy.rs", "line": 42 },
-            { "name": "other_flag", "path": "src/other.rs", "line": 10 }
+            { "name": "gate_deploy", "kind": "compile", "path": "src/deploy.rs", "line": 42, "reads_count": 1, "reads": [{ "path": "src/deploy.rs", "line": 42 }] },
+            { "name": "other_flag", "kind": "compile", "path": "src/other.rs", "line": 10, "reads_count": 1, "reads": [{ "path": "src/other.rs", "line": 10 }] }
         ]
     });
+    let entries = flag_entries("gate_deploy", &flags_val).unwrap();
+    let reach = FlipReach::default();
     let mut buf = Vec::new();
-    render_flip_xml("gate_deploy", ".", &flags_val, &mut buf).unwrap();
+    render_flip_xml(
+        "gate_deploy",
+        ".",
+        &entries,
+        &reach,
+        PageRequest::default(),
+        &mut buf,
+    )
+    .unwrap();
     let out = std::str::from_utf8(&buf).unwrap();
-    assert!(out.contains("ripwire-rs.flip/v1"));
-    assert!(out.contains("<site p=\"src/deploy.rs\" l=\"42\" gate=\"gate_deploy\"/>"));
+    assert!(out.contains("ripwire-rs.flip/v2"));
+    assert!(out.contains(
+        "<site p=\"src/deploy.rs\" l=\"42\" gate=\"gate_deploy\" kind=\"compile\" reads=\"1\"/>"
+    ));
+    assert!(out.contains("<reach readers=\"0\" unscoped_reads=\"0\" files=\"0\">"));
     assert!(!out.contains("other_flag"));
+}
+
+#[test]
+fn test_flag_entries_rejects_empty_and_unknown_gates() {
+    let flags_val = serde_json::json!({
+        "flags": [ { "name": "FEATURE_X" }, { "name": "FEATURE_XY" } ]
+    });
+    assert!(flag_entries("", &flags_val).is_err());
+    assert!(flag_entries("   ", &flags_val).is_err());
+    assert!(flag_entries("ZZZ_NOPE", &flags_val).is_err());
+    // Substring matches are not gates: "FEATURE" names no flag in the table.
+    assert!(flag_entries("FEATURE", &flags_val).is_err());
+    let exact = flag_entries("FEATURE_X", &flags_val).unwrap();
+    assert_eq!(exact.len(), 1);
+    assert_eq!(exact[0]["name"], "FEATURE_X");
+}
+
+#[test]
+fn test_flip_reach_follows_readers_to_callers_and_tests() {
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let app: &[u8] = b"import os\ndef gate_check():\n    return os.getenv(\"FEATURE_X\")\ndef serve():\n    return gate_check()\ndef unrelated():\n    pass\n";
+    let test: &[u8] = b"from app import serve\ndef test_serve():\n    serve()\n";
+    let ingest = ingest_in_memory_files(
+        &[
+            ("src/app.py", Lang::Python, app),
+            ("tests/test_app.py", Lang::Python, test),
+        ],
+        &reg,
+        &interner,
+    );
+    let graph = ripwire_rs::Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&ripwire_rs::PageRankConfig::default());
+    let sources: &[(&str, &[u8])] = &[("src/app.py", app), ("tests/test_app.py", test)];
+    let flags = flags_from_sources(":memory:", sources, &ingest, &interner);
+    let entries = flag_entries("FEATURE_X", &flags).unwrap();
+    let reach = flip_reach(&entries, &ingest, &graph, &pr.ranks, &interner);
+    let names: Vec<&str> = reach.readers.iter().map(|(_, _, n)| n.as_str()).collect();
+    assert_eq!(names, vec!["gate_check"]);
+    assert_eq!(reach.unscoped_reads, 0);
+    let callers: Vec<&str> = reach.callers.iter().map(|c| c.name.as_str()).collect();
+    assert!(callers.contains(&"serve"), "callers were {callers:?}");
+    assert!(reach.tests.iter().any(|t| t.path == "tests/test_app.py"));
+
+    let unread = serde_json::json!({ "flags": [] });
+    assert!(flag_entries("FEATURE_Y", &unread).is_err());
+    let none = FlipReach::default();
+    assert!(none.callers.is_empty() && none.readers.is_empty());
 }
 
 #[test]
@@ -335,8 +467,8 @@ fn test_session_plugins_render_in_memory_content() {
 
     buf.clear();
     let flags_val = serde_json::json!({ "flags": [] });
-    render_flip_xml("nonexistent_gate", ".", &flags_val, &mut buf).unwrap();
-    assert!(String::from_utf8_lossy(&buf).contains("flip"));
+    assert!(flag_entries("nonexistent_gate", &flags_val).is_err());
+    assert!(String::from_utf8_lossy(&buf).is_empty());
 
     assert!((NOTES.selected)(&NotesArgs { notes: true }));
     assert!((FLIP.selected)(&FlipArgs {
