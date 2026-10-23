@@ -85,26 +85,6 @@ fn test_execute_edit_plan_from_facts_behavior() {
 }
 
 #[test]
-fn test_execute_merge_scout_from_facts() {
-    let (ingest, _graph, interner) =
-        sample_corpus(&[("src/lib.rs", Lang::Rust, b"pub fn a() {}\npub fn b() {}\n")]);
-
-    let mut out = Vec::new();
-    let rep = execute_merge_scout_from_facts("feat_a,feat_b", false, &ingest, &interner, &mut out)
-        .unwrap();
-    assert_eq!(rep.arms_count, 2);
-    let xml = String::from_utf8(out).unwrap();
-    assert!(xml.contains("<merge-scout schema=\"ripwire-rs.merge-scout/v1\""));
-    assert!(xml.contains("arms=\"2\""));
-
-    let mut out = Vec::new();
-    let rep_dirty =
-        execute_merge_scout_from_facts("feat_a", true, &ingest, &interner, &mut out).unwrap();
-    assert_eq!(rep_dirty.arms_count, 2);
-    assert_eq!(rep_dirty.landing_order, vec!["feat_a", "working-tree"]);
-}
-
-#[test]
 fn test_execute_pr_context_from_facts() {
     let (ingest, graph, interner) =
         sample_corpus(&[("src/lib.rs", Lang::Rust, b"pub fn worker() {}\n")]);

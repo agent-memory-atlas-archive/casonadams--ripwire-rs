@@ -233,7 +233,7 @@ Discover untested cross-module call boundaries (integration seams) across direct
 Generate a composite pull request review context bundle against base reference \fIBASE\fR (default: \fBmain\fR or \fBmaster\fR), including changed symbols, impact, tests, co-change, and authors.
 .TP
 .BI \-\-merge\-scout= REFS
-Predict semantic and symbol merge conflicts across concurrent divergent branches \fIREFS\fR before attempting a git merge or rebase.
+Symbol-level overlap of each ref in \fIREFS\fR against HEAD: the functions, methods and types each ref changed since its merge base with HEAD, the symbols two refs both changed (conflicts), files both changed without a shared symbol (risks), each arm's overlap with HEAD, and a landing order (fewest conflicts first). Read-only; an unknown ref exits with code \fB1\fR.
 .TP
 .BI \-\-arch= FILE
 Enforce architectural layering rules from file \fIFILE\fR. Exits with code \fB2\fR if any forbidden cross-layer call dependency is introduced.

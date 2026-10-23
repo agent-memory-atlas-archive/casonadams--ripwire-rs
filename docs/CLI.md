@@ -139,7 +139,7 @@ ripwire-rs . --seams
 # Composite PR review context bundle vs base ref
 ripwire-rs . --pr-context=main
 
-# Predict symbol merge conflicts across concurrent branches
+# Symbol overlap of branch refs vs HEAD: same-symbol conflicts, risks, landing order
 ripwire-rs . --merge-scout="branch-a,branch-b"
 
 # Delta Maintainability Model (DMM) scalar in [0,1] measuring healthy code churn

@@ -130,13 +130,7 @@ callers), the deep detail trims deepest-first, and `truncated=`/`est_tokens=` on
    agents worse. The gate can't watch a run; the loop is **run the named tests, then rely on green**. A
    non-empty untested list = the gap to close before you call it merge-safe.
 
-9. **Landing several concurrent branches?** — `ripwire-rs <dir> --merge-scout=REF1,REF2,... --legend=compact` (read-only; the
-   dirty working tree joins automatically as an implicit extra arm). For each REF it diffs the ref's tree
-   against its merge-base with HEAD (git-archive temp copies — nothing is checked out or mutated) and
-   reports, per pair, **same-symbol conflicts** (both arms touched the identical symbol — a real merge will
-   fight over it) and **same-file/different-symbol risks** (no content collision, still worth a glance), plus
-   a `<landing order="…">` — the fewest-conflicts-first sequence to land them in. Run this BEFORE picking a
-   merge order for several agent branches instead of hand-diffing each pair.
+9. **Landing several concurrent branches?** — `ripwire-rs <dir> --merge-scout=REF1,REF2,... --legend=compact` (read-only, in-process git). For each REF it takes the merge-base with HEAD and the functions, methods and types whose lines the REF changed since then (`<sym>` rows). Per pair it reports **conflicts** (both refs changed the same symbol: a real merge will fight over it) and **risks** (files both changed with no shared symbol: still worth a glance). `head_conflicts=` counts an arm's symbols that HEAD also changed since that base; `<no-work/>` marks an arm with nothing divergent; `<landing order="…"/>` is the fewest-conflicts-first sequence to land the arms with work. An unknown REF is an error. Run this BEFORE picking a merge order for several agent branches instead of hand-diffing each pair.
 
 9b. **Is anything STRANDED on a branch — and was it already re-done?** — `ripwire-rs <dir> --stray-content --legend=compact`
     (`=SUBSTR` filters ref names). `--merge-scout` above answers "which of these named branches collide";

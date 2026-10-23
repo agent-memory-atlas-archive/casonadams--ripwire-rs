@@ -137,15 +137,27 @@ Assembles a complete pull request review context bundle against a base git refer
 
 ---
 
-## 8. Branch Merge Scout (`--merge-scout="branch-a,branch-b"`)
+## 8. Branch Merge Scout (`--merge-scout=REF1,REF2,...`)
 
-Predicts semantic and symbol merge conflicts across concurrent divergent branches before attempting a git merge or rebase.
+Symbol-level overlap of divergent refs against HEAD, read-only and in-process through gix (no checkout, no git subprocess per file). For each REF:
+
+- `base`: `merge-base(HEAD, REF)`. A ref that shares no history with HEAD reports `ok="0"` and is not compared. An unknown ref is an error (exit 1).
+- `changed`: the indexed symbols (functions, methods, classes, structs, interfaces, macros, sections) whose lines the diff from the base to REF touched. Each side is indexed at its own version: the old side names what REF removed or rewrote, the new side what it added or rewrote. A changed line belongs to its innermost symbol, so editing a method names the method, not its `impl`. Constants, fields and locals name no symbol; their file still counts in `files`.
+- `head_conflicts`: of the changed symbols, those HEAD also changed since the same merge base.
+- `<no-work/>`: REF changed no path since its merge base. It takes no landing slot.
+- `<pair>`: one for every two arms that ran, work or not (as upstream pairs them). `conflicts` counts the symbols both changed (listed as `<sym>`, a real merge fights over them); `risks` counts files both changed in which the two arms' changed symbols do not overlap (same file, different symbols: a textual merge may still need a look).
+- `<landing order="…"/>`: arms with work, fewest conflicts first (conflicts with HEAD and with other arms), then the smaller change (symbols, then files), then request order. `order=""` when no arm has work.
+- A dirty checkout (`git status` lists a tracked change or an untracked, non-ignored file) adds one arm last, `working-tree`: its tracked changes against HEAD, read from disk. Untracked files are not work, so an arm of only untracked files is `<no-work/>`.
+- `head` is the short HEAD sha; `at` is that sha plus `+dirty` for a dirty checkout and `+shallow` for a shallow clone, where merge bases may be missing.
+- Symbol rows are windowed by the default pack budget per list (`shown=`/`capped=` on the enclosing element); every count is exact.
+
+Real output for three refs against HEAD 81550c4 (arm A changed branch_verdict and classify_file, arm B changed classify_file, arm C changed line_counts; the refs are named armA, armB and armC):
 
 ```xml
-<merge-scout schema="ripwire-rs.merge-scout/v1" base="main" branches="feature-a,feature-b" conflicts="1">
-  <conflict sym="Interner::len" file="src/domain.rs" branches="feature-a,feature-b"/>
-</merge-scout>
+<merge-scout schema="ripwire-rs.merge-scout/v1" arms="3" head="81550c4ef" at="81550c4ef"><arm ref="armA" base="358264c5f" ok="1" changed="2" head_conflicts="0" files="1"><sym p="src/query/stray_lines.rs" n="branch_verdict"/><sym p="src/query/stray_lines.rs" n="classify_file"/></arm><arm ref="armB" base="358264c5f" ok="1" changed="1" head_conflicts="0" files="1"><sym p="src/query/stray_lines.rs" n="classify_file"/></arm><arm ref="armC" base="358264c5f" ok="1" changed="1" head_conflicts="0" files="1"><sym p="src/query/stray_lines.rs" n="line_counts"/></arm><pair a="armA" b="armB" conflicts="1" risks="0"><sym p="src/query/stray_lines.rs" n="classify_file"/></pair><pair a="armA" b="armC" conflicts="0" risks="1"/><pair a="armB" b="armC" conflicts="0" risks="1"/><landing order="armC,armB,armA"/></merge-scout>
 ```
+
+Parity: `--merge-scout=main` (with the base resolved from `main`, `master`, `origin/main` or `origin/master`, in that order) is compared with upstream on the base itself, which has no work and so matches upstream's `<no-work/>` shape. Refs with work are not covered by `make parity` (the fixture runner writes no git history), so their symbol rows are verified by hand, not measured against upstream.
 
 ---
 

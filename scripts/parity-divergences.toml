@@ -182,14 +182,6 @@ kind = "richer"
 why = "Pair counts are the real git history (the top pair src/cli/dispatch.rs + src/cli/queries.rs co-changes in 39 commits of the 18-month window, which git log confirms), where upstream caps its top pair at together=7, so the co-change evidence it reports is more complete and more accurate; the byte count is driven by the shared 64KB default budget, not by this entry."
 evidence = "rw: 64744 B, 4354 facts, density 0.06725; rip: 5559 B, 312 facts, density 0.05613. git log --since='18 months ago' -- src/cli/dispatch.rs src/cli/queries.rs: 39 commits. Upstream max together=7 across 30 rows (678 total pairs); ours 3214 total pairs. Conditional: revisit if DEFAULT_PACK_BUDGET_BYTES changes."
 [[divergence]]
-id = "merge-scout-smaller-no-sym-rows"
-command = "--merge-scout=main"
-case = ""
-kind = "smaller"
-why = "Merge-conflict prediction ships the arm, pair and landing verdicts in a fraction of upstream's bytes, dropping the per-symbol listing that the verdicts already summarise."
-evidence = "measured: ours 435 B, 24 facts, density 0.05517; upstream 4890 B, 215 facts, density 0.04397. Upstream-only elements: <sym> 63, <no-work> 1."
-
-[[divergence]]
 id = "handoff-smaller-no-cochange-rows"
 command = "--handoff"
 case = ""

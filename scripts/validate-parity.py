@@ -179,13 +179,26 @@ def find_binaries():
     return rw_bin, rip_bin
 
 
+# Base-branch candidates for --merge-scout, in preference order. A PR checkout is a detached merge
+# commit with only origin/* refs, so the remote-tracking spellings must be tried too.
+MERGE_BASE_CANDIDATES = ("main", "master", "origin/main", "origin/master")
+# The ledger and the tree-entry key always spell the base as `main`; the checker substitutes the
+# ref it detected when it runs the command, so entries stay valid whatever spelling resolved.
+MERGE_SCOUT_CMD = "--merge-scout=main"
+
+
+def resolves_to_commit(repo_dir, rev):
+    res = subprocess.run(
+        ["git", "-C", repo_dir, "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"],
+        capture_output=True,
+    )
+    return res.returncode == 0
+
+
 def detect_merge_ref(repo_dir):
-    for candidate in ("main", "master", "HEAD"):
-        res = subprocess.run(
-            ["git", "-C", repo_dir, "rev-parse", "--verify", f"{candidate}^{{commit}}"],
-            capture_output=True,
-        )
-        if res.returncode == 0:
+    """First base candidate that resolves, or "HEAD" when none does (nothing to scout against)."""
+    for candidate in MERGE_BASE_CANDIDATES:
+        if resolves_to_commit(repo_dir, candidate):
             return candidate
     return "HEAD"
 
@@ -222,7 +235,7 @@ GATE_SYMBOLS = ("resolve_changed_or_spec_files", "build_handoff_verified_rows", 
 RANKED_FLAGS = ("", "--top-k", "--max-tokens", "--rank-by", "--biggest-first", "--hotspots", "--affected")
 
 
-def build_command_list(merge_ref, target_file, target_sym, second_sym):
+def build_command_list(target_file, target_sym, second_sym):
     return [
         ("", "Default ranked map"),
         ("--top-k=50", "Top 50 symbols"),
@@ -248,7 +261,7 @@ def build_command_list(merge_ref, target_file, target_sym, second_sym):
         ("--map-diff --top-k=30", "Map diff biased teleportation"),
         ("--seams", "Integration seams detection"),
         ("--pr-context", "PR review context bundle"),
-        (f"--merge-scout={merge_ref}", "Cross-branch merge conflict prediction"),
+        (MERGE_SCOUT_CMD, "Cross-branch merge conflict prediction"),
         ("--biggest-first", "Posnett readability size ranking"),
         ("--nonlocal-state", "Reachable global mutable state"),
         ("--lint", "AST code smell scan"),
@@ -804,11 +817,11 @@ def judge(rw_bin, rip_bin, repo, cmd, outcome, entry):
 
 
 
-def check_one(rw_bin, rip_bin, where, cmd, desc, entry):
+def check_one(rw_bin, rip_bin, where, cmd, desc, entry, run_cmd=None):
     kind_allows_extra = entry is not None and entry["kind"] == "richer"
     omits = entry.get("omits") if entry is not None else None
-    outcome = run_one_check(rw_bin, rip_bin, where, cmd, kind_allows_extra, omits)
-    reason, warning = judge(rw_bin, rip_bin, where, cmd, outcome, entry)
+    outcome = run_one_check(rw_bin, rip_bin, where, run_cmd or cmd, kind_allows_extra, omits)
+    reason, warning = judge(rw_bin, rip_bin, where, run_cmd or cmd, outcome, entry)
     if warning is not None:
         WARNINGS.append(warning)
         print(f"::warning::{warning} ({cmd or '(default)'})", file=sys.stderr)
@@ -834,13 +847,19 @@ def main():
     rw_bin, rip_bin = find_binaries()
     merge_ref = detect_merge_ref(repo)
     target_file, target_sym, second_sym = discover_repo_targets(rw_bin, repo)
-    commands = build_command_list(merge_ref, target_file, target_sym, second_sym)
+    commands = build_command_list(target_file, target_sym, second_sym)
     builtin = {cmd for cmd, _ in commands}
     tree_entries = {entry_key(e): e for e in entries if "files" not in e}
     fixture_entries = [e for e in entries if "files" in e]
     failures = 0
     for cmd, desc in commands:
-        failures += check_one(rw_bin, rip_bin, repo, cmd, desc, tree_entries.get(cmd))
+        run_cmd = cmd
+        if cmd == MERGE_SCOUT_CMD:
+            if merge_ref == "HEAD":
+                print(f"note: skipped {cmd} ({desc}): none of {', '.join(MERGE_BASE_CANDIDATES)} resolves on this checkout, so there is no base branch to scout against")
+                continue
+            run_cmd = f"--merge-scout={merge_ref}"
+        failures += check_one(rw_bin, rip_bin, repo, cmd, desc, tree_entries.get(cmd), run_cmd)
     for key, entry in tree_entries.items():
         if key not in builtin:
             failures += check_one(rw_bin, rip_bin, repo, key, f"ledger {entry['id']}", entry)

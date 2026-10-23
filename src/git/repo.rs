@@ -280,7 +280,7 @@ fn is_binary(data: &[u8]) -> bool {
     data[..data.len().min(BINARY_PROBE_LEN)].contains(&0)
 }
 
-fn revision_commit<'a>(repo: &'a gix::Repository, rev: &str) -> Option<gix::Commit<'a>> {
+pub fn revision_commit<'a>(repo: &'a gix::Repository, rev: &str) -> Option<gix::Commit<'a>> {
     repo.rev_parse_single(rev)
         .ok()?
         .object()

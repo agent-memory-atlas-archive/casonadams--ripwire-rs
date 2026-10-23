@@ -204,48 +204,26 @@ pub fn execute_exercises_query<W: Write>(
     crate::serialize::serialize_exercises_xml(root, test_path, &reached, out)
 }
 
-pub fn validate_merge_scout_branches(root: &str, branches: &str) -> bool {
-    for branch in branches.split(',').map(str::trim).filter(|b| !b.is_empty()) {
-        let git_ok = gix::open(root).is_ok_and(|repo| {
-            repo.rev_parse_single(branch).is_ok() || repo.find_reference(branch).is_ok()
-        });
-        if !git_ok {
-            eprintln!("ripwire-rs: --merge-scout: unknown ref '{branch}'");
-            return false;
-        }
-    }
-    true
-}
-
-pub fn execute_merge_scout_from_facts<W: Write>(
-    branches: &str,
-    dirty: bool,
-    ingest: &IngestResult,
-    interner: &Interner,
-    out: &mut W,
-) -> io::Result<crate::gate::merge_scout::MergeScoutReport> {
-    let eff_branches = if dirty && !branches.contains(',') {
-        format!("{branches},working-tree")
-    } else {
-        branches.to_string()
-    };
-    let rep = crate::gate::merge_scout::evaluate_merge_scout(&eff_branches, ingest, interner);
-    crate::gate::merge_scout::serialize_merge_scout_xml(&rep, out)?;
-    Ok(rep)
-}
-
 pub fn execute_merge_scout_dispatch<W: Write>(
     root: &str,
     branches: &str,
-    ingest: &IngestResult,
-    interner: &Interner,
     out: &mut W,
 ) -> io::Result<Option<i32>> {
-    if !validate_merge_scout_branches(root, branches) {
-        return Ok(Some(1));
-    }
-    let dirty = !get_working_tree_changed_files(root).is_empty();
-    execute_merge_scout_from_facts(branches, dirty, ingest, interner, out)?;
+    let refs: Vec<&str> = branches
+        .split(',')
+        .map(str::trim)
+        .filter(|b| !b.is_empty())
+        .collect();
+    let inputs = match crate::git::merge_scout::collect_scout(root, &refs) {
+        Ok(inputs) => inputs,
+        Err(msg) => {
+            eprintln!("ripwire-rs: --merge-scout: {msg}");
+            return Ok(Some(1));
+        }
+    };
+    let rep =
+        crate::gate::merge_scout::evaluate_merge_scout(&inputs.head, &inputs.at, &inputs.arms);
+    crate::gate::merge_scout::serialize_merge_scout_xml(&rep, out)?;
     Ok(None)
 }
 

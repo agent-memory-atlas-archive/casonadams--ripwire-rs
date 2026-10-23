@@ -15,7 +15,7 @@ pub struct MergeScoutArgs {
 fn run(run: &Run<'_>, args: &MergeScoutArgs) -> io::Result<()> {
     let branches = args.merge_scout.as_deref().unwrap_or_default();
     report_exit(run, |ctx, out| {
-        execute_merge_scout_dispatch(ctx.root, branches, ctx.ingest, ctx.interner, out)
+        execute_merge_scout_dispatch(ctx.root, branches, out)
     })
 }
 

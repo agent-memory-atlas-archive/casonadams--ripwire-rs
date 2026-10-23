@@ -27,9 +27,10 @@ pub fn parse_file_content(
     parse_file_tree(source_bytes, language, query, lang)
 }
 
-/// Lines where `name` is defined in `source_bytes`, by the tags query of `rel_path`'s language.
+/// Definitions the index extracts from `source_bytes` as `rel_path`, with byte spans; empty when
+/// the language has no grammar.
 #[must_use]
-pub fn definition_lines(rel_path: &str, source_bytes: &[u8], name: &str) -> Vec<u32> {
+pub fn file_definitions(rel_path: &str, source_bytes: &[u8]) -> Vec<RawDef> {
     let lang = Lang::from_path(std::path::Path::new(rel_path));
     let lang = lang
         .semantics()
@@ -37,8 +38,13 @@ pub fn definition_lines(rel_path: &str, source_bytes: &[u8], name: &str) -> Vec<
     let Some((language, query)) = LanguageRegistry.get(lang) else {
         return Vec::new();
     };
-    parse_file_content(source_bytes, language, query, lang, rel_path)
-        .defs
+    parse_file_content(source_bytes, language, query, lang, rel_path).defs
+}
+
+/// Lines where `name` is defined in `source_bytes`, by the tags query of `rel_path`'s language.
+#[must_use]
+pub fn definition_lines(rel_path: &str, source_bytes: &[u8], name: &str) -> Vec<u32> {
+    file_definitions(rel_path, source_bytes)
         .into_iter()
         .filter(|d| d.name == name)
         .map(|d| d.line)
