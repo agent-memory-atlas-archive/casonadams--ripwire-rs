@@ -32,3 +32,67 @@ fn test_has_word_boundaries_and_identifiers() {
     assert!(!has_word("anything", ""));
     assert!(!has_word("", "world"));
 }
+
+fn blob(c: char) -> gix::ObjectId {
+    gix::ObjectId::from_hex(c.to_string().repeat(40).as_bytes()).unwrap()
+}
+
+fn tree(entries: &[(&str, char)]) -> std::collections::BTreeMap<String, gix::ObjectId> {
+    entries
+        .iter()
+        .map(|(path, c)| ((*path).to_string(), blob(*c)))
+        .collect()
+}
+
+fn dirty(paths: &[&str]) -> std::collections::BTreeSet<String> {
+    paths.iter().map(|p| (*p).to_string()).collect()
+}
+
+#[test]
+fn test_changed_paths_reports_committed_change_since_base() {
+    use ripwire_rs::git::repo::changed_paths;
+    let base = tree(&[("src/a.rs", 'a'), ("src/b.rs", 'b')]);
+    let head = tree(&[("src/a.rs", 'c'), ("src/b.rs", 'b')]);
+    let changed = changed_paths(&base, &head, &dirty(&[]), |_| None);
+    assert_eq!(changed, vec!["src/a.rs"]);
+}
+
+#[test]
+fn test_changed_paths_empty_when_tree_matches_base() {
+    use ripwire_rs::git::repo::changed_paths;
+    let base = tree(&[("src/a.rs", 'a')]);
+    let changed = changed_paths(&base, &base, &dirty(&[]), |_| None);
+    assert!(changed.is_empty());
+}
+
+#[test]
+fn test_changed_paths_dirty_edit_is_hashed_against_base() {
+    use ripwire_rs::git::repo::changed_paths;
+    let base = tree(&[("src/a.rs", 'a')]);
+    let head = tree(&[("src/a.rs", 'a')]);
+    let changed = changed_paths(&base, &head, &dirty(&["src/a.rs"]), |_| Some(blob('d')));
+    assert_eq!(changed, vec!["src/a.rs"]);
+}
+
+#[test]
+fn test_changed_paths_dirty_file_restored_to_base_is_unchanged() {
+    use ripwire_rs::git::repo::changed_paths;
+    let base = tree(&[("src/a.rs", 'a')]);
+    let head = tree(&[("src/a.rs", 'c')]);
+    let changed = changed_paths(&base, &head, &dirty(&["src/a.rs"]), |_| Some(blob('a')));
+    assert!(changed.is_empty());
+}
+
+#[test]
+fn test_changed_paths_untracked_and_deleted_files() {
+    use ripwire_rs::git::repo::changed_paths;
+    let base = tree(&[("src/gone.rs", 'e')]);
+    let head = tree(&[("src/gone.rs", 'e')]);
+    let changed = changed_paths(
+        &base,
+        &head,
+        &dirty(&["src/gone.rs", "src/new.rs"]),
+        |path| (path == "src/new.rs").then(|| blob('f')),
+    );
+    assert_eq!(changed, vec!["src/gone.rs", "src/new.rs"]);
+}

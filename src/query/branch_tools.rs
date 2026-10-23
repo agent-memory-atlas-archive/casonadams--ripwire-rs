@@ -137,7 +137,7 @@ fn branch_hit_json(
 
 struct WhereisScan {
     rows: Vec<Value>,
-    on_head: bool,
+    on_head: Option<bool>,
     refs_scanned: usize,
     blobs: usize,
 }
@@ -170,7 +170,7 @@ fn scan_repo_whereis(
         .filter(|h| changed.binary_search(&h.path).is_err())
         .map(|h| {
             let src = CheckoutLine {
-                label: "HEAD",
+                label: Some("HEAD"),
                 path: &h.path,
                 line: h.line,
                 text: &h.text,
@@ -185,11 +185,11 @@ fn scan_repo_whereis(
             path,
             symbol_name,
             defs,
-            "worktree",
+            Some("worktree"),
         ));
     }
     sort_checkout_rows(&mut rows);
-    let on_head = !rows.is_empty();
+    let on_head = Some(!rows.is_empty());
     let per_branch: Vec<Vec<crate::git::repo::LineHit>> = per_rev.collect();
     rows.extend(branch_rows(repo, &branches, &per_branch, symbol_name));
     WhereisScan {
@@ -273,7 +273,7 @@ pub(super) fn probe_name_history(root: &str, sym_name: &str, head_sha: &str) -> 
 }
 
 struct CheckoutLine<'a> {
-    label: &'a str,
+    label: Option<&'a str>,
     path: &'a str,
     line: usize,
     text: &'a str,
@@ -283,17 +283,20 @@ fn checkout_row(src: &CheckoutLine<'_>, symbol_name: &str, defs: Option<&HashSet
     let line = src.line as u32;
     let is_def = defs.is_some_and(|s| s.contains(&line));
     let code_text: String = src.text.trim().chars().take(200).collect();
-    json!({
-        "ref": src.label,
+    let mut row = json!({
         "symbol": symbol_name,
         "kind": if is_def { "def" } else { "ref" },
         "file": src.path,
         "path": src.path,
         "line": line,
         "text": code_text,
-        "on_head": true,
         "is_def": is_def,
-    })
+    });
+    if let Some(label) = src.label {
+        row["ref"] = json!(label);
+        row["on_head"] = json!(true);
+    }
+    row
 }
 
 fn scan_file_whereis_hits(
@@ -301,7 +304,7 @@ fn scan_file_whereis_hits(
     rel_path: &str,
     symbol_name: &str,
     defs: Option<&HashSet<u32>>,
-    label: &str,
+    label: Option<&str>,
 ) -> Vec<Value> {
     let Ok(bytes) = sources.read(rel_path) else {
         return Vec::new();
@@ -334,18 +337,19 @@ fn scan_files_whereis(
     sources: &(impl SourceReader + ?Sized),
     symbol_name: &str,
     index_defs: &HashMap<&str, HashSet<u32>>,
+    label: Option<&str>,
 ) -> WhereisScan {
     let mut rows: Vec<Value> = ingest
         .files
         .iter()
         .flat_map(|fi| {
             let path = interner.resolve(&fi.path);
-            scan_file_whereis_hits(sources, path, symbol_name, index_defs.get(path), "HEAD")
+            scan_file_whereis_hits(sources, path, symbol_name, index_defs.get(path), label)
         })
         .collect();
     sort_checkout_rows(&mut rows);
     WhereisScan {
-        on_head: !rows.is_empty(),
+        on_head: None,
         rows,
         refs_scanned: 0,
         blobs: ingest.files.len(),
@@ -417,7 +421,18 @@ pub fn whereis_from_sources_with_facts(
     facts: &WhereisFacts,
 ) -> Value {
     let defs = index_def_lines(ingest, interner, symbol_name);
-    let mut scan = scan_files_whereis(ingest, interner, sources, symbol_name, &defs);
+    let git_backed = facts.at_stamp.is_some();
+    let mut scan = scan_files_whereis(
+        ingest,
+        interner,
+        sources,
+        symbol_name,
+        &defs,
+        git_backed.then_some("HEAD"),
+    );
+    if git_backed {
+        scan.on_head = Some(!scan.rows.is_empty());
+    }
     scan.rows.extend(facts.branch_rows.clone());
     scan.refs_scanned += facts.refs_scanned;
     whereis_report(
@@ -460,9 +475,16 @@ pub fn whereis_with_sources_and_history(
     let index_defs = index_def_lines(ingest, interner, req.symbol_name);
     let scan = match &repo {
         Some(repo) => scan_repo_whereis(repo, req.root, sources, req.symbol_name, &index_defs),
-        None => scan_files_whereis(ingest, interner, sources, req.symbol_name, &index_defs),
+        None => scan_files_whereis(
+            ingest,
+            interner,
+            sources,
+            req.symbol_name,
+            &index_defs,
+            None,
+        ),
     };
-    let history_info = if req.with_history && !scan.on_head {
+    let history_info = if req.with_history && scan.on_head == Some(false) {
         probe_name_history(req.root, req.symbol_name, &at_stamp)
     } else {
         None
@@ -502,7 +524,8 @@ fn whereis_report(
     let hits_count = scan.rows.len();
     json!({
         "symbol": symbol_name,
-        "on_head": u8::from(scan.on_head),
+        "on_head": scan.on_head,
+        "git": scan.on_head.is_some(),
         "refs_scanned": scan.refs_scanned,
         "blobs": scan.blobs,
         "hits_count": hits_count,

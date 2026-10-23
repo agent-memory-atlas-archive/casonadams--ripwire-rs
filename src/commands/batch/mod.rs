@@ -103,11 +103,10 @@ pub fn execute_batch_content<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     use crate::query::commands::{QueryContext, execute_batch, parse_batch_content};
-    use crate::serialize::GitStampExt;
     let sources = crate::query::FileSources {
         root: std::path::Path::new(root),
     };
-    let at = root.git_at_or_head();
+    let at = crate::git::history::compute_git_at_stamp(root);
     let context = QueryContext {
         root,
         ingest,
@@ -116,7 +115,7 @@ pub fn execute_batch_content<W: Write>(
         interner,
         sources: &sources,
         commits: None,
-        at: Some(&at),
+        at: at.as_deref(),
     };
     let tools = crate::commands::tools();
     let queries = parse_batch_content(tools, content);

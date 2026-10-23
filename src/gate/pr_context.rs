@@ -11,16 +11,24 @@ pub struct PrFileContext {
     pub dependents_count: usize,
     pub files_other_count: usize,
     pub tests_count: usize,
-    pub commits_count: usize,
-    pub partners_count: usize,
-    pub authors_count: usize,
+    pub history: Option<FileHistory>,
+}
+
+/// Git history of one changed file. Absent when the file has no commits, so no cochange or
+/// owner claim is made for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FileHistory {
+    pub commits: usize,
+    pub partners: usize,
+    pub authors: usize,
     pub bus_factor: usize,
 }
 
 /// Comprehensive PR context report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrContextReport {
-    pub base_ref: String,
+    pub base_ref: Option<String>,
+    pub at_stamp: String,
     pub files_count: usize,
     pub files: Vec<PrFileContext>,
     pub gauges: crate::serialize::GraphGauges,
@@ -58,7 +66,6 @@ fn build_single_pr_file_context(
 
     let specs = [f];
     let affected = crate::gate::affected::find_affected_tests(&specs, ingest, graph, interner);
-    let partners_count = coupling.partners_of(f).len();
     let mut file_commits = 0usize;
     let mut authors = std::collections::HashSet::new();
     for c in commits {
@@ -67,9 +74,12 @@ fn build_single_pr_file_context(
             authors.insert(c.author.as_str());
         }
     }
-    let commits_count = file_commits.max(1);
-    let authors_count = authors.len().max(1);
-    let bus_factor = authors_count.min(2);
+    let history = (file_commits > 0).then(|| FileHistory {
+        commits: file_commits,
+        partners: coupling.partners_of(f).len(),
+        authors: authors.len(),
+        bus_factor: authors.len().min(2),
+    });
 
     PrFileContext {
         path: f.to_string(),
@@ -78,29 +88,15 @@ fn build_single_pr_file_context(
         dependents_count: dependents,
         files_other_count: caller_files.len(),
         tests_count: affected.tests.len(),
-        commits_count,
-        partners_count,
-        authors_count,
-        bus_factor,
+        history,
     }
-}
-
-/// Compute PR context for changed files against baseline.
-#[must_use]
-pub fn compute_pr_context(
-    changed_files: &[String],
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    base_ref: &str,
-) -> PrContextReport {
-    compute_pr_context_in_root(".", changed_files, ingest, graph, interner, base_ref)
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct PrContextRequest<'a> {
     pub changed_files: &'a [String],
-    pub base_ref: &'a str,
+    pub base_ref: Option<&'a str>,
+    pub at_stamp: &'a str,
     pub commits: &'a [crate::git::history::CommitInfo],
     pub page: crate::serialize::PageRequest,
 }
@@ -120,31 +116,13 @@ pub fn compute_pr_context_from_facts(
         .collect();
 
     PrContextReport {
-        base_ref: req.base_ref.to_string(),
+        base_ref: req.base_ref.map(str::to_string),
+        at_stamp: req.at_stamp.to_string(),
         files_count: files.len(),
         files,
         gauges: graph.gauges(),
         page: req.page,
     }
-}
-
-#[must_use]
-pub fn compute_pr_context_in_root(
-    root: &str,
-    changed_files: &[String],
-    ingest: &IngestResult,
-    graph: &Graph,
-    interner: &Interner,
-    base_ref: &str,
-) -> PrContextReport {
-    let commits = crate::git::history::walk_repository_history(root).unwrap_or_default();
-    let req = PrContextRequest {
-        changed_files,
-        base_ref,
-        commits: &commits,
-        page: crate::serialize::PageRequest::default(),
-    };
-    compute_pr_context_from_facts(&req, ingest, graph, interner)
 }
 
 /// Serialize PR context to canonical XML format.
@@ -169,16 +147,18 @@ fn write_pr_file_context(f: &PrFileContext, out: &mut dyn Write) -> io::Result<(
         f.dependents_count, f.files_other_count
     )?;
     writeln!(out, "    <tests count=\"{}\"/>", f.tests_count)?;
-    writeln!(
-        out,
-        "    <cochange commits=\"{}\" partners=\"{}\"/>",
-        f.commits_count, f.partners_count
-    )?;
-    writeln!(
-        out,
-        "    <owners authors=\"{}\" bf=\"{}\"/>",
-        f.authors_count, f.bus_factor
-    )?;
+    if let Some(h) = &f.history {
+        writeln!(
+            out,
+            "    <cochange commits=\"{}\" partners=\"{}\"/>",
+            h.commits, h.partners
+        )?;
+        writeln!(
+            out,
+            "    <owners authors=\"{}\" bf=\"{}\"/>",
+            h.authors, h.bus_factor
+        )?;
+    }
     writeln!(out, "  </file>")
 }
 
@@ -214,10 +194,22 @@ impl crate::serialize::XmlReport for PrContextReport {
         let trim_level = usize::from(window.capped);
         let truncated = if window.capped { "files" } else { "none" };
         let budget_default = usize::from(self.page.budget.is_none());
+        let base = self.base_ref.as_deref().unwrap_or("working-tree");
+        let direction = if self.base_ref.is_some() {
+            "worktree-since-merge-base"
+        } else {
+            "worktree-since-head"
+        };
+        let at_attr = if self.at_stamp.is_empty() {
+            String::new()
+        } else {
+            format!(" at=\"{}\"", crate::serialize::XmlEscaped(&self.at_stamp))
+        };
         write!(
             w,
-            " base=\"{}\" direction=\"worktree-since-head\" files=\"{}\" budget_tokens=\"{budget_tokens}\" est_tokens=\"{est_tokens}\" trim_level=\"{trim_level}\" truncated=\"{truncated}\" budget_default=\"{budget_default}\" at=\"HEAD\"",
-            self.base_ref, self.files_count
+            " base=\"{}\" direction=\"{direction}\" files=\"{}\" budget_tokens=\"{budget_tokens}\" est_tokens=\"{est_tokens}\" trim_level=\"{trim_level}\" truncated=\"{truncated}\" budget_default=\"{budget_default}\"{at_attr}",
+            crate::serialize::XmlEscaped(base),
+            self.files_count
         )
     }
     fn write_body<W: Write>(&self, w: &mut W) -> io::Result<()> {

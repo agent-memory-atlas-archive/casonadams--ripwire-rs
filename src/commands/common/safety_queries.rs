@@ -79,9 +79,8 @@ pub fn execute_test_gate_query_paged<W: Write>(
     interner: &Interner,
     out: &mut W,
 ) -> io::Result<bool> {
-    use crate::serialize::GitStampExt;
     let files = resolve_changed_or_spec_files(root, files_spec);
-    let at_stamp = root.git_at_or_head();
+    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
     let ctx = SafetyContext {
         root,
         ingest,
@@ -249,12 +248,17 @@ pub fn execute_pr_context_dispatch<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     let SafetyContext { root, .. } = *facts;
-    let base_ref = ref_opt.filter(|s| !s.is_empty()).unwrap_or("working-tree");
-    let changed = get_working_tree_changed_files(root);
+    let rev = ref_opt.filter(|s| !s.is_empty());
+    let changed = match rev {
+        Some(rev) => crate::git::repo::changed_since_ref(root, rev).map_err(io::Error::other)?,
+        None => get_working_tree_changed_files(root),
+    };
     let commits = crate::git::history::walk_repository_history(root).unwrap_or_default();
+    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
     let req = crate::gate::pr_context::PrContextRequest {
         changed_files: &changed,
-        base_ref,
+        base_ref: rev,
+        at_stamp: &at_stamp,
         commits: &commits,
         page,
     };

@@ -353,17 +353,13 @@ pub fn write_cdata<W: std::io::Write>(out: &mut W, text: &str) -> std::io::Resul
     out.write_all(b"]]>")
 }
 
-/// Extension trait for resolving a repository root path's git HEAD stamp and XML attribute.
+/// Extension trait for a repository root's git stamp. A root that is not a git work tree has no
+/// stamp, so callers omit `at=` rather than print a HEAD that does not exist.
 pub trait GitStampExt {
-    fn git_at_or_head(&self) -> String;
     fn git_at_xml_attr(&self) -> String;
 }
 
 impl GitStampExt for str {
-    fn git_at_or_head(&self) -> String {
-        crate::git::history::compute_git_at_stamp(self).unwrap_or_else(|| "HEAD".to_string())
-    }
-
     fn git_at_xml_attr(&self) -> String {
         match crate::git::history::compute_git_at_stamp(self) {
             Some(stamp) if !stamp.is_empty() => format!(" at=\"{stamp}\""),

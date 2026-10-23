@@ -31,7 +31,9 @@ fn emit_whereis_history<W: Write>(out: &mut W, hist: &Value, sym: &str) -> io::R
 }
 
 fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value, refs: usize) -> io::Result<()> {
-    let ref_name = h.str_or("ref", "HEAD").xml_escaped();
+    let ref_attr = h
+        .opt_str("ref")
+        .map_or_else(String::new, |r| format!(" ref=\"{}\"", r.xml_escaped()));
     let mut stamp = String::new();
     for key in ["tip", "date"] {
         if let Some(v) = h.opt_str(key).filter(|v| !v.is_empty()) {
@@ -49,7 +51,7 @@ fn emit_whereis_hit<W: Write>(out: &mut W, h: &Value, refs: usize) -> io::Result
     let text = h.str_or("text", "").xml_escaped();
     writeln!(
         out,
-        "  <hit ref=\"{ref_name}\"{stamp} p=\"{path}\" l=\"{line}\" kind=\"{kind}\"{refs_attr} t=\"{text}\"/>"
+        "  <hit{ref_attr}{stamp} p=\"{path}\" l=\"{line}\" kind=\"{kind}\"{refs_attr} t=\"{text}\"/>"
     )
 }
 
@@ -132,25 +134,35 @@ impl crate::serialize::XmlReport for WhereisReport<'_> {
         } else {
             String::new()
         };
-        let head_date = self
-            .val
-            .opt_str("head_date")
-            .filter(|d| !d.is_empty())
-            .map_or_else(String::new, |d| format!(" head_date=\"{d}\""));
+        let git = self.val.bool_or("git", false);
+        let git_attrs = if git {
+            let head_date = self
+                .val
+                .opt_str("head_date")
+                .filter(|d| !d.is_empty())
+                .map_or_else(String::new, |d| format!(" head_date=\"{d}\""));
+            let at = self
+                .val
+                .opt_str("at")
+                .filter(|s| !s.is_empty())
+                .map_or_else(String::new, |s| format!(" at=\"{}\"", s.xml_escaped()));
+            format!(
+                " on-head=\"{}\" refs_scanned=\"{}\" head_labels=\"index\" ref_labels=\"{}\"{head_date}{at} complete=\"1\"",
+                u8::from(self.val.bool_or("on_head", false)),
+                self.val.u64_or("refs_scanned", 0),
+                self.val.str_or("ref_labels", "parsed"),
+            )
+        } else {
+            String::new()
+        };
+        let git_attr = if git { "" } else { " git=\"0\"" };
         write!(
             out,
-            " sym=\"{sym}\" on-head=\"{}\" refs_scanned=\"{}\" blobs=\"{}\" hits=\"{}\" head_labels=\"index\"{} listing=\"{}\"{folded_attr} ref_labels=\"{}\"{head_date} at=\"{}\" worktree=\"{}\" complete=\"1\"",
-            self.val.u64_or("on_head", 1),
-            self.val.u64_or("refs_scanned", 0),
+            " sym=\"{sym}\"{git_attr}{git_attrs} blobs=\"{}\" hits=\"{}\"{} listing=\"{}\"{folded_attr} worktree=\"{}\"",
             self.val.u64_or("blobs", 0),
             hits.len(),
             pw.xml_attrs(),
             self.listing().xml_escaped(),
-            self.val.str_or("ref_labels", "parsed"),
-            self.val
-                .opt_str("at")
-                .filter(|s| !s.is_empty())
-                .unwrap_or("HEAD"),
             self.val.str_or("worktree", "read"),
         )
     }

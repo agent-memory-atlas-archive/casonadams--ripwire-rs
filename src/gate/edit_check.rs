@@ -77,17 +77,21 @@ impl crate::serialize::XmlReport for EditCheckReport {
     }
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         let (_, _, shown) = self.unflagged_window();
+        let at_attr = if self.at_stamp.is_empty() {
+            String::new()
+        } else {
+            format!(" at=\"{}\"", self.at_stamp)
+        };
         let est_tokens = 60 + (self.incompatible_callers + shown) * 24;
         write!(
             out,
-            " sym=\"{}\" t=\"fn\" p=\"{}:{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\" at=\"{}\" root=\".\" next=\"--test-gate={}\"",
+            " sym=\"{}\" t=\"fn\" p=\"{}:{}\" status=\"{}\" defs=\"1\" callers=\"{}\" incompatible=\"{}\"{at_attr} root=\".\" next=\"--test-gate={}\"",
             self.symbol_name.xml_escaped(),
             self.file_path.xml_escaped(),
             self.line,
             self.status,
             self.total_callers,
             self.incompatible_callers,
-            self.at_stamp,
             self.file_path.xml_escaped()
         )?;
         self.write_page_attrs(out)?;
@@ -232,7 +236,7 @@ pub fn check_symbol_contract(
         incompatible_callers,
         callers,
         gauges: graph.gauges(),
-        at_stamp: "HEAD".to_string(),
+        at_stamp: String::new(),
         page: None,
     })
 }

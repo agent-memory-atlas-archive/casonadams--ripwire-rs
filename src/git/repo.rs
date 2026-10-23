@@ -420,6 +420,68 @@ pub fn merge_base_id(repo: &gix::Repository, branch: &str) -> Option<gix::Object
     branch_merge_base(repo, branch).map(|(base, _)| base)
 }
 
+/// Paths whose content differs between the merge base of `rev` and `HEAD` and the working tree:
+/// committed changes since that base plus uncommitted and untracked edits, compared by blob id.
+/// Errors name why `rev` cannot be honored.
+pub fn changed_since_ref(root: &str, rev: &str) -> Result<Vec<String>, String> {
+    let repo =
+        discover(root).ok_or_else(|| format!("--pr-context: {root} is not a git repository"))?;
+    let workdir = repo
+        .workdir()
+        .ok_or_else(|| format!("--pr-context: {root} has no work tree"))?;
+    if revision_commit(&repo, rev).is_none() {
+        return Err(format!("--pr-context: unknown ref '{rev}'"));
+    }
+    let base = merge_base_id(&repo, rev)
+        .ok_or_else(|| format!("--pr-context: '{rev}' shares no history with HEAD"))?;
+    let base_blobs = path_blobs(&repo, &base.to_hex().to_string());
+    let head_blobs = path_blobs(&repo, "HEAD");
+    let dirty: std::collections::BTreeSet<String> = dirty_paths(root).into_iter().collect();
+    Ok(changed_paths(&base_blobs, &head_blobs, &dirty, |path| {
+        worktree_blob_id(&repo, workdir, path)
+    }))
+}
+
+/// Paths whose working-tree blob differs from their blob at the merge base. A path outside `dirty`
+/// is in the working tree exactly as at `HEAD`; `worktree` hashes the file of a dirty path, and
+/// `None` means the file is gone.
+#[must_use]
+pub fn changed_paths(
+    base: &std::collections::BTreeMap<String, gix::ObjectId>,
+    head: &std::collections::BTreeMap<String, gix::ObjectId>,
+    dirty: &std::collections::BTreeSet<String>,
+    worktree: impl Fn(&str) -> Option<gix::ObjectId>,
+) -> Vec<String> {
+    let paths: std::collections::BTreeSet<&str> = base
+        .keys()
+        .chain(head.keys())
+        .chain(dirty.iter())
+        .map(String::as_str)
+        .collect();
+    paths
+        .into_iter()
+        .filter(|path| {
+            let now = if dirty.contains(*path) {
+                worktree(path)
+            } else {
+                head.get(*path).copied()
+            };
+            now != base.get(*path).copied()
+        })
+        .map(str::to_string)
+        .collect()
+}
+
+/// Blob id of a working-tree file, hashed in-process; `None` when the file is absent.
+fn worktree_blob_id(
+    repo: &gix::Repository,
+    workdir: &std::path::Path,
+    path: &str,
+) -> Option<gix::ObjectId> {
+    let data = std::fs::read(workdir.join(path)).ok()?;
+    gix::objs::compute_hash(repo.object_hash(), gix::objs::Kind::Blob, &data).ok()
+}
+
 /// Object id that `rev` resolves to, or `None` when it does not resolve.
 #[must_use]
 pub fn rev_id(repo: &gix::Repository, rev: &str) -> Option<gix::ObjectId> {

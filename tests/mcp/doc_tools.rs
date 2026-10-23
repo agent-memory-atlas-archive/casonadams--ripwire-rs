@@ -224,9 +224,43 @@ fn test_whereis_reports_indexed_definition() {
 
     let sources = [("src/main.rs", b"fn main() {}\n".as_slice())];
     let whereis_res = whereis_from_sources(&sources, &ingest, &interner, "main");
-    assert_eq!(whereis_res["on_head"], 1);
+    assert_eq!(whereis_res["git"], false);
+    assert!(whereis_res["on_head"].is_null());
     assert_eq!(whereis_res["hits"][0]["kind"], "def");
     assert_eq!(whereis_res["hits"][0]["line"], 1);
+}
+
+#[test]
+fn test_whereis_outside_git_discloses_no_git_and_omits_head_claims() {
+    let mut ingest = IngestResult::new();
+    let interner = Interner::new();
+    ingest.files.push(FileInfo {
+        id: 0,
+        path: interner.intern("src/main.rs"),
+        lang: Lang::Rust,
+        byte_size: 100,
+        line_count: 1,
+    });
+    ingest.symbols.push(Symbol::new(
+        0,
+        interner.intern("main"),
+        interner.intern("main"),
+        SymKind::Function,
+        Lang::Rust,
+        0,
+        1,
+    ));
+    let sources = [("src/main.rs", b"fn main() {}\n".as_slice())];
+    let val = whereis_from_sources(&sources, &ingest, &interner, "main");
+    let mut out = Vec::new();
+    ripwire_rs::serialize::serialize_whereis_xml(&val, &mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(xml.contains(" git=\"0\""));
+    assert!(!xml.contains("on-head="));
+    assert!(!xml.contains("complete="));
+    assert!(!xml.contains(" at=\""));
+    assert!(!xml.contains(" ref=\""));
+    assert!(xml.contains("kind=\"def\""));
 }
 
 #[test]
@@ -274,7 +308,7 @@ fn test_whereis_from_sources_with_facts_branch_and_history() {
     let res =
         whereis_from_sources_with_facts(&sources, &ingest, &interner, "legacy_target", &facts);
     assert_eq!(res["symbol"], "legacy_target");
-    assert_eq!(res["on_head"], 0);
+    assert_eq!(res["on_head"], false);
     assert_eq!(res["refs_scanned"], 3);
     assert_eq!(res["head_date"], "2026-10-21");
     assert_eq!(res["at"], "a1b2c3d");

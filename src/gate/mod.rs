@@ -32,7 +32,7 @@ pub use lanes::{
 };
 pub use merge_scout::{MergeScoutReport, evaluate_merge_scout, serialize_merge_scout_xml};
 pub use pr_context::{
-    PrContextReport, PrContextRequest, compute_pr_context, compute_pr_context_from_facts,
+    FileHistory, PrContextReport, PrContextRequest, compute_pr_context_from_facts,
     serialize_pr_context_xml,
 };
 pub use quality_delta::{

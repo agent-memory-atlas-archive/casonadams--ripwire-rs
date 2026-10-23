@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 fn sample_report() -> DoctorReport {
     DoctorReport {
-        at: "abc123def+dirty".to_string(),
+        at: Some("abc123def+dirty".to_string()),
         built_from: "0.1.0".to_string(),
         checks: vec![
             DoctorCheck::new("grammars", true)
@@ -16,6 +16,23 @@ fn sample_report() -> DoctorReport {
             DoctorCheck::new("layout", true),
         ],
     }
+}
+
+#[test]
+fn test_doctor_report_omits_at_outside_git() {
+    let report = DoctorReport {
+        at: None,
+        built_from: "x".to_string(),
+        checks: vec![DoctorCheck::new("binary-path", true)],
+    };
+    let mut out = Vec::new();
+    report.write_xml(&mut out).unwrap();
+    let xml = String::from_utf8(out).unwrap();
+    assert!(xml.contains(
+        "<doctor schema=\"ripwire-rs.doctor/v1\" checks=\"1\" passed=\"1\" built_from=\"x\">"
+    ));
+    assert!(!xml.contains(" at=\""));
+    assert!(!xml.contains("n=\"layout\""));
 }
 
 #[test]
@@ -53,7 +70,7 @@ fn test_index_source_follows_no_cache_then_cache_flag() {
 #[test]
 fn test_doctor_empty_report_passes_vacuously() {
     let report = DoctorReport {
-        at: "HEAD".to_string(),
+        at: None,
         built_from: "x".to_string(),
         checks: Vec::new(),
     };

@@ -266,7 +266,8 @@ mod doc_tests {
             &interner,
             "current_api",
         );
-        assert_eq!(locations["on_head"], 1);
+        assert_eq!(locations["git"], false);
+        assert!(locations["on_head"].is_null());
         assert_eq!(locations["hits"][0]["kind"], "def");
         assert_eq!(locations["hits"][0]["line"], 1);
         assert!(

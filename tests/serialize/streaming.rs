@@ -705,7 +705,8 @@ fn test_page_window_and_xml_report_trait() {
     assert!(scout.to_xml_string().contains("ripwire-rs.merge-scout/v1"));
     let pr_req = ripwire_rs::gate::pr_context::PrContextRequest {
         changed_files: &[],
-        base_ref: "HEAD",
+        base_ref: None,
+        at_stamp: "",
         commits: &[],
         page: ripwire_rs::serialize::PageRequest::default(),
     };

@@ -47,7 +47,7 @@ ripwire-rs . --html=callgraph.html --color-by=community
 `next_offset` to page them. `--impact` keeps unbound candidate calls in `<dc>`
 rows outside the graph; `dc_shown` of `declined_calls` says how many a capped sample holds, and `--token-budget` widens it.
 `--whereis` scans distinct Git blobs up to 2 MiB once, including unindexed HEAD
-files, and replaces changed paths with worktree rows.
+files, and replaces changed paths with worktree rows. Outside a git repository it scans the working tree only and reports `git="0"`; it makes no HEAD claim, so `on-head`, `ref`, `at` and `complete` are omitted.
 `--lint` compares all distinct naming subjects within each namespace through
 512 names. Larger pools compare the next 24 lexicographic successors and mark
 the affected rule `count_capped="1"`; paginating findings does not expand that pool.

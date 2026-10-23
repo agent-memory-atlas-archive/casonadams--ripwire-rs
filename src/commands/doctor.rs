@@ -14,7 +14,7 @@ const SNIFF_BYTES: u64 = 8000;
 const AUTO_CACHE_PREFIX: &str = "ripwire-rs-cache-";
 const AUTO_CACHE_SUFFIX: &str = ".json";
 
-const DOCTOR_LEGEND: &str = "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. checks=/passed=: rows emitted / rows with ok=1. n=: binary-path, grammars, cache-dir, git, tree-sitter, tracked-binaries, index-cache, git-config-trust, layout. self=/which=: this binary / the same name found on PATH; which_version=: the PATH copy's version line, printed only when it is not this binary; on_path=0 fails the row and hint= carries the export line; same_file=1: both resolve to one file. loaded=/expected=: distinct compiled-in grammars ABI-compatible with the linked tree-sitter / distinct compiled-in grammars; a shortfall fails the row. dir=: the temp directory holding auto-cache blobs (ripwire-rs-cache-*.json); unwritable fails the row. blobs=/bytes=: blob count / total size; blobs_floor=1 when the scan stopped at 4096. many=1: more than 50 blobs, informational. truncated=1: scan cut short (cache-dir: cap or I/O error; tracked-binaries: over 20000 tracked files, binaries= omitted). volatile=: attributes reading live machine state. repo=0|1: root is inside a git repository; git is read in-process, so a git executable is needed only to clone a remote URL root. history=0|1: HEAD resolves to a commit; head= its 9-hex short sha. core_abi=/newest_grammar_abi=: tree-sitter language ABI / the newest compiled-in grammar ABI. languages=N: distinct compiled-in grammars. tracked=N: index entries under root. binaries=N: tracked files whose first 8000 bytes hold a NUL. non_git=1: no repository; the row passes unscanned. cache_version=: index cache format version. source=auto|cache-flag|disabled: the index artifact this run reads (per-root auto-cache, the --cache file, or none under --no-cache). lean_path=: the index artifact checked: the --cache file or the auto-cache for root. lean=: ok, absent, cache-version (other format), corrupt or unreadable; only the last two fail the row. fsmonitor=: core.fsmonitor: unset, builtin, off or hook (a command git runs). neutralised=1: a hook is configured but never runs: ripwire-rs reads git in-process, and its one git invocation (cloning a remote URL root) passes -c core.fsmonitor=false. filter_drivers=N: filter drivers the repository's own config defines. state=/checked=/units=: C++ struct-layout cross-check; ripwire-rs registers no layout records. -->\n";
+const DOCTOR_LEGEND: &str = "<!-- ripwire-rs doctor schema=ripwire-rs.doctor/v1: setup health: <c n= ok=> checks. checks=/passed=: rows emitted / rows with ok=1. n=: binary-path, grammars, cache-dir, git, tree-sitter, tracked-binaries, index-cache, git-config-trust. self=/which=: this binary / the same name found on PATH; which_version=: the PATH copy's version line, printed only when it is not this binary; on_path=0 fails the row and hint= carries the export line; same_file=1: both resolve to one file. loaded=/expected=: distinct compiled-in grammars ABI-compatible with the linked tree-sitter / distinct compiled-in grammars; a shortfall fails the row. dir=: the temp directory holding auto-cache blobs (ripwire-rs-cache-*.json); unwritable fails the row. blobs=/bytes=: blob count / total size; blobs_floor=1 when the scan stopped at 4096. many=1: more than 50 blobs, informational. truncated=1: scan cut short (cache-dir: cap or I/O error; tracked-binaries: over 20000 tracked files, binaries= omitted). volatile=: attributes reading live machine state. repo=0|1: root is inside a git repository; git is read in-process, so a git executable is needed only to clone a remote URL root. history=0|1: HEAD resolves to a commit; head= its 9-hex short sha. core_abi=/newest_grammar_abi=: tree-sitter language ABI / the newest compiled-in grammar ABI. languages=N: distinct compiled-in grammars. tracked=N: index entries under root. binaries=N: tracked files whose first 8000 bytes hold a NUL. non_git=1: no repository; the row passes unscanned. cache_version=: index cache format version. source=auto|cache-flag|disabled: the index artifact this run reads (per-root auto-cache, the --cache file, or none under --no-cache). lean_path=: the index artifact checked: the --cache file or the auto-cache for root. lean=: ok, absent, cache-version (other format), corrupt or unreadable; only the last two fail the row. fsmonitor=: core.fsmonitor: unset, builtin, off or hook (a command git runs). neutralised=1: a hook is configured but never runs: ripwire-rs reads git in-process, and its one git invocation (cloning a remote URL root) passes -c core.fsmonitor=false. filter_drivers=N: filter drivers the repository's own config defines. -->\n";
 
 /// One `<c>` row of the doctor report: a named check, its verdict, and measured attributes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,7 +56,7 @@ impl DoctorCheck {
 /// Doctor envelope: the git stamp, the build identity, and the ordered check rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoctorReport {
-    pub at: String,
+    pub at: Option<String>,
     pub built_from: String,
     pub checks: Vec<DoctorCheck>,
 }
@@ -69,12 +69,15 @@ impl DoctorReport {
 
     pub fn write_xml<W: Write>(&self, out: &mut W) -> io::Result<()> {
         out.write_all(DOCTOR_LEGEND.as_bytes())?;
+        let at_attr = self
+            .at
+            .as_deref()
+            .map_or_else(String::new, |at| format!(" at=\"{}\"", at.xml_escaped()));
         write!(
             out,
-            "<doctor schema=\"ripwire-rs.doctor/v1\" checks=\"{}\" passed=\"{}\" at=\"{}\" built_from=\"{}\">",
+            "<doctor schema=\"ripwire-rs.doctor/v1\" checks=\"{}\" passed=\"{}\"{at_attr} built_from=\"{}\">",
             self.checks.len(),
             self.passed(),
-            self.at.xml_escaped(),
             self.built_from.xml_escaped()
         )?;
         for check in &self.checks {
@@ -123,11 +126,10 @@ pub fn probe_cache_artifact<R: Read>(reader: R) -> &'static str {
 /// Run every doctor check against `root`, the `--cache` file when given, and the process environment.
 #[must_use]
 pub fn collect_doctor_report(root: &str, cache: Option<&Path>, no_cache: bool) -> DoctorReport {
-    use crate::serialize::GitStampExt;
     let repo = gix::discover(root).ok();
     let census = grammar_census();
     DoctorReport {
-        at: root.git_at_or_head(),
+        at: crate::git::history::compute_git_at_stamp(root),
         built_from: env!("CARGO_PKG_VERSION").to_string(),
         checks: vec![
             check_binary_path(),
@@ -138,7 +140,6 @@ pub fn collect_doctor_report(root: &str, cache: Option<&Path>, no_cache: bool) -
             check_tracked_binaries(root, repo.as_ref()),
             check_index_cache(root, cache, no_cache),
             check_git_config_trust(repo.as_ref()),
-            check_layout(),
         ],
     }
 }
@@ -437,13 +438,6 @@ fn check_git_config_trust(repo: Option<&gix::Repository>) -> DoctorCheck {
         .attr("fsmonitor", fsmonitor)
         .flag("neutralised", fsmonitor == "hook")
         .attr("filter_drivers", local_filter_drivers(snapshot.plumbing()))
-}
-
-fn check_layout() -> DoctorCheck {
-    DoctorCheck::new("layout", true)
-        .attr("state", "no-records")
-        .flag("checked", false)
-        .attr("units", 0)
 }
 
 report_command! {

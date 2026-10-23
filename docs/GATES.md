@@ -117,7 +117,7 @@ ripwire-rs . --map-diff --top-k=30
 
 ## 7. Composite PR Context (`--pr-context=BASE`)
 
-Assembles a complete pull request review context bundle against a base git reference (defaulting to `main` or `master`).
+Assembles a complete pull request review context bundle for the changed files. Changed files are the working tree compared with the merge base of REF and `HEAD` (`--pr-context=REF`, `direction="worktree-since-merge-base"`, `base="REF"`). Without REF they are tracked edits against `HEAD` (`base="working-tree"`). An unknown REF, or a root outside a git repository, exits nonzero. A file with no commit history gets no `<cochange>` or `<owners>` element, and `at` (the HEAD short sha, with `+dirty` when the tree is dirty) is omitted outside git.
 
 ```xml
 <pr-context schema="ripwire-rs.pr-context/v1" base="main" files="2">

@@ -104,12 +104,13 @@ fn test_execute_pr_context_from_facts() {
     let changed = vec!["src/lib.rs".to_string()];
     let pr_req = ripwire_rs::gate::pr_context::PrContextRequest {
         changed_files: &changed,
-        base_ref: "main",
+        base_ref: Some("main"),
+        at_stamp: "",
         commits: &commits,
         page: ripwire_rs::serialize::PageRequest::default(),
     };
     let rep = execute_pr_context_from_facts(&ctx, &pr_req, &mut out).unwrap();
-    assert_eq!(rep.base_ref, "main");
+    assert_eq!(rep.base_ref.as_deref(), Some("main"));
     assert_eq!(rep.files_count, 1);
     let xml = String::from_utf8(out).unwrap();
     assert!(xml.contains("<pr-context schema=\"ripwire-rs.pr-context/v1\""));

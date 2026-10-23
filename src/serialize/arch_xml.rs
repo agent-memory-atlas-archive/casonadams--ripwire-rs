@@ -161,9 +161,14 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
             .iter()
             .find_map(|t| t.run.as_deref())
             .unwrap_or("--situ");
+        let at_attr = if self.at_stamp.is_empty() {
+            String::new()
+        } else {
+            format!(" at=\"{}\"", self.at_stamp.xml_escaped())
+        };
         write!(
             out,
-            " changed=\"{}\" impacted=\"{}\" tests=\"{t_len}\" untested=\"{u_len}\" untested_modscope=\"{}\" shown_tests=\"{}\" tests_capped=\"{}\" shown_untested=\"{}\" untested_capped=\"{}\" script_gates_unmodelled=\"{}\" script_gates_registered=\"{}\" script_gates_mapped=\"{}\" script_gates_unresolved_dynamic=\"{}\" ccx_bar=\"15\"{run_first} {}{window_attrs} at=\"{}\" root=\"{}\" next=\"{}\"",
+            " changed=\"{}\" impacted=\"{}\" tests=\"{t_len}\" untested=\"{u_len}\" untested_modscope=\"{}\" shown_tests=\"{}\" tests_capped=\"{}\" shown_untested=\"{}\" untested_capped=\"{}\" script_gates_unmodelled=\"{}\" script_gates_registered=\"{}\" script_gates_mapped=\"{}\" script_gates_unresolved_dynamic=\"{}\" ccx_bar=\"15\"{run_first} {}{window_attrs}{at_attr} root=\"{}\" next=\"{}\"",
             self.changed,
             self.impacted,
             self.untested_modscope,
@@ -176,7 +181,6 @@ impl crate::serialize::XmlReport for TestGateReport<'_> {
             self.script_gates_mapped,
             self.script_gates_registered - self.script_gates_mapped,
             self.gauge_attrs,
-            self.at_stamp.xml_escaped(),
             self.root.xml_escaped(),
             next.xml_escaped()
         )
@@ -203,9 +207,10 @@ pub fn serialize_test_gate_xml<W: Write>(
     out: &mut W,
 ) -> io::Result<()> {
     use crate::serialize::XmlReport;
+    let at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
     TestGateReport {
         root,
-        at_stamp: "HEAD",
+        at_stamp: &at_stamp,
         changed: usize::from(!tests.is_empty() || untested > 0),
         impacted: untested,
         tests,

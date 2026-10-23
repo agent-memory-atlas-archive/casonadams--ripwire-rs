@@ -31,9 +31,8 @@ pub struct HotspotsReport {
 impl HotspotsReport {
     #[must_use]
     pub fn with_root(mut self, root: &str) -> Self {
-        use crate::serialize::GitStampExt;
         self.root_path = root.to_string();
-        self.at_stamp = root.git_at_or_head();
+        self.at_stamp = crate::git::history::compute_git_at_stamp(root).unwrap_or_default();
         self
     }
 
@@ -68,15 +67,19 @@ impl crate::serialize::XmlReport for HotspotsReport {
     fn write_extra_attrs<W: Write>(&self, out: &mut W) -> io::Result<()> {
         use crate::serialize::XmlEscapeExt;
         let pw = self.window().xml_attrs();
+        let at_attr = if self.at_stamp.is_empty() {
+            String::new()
+        } else {
+            format!(" at=\"{}\"", self.at_stamp.xml_escaped())
+        };
         write!(
             out,
-            " window=\"12mo@HEAD\" files=\"{}\" ranked=\"{}\"{pw} unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\" root=\"{}\" at=\"{}\"",
+            " window=\"12mo@HEAD\" files=\"{}\" ranked=\"{}\"{pw} unranked_no_churn=\"{}\" unranked_no_complexity=\"{}\" root=\"{}\"{at_attr}",
             self.total_files,
             self.ranked_count,
             self.unranked_no_churn,
             self.unranked_no_complexity,
             self.root_path.xml_escaped(),
-            self.at_stamp.xml_escaped(),
         )
     }
     fn write_body<W: Write>(&self, out: &mut W) -> io::Result<()> {
@@ -165,7 +168,7 @@ pub fn compute_hotspots(
         unranked_no_churn,
         unranked_no_complexity,
         root_path: ".".to_string(),
-        at_stamp: "HEAD".to_string(),
+        at_stamp: String::new(),
         page: crate::serialize::PageRequest::default(),
     }
 }

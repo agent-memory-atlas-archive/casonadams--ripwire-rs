@@ -53,9 +53,10 @@ pub fn dispatch_default_run(cli: &Cli, root: &str) -> io::Result<()> {
     let changed_files = flags
         .map_diff
         .then(|| crate::git::repo::working_tree_changes(root));
-    let at = flags.map_diff.then(|| {
-        crate::git::history::compute_git_at_stamp(root).unwrap_or_else(|| "HEAD".to_string())
-    });
+    let at = flags
+        .map_diff
+        .then(|| crate::git::history::compute_git_at_stamp(root))
+        .flatten();
     let mut request = MapRequest::new(root);
     request.rank_by = rank_by;
     request.pack_budget = cli.effective_budget_bytes();
