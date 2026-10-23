@@ -1,4 +1,5 @@
 use crate::domain::{IngestResult, Interner, SymKind};
+use crate::gate::rename::BodyFingerprint;
 use crate::graph::Graph;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -21,9 +22,12 @@ pub struct QualitySnapshot {
     pub dead_symbols: HashSet<String>,
     pub public_api: HashSet<String>,
     pub line_by_sym: HashMap<String, u32>,
+    /// Body shapes of the callables in the changed files, for rename pairing. In memory only: never
+    /// serialized, so a pinned sidecar baseline carries none and pairs no renames.
+    pub body_by_sym: HashMap<String, BodyFingerprint>,
 }
 
-fn symbol_canonical_key(sym_name: &str, file_path: &str, scope: Option<&str>) -> String {
+pub(crate) fn symbol_canonical_key(sym_name: &str, file_path: &str, scope: Option<&str>) -> String {
     match scope {
         Some(sc) => format!("{file_path}::{sc}::{sym_name}"),
         None => format!("{file_path}::{sym_name}"),

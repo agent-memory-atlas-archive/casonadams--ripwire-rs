@@ -60,13 +60,14 @@ pub struct CloneGroup {
     pub tokens_saved: usize,
 }
 
-struct BodyTokens {
-    id: NodeId,
-    raw_hash: u64,
-    norm_hash: u64,
-    norm_token_ids: Vec<u32>,
-    kgrams: Vec<u64>,
-    sketch: [u8; SKETCH_HASHES],
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BodyTokens {
+    pub(crate) id: NodeId,
+    pub(crate) raw_hash: u64,
+    pub(crate) norm_hash: u64,
+    pub(crate) norm_token_ids: Vec<u32>,
+    pub(crate) kgrams: Vec<u64>,
+    pub(crate) sketch: [u8; SKETCH_HASHES],
 }
 
 const ID_IF: u32 = 0x3938_6e06;
@@ -127,29 +128,36 @@ fn extract_file_candidates(
     syms: &[&crate::domain::Symbol],
     min_tokens: usize,
 ) -> Vec<BodyTokens> {
-    let mut out = Vec::with_capacity(syms.len());
-    for sym in syms {
-        let (start, end) = symbol_body_range(sym, file_bytes.len());
-        if start >= end {
-            continue;
-        }
-        let (raw_hash, norm_hash, norm_token_ids) =
-            scan_body_ids(&file_bytes[start..end], sym.lang);
-        if norm_token_ids.len() < min_tokens {
-            continue;
-        }
-        let kgrams = compute_kgrams_ids(&norm_token_ids, 5);
-        let sketch = compute_sketch(&kgrams);
-        out.push(BodyTokens {
-            id: sym.id,
-            raw_hash,
-            norm_hash,
-            norm_token_ids,
-            kgrams,
-            sketch,
-        });
+    syms.iter()
+        .filter_map(|sym| symbol_body_tokens(sym, file_bytes, min_tokens))
+        .collect()
+}
+
+/// Token shape of a callable's body (the bytes after its signature), or `None` when the body is empty or
+/// has fewer than `min_tokens` normalized tokens. The clone detector and rename pairing share this shape.
+pub(crate) fn symbol_body_tokens(
+    sym: &crate::domain::Symbol,
+    file_bytes: &[u8],
+    min_tokens: usize,
+) -> Option<BodyTokens> {
+    let (start, end) = symbol_body_range(sym, file_bytes.len());
+    if start >= end {
+        return None;
     }
-    out
+    let (raw_hash, norm_hash, norm_token_ids) = scan_body_ids(&file_bytes[start..end], sym.lang);
+    if norm_token_ids.len() < min_tokens {
+        return None;
+    }
+    let kgrams = compute_kgrams_ids(&norm_token_ids, 5);
+    let sketch = compute_sketch(&kgrams);
+    Some(BodyTokens {
+        id: sym.id,
+        raw_hash,
+        norm_hash,
+        norm_token_ids,
+        kgrams,
+        sketch,
+    })
 }
 
 fn load_clone_file_bytes(
@@ -245,8 +253,13 @@ const TYPE3_FLOOR: f64 = 0.80;
 const TYPE3_SHORT_BODY_FLOOR: f64 = 0.85;
 const TYPE3_MAX_PAIRS: usize = 200_000;
 
-fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGroup> {
-    if compute_jaccard(&ca.kgrams, &cb.kgrams) < 0.40 {
+/// Minimum Jaccard of two bodies' k-gram sets before the exact Type-3 score is computed.
+const TYPE3_MIN_JACCARD: f64 = 0.40;
+
+/// Type-3 similarity of two bodies: the LCS ratio over normalized tokens, accepted at or above the floor
+/// (the stricter one for short bodies) and below 1.0 (identical bodies are Type-1/2 groups).
+pub(crate) fn type3_similarity(ca: &BodyTokens, cb: &BodyTokens) -> Option<f64> {
+    if compute_jaccard(&ca.kgrams, &cb.kgrams) < TYPE3_MIN_JACCARD {
         return None;
     }
     let len_a = ca.norm_token_ids.len();
@@ -261,19 +274,20 @@ fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGrou
     } else {
         TYPE3_FLOOR
     };
-    if (floor..1.0).contains(&similarity) {
-        let avg_tokens = (len_a + len_b) / 2;
-        Some(CloneGroup {
-            members: vec![ca.id, cb.id],
-            clone_type: CloneType::Type3,
-            token_count: avg_tokens,
-            similarity,
-            idiom: CloneIdiom::None,
-            tokens_saved: avg_tokens,
-        })
-    } else {
-        None
-    }
+    (floor..1.0).contains(&similarity).then_some(similarity)
+}
+
+fn evaluate_candidate_pair(ca: &BodyTokens, cb: &BodyTokens) -> Option<CloneGroup> {
+    let similarity = type3_similarity(ca, cb)?;
+    let avg_tokens = (ca.norm_token_ids.len() + cb.norm_token_ids.len()) / 2;
+    Some(CloneGroup {
+        members: vec![ca.id, cb.id],
+        clone_type: CloneType::Type3,
+        token_count: avg_tokens,
+        similarity,
+        idiom: CloneIdiom::None,
+        tokens_saved: avg_tokens,
+    })
 }
 
 fn build_dedup_kgram_index(candidates: &[BodyTokens]) -> HashMap<u64, Vec<u32>> {
@@ -298,22 +312,24 @@ fn try_stage_pair(
     survivors: &mut Vec<u64>,
 ) {
     let (lo, hi) = if ia < ib { (ia, ib) } else { (ib, ia) };
-    let len_a = candidates[lo as usize].norm_token_ids.len();
-    let len_b = candidates[hi as usize].norm_token_ids.len();
-    if len_a.min(len_b) * 100 < len_a.max(len_b) * 70 {
-        return;
-    }
     let key = ((lo as u64) << 32) | (hi as u64);
     if !seen.insert(key) {
         return;
     }
-    if sketch_matches(
-        &candidates[lo as usize].sketch,
-        &candidates[hi as usize].sketch,
-    ) >= SKETCH_MIN_MATCHES
-    {
+    if sketch_stage_passes(&candidates[lo as usize], &candidates[hi as usize]) {
         survivors.push(key);
     }
+}
+
+/// The clone detector's cheap gate before the exact Type-3 score: bodies within 70% of each other's length
+/// and enough matching MinHash components.
+pub(crate) fn sketch_stage_passes(ca: &BodyTokens, cb: &BodyTokens) -> bool {
+    let len_a = ca.norm_token_ids.len();
+    let len_b = cb.norm_token_ids.len();
+    if len_a.min(len_b) * 100 < len_a.max(len_b) * 70 {
+        return false;
+    }
+    sketch_matches(&ca.sketch, &cb.sketch) >= SKETCH_MIN_MATCHES
 }
 
 fn collect_type3_survivor_pairs(

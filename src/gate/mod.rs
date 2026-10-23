@@ -7,6 +7,7 @@ pub mod lanes;
 pub mod merge_scout;
 pub mod pr_context;
 pub mod quality_delta;
+pub mod rename;
 pub mod runners;
 pub mod script_gates;
 pub mod seams;

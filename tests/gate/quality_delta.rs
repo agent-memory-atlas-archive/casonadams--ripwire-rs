@@ -292,6 +292,7 @@ fn test_ack_only_filter_marks_and_records_matching_rows() {
         now_val: 20,
         is_gating: true,
         is_new_symbol: false,
+        renamed_from: None,
     };
     report.regressions = vec![
         row("complexity", "calc"),
@@ -469,6 +470,7 @@ fn test_apply_cli_delta_options_with_in_memory_writer() {
         now_val: 10,
         is_gating: true,
         is_new_symbol: false,
+        renamed_from: None,
     });
     report.gating_count = 1;
 

@@ -1,7 +1,9 @@
 use crate::domain::{IngestResult, Interner};
 use crate::gate::baseline::{
     DEFAULT_BASELINE_FILE, QualitySnapshot, compute_snapshot, read_baseline_file,
+    symbol_canonical_key,
 };
+use crate::gate::rename::{RenameMap, RenamePair, attach_body_fingerprints, pair_renames};
 use crate::query::commands::QueryContext;
 use crate::serialize::XmlEscapeExt;
 use std::collections::HashMap;
@@ -102,6 +104,8 @@ pub struct QualityRegression {
     pub now_val: u32,
     pub is_gating: bool,
     pub is_new_symbol: bool,
+    /// The baseline name this symbol was renamed from, when `pair_renames` paired it; `None` otherwise.
+    pub renamed_from: Option<String>,
 }
 
 /// Comprehensive delta report across all quality dimensions.
@@ -120,6 +124,8 @@ pub struct QualityDeltaReport {
     pub api_new_surface: usize,
     pub stale_collapse_replay: Option<String>,
     pub baseline_absorbed: usize,
+    pub renames: usize,
+    pub acked_by_rename: usize,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -153,6 +159,9 @@ fn write_regression_row<W: Write>(r: &QualityRegression, out: &mut W) -> io::Res
     } else {
         ""
     };
+    let renamed_attr = r.renamed_from.as_ref().map_or_else(String::new, |old| {
+        format!(" renamed_from=\"{}\"", old.xml_escaped())
+    });
     let gating_val = usize::from(r.is_gating);
     let bar_val = match r.kind.as_str() {
         "complexity" => 15,
@@ -163,7 +172,7 @@ fn write_regression_row<W: Write>(r: &QualityRegression, out: &mut W) -> io::Res
     };
     writeln!(
         out,
-        "  <r kind=\"{}\" sym=\"{}\" p=\"{}:{}\" was=\"{}\" now=\"{}\" gating=\"{}\" bar=\"{bar_val}\"{}/>",
+        "  <r kind=\"{}\" sym=\"{}\" p=\"{}:{}\" was=\"{}\" now=\"{}\" gating=\"{}\" bar=\"{bar_val}\"{}{}/>",
         r.kind.xml_escaped(),
         r.sym_name.xml_escaped(),
         r.file_path.xml_escaped(),
@@ -171,7 +180,8 @@ fn write_regression_row<W: Write>(r: &QualityRegression, out: &mut W) -> io::Res
         r.was_val,
         r.now_val,
         gating_val,
-        origin_attr
+        origin_attr,
+        renamed_attr
     )
 }
 
@@ -194,6 +204,12 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
                 self.baseline_absorbed
             ));
         }
+        if self.renames > 0 {
+            hb_attr.push_str(&format!(" renames=\"{}\"", self.renames));
+        }
+        if self.acked_by_rename > 0 {
+            hb_attr.push_str(&format!(" acked_by_rename=\"{}\"", self.acked_by_rename));
+        }
         let collapse = self.collapsed_stale_replay();
         let stale_attr = collapse.map_or_else(String::new, |replay| {
             format!(
@@ -206,7 +222,9 @@ impl crate::serialize::ToXmlString for QualityDeltaReport {
             && self.head_basis == Some("identity")
             && self.acked_count == 0
             && self.baseline_absorbed == 0
-            && self.api_new_surface == 0;
+            && self.api_new_surface == 0
+            && self.renames == 0
+            && self.acked_by_rename == 0;
         if verdict_only {
             return writeln!(
                 out,
@@ -330,18 +348,22 @@ fn check_symbol_numeric_regressions(
     key: &str,
     working: &QualitySnapshot,
     baseline: &QualitySnapshot,
-    is_preexisting: bool,
+    renames: &RenameMap,
     regressions: &mut Vec<QualityRegression>,
 ) {
     let parts: Vec<&str> = key.split("::").collect();
     let file_path = parts.first().copied().unwrap_or(key).to_string();
     let sym_name = parts.last().copied().unwrap_or(key).to_string();
     let line = working.line_by_sym.get(key).copied().unwrap_or(0);
+    let pair = renames.pair_for(key);
+    let was_key = renames.was_key(key);
+    let is_preexisting = baseline.ccx_by_sym.contains_key(was_key);
+    let renamed_from = pair.map(|p| p.old_name.clone());
 
     for dim in DELTA_DIMENSIONS {
         let now_val = dim.extract(working, key);
         if is_preexisting {
-            let was_val = dim.extract(baseline, key);
+            let was_val = dim.extract(baseline, was_key);
             if now_val > was_val && now_val > dim.preexisting_floor() {
                 regressions.push(QualityRegression {
                     kind: dim.kind().to_string(),
@@ -352,6 +374,7 @@ fn check_symbol_numeric_regressions(
                     now_val,
                     is_gating: dim.is_preexisting_gating(now_val),
                     is_new_symbol: false,
+                    renamed_from: renamed_from.clone(),
                 });
             }
         } else if dim.new_symbol_floor().is_some_and(|floor| now_val > floor) {
@@ -364,6 +387,7 @@ fn check_symbol_numeric_regressions(
                 now_val,
                 is_gating: false,
                 is_new_symbol: true,
+                renamed_from: None,
             });
         }
     }
@@ -372,11 +396,13 @@ fn check_symbol_numeric_regressions(
 fn check_structural_regressions(
     working: &QualitySnapshot,
     baseline: &QualitySnapshot,
+    renames: &RenameMap,
     regressions: &mut Vec<QualityRegression>,
 ) {
     for dead in &working.dead_symbols {
-        if !baseline.dead_symbols.contains(dead) {
-            let is_new = !baseline.ccx_by_sym.contains_key(dead);
+        let was_key = renames.was_key(dead);
+        if !baseline.dead_symbols.contains(was_key) {
+            let is_new = !baseline.ccx_by_sym.contains_key(was_key);
             regressions.push(QualityRegression {
                 kind: "dead-code".to_string(),
                 sym_name: dead.clone(),
@@ -386,10 +412,14 @@ fn check_structural_regressions(
                 now_val: 1,
                 is_gating: !is_new,
                 is_new_symbol: is_new,
+                renamed_from: renames.pair_for(dead).map(|p| p.old_name.clone()),
             });
         }
     }
-    for pub_sym in working.public_api.difference(&baseline.public_api) {
+    for pub_sym in &working.public_api {
+        if baseline.public_api.contains(renames.was_key(pub_sym)) {
+            continue;
+        }
         regressions.push(QualityRegression {
             kind: "api-surface".to_string(),
             sym_name: pub_sym.split("::").last().unwrap_or(pub_sym).to_string(),
@@ -399,6 +429,7 @@ fn check_structural_regressions(
             now_val: 1,
             is_gating: false,
             is_new_symbol: true,
+            renamed_from: None,
         });
     }
 }
@@ -418,6 +449,9 @@ fn apply_quality_acks(regressions: &mut [QualityRegression], ledger: &QualityAck
     for r in regressions {
         let file = r.file_path.split(':').next().unwrap_or(&r.file_path);
         if ledger.is_acknowledged(&r.kind, &r.sym_name, r.now_val)
+            || r.renamed_from
+                .as_deref()
+                .is_some_and(|old| ledger.is_acknowledged(&r.kind, old, r.now_val))
             || ledger.is_acknowledged(&r.kind, &r.file_path, r.now_val)
             || ledger.is_acknowledged(&r.kind, file, r.now_val)
         {
@@ -430,7 +464,11 @@ fn apply_quality_acks(regressions: &mut [QualityRegression], ledger: &QualityAck
     acked
 }
 
-fn collect_stale_acks(ledger: &QualityAcks, regressions: &[QualityRegression]) -> Vec<StaleAck> {
+fn collect_stale_acks(
+    ledger: &QualityAcks,
+    regressions: &[QualityRegression],
+    renames: &RenameMap,
+) -> Vec<StaleAck> {
     let mut out = Vec::new();
     for entry in &ledger.entries {
         let active = regressions.iter().any(|r| {
@@ -441,7 +479,7 @@ fn collect_stale_acks(ledger: &QualityAcks, regressions: &[QualityRegression]) -
                         .as_deref()
                         .is_some_and(|p| p.starts_with(&r.file_path)))
         });
-        if !active {
+        if !active && !renames.carries(&entry.key) {
             out.push(StaleAck {
                 kind: entry.kind.clone(),
                 key: entry.key.clone(),
@@ -482,25 +520,44 @@ pub fn compute_quality_delta_with_acks(
     baseline_source: &str,
     acks: Option<&QualityAcks>,
 ) -> QualityDeltaReport {
+    compute_delta_and_renames(working, baseline, baseline_source, acks).0
+}
+
+/// The delta report with the rename pairs it was computed under, so rows added later see the same pairing.
+fn compute_delta_and_renames(
+    working: &QualitySnapshot,
+    baseline: &QualitySnapshot,
+    baseline_source: &str,
+    acks: Option<&QualityAcks>,
+) -> (QualityDeltaReport, RenameMap) {
+    let renames = pair_renames(working, baseline);
     let mut regressions = Vec::new();
 
     for key in working.ccx_by_sym.keys() {
-        let is_preexisting = baseline.ccx_by_sym.contains_key(key);
-        check_symbol_numeric_regressions(key, working, baseline, is_preexisting, &mut regressions);
+        check_symbol_numeric_regressions(key, working, baseline, &renames, &mut regressions);
     }
 
-    check_structural_regressions(working, baseline, &mut regressions);
+    check_structural_regressions(working, baseline, &renames, &mut regressions);
 
-    let (acked_count, stale_acks) = match acks {
+    let (acked_count, stale_acks, acked_by_rename) = match acks {
         Some(ledger) => (
             apply_quality_acks(&mut regressions, ledger),
-            collect_stale_acks(ledger, &regressions),
+            collect_stale_acks(ledger, &regressions, &renames),
+            ledger
+                .entries
+                .iter()
+                .filter(|e| renames.carries(&e.key))
+                .count(),
         ),
-        None => (0, Vec::new()),
+        None => (0, Vec::new(), 0),
     };
     let (gating_count, preexisting_worse_count, new_symbol_count) =
         count_delta_categories(&regressions);
-    let api_new_surface = working.public_api.difference(&baseline.public_api).count();
+    let api_new_surface = working
+        .public_api
+        .iter()
+        .filter(|key| !baseline.public_api.contains(renames.was_key(key)))
+        .count();
     let short_sha = if working.head_sha.len() >= 9 {
         &working.head_sha[..9]
     } else {
@@ -513,7 +570,7 @@ pub fn compute_quality_delta_with_acks(
     };
     let minor_count = regressions.len().saturating_sub(gating_count);
 
-    QualityDeltaReport {
+    let report = QualityDeltaReport {
         baseline_source: baseline_source.to_string(),
         head_sha: working.head_sha.clone(),
         at_stamp,
@@ -528,7 +585,10 @@ pub fn compute_quality_delta_with_acks(
         api_new_surface,
         stale_collapse_replay: None,
         baseline_absorbed: 0,
-    }
+        renames: renames.len(),
+        acked_by_rename,
+    };
+    (report, renames)
 }
 
 fn remove_file_entries_from_snapshot(snap: &mut QualitySnapshot, file_prefix: &str) {
@@ -540,6 +600,7 @@ fn remove_file_entries_from_snapshot(snap: &mut QualitySnapshot, file_prefix: &s
     snap.params_by_sym.retain(|k, _| !k.starts_with(&prefix));
     snap.dead_symbols.retain(|k| !k.starts_with(&prefix));
     snap.public_api.retain(|k| !k.starts_with(&prefix));
+    snap.body_by_sym.retain(|k, _| !k.starts_with(&prefix));
 }
 
 fn merge_snapshot_entries(dst: &mut QualitySnapshot, src: QualitySnapshot) {
@@ -550,6 +611,46 @@ fn merge_snapshot_entries(dst: &mut QualitySnapshot, src: QualitySnapshot) {
     dst.params_by_sym.extend(src.params_by_sym);
     dst.dead_symbols.extend(src.dead_symbols);
     dst.public_api.extend(src.public_api);
+    dst.body_by_sym.extend(src.body_by_sym);
+}
+/// Fingerprints the working callables of the changed files: the rename pairing's "appeared" side.
+fn attach_working_bodies(
+    working: &mut QualitySnapshot,
+    state: &QueryContext<'_>,
+    changed_files: &[String],
+) {
+    if !changed_files.is_empty() {
+        attach_body_fingerprints(
+            working,
+            state.ingest,
+            state.interner,
+            changed_files,
+            state.sources,
+        );
+    }
+}
+
+/// Fingerprints the HEAD callables of the changed files: the rename pairing's "vanished" side. Skipped when the
+/// working side has none to pair with (`--dmm` never pairs), so HEAD blobs are not tokenized again.
+fn attach_head_bodies(
+    delta: &mut QualitySnapshot,
+    head_ingest: &IngestResult,
+    head_interner: &Interner,
+    changed_files: &[String],
+    working: &QualitySnapshot,
+    slices: &[(&str, crate::domain::Lang, &[u8])],
+) {
+    if working.body_by_sym.is_empty() {
+        return;
+    }
+    let sources: Vec<(&str, &[u8])> = slices.iter().map(|(p, _, b)| (*p, *b)).collect();
+    attach_body_fingerprints(
+        delta,
+        head_ingest,
+        head_interner,
+        changed_files,
+        &sources.as_slice(),
+    );
 }
 
 fn head_tree<'a>(repo: &'a gix::Repository) -> Option<gix::Tree<'a>> {
@@ -630,6 +731,14 @@ pub fn load_revision_baseline_incremental(
     let head_ingest = crate::ingest::ingest_in_memory_files(&slices, &registry, &head_interner);
     let head_graph = crate::graph::Graph::build(&head_ingest, &head_interner);
     let mut delta_snap = compute_snapshot(&head_ingest, &head_graph, &head_interner, head_sha);
+    attach_head_bodies(
+        &mut delta_snap,
+        &head_ingest,
+        &head_interner,
+        changed_files,
+        working,
+        &slices,
+    );
     for k in delta_snap.ccx_by_sym.keys() {
         if working.dead_symbols.contains(k) {
             delta_snap.dead_symbols.insert(k.clone());
@@ -737,6 +846,7 @@ fn check_churn_regressions(
                 now_val: commit_count as u32,
                 is_gating: false,
                 is_new_symbol: false,
+                renamed_from: None,
             });
         }
     }
@@ -781,10 +891,14 @@ fn check_body_text_regressions(
     file_path: &str,
     body: &str,
     is_new: bool,
+    pair: Option<&RenamePair>,
     regressions: &mut Vec<QualityRegression>,
 ) {
     let masked = crate::metrics::source_mask::mask_source(body, sym.lang);
     for kind in body_text_kinds(&masked) {
+        if pair.is_some_and(|p| p.old_text_kinds.contains(&kind)) {
+            continue;
+        }
         regressions.push(QualityRegression {
             kind: kind.to_string(),
             sym_name: sym_name.to_string(),
@@ -794,6 +908,7 @@ fn check_body_text_regressions(
             now_val: 1,
             is_gating: false,
             is_new_symbol: is_new,
+            renamed_from: pair.map(|p| p.old_name.clone()),
         });
     }
 }
@@ -835,6 +950,7 @@ pub fn collect_changed_clone_regressions(
             now_val: cg.token_count as u32,
             is_gating: false,
             is_new_symbol: true,
+            renamed_from: None,
         });
     }
 }
@@ -855,6 +971,7 @@ fn check_source_and_clone_regressions(
     baseline: &QualitySnapshot,
     changed_files: &[String],
     clones: &[crate::clones::CloneGroup],
+    renames: &RenameMap,
     regressions: &mut Vec<QualityRegression>,
 ) {
     use crate::domain::CorpusView;
@@ -867,8 +984,10 @@ fn check_source_and_clone_regressions(
             let body = String::from_utf8_lossy(sym.decl_bytes(&bytes));
             let sym_name = state.sym_name(sym);
             let key = format!("{file_path}::{sym_name}");
-            let is_new = !baseline.ccx_by_sym.contains_key(&key);
-            check_body_text_regressions(sym, sym_name, file_path, &body, is_new, regressions);
+            let scope = sym.scope.map(|sc| state.interner.resolve(&sc));
+            let pair = renames.pair_for(&symbol_canonical_key(sym_name, file_path, scope));
+            let is_new = pair.is_none() && !baseline.ccx_by_sym.contains_key(&key);
+            check_body_text_regressions(sym, sym_name, file_path, &body, is_new, pair, regressions);
         }
     }
     collect_changed_clone_regressions(clones.to_vec(), state, changed_files, regressions);
@@ -1068,12 +1187,8 @@ pub fn assemble_quality_delta_report(
     state: &QueryContext<'_>,
     facts: &QualityDeltaFacts<'_>,
 ) -> QualityDeltaReport {
-    let mut report = compute_quality_delta_with_acks(
-        facts.working,
-        facts.baseline,
-        facts.source_name,
-        facts.acks,
-    );
+    let (mut report, renames) =
+        compute_delta_and_renames(facts.working, facts.baseline, facts.source_name, facts.acks);
     report.head_basis = facts.head_basis;
     report.baseline_absorbed = facts.baseline.absorbed;
     if !facts.at_stamp.is_empty() {
@@ -1091,6 +1206,7 @@ pub fn assemble_quality_delta_report(
             facts.baseline,
             facts.changed_files,
             facts.clones,
+            &renames,
             &mut report.regressions,
         );
         if let Some(ledger) = facts.acks {
@@ -1168,6 +1284,7 @@ pub fn evaluate_quality_delta_with_basis(
     let changed_files = crate::git::repo::working_tree_changes(root);
     let mut working = compute_snapshot(state.ingest, state.graph, state.interner, head_sha);
     working.dirty = !changed_files.is_empty();
+    attach_working_bodies(&mut working, state, &changed_files);
 
     let (baseline, source_name, head_basis) =
         resolve_quality_baseline(root, state, basis, &working, &changed_files)?;
