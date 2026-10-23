@@ -1,4 +1,5 @@
 /target
+/target-*/
 .cccc.cache
 /vendor/grammars/
 __pycache__/

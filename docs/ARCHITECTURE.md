@@ -98,8 +98,10 @@ trait/subject index and declaration spans for implementors and contract methods.
 A language is a directory, `src/languages/<lang>/`, that holds everything specific to it:
 `mod.rs` (its `LanguageSemantics` impl and helpers), `tags.scm` (the Tree-sitter query), and
 optionally `grammar.txt` (a vendored C grammar: `files = parser.c scanner.c`, optional `src =`,
-`include =`, `upstream = <repo> <branch> <subdir>` and `patch = <sed script>`, read by `build.rs`
-and `scripts/update-grammars.sh`). Callers only see the `LanguageSemantics` trait, so shared
+`include =`, `upstream = <repo> <branch> <subdir>`, `rev = <commit sha>` and `patch = <sed script>`,
+read by `build.rs` and `scripts/update-grammars.sh`). The build fetches exactly `rev`, never a branch
+head; `scripts/update-grammars.sh --bump [lang]` moves a pin to the current head, so grammar changes
+are reviewed commits. Callers only see the `LanguageSemantics` trait, so shared
 code never names a language. To add one, create the directory and add one line to
 `register_languages!` in `src/languages/mod.rs`, which generates the `Lang` enum, the module
 declaration and the semantics table. `src/languages/common/` is not a language: it holds the shared

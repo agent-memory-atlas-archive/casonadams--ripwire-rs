@@ -7,6 +7,8 @@ settings, including SCIP overlays, cache/crawl options, JSON, and legend removal
 For example: `ripwire-rs --json gate . --quality-delta` or
 `ripwire-rs --legend=none --scip=index.scip gate . --edit-check=compute`.
 
+CI runs `make ci`, the deterministic set: format check, clippy, the cccc complexity gate, the plugin registry check, and the tests with the CRAP gate. Every input is pinned (Rust toolchain in `rust-toolchain.toml`, vendored grammars by commit in each `grammar.txt`, tool versions in the workflow) and no check reads git history, another branch, a downloaded binary, or machine state. `make all` runs everything in `make ci` plus the checks that depend on the environment: `quality` (regressions against git `HEAD`) and `parity` (the comparison with an upstream `ripwire` binary on this repository). Run `make all` before pushing.
+
 ---
 
 ## 1. Contract Checker (`--edit-check=SYM`)
@@ -195,4 +197,4 @@ Root attributes: every entry's root attribute keys must equal upstream's (outsid
 
 Declared omissions: a `smaller` entry may carry `omits = ["row:attr", "element", ...]` to name upstream attributes and elements that ours deliberately does not emit. A `row:attr` token names the upstream child row by its `n=` value (for example `"cache-dir:locks"`). The checker exempts exactly those tokens and nothing else: an omitted attribute counts only when that upstream row would otherwise fail and passes without it, a bare element token must be absent from our output, and every token must be needed. An entry that declares `omits` is checked exactly: any upstream element that ours lacks must be listed, and any listed token that ours does not need fails as stale. Each omitted name must be named in `why` with its reason; `omits` on any other kind fails the ledger load.
 
-Upstream timeout: the upstream run of each command gets 4 seconds. A command that exceeds it is not compared and the checker prints a `note:` line, and a ledger entry for it then reports as unmeasurable. Upstream keeps a cache directory (`--doctor` reports it) that grows with use and slows its own `--doctor`; set `PARITY_UPSTREAM_TIMEOUT=SECONDS` to measure such commands on a loaded machine. CI runs with a clean cache and the default.
+Upstream timeout: the upstream run of each command gets 4 seconds. A command that exceeds it is not compared and the checker prints a `note:` line, and a ledger entry for it then reports as unmeasurable. Upstream keeps a cache directory (`--doctor` reports it) that grows with use and slows its own `--doctor`; set `PARITY_UPSTREAM_TIMEOUT=SECONDS` to measure such commands on a loaded machine. Parity is not part of CI because it compares a moving target (the installed upstream release and this repository's own history) and so cannot be deterministic.

@@ -17,8 +17,11 @@ ensure-grammars:
 		./scripts/update-grammars.sh; \
 	fi
 
+.PHONY: ci
+ci: fmt-check clippy complexity registry crap ## Deterministic checks CI runs: format, clippy, complexity, registry, CRAP/tests (no upstream binary, no git history, no machine state)
+
 .PHONY: all
-all: clippy complexity registry quality crap parity fmt ## Run all checks (clippy, complexity, registry, quality regressions, CRAP/tests, parity, format)
+all: fmt ci quality parity ## Run every check: format, the deterministic CI set, quality regressions against git HEAD, and upstream parity
 
 .PHONY: build
 build: ## Build the project in debug mode
@@ -68,12 +71,15 @@ coverage: ## Generate LCOV and nextest JUnit reports with quiet test output
 		$(CARGO) llvm-cov --workspace --lcov --output-path target/lcov.info --ignore-filename-regex 'src/(cli|ingest|mcp)/mod\.rs$$'; \
 	fi
 
-.PHONY: crap
-crap: coverage ## Evaluate CRAP metrics and gate on functions exceeding threshold 30 or emitting warnings
+.PHONY: crap-gate
+crap-gate: ## Gate on functions exceeding CRAP threshold 30 (or emitting warnings) using an existing target/lcov.info
 	@err=$$(mktemp); \
 	$(CARGO) crap --path . --lcov target/lcov.info --threshold 30 --fail-above --format github >/dev/null 2>"$$err" || { cat "$$err" >&2; rm -f "$$err"; exit 1; }; \
 	if [ -s "$$err" ]; then cat "$$err" >&2; rm -f "$$err"; exit 1; fi; \
 	rm -f "$$err"
+
+.PHONY: crap
+crap: coverage crap-gate ## Run the tests with coverage, then gate on CRAP
 
 .PHONY: complexity
 complexity: ## Gate on cccc cognitive complexity <= 15 with GitHub error annotations

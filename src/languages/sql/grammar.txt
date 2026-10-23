@@ -1,2 +1,3 @@
 files = parser.c scanner.c
 upstream = https://github.com/DerekStride/tree-sitter-sql gh-pages src
+rev = e038788e5d4daba82dea35676bf49a216629e141

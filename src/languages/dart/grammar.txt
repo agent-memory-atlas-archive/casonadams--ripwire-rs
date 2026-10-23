@@ -1,2 +1,3 @@
 files = parser.c scanner.c
 upstream = https://github.com/UserNobody14/tree-sitter-dart master src
+rev = 0038280b774b65c1b89ba7fec50624d8baed9fe1
