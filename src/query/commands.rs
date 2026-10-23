@@ -133,11 +133,57 @@ pub fn dispatch(
         .ok_or_else(|| format!("unknown query: {name}"))?;
     validate_arguments(command, args)?;
     let legend = legend_posture(args)?;
-    let result = (command.handler)(context, args)?;
+    let args = scoped_args(command, args);
+    let result = (command.handler)(context, &args)?;
     Ok(match (legend, result) {
         (Legend::None, Value::String(text)) => Value::String(strip_legend_comment(text)),
         (_, result) => result,
     })
+}
+
+/// Envelope parameters every MCP tool accepts unless it declares the name itself (`path` filters grep, owners and
+/// the edit verbs). `path` and `paths` are client scope hints: the workspace root is fixed by the server, so
+/// `paths` is accepted and not acted on, and `path` only scopes tools that take `in_scope` (see [`scoped_args`]).
+/// `legend` is honored by [`dispatch`].
+pub const ENVELOPE_ROWS: [(&str, &str, &str); 3] = [
+    (
+        "path",
+        "string",
+        "Client path hint: a subdirectory scopes tools that take in_scope; the server root is fixed",
+    ),
+    (
+        "paths",
+        "string[]",
+        "Client workspace path hints; the server root is fixed",
+    ),
+    (
+        "legend",
+        "string",
+        "Schema legend posture: compact (default) or none",
+    ),
+];
+
+/// `args` with the envelope `path` subdirectory carried into `in_scope` for a tool that takes `in_scope` and
+/// does not declare its own `path`.
+fn scoped_args<'a>(command: &CommandDescriptor, args: &'a Value) -> std::borrow::Cow<'a, Value> {
+    let takes_scope = command
+        .params
+        .iter()
+        .any(|(name, _, _)| *name == "in_scope");
+    let envelope_path = command.params.iter().any(|row| *row == ENVELOPE_ROWS[0]);
+    let sub = args
+        .get("path")
+        .and_then(Value::as_str)
+        .map(|path| path.trim_start_matches("./").trim_end_matches('/'))
+        .filter(|path| !path.is_empty() && *path != ".");
+    match sub {
+        Some(sub) if takes_scope && envelope_path && args.get("in_scope").is_none() => {
+            let mut scoped = args.clone();
+            scoped["in_scope"] = Value::from(sub);
+            std::borrow::Cow::Owned(scoped)
+        }
+        _ => std::borrow::Cow::Borrowed(args),
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

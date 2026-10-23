@@ -360,3 +360,37 @@ fn dispatch_accepts_envelope_arguments_and_honors_legend() {
         }
     });
 }
+
+#[test]
+fn envelope_path_scopes_tools_that_take_in_scope() {
+    let files: [(&str, Lang, &[u8]); 2] = [
+        (
+            "alpha/one.rs",
+            Lang::Rust,
+            b"pub fn parse_alpha_input() {}\n",
+        ),
+        ("beta/two.rs", Lang::Rust, b"pub fn parse_beta_input() {}\n"),
+    ];
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(&files, &registry, &interner);
+    let workspace = ripwire_rs::Workspace::from_ingest(":memory:", ingest, interner);
+    let sources = [("alpha/one.rs", files[0].2), ("beta/two.rs", files[1].2)];
+    let context = workspace.query_context(&sources);
+    let run = |args: serde_json::Value| {
+        dispatch(&context, "for", &args)
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned()
+    };
+    let whole = run(json!({"task": "parse input"}));
+    assert!(whole.contains("parse_alpha_input") && whole.contains("parse_beta_input"));
+    for path in ["alpha", "./alpha/"] {
+        let scoped = run(json!({"task": "parse input", "path": path}));
+        assert!(scoped.contains("parse_alpha_input"), "{path}");
+        assert!(!scoped.contains("parse_beta_input"), "{path}");
+    }
+    let root = run(json!({"task": "parse input", "path": "."}));
+    assert!(root.contains("parse_beta_input"));
+}
