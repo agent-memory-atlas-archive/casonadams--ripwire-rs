@@ -17,3 +17,9 @@ fn test_sql_graph_protocol() {
         ..Default::default()
     });
 }
+
+#[test]
+fn test_sql_extensions_include_dataform_sqlx() {
+    assert_eq!(Lang::from_extension("sql"), Lang::Sql);
+    assert_eq!(Lang::from_extension("sqlx"), Lang::Sql);
+}

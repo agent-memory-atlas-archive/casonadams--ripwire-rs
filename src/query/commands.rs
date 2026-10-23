@@ -132,7 +132,38 @@ pub fn dispatch(
         .find(|command| command.name == name)
         .ok_or_else(|| format!("unknown query: {name}"))?;
     validate_arguments(command, args)?;
-    (command.handler)(context, args)
+    let legend = legend_posture(args)?;
+    let result = (command.handler)(context, args)?;
+    Ok(match (legend, result) {
+        (Legend::None, Value::String(text)) => Value::String(strip_legend_comment(text)),
+        (_, result) => result,
+    })
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Legend {
+    Compact,
+    None,
+}
+
+fn legend_posture(args: &Value) -> Result<Legend, String> {
+    match args.get("legend").and_then(Value::as_str) {
+        None | Some("compact") => Ok(Legend::Compact),
+        Some("none") => Ok(Legend::None),
+        Some(other) => Err(format!(
+            "argument 'legend' must be compact or none, got '{other}'"
+        )),
+    }
+}
+
+/// Drop the leading `<!-- ... -->` schema legend line a report opens with.
+fn strip_legend_comment(text: String) -> String {
+    match text.split_once('\n') {
+        Some((first, rest)) if first.starts_with("<!--") && first.ends_with("-->") => {
+            rest.to_string()
+        }
+        _ => text,
+    }
 }
 
 pub const BATCH_LIMIT: usize = 16;

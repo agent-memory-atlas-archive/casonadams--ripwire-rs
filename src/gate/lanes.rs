@@ -136,7 +136,7 @@ fn rank_task_surface_nodes(
         ranks,
         task,
         crate::query::retrieval::ForTaskOptions {
-            budget_tokens: Some(surface_cap),
+            limit: Some(surface_cap),
             signatures_only: true,
             ..Default::default()
         },

@@ -108,6 +108,7 @@ pub struct ResolutionIndex {
     by_name: HashMap<Spur, Vec<NodeId>>,
     file_scopes: Vec<HashSet<Spur>>,
     module_qualifiers: Vec<HashMap<Spur, u32>>,
+    file_imports: Vec<HashSet<u32>>,
     foreign: ForeignIndex,
     scip: ScipIndex,
     traits: TraitIndex,
@@ -138,6 +139,7 @@ impl ResolutionIndex {
             by_name,
             file_scopes: index_file_scope_mentions(ingest.files.len(), &ingest.references),
             module_qualifiers,
+            file_imports: index_file_imports(ingest, interner),
             scip: ingest
                 .scip_sites
                 .iter()
@@ -168,6 +170,7 @@ impl ResolutionIndex {
             interner: Some(interner),
             file_scopes: Some(&self.file_scopes),
             module_qualifiers: Some(&self.module_qualifiers),
+            file_imports: Some(&self.file_imports),
             foreign: Some(&self.foreign),
             scip: Some(&self.scip),
             trait_index: Some(&self.traits),

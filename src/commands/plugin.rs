@@ -46,11 +46,39 @@ impl SharedOption {
     }
 }
 
-/// `tool` with the parameters its command's shared options add (`limit`/`offset`, `budget_tokens`) appended in
-/// option order. The registry builds its tool list once from these owned copies.
+/// Envelope parameters every MCP tool accepts unless it declares the name itself (`path` filters grep, owners and
+/// the edit verbs). `path` and `paths` are client scope hints: the workspace root is fixed by the server, so they
+/// are accepted and not acted on. `legend` is honored by `query::commands::dispatch`.
+const ENVELOPE_ROWS: [(&str, &str, &str); 3] = [
+    (
+        "path",
+        "string",
+        "Client workspace path hint; the server root is fixed",
+    ),
+    (
+        "paths",
+        "string[]",
+        "Client workspace path hints; the server root is fixed",
+    ),
+    (
+        "legend",
+        "string",
+        "Schema legend posture: compact (default) or none",
+    ),
+];
+
+/// `tool` with the envelope parameters it does not declare and the parameters its command's shared options add
+/// (`limit`/`offset`, `budget_tokens`) appended in option order. The registry builds its tool list once from these
+/// owned copies.
 #[must_use]
 pub fn with_shared_rows(options: &[SharedOption], tool: &CommandDescriptor) -> CommandDescriptor {
     let mut params = tool.params.to_vec();
+    let declared: Vec<&str> = params.iter().map(|(name, _, _)| *name).collect();
+    let envelope: Vec<_> = ENVELOPE_ROWS
+        .into_iter()
+        .filter(|(name, _, _)| !declared.contains(name))
+        .collect();
+    params.extend(envelope);
     params.extend(options.iter().flat_map(|option| option.rows()));
     CommandDescriptor {
         name: tool.name,

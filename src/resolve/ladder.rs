@@ -339,7 +339,9 @@ fn is_unpinned_std_member_blocked<L: ResolutionLookup + ?Sized>(
         crate::domain::SymKind::Method => {
             is_method_std_member_blocked(lookup, r, sym, caller_scope)
         }
-        crate::domain::SymKind::Function => sym.file_id != r.file_id,
+        crate::domain::SymKind::Function => {
+            sym.file_id != r.file_id && !lookup.file_imports_file(r.file_id, sym.file_id)
+        }
         _ => false,
     }
 }
@@ -442,6 +444,39 @@ pub fn index_module_qualifiers(
         }
     }
     maps
+}
+
+/// Per file, the indexed files its imports resolve to; resolution is the importing language's own.
+#[must_use]
+pub fn index_file_imports(
+    ingest: &crate::domain::IngestResult,
+    interner: &Interner,
+) -> Vec<std::collections::HashSet<u32>> {
+    let file_index: HashMap<&str, u32> = ingest
+        .files
+        .iter()
+        .map(|f| (interner.resolve(&f.path), f.id))
+        .collect();
+    let mut sets = vec![std::collections::HashSet::new(); ingest.files.len()];
+    for r in ingest
+        .references
+        .iter()
+        .filter(|r| r.role == RefRole::Import)
+    {
+        let Some(importer) = ingest.files.get(r.file_id as usize) else {
+            continue;
+        };
+        if let Some(target) = crate::languages::resolve_import(
+            r.lang,
+            interner.resolve(&importer.path),
+            interner.resolve(&r.callee_name),
+            &file_index,
+            &ingest.import_aliases,
+        ) {
+            sets[r.file_id as usize].insert(target);
+        }
+    }
+    sets
 }
 
 fn edge_prov(target_count: usize, narrowing: Narrowing, tier: Tier) -> EdgeProv {
@@ -561,6 +596,10 @@ pub trait ResolutionLookup {
         None
     }
     fn file_mentions_scope(&self, _file_id: u32, _scope: Spur) -> bool {
+        false
+    }
+    /// True when `file_id` imports the indexed file `target`.
+    fn file_imports_file(&self, _file_id: u32, _target: u32) -> bool {
         false
     }
     fn qualifier_module_file(&self, _file_id: u32, _qualifier: Spur) -> Option<u32> {
@@ -991,6 +1030,7 @@ pub struct ResolutionContext<'a> {
     pub interner: Option<&'a Interner>,
     pub file_scopes: Option<&'a [std::collections::HashSet<Spur>]>,
     pub module_qualifiers: Option<&'a [HashMap<Spur, u32>]>,
+    pub file_imports: Option<&'a [std::collections::HashSet<u32>]>,
     pub foreign: Option<&'a HashMap<(Spur, crate::domain::Lang), Vec<NodeId>>>,
     pub scip: Option<&'a HashMap<(u32, u32, Spur), crate::domain::ScipTarget>>,
     pub trait_index: Option<&'a crate::resolve::TraitIndex>,
@@ -1047,6 +1087,13 @@ impl ResolutionLookup for ResolutionContext<'_> {
             .get(file_id as usize)?
             .get(&qualifier)
             .copied()
+    }
+
+    #[inline]
+    fn file_imports_file(&self, file_id: u32, target: u32) -> bool {
+        self.file_imports
+            .and_then(|sets| sets.get(file_id as usize))
+            .is_some_and(|set| set.contains(&target))
     }
 
     #[inline]

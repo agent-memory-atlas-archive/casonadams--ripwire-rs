@@ -335,3 +335,28 @@ fn edit_check_pages_preserve_flagged_callers_and_offset_unflagged_rows() {
     assert!(xml.contains("shown_unflagged=\"1\""));
     assert!(xml.contains("offset=\"1\" limit=\"1\""));
 }
+
+#[test]
+fn dispatch_accepts_envelope_arguments_and_honors_legend() {
+    with_context(|context| {
+        let compact = dispatch(context, "find_symbol", &json!({"symbol": "target"})).unwrap();
+        assert!(compact.as_str().unwrap().starts_with("<!--"));
+        let with_envelope = json!({
+            "symbol": "target",
+            "path": ".",
+            "paths": ["src"],
+            "legend": "none",
+        });
+        let none = dispatch(context, "find_symbol", &with_envelope).unwrap();
+        let xml = none.as_str().unwrap();
+        assert!(!xml.contains("<!--"));
+        assert!(xml.contains("target"));
+        for bad in [
+            json!({"symbol": "target", "legend": "verbose"}),
+            json!({"symbol": "target", "paths": "src"}),
+            json!({"symbol": "target", "bogus": 1}),
+        ] {
+            assert!(dispatch(context, "find_symbol", &bad).is_err());
+        }
+    });
+}

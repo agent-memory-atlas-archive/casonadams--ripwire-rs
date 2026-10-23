@@ -62,6 +62,10 @@ and 65536 bytes. Rank signals: `pagerank`, `authority`, `hub`, `degree`, `ccx`,
 `stable`; unknown signals (including `churn`) error. Slice shares the CLI
 workspace root and flow/depth validation.
 
+Every tool also accepts the envelope arguments `path` and `paths` (client scope hints; the server root is fixed, so
+they are accepted and not acted on, except where a tool declares its own `path` filter) and `legend` (`compact`
+default, or `none` to drop the leading schema comment).
+
 ## The read verbs + fetch_body (and when each beats the CLI form)
 
 Every verb takes `path` (the repo root; `memory_recall` takes the docs/memory dir). For a split

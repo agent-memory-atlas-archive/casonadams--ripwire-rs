@@ -28,6 +28,10 @@ impl LanguageSemantics for SqlLanguage {
     fn tag(&self) -> &'static str {
         "sql"
     }
+
+    fn extensions(&self) -> &'static [&'static str] {
+        &["sql", "sqlx"]
+    }
     super::impl_grammar_method!(ffi tree_sitter_sql, include_str!("tags.scm"));
 
     fn dialect_group(&self) -> DialectGroup {

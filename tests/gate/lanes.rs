@@ -279,3 +279,19 @@ fn file_row<'a>(val: &'a Value, path: &str) -> &'a Value {
         .find(|f| f["p"] == path)
         .unwrap_or_else(|| panic!("no claim row for {path}"))
 }
+
+#[test]
+fn task_partition_surface_is_capped_by_symbol_count_not_token_budget() {
+    let source: String = (0..24)
+        .map(|i| format!("pub fn worker_stage_{i}() {{}}\n"))
+        .collect();
+    let files: [(&str, Lang, &[u8]); 1] = [("src/worker.rs", Lang::Rust, source.as_bytes())];
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(&files, &reg, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let pr = graph.page_rank(&PageRankConfig::default());
+    let plan = plan_task_partition("worker stage", 2, &ingest, &graph, &pr.ranks, &interner);
+    assert!(plan.surface_count >= 20, "surface {}", plan.surface_count);
+    assert!(!plan.groups.is_empty());
+}
