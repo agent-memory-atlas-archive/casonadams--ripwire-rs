@@ -22,6 +22,7 @@ PAGING_ATTRS = ("total", "has_more", "next_offset", "capped")
 ROW_KEYS = ("p", "n", "path", "name")
 FULL_ROWS_FLAG = "--limit=100000"
 FULL_TIMEOUT = 60
+UPSTREAM_TIMEOUT = int(os.environ.get("PARITY_UPSTREAM_TIMEOUT", "4"))
 WARNINGS = []
 
 OPTIONAL_ATTRS = {
@@ -551,8 +552,12 @@ def run_one_check(rw_bin, rip_bin, repo, cmd, allow_extra_root=False, omits=None
         c_rw, c_rip = [rw_bin, repo] + args, [rip_bin, repo] + args
     p_rw = subprocess.run(c_rw, capture_output=True, text=True, timeout=20)
     try:
-        p_rip = subprocess.run(c_rip, capture_output=True, text=True, timeout=4)
+        p_rip = subprocess.run(c_rip, capture_output=True, text=True, timeout=UPSTREAM_TIMEOUT)
     except subprocess.TimeoutExpired:
+        print(
+            f"note: upstream {cmd or 'default map'} exceeded {UPSTREAM_TIMEOUT}s; not compared "
+            "(raise PARITY_UPSTREAM_TIMEOUT to measure it)"
+        )
         if text:
             return Outcome(check_text_timeout(cmd, p_rw.stdout), None, None, text)
         return Outcome(check_xml_timeout(p_rw.stdout), None, None, text)
