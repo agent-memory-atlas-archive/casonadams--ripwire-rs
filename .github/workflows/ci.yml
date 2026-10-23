@@ -44,7 +44,7 @@ jobs:
           tool: cargo-binstall
 
       - name: Install cccc
-        run: cargo binstall --no-confirm --locked cccc-cli@1.7.0
+        run: cargo binstall --no-confirm --locked --force cccc-cli@1.7.0
 
       - name: Format, clippy, complexity and registry gates
         run: make fmt-check clippy complexity registry

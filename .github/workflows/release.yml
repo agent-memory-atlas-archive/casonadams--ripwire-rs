@@ -39,7 +39,10 @@ jobs:
         run: ./scripts/update-grammars.sh
 
       - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+          rustflags: ""
 
       - uses: Swatinem/rust-cache@v2
 
@@ -72,7 +75,10 @@ jobs:
       - name: Fetch vendored grammars
         run: ./scripts/update-grammars.sh
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+          rustflags: ""
 
       - uses: Swatinem/rust-cache@v2
 
@@ -118,9 +124,11 @@ jobs:
         shell: bash
         run: ./scripts/update-grammars.sh
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          targets: ${{ matrix.target }}
+          target: ${{ matrix.target }}
+          cache: false
+          rustflags: ""
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -255,7 +263,10 @@ jobs:
       - name: Fetch vendored grammars
         run: ./scripts/update-grammars.sh
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          cache: false
+          rustflags: ""
 
       - uses: Swatinem/rust-cache@v2
 
