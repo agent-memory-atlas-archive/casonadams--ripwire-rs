@@ -41,8 +41,10 @@ fn test_load_cached_payload_in_memory() {
 
 #[test]
 fn test_compute_cache_key_non_empty() {
-    let key = compute_cache_key(".");
+    // A root that is not a repository: the key must not depend on the checkout's cwd or state.
+    const ROOT: &str = "/nonexistent_ripwire_cache_root";
+    let key = compute_cache_key(ROOT);
     assert!(!key.is_empty());
-    let path = auto_cache_path(".");
+    let path = auto_cache_path(ROOT);
     assert!(path.to_string_lossy().contains("ripwire-rs-cache-"));
 }

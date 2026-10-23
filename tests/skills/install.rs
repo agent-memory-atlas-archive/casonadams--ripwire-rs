@@ -1,6 +1,6 @@
 use ripwire_rs::skills::{
-    generate_manifest_content, get_skill_names, resolve_skills_dir, scan_content_for_exfil,
-    scan_skills_directory, serialize_skill_scan_xml,
+    SkillsEnv, default_skills_dir_in, expand_tilde_in, generate_manifest_content, get_skill_names,
+    resolve_skills_dir_in, scan_content_for_exfil, scan_skills_directory, serialize_skill_scan_xml,
 };
 use std::path::{Path, PathBuf};
 
@@ -24,19 +24,57 @@ fn test_generate_manifest_content() {
     assert!(manifest.contains("skill=ripwire-rs-change-check\n"));
 }
 
+fn env(agents_home: Option<&str>, home: Option<&str>) -> SkillsEnv {
+    SkillsEnv {
+        agents_home: agents_home.map(String::from),
+        home: home.map(String::from),
+    }
+}
+
 #[test]
-fn test_resolve_skills_dir() {
-    let custom = resolve_skills_dir(Some("/custom/skills/dir"));
-    assert_eq!(custom, PathBuf::from("/custom/skills/dir"));
+fn test_resolve_skills_dir_custom_paths() {
+    let none = env(None, None);
+    assert_eq!(
+        resolve_skills_dir_in(Some("/custom/skills/dir"), &none),
+        PathBuf::from("/custom/skills/dir")
+    );
+    assert_eq!(
+        resolve_skills_dir_in(Some("/some/path/.agents"), &none),
+        PathBuf::from("/some/path/.agents/skills")
+    );
+    assert_eq!(
+        resolve_skills_dir_in(Some("~/test_skills"), &env(None, Some("/home/u"))),
+        PathBuf::from("/home/u/test_skills")
+    );
+    assert_eq!(
+        resolve_skills_dir_in(Some("  "), &env(None, Some("/home/u"))),
+        PathBuf::from("/home/u/.agents/skills")
+    );
+}
 
-    let agents_dir = resolve_skills_dir(Some("/some/path/.agents"));
-    assert_eq!(agents_dir, PathBuf::from("/some/path/.agents/skills"));
+#[test]
+fn test_default_skills_dir_prefers_agents_home_then_home() {
+    assert_eq!(
+        default_skills_dir_in(&env(Some("/agents"), Some("/home/u"))),
+        PathBuf::from("/agents/skills")
+    );
+    assert_eq!(
+        default_skills_dir_in(&env(None, Some("/home/u"))),
+        PathBuf::from("/home/u/.agents/skills")
+    );
+    assert_eq!(
+        default_skills_dir_in(&env(None, None)),
+        PathBuf::from(".agents/skills")
+    );
+}
 
-    let tilde_dir = resolve_skills_dir(Some("~/test_skills"));
-    assert!(!tilde_dir.to_string_lossy().starts_with('~'));
-
-    let default_dir = resolve_skills_dir(None);
-    assert!(default_dir.ends_with(".agents/skills"));
+#[test]
+fn test_expand_tilde_in() {
+    assert_eq!(expand_tilde_in("~", Some("/home/u")), "/home/u");
+    assert_eq!(expand_tilde_in("~/x/y", Some("/home/u")), "/home/u/x/y");
+    assert_eq!(expand_tilde_in("~other/x", Some("/home/u")), "~other/x");
+    assert_eq!(expand_tilde_in("/abs/~/x", Some("/home/u")), "/abs/~/x");
+    assert_eq!(expand_tilde_in("~/x", None), "~/x");
 }
 
 #[test]

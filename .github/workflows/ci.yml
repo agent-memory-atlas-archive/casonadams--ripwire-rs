@@ -55,8 +55,6 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.action != 'edited'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Fetch vendored grammars (pinned revisions)
         run: ./scripts/update-grammars.sh

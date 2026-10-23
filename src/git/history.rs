@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::fmt;
 use std::path::Path;
 
@@ -273,27 +273,44 @@ pub fn file_commit_counts(commits: &[CommitInfo]) -> HashMap<String, u32> {
         .collect()
 }
 
-struct RawCommitMeta {
-    id: gix::ObjectId,
-    timestamp: i64,
+/// What the history walk needs to know about one commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WalkNode {
+    pub timestamp: i64,
+    /// Whether the commit has two or more parents; merges are never reported.
+    pub is_merge: bool,
+    /// The parents the walk continues into from this commit.
+    pub followed_parents: Vec<gix::ObjectId>,
+}
+
+/// A non-merge commit reached by the walk, with its commit time.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawCommitMeta {
+    pub id: gix::ObjectId,
+    pub timestamp: i64,
 }
 
 fn walk_err(e: impl fmt::Display) -> GitHistoryError {
     GitHistoryError::Walk(e.to_string())
 }
 
-fn commit_time(repo: &gix::Repository, id: gix::ObjectId) -> Result<Option<i64>, GitHistoryError> {
-    match repo.try_find_object(id) {
-        Ok(Some(obj)) => Ok(Some(
-            obj.try_into_commit()
-                .map_err(walk_err)?
-                .time()
-                .map_err(walk_err)?
-                .seconds,
-        )),
-        Ok(None) => Ok(None),
-        Err(e) => Err(walk_err(e)),
-    }
+/// Resolve `id` from the object store, or `None` when the object is absent (e.g. beyond a shallow
+/// boundary).
+fn walk_node(
+    repo: &gix::Repository,
+    prefix: &str,
+    id: gix::ObjectId,
+) -> Result<Option<WalkNode>, GitHistoryError> {
+    let Some(object) = repo.try_find_object(id).map_err(walk_err)? else {
+        return Ok(None);
+    };
+    let commit = object.try_into_commit().map_err(walk_err)?;
+    let timestamp = commit.time().map_err(walk_err)?.seconds;
+    Ok(Some(WalkNode {
+        timestamp,
+        is_merge: commit.parent_ids().nth(1).is_some(),
+        followed_parents: followed_parents(repo, &commit, prefix),
+    }))
 }
 
 fn tree_at_prefix(commit: &gix::Commit<'_>, prefix: &str) -> Option<gix::ObjectId> {
@@ -331,57 +348,91 @@ fn followed_parents(
         .map_or(parents, |p| vec![p])
 }
 
-type CommitQueue = std::collections::BinaryHeap<(i64, gix::ObjectId)>;
+/// A commit waiting to be visited: newest first, larger id first on equal times.
+struct Queued {
+    id: gix::ObjectId,
+    node: WalkNode,
+}
 
-fn push_unseen(
-    repo: &gix::Repository,
+impl Queued {
+    fn key(&self) -> (i64, gix::ObjectId) {
+        (self.node.timestamp, self.id)
+    }
+}
+
+impl PartialEq for Queued {
+    fn eq(&self, other: &Self) -> bool {
+        self.key() == other.key()
+    }
+}
+
+impl Eq for Queued {}
+
+impl PartialOrd for Queued {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Queued {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.key().cmp(&other.key())
+    }
+}
+
+/// Look up each unseen id once and queue it when the store holds it; absent objects are skipped.
+fn enqueue<E>(
     ids: impl IntoIterator<Item = gix::ObjectId>,
-    seen: &mut std::collections::HashSet<gix::ObjectId>,
-    queue: &mut CommitQueue,
-) -> Result<(), GitHistoryError> {
+    lookup: &mut impl FnMut(gix::ObjectId) -> Result<Option<WalkNode>, E>,
+    seen: &mut HashSet<gix::ObjectId>,
+    queue: &mut BinaryHeap<Queued>,
+) -> Result<(), E> {
     for id in ids {
         if seen.insert(id)
-            && let Some(time) = commit_time(repo, id)?
+            && let Some(node) = lookup(id)?
         {
-            queue.push((time, id));
+            queue.push(Queued { id, node });
         }
     }
     Ok(())
 }
 
+/// Walk history from `head`, newest first, and return the non-merge commits at or after
+/// `cutoff_timestamp` (inclusive). `lookup` resolves a commit id: `Ok(None)` skips that id, `Err`
+/// aborts the walk. An absent `head` yields no commits.
+pub fn walk_metas<E>(
+    head: gix::ObjectId,
+    mut lookup: impl FnMut(gix::ObjectId) -> Result<Option<WalkNode>, E>,
+    cutoff_timestamp: Option<i64>,
+) -> Result<Vec<RawCommitMeta>, E> {
+    let mut metas = Vec::new();
+    let mut seen = HashSet::new();
+    let mut queue = BinaryHeap::new();
+    enqueue(std::iter::once(head), &mut lookup, &mut seen, &mut queue)?;
+    while let Some(Queued { id, node }) = queue.pop() {
+        if cutoff_timestamp.is_some_and(|cutoff| node.timestamp < cutoff) {
+            break;
+        }
+        if !node.is_merge {
+            metas.push(RawCommitMeta {
+                id,
+                timestamp: node.timestamp,
+            });
+        }
+        enqueue(node.followed_parents, &mut lookup, &mut seen, &mut queue)?;
+    }
+    Ok(metas)
+}
+
+/// Git-backed `walk_metas`: `head` must exist, otherwise the walk fails.
 fn collect_commit_metas(
     repo: &gix::Repository,
     head: gix::ObjectId,
     prefix: &str,
     cutoff_timestamp: Option<i64>,
 ) -> Result<Vec<RawCommitMeta>, GitHistoryError> {
-    let mut metas = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    let mut queue = CommitQueue::new();
-    let head_time = repo
-        .find_commit(head)
-        .map_err(walk_err)?
-        .time()
-        .map_err(walk_err)?
-        .seconds;
-    seen.insert(head);
-    queue.push((head_time, head));
-    while let Some((timestamp, id)) = queue.pop() {
-        if cutoff_timestamp.is_some_and(|cutoff| timestamp < cutoff) {
-            break;
-        }
-        let commit = repo.find_commit(id).map_err(walk_err)?;
-        if commit.parent_ids().nth(1).is_none() {
-            metas.push(RawCommitMeta { id, timestamp });
-        }
-        push_unseen(
-            repo,
-            followed_parents(repo, &commit, prefix),
-            &mut seen,
-            &mut queue,
-        )?;
-    }
-    Ok(metas)
+    repo.find_commit(head).map_err(walk_err)?;
+    walk_metas(head, |id| walk_node(repo, prefix, id), cutoff_timestamp)
 }
 
 fn diff_commit_tree(

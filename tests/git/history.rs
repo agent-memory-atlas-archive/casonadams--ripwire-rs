@@ -1,8 +1,10 @@
 use ripwire_rs::git::history::{
-    CommitInfo, SinceScope, civil_from_days, compute_file_churn, days_from_civil,
-    filter_commits_by_scope, months_before_epoch, parse_since_scope, walk_repository_history,
-    walk_repository_history_scoped,
+    CommitInfo, SinceScope, WalkNode, civil_from_days, compute_file_churn, days_from_civil,
+    filter_commits_by_scope, months_before_epoch, parse_since_scope, walk_metas,
+    walk_repository_history,
 };
+use std::collections::HashMap;
+use std::convert::Infallible;
 
 #[test]
 fn test_civil_calendar_conversions() {
@@ -112,28 +114,139 @@ fn test_walk_repository_history_nonexistent() {
     assert!(format!("{err}").contains("failed to open repository"));
 }
 
-#[test]
-fn test_history_walk_is_newest_first_non_merge_with_exact_cutoff() {
-    let repo = gix::discover(".").unwrap();
-    let recent_tip = repo.head_commit().unwrap().time().unwrap().seconds - 30 * 86_400;
-    let commits = walk_repository_history_scoped(".", Some(recent_tip)).unwrap();
-    assert!(commits.windows(2).all(|w| w[0].timestamp >= w[1].timestamp));
-    assert!(commits.iter().all(|c| {
-        let id = gix::ObjectId::from_hex(c.id.as_bytes()).unwrap();
-        repo.find_commit(id).unwrap().parent_ids().count() <= 1
-    }));
-    if commits.is_empty() {
-        return;
-    }
-    let cutoff = commits[commits.len() / 2].timestamp;
-    let newer = walk_repository_history_scoped(".", Some(cutoff)).unwrap();
-    let expected: Vec<&str> = commits
-        .iter()
-        .filter(|c| c.timestamp >= cutoff)
-        .map(|c| c.id.as_str())
-        .collect();
-    assert_eq!(
-        newer.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
-        expected
+type Graph = HashMap<gix::ObjectId, WalkNode>;
+
+fn oid(n: u32) -> gix::ObjectId {
+    gix::ObjectId::from_hex(format!("{n:040x}").as_bytes()).unwrap()
+}
+
+/// Add commit `n` at `timestamp`; its followed parents are `parents`, and it is a merge with two.
+fn add(graph: &mut Graph, n: u32, timestamp: i64, parents: &[u32]) {
+    graph.insert(
+        oid(n),
+        WalkNode {
+            timestamp,
+            is_merge: parents.len() > 1,
+            followed_parents: parents.iter().map(|&p| oid(p)).collect(),
+        },
     );
+}
+
+fn walk(graph: &Graph, head: u32, cutoff: Option<i64>) -> Vec<gix::ObjectId> {
+    walk_metas(
+        oid(head),
+        |id| Ok::<_, Infallible>(graph.get(&id).cloned()),
+        cutoff,
+    )
+    .unwrap()
+    .into_iter()
+    .map(|m| m.id)
+    .collect()
+}
+
+#[test]
+fn test_walk_is_newest_first_along_parents() {
+    let mut g = Graph::new();
+    add(&mut g, 4, 400, &[3]);
+    add(&mut g, 3, 300, &[2]);
+    add(&mut g, 2, 200, &[1]);
+    add(&mut g, 1, 100, &[]);
+    assert_eq!(walk(&g, 4, None), vec![oid(4), oid(3), oid(2), oid(1)]);
+}
+
+#[test]
+fn test_merge_commits_are_walked_through_but_not_reported() {
+    let mut g = Graph::new();
+    add(&mut g, 3, 300, &[1, 2]);
+    add(&mut g, 2, 200, &[]);
+    add(&mut g, 1, 100, &[]);
+    assert_eq!(walk(&g, 3, None), vec![oid(2), oid(1)]);
+}
+
+#[test]
+fn test_shared_ancestor_of_diamond_is_reported_once() {
+    let mut g = Graph::new();
+    add(&mut g, 5, 500, &[3, 4]);
+    add(&mut g, 4, 200, &[1]);
+    add(&mut g, 3, 300, &[1]);
+    add(&mut g, 1, 100, &[]);
+    assert_eq!(walk(&g, 5, None), vec![oid(3), oid(4), oid(1)]);
+}
+
+#[test]
+fn test_equal_timestamps_order_larger_id_first() {
+    let mut g = Graph::new();
+    add(&mut g, 3, 300, &[1, 2]);
+    add(&mut g, 2, 200, &[]);
+    add(&mut g, 1, 200, &[]);
+    assert_eq!(walk(&g, 3, None), vec![oid(2), oid(1)]);
+}
+
+#[test]
+fn test_cutoff_is_inclusive_at_exact_commit_time() {
+    let mut g = Graph::new();
+    add(&mut g, 3, 300, &[2]);
+    add(&mut g, 2, 200, &[1]);
+    add(&mut g, 1, 100, &[]);
+    assert_eq!(walk(&g, 3, Some(200)), vec![oid(3), oid(2)]);
+    assert_eq!(walk(&g, 3, Some(201)), vec![oid(3)]);
+    assert_eq!(walk(&g, 3, Some(100)), vec![oid(3), oid(2), oid(1)]);
+}
+
+#[test]
+fn test_cutoff_newer_than_head_yields_nothing() {
+    let mut g = Graph::new();
+    add(&mut g, 3, 300, &[2]);
+    add(&mut g, 2, 200, &[]);
+    assert!(walk(&g, 3, Some(301)).is_empty());
+}
+
+#[test]
+fn test_root_commit_is_reported() {
+    let mut g = Graph::new();
+    add(&mut g, 1, 100, &[]);
+    assert_eq!(walk(&g, 1, None), vec![oid(1)]);
+}
+
+#[test]
+fn test_only_followed_parents_are_walked() {
+    let mut g = Graph::new();
+    g.insert(
+        oid(3),
+        WalkNode {
+            timestamp: 300,
+            is_merge: true,
+            followed_parents: vec![oid(1)],
+        },
+    );
+    add(&mut g, 2, 200, &[]);
+    add(&mut g, 1, 100, &[]);
+    assert_eq!(walk(&g, 3, None), vec![oid(1)]);
+}
+
+#[test]
+fn test_absent_parent_is_skipped_and_absent_head_is_empty() {
+    let mut g = Graph::new();
+    add(&mut g, 2, 200, &[9]);
+    assert_eq!(walk(&g, 2, None), vec![oid(2)]);
+    assert!(walk(&g, 7, None).is_empty());
+}
+
+#[test]
+fn test_lookup_error_aborts_walk() {
+    let mut g = Graph::new();
+    add(&mut g, 2, 200, &[1]);
+    add(&mut g, 1, 100, &[]);
+    let result = walk_metas(
+        oid(2),
+        |id| {
+            if id == oid(1) {
+                Err("boom")
+            } else {
+                Ok(g.get(&id).cloned())
+            }
+        },
+        None,
+    );
+    assert_eq!(result.unwrap_err(), "boom");
 }

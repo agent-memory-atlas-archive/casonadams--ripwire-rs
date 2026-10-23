@@ -37,8 +37,14 @@ pub fn short_id(id: impl AsRef<gix::oid>) -> String {
 pub fn workdir_prefix(repo: &gix::Repository, root: &str) -> Option<String> {
     let workdir = std::fs::canonicalize(repo.workdir()?).ok()?;
     let root = std::fs::canonicalize(root).ok()?;
+    relative_prefix(&workdir, &root)
+}
+
+/// `root` relative to `workdir` as `dir/` (empty at the top); `None` when `root` is outside `workdir`.
+#[must_use]
+pub fn relative_prefix(workdir: &std::path::Path, root: &std::path::Path) -> Option<String> {
     let rel = root
-        .strip_prefix(&workdir)
+        .strip_prefix(workdir)
         .ok()?
         .to_str()?
         .replace('\\', "/");
@@ -372,31 +378,40 @@ fn changes_count(repo: &gix::Repository, commit: &gix::Commit<'_>, needle: &str)
 
 /// Visit each file change of `commit` against its first parent (or the empty tree), without rename
 /// tracking; stop when `visit` returns `false`.
-pub fn for_each_change(
-    repo: &gix::Repository,
-    commit: &gix::Commit<'_>,
+pub fn for_each_change<'r>(
+    repo: &'r gix::Repository,
+    commit: &gix::Commit<'r>,
     mut visit: impl FnMut(gix::object::tree::diff::Change<'_, '_, '_>) -> bool,
 ) -> Option<()> {
     let tree = commit.tree().ok()?;
-    let parent_tree = match commit.parent_ids().next() {
-        Some(pid) => pid.object().ok()?.peel_to_tree().ok()?,
-        None => repo.empty_tree(),
-    };
+    let parent_tree = parent_tree(repo, commit)?;
     let mut changes = parent_tree.changes().ok()?;
     changes.options(|o| {
         o.track_rewrites(None);
     });
     changes
         .for_each_to_obtain_tree(&tree, |change| {
-            let flow = if visit(change) {
-                std::ops::ControlFlow::Continue(())
-            } else {
-                std::ops::ControlFlow::Break(())
-            };
-            Ok::<_, gix::Error>(flow)
+            Ok::<_, gix::Error>(continue_if(visit(change)))
         })
         .ok()
         .map(|_| ())
+}
+
+/// The tree `commit` is diffed against: its first parent's tree, or the empty tree for a root commit.
+fn parent_tree<'r>(repo: &'r gix::Repository, commit: &gix::Commit<'r>) -> Option<gix::Tree<'r>> {
+    match commit.parent_ids().next() {
+        Some(pid) => pid.object().ok()?.peel_to_tree().ok(),
+        None => Some(repo.empty_tree()),
+    }
+}
+
+/// Map a visitor's keep-going flag to the diff traversal's control flow.
+fn continue_if(keep_going: bool) -> std::ops::ControlFlow<()> {
+    if keep_going {
+        std::ops::ControlFlow::Continue(())
+    } else {
+        std::ops::ControlFlow::Break(())
+    }
 }
 
 #[must_use]

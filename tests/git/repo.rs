@@ -96,3 +96,17 @@ fn test_changed_paths_untracked_and_deleted_files() {
     );
     assert_eq!(changed, vec!["src/gone.rs", "src/new.rs"]);
 }
+
+#[test]
+fn test_relative_prefix_is_dir_with_trailing_slash_or_empty_at_top() {
+    use ripwire_rs::git::repo::relative_prefix;
+    use std::path::Path;
+    let work = Path::new("/work/tree");
+    assert_eq!(relative_prefix(work, work).as_deref(), Some(""));
+    assert_eq!(
+        relative_prefix(work, Path::new("/work/tree/src/git")).as_deref(),
+        Some("src/git/")
+    );
+    assert_eq!(relative_prefix(work, Path::new("/work/other")), None);
+    assert_eq!(relative_prefix(work, Path::new("/work/treeish")), None);
+}

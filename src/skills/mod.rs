@@ -13,37 +13,62 @@ pub struct SkillInstallReport {
     pub skills: Vec<String>,
 }
 
+/// Environment inputs to skills-directory resolution, read once so resolution is a pure function.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SkillsEnv {
+    /// `AGENTS_HOME`, when set.
+    pub agents_home: Option<String>,
+    /// `HOME` (or `USERPROFILE` on Windows), when set.
+    pub home: Option<String>,
+}
+
+impl SkillsEnv {
+    /// Read `AGENTS_HOME` and the home directory from the process environment.
+    #[must_use]
+    pub fn from_process() -> Self {
+        let home = std::env::var("HOME").ok().or_else(|| {
+            if cfg!(windows) {
+                std::env::var("USERPROFILE").ok()
+            } else {
+                None
+            }
+        });
+        Self {
+            agents_home: std::env::var("AGENTS_HOME").ok(),
+            home,
+        }
+    }
+}
+
 /// Compute default cross-agent skills directory (~/.agents/skills).
 pub fn default_skills_dir() -> PathBuf {
-    if let Ok(agents_home) = std::env::var("AGENTS_HOME") {
+    default_skills_dir_in(&SkillsEnv::from_process())
+}
+
+/// [`default_skills_dir`] for the given environment.
+#[must_use]
+pub fn default_skills_dir_in(env: &SkillsEnv) -> PathBuf {
+    if let Some(agents_home) = &env.agents_home {
         return PathBuf::from(agents_home).join("skills");
     }
-
-    if let Ok(home) = std::env::var("HOME") {
+    if let Some(home) = &env.home {
         return PathBuf::from(home).join(".agents").join("skills");
     }
-
-    #[cfg(windows)]
-    if let Ok(user_profile) = std::env::var("USERPROFILE") {
-        return PathBuf::from(user_profile).join(".agents").join("skills");
-    }
-
     PathBuf::from(".agents").join("skills")
 }
 
 /// Resolve destination skills directory from optional user CLI argument.
 pub fn resolve_skills_dir(custom_path: Option<&str>) -> PathBuf {
-    let Some(raw) = custom_path else {
-        return default_skills_dir();
+    resolve_skills_dir_in(custom_path, &SkillsEnv::from_process())
+}
+
+/// [`resolve_skills_dir`] for the given environment.
+#[must_use]
+pub fn resolve_skills_dir_in(custom_path: Option<&str>, env: &SkillsEnv) -> PathBuf {
+    let Some(raw) = custom_path.map(str::trim).filter(|s| !s.is_empty()) else {
+        return default_skills_dir_in(env);
     };
-
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return default_skills_dir();
-    }
-
-    let expanded = expand_tilde(trimmed);
-    let path = PathBuf::from(expanded);
+    let path = PathBuf::from(expand_tilde_in(raw, env.home.as_deref()));
     if path.file_name().and_then(|n| n.to_str()) == Some(".agents") {
         path.join("skills")
     } else {
@@ -51,17 +76,20 @@ pub fn resolve_skills_dir(custom_path: Option<&str>) -> PathBuf {
     }
 }
 
-fn expand_tilde(path_str: &str) -> String {
-    if let Some(rest) = path_str.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return format!("{home}/{rest}");
-        }
-    } else if path_str == "~"
-        && let Ok(home) = std::env::var("HOME")
-    {
-        return home;
+/// Expand a leading `~` or `~/` to `home`. Other paths, and every path when `home` is `None`, are
+/// returned unchanged.
+#[must_use]
+pub fn expand_tilde_in(path_str: &str, home: Option<&str>) -> String {
+    let Some(home) = home else {
+        return path_str.to_string();
+    };
+    if path_str == "~" {
+        return home.to_string();
     }
-    path_str.to_string()
+    match path_str.strip_prefix("~/") {
+        Some(rest) => format!("{home}/{rest}"),
+        None => path_str.to_string(),
+    }
 }
 
 /// Extract unique skill directory names from embedded assets.
