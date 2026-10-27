@@ -33,6 +33,12 @@
   ripwire-rs . --html=graph.html --color-by=community
   ```
 
+- **Graph Export**: Write the resolved call graph, with per-edge provenance, for external graph tools.
+  ```bash
+  ripwire-rs . --export=graph.graphml   # Gephi, yEd, Neo4j APOC
+  ripwire-rs . --export=graph.json      # node-link JSON for NetworkX/D3
+  ```
+
 ### Benefits
 - **Zero Hallucinated Dependencies**: Produces an in-context AST schema dictionary teaching agents the meaning of minified attributes (`t`, `n`, `sc`, `k`, `c`).
 - **Prompt Token Savings**: Emits `shown="K"` truncation markers so LLMs know absence in a top-K slice does not mean absence in the codebase.

@@ -41,6 +41,8 @@ ripwire-rs . --uses="user_accounts"
 ripwire-rs . --impact="user_accounts"
 # Export self-contained interactive SVG/HTML visualizer
 ripwire-rs . --html=callgraph.html --color-by=community
+# Export the call graph for Gephi, yEd, Neo4j (.graphml) or NetworkX/D3 (.json node-link)
+ripwire-rs . --export=graph.graphml
 ```
 
 `--uses` lists all indexed sites by default; use `--limit=N --offset=M` and
@@ -382,9 +384,9 @@ ripwire-rs . --help-task="find callers of function and test blast radius"
 # Crawler filtering: exclude patterns, ignore gitignore, ignore test files, file size limits
 ripwire-rs . --exclude="vendor/*" --no-ignore --ignore-tests --max-file-size=500000
 
-# Compress output with compact token dialect or export full index
+# Compress output with compact token dialect, or write the binary index cache
 ripwire-rs . --compress
-ripwire-rs . --export="index.json" --index-out="index.bin"
+ripwire-rs . --index-out="index.bin"
 
 # Annotate symbols with runtime profile weights or trace execution
 ripwire-rs . --with-profile="flamegraph.perf"

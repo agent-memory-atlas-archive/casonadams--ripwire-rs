@@ -119,16 +119,27 @@ impl EdgeProv {
         self == Self::Split
     }
 
+    /// Name of how the edge bound, for every provenance.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Split => "split",
+            Self::Template => "template",
+            Self::Name => "name",
+            Self::Local => "local",
+            Self::FinalSegment => "final-segment",
+            Self::Import => "import",
+            Self::Binding => "binding",
+            Self::Scip => "scip",
+        }
+    }
+
     /// `prov=` value on a callee row; absent when the name or lexical scope bound it.
     #[must_use]
     pub fn callee_label(self) -> Option<&'static str> {
         match self {
-            Self::Split => Some("split"),
-            Self::FinalSegment => Some("final-segment"),
-            Self::Import => Some("import"),
-            Self::Binding => Some("binding"),
-            Self::Scip => Some("scip"),
             Self::Template | Self::Name | Self::Local => None,
+            other => Some(other.label()),
         }
     }
 

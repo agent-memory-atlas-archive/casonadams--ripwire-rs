@@ -172,6 +172,7 @@ register_commands! {
     gate::GATE,
     clones::CLONES,
     html::HTML,
+    export::EXPORT,
     slice::SLICE,
 }
 

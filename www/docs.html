@@ -545,6 +545,27 @@ cargo install ripwire-rs</code></pre>
 
       <div class="cmd-card">
         <div class="cmd-header">
+          <div class="cmd-title"><code>ripwire-rs . --export=&lt;FILE.graphml|FILE.json&gt;</code></div>
+          <span class="cmd-badge">Visualization</span>
+        </div>
+        <div class="cmd-body">
+          <div class="cmd-field">
+            <span class="cmd-label">What It Does</span>
+            <p class="cmd-desc">Writes the resolved call graph to a file external graph tools load: GraphML for Gephi, yEd and Neo4j APOC, or node-link JSON for NetworkX and D3.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">How It Works</span>
+            <p class="cmd-desc">Streams every symbol as a node (name, kind, file, line, language, PageRank) and every resolved edge with its provenance (local, import, name, split, binding, scip) and a type-use flag; the extension picks the format.</p>
+          </div>
+          <div class="cmd-field">
+            <span class="cmd-label">When To Use It</span>
+            <p class="cmd-desc">Custom graph analysis, loading the code graph into a graph database, or rendering it in a dedicated graph layout tool.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd-card">
+        <div class="cmd-header">
           <div class="cmd-title"><code>ripwire-rs . --grep &lt;PAT&gt; [--grep-in code|any] [--grep-scope line|file] [--and &lt;PAT&gt;] [--not &lt;PAT&gt;] [--in &lt;PATH&gt;]</code></div>
           <span class="cmd-badge">Search</span>
         </div>

@@ -1,5 +1,6 @@
 pub mod arch_xml;
 pub mod escape;
+pub mod graph_export;
 pub mod html;
 pub mod legend;
 pub mod query_xml;

@@ -1,5 +1,6 @@
 mod serialize {
     mod escape;
+    mod graph_export;
     mod grep;
     mod html;
     mod streaming;

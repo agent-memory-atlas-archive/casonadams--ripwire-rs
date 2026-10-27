@@ -427,9 +427,6 @@ Disable secret redaction on emitted code snippets.
 .B \-\-compress
 Compress output using compact token dialect.
 .TP
-.BI \-\-export= FILE
-Export full repository symbol index to JSON file \fIFILE\fR.
-.TP
 .BI \-\-index\-out= FILE
 Write binary index cache directly to file \fIFILE\fR.
 .TP
@@ -490,6 +487,9 @@ Export interactive, self-contained SVG/HTML call graph visualization (writes to 
 .TP
 .BI \-\-color\-by= MODE
 Node coloring mode for HTML visualization: \fBlang\fR (default), \fBcommunity\fR, \fBcx\fR (complexity), \fBchurn\fR, or \fBtested\fR.
+.TP
+.BI \-\-export= FILE
+Write the resolved call graph to \fIFILE\fR: \fB.graphml\fR (Gephi, yEd, Neo4j APOC) or \fB.json\fR (node-link, NetworkX/D3). Nodes carry name, kind, file, line, lang and rank; edges carry \fBprov\fR (how the edge bound) and \fBtype_use\fR. Prints one \fB<export>\fR summary row.
 
 .SH SUBCOMMANDS
 .TP
