@@ -1,6 +1,7 @@
 use super::java::{JVM_STD_MEMBERS, JVM_STD_QUALIFIERS};
 use super::{ComplexityKinds, DialectGroup, LanguageSemantics, SyntaxKinds, VisibilityMode};
 
+mod types;
 pub struct KotlinLanguage;
 pub static KOTLIN_LANG: KotlinLanguage = KotlinLanguage;
 
@@ -65,6 +66,39 @@ impl LanguageSemantics for KotlinLanguage {
         } else {
             None
         }
+    }
+
+    fn overloads_by_arity(&self) -> bool {
+        true
+    }
+
+    fn read_bindings<'a>(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> super::reads::ReadBindings<'a> {
+        types::typed_read_bindings(root, source)
+    }
+
+    fn implementations(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &[u8],
+    ) -> Vec<super::Implementation> {
+        types::class_implementations(root, source)
+    }
+
+    super::impl_class_dispatch_flags!();
+
+    fn call_receiver_name<'a>(
+        &self,
+        receiver: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> Option<&'a str> {
+        let callee = receiver
+            .named_child(0)
+            .filter(|callee| receiver.kind() == "call_expression" && callee.kind() == "simple_identifier")?;
+        callee.utf8_text(source).ok()
     }
 
     fn tag(&self) -> &'static str {

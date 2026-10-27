@@ -114,6 +114,10 @@ impl LanguageSemantics for SwiftLanguage {
         }
     }
 
+    fn overloads_by_arity(&self) -> bool {
+        true
+    }
+
     fn tag(&self) -> &'static str {
         "swift"
     }

@@ -122,7 +122,7 @@ fn test_call_exemplar_roles() {
         1,
         interner.intern("callee_fn"),
         interner.intern("src/lib.rs::callee_fn"),
-        SymKind::Method,
+        SymKind::Function,
         Lang::Rust,
         0,
         10,

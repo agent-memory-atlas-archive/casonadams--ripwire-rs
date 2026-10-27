@@ -191,21 +191,12 @@ fn assemble_defs(headings: &[HeadingEntry], rel_path: &str, source_len: usize) -
         .and_then(|s| s.to_str())
         .unwrap_or("doc");
 
-    defs.push(RawDef {
-        name: stem.to_string(),
-        scope: None,
-        kind: SymKind::Section,
-        line: 1,
-        start_byte: 0,
-        doc_len: 0,
-        body_byte: 0,
-        end_byte: source_len,
-        loc: 1,
-        params: 0,
-        metrics: crate::metrics::ComplexityMetrics::default(),
-        binding: crate::domain::Binding::Mutable,
-        contract_member: false,
-    });
+    defs.push(RawDef::span(
+        stem.to_string(),
+        SymKind::Section,
+        1,
+        0..source_len,
+    ));
 
     for (i, h) in headings.iter().enumerate() {
         let mut end_byte = source_len;
@@ -225,19 +216,13 @@ fn assemble_defs(headings: &[HeadingEntry], rel_path: &str, source_len: usize) -
         }
 
         defs.push(RawDef {
-            name: h.name.clone(),
             scope,
-            kind: SymKind::Section,
-            line: h.line,
-            start_byte: h.start_byte,
-            doc_len: 0,
-            body_byte: h.start_byte,
-            end_byte,
-            loc: 1,
-            params: 0,
-            metrics: crate::metrics::ComplexityMetrics::default(),
-            binding: crate::domain::Binding::Mutable,
-            contract_member: false,
+            ..RawDef::span(
+                h.name.clone(),
+                SymKind::Section,
+                h.line,
+                h.start_byte..end_byte,
+            )
         });
     }
 

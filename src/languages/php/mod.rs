@@ -66,7 +66,11 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
         "interface_declaration",
         "namespace_definition",
     ],
-    member_access: &["member_access_expression"],
+    member_access: &[
+        "member_access_expression",
+        "member_call_expression",
+        "nullsafe_member_call_expression",
+    ],
     body_blocks: &["compound_statement", "declaration_list"],
     body_wrappers: &[
         "property_declaration",
@@ -82,7 +86,37 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
     identifiers: &["variable_name", "name"],
     callables: &["arrow_function"],
     callable_wrappers: &["parenthesized_expression"],
+    scoped_paths: &["scoped_call_expression"],
     ..SyntaxKinds::NONE
+};
+
+const TYPED: super::typed::TypedSyntax = super::typed::TypedSyntax {
+    classes: &[
+        "class_declaration",
+        "interface_declaration",
+        "trait_declaration",
+        "enum_declaration",
+    ],
+    supertype_clauses: &["base_clause", "class_interface_clause"],
+    params: &["simple_parameter", "property_promotion_parameter"],
+    functions: &[
+        "method_declaration",
+        "function_definition",
+        "anonymous_function",
+        "arrow_function",
+    ],
+    locals: &[],
+    fields: &["property_declaration"],
+    declarators: &["property_element"],
+    blocks: &["compound_statement"],
+    constructions: &["object_creation_expression"],
+    inferred: &[],
+    assignments: &["assignment_expression"],
+    calls: &[("function_call_expression", "function")],
+    return_type_field: "return_type",
+    superclass: None,
+    declaration_name: None,
+    class_params: &[],
 };
 
 impl LanguageSemantics for PhpLanguage {
@@ -93,6 +127,15 @@ impl LanguageSemantics for PhpLanguage {
     fn syntax_kinds(&self) -> &'static SyntaxKinds {
         &SYNTAX
     }
+
+    fn receiver_text<'a>(&self, text: &'a str) -> std::borrow::Cow<'a, str> {
+        if !text.contains('$') && !text.contains("->") {
+            return std::borrow::Cow::Borrowed(text);
+        }
+        std::borrow::Cow::Owned(text.replace("?->", ".").replace("->", ".").replace('$', ""))
+    }
+
+    super::impl_typed_class_hooks!(TYPED);
 
     fn tag(&self) -> &'static str {
         "php"

@@ -137,12 +137,40 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
     ..SyntaxKinds::NONE
 };
 
+const TYPED: super::typed::TypedSyntax = super::typed::TypedSyntax {
+    classes: &[
+        "class_declaration",
+        "interface_declaration",
+        "enum_declaration",
+        "record_declaration",
+    ],
+    supertype_clauses: &["superclass", "super_interfaces", "extends_interfaces"],
+    params: &["formal_parameter", "spread_parameter"],
+    functions: &["method_declaration", "constructor_declaration", "lambda_expression"],
+    locals: &["local_variable_declaration"],
+    fields: &["field_declaration"],
+    declarators: &["variable_declarator"],
+    blocks: &["block", "constructor_body"],
+    constructions: &["object_creation_expression"],
+    inferred: &["var"],
+    assignments: &[],
+    calls: &[("method_invocation", "name")],
+    return_type_field: "type",
+    superclass: Some(("superclass", "super")),
+    declaration_name: None,
+    class_params: &[],
+};
+
 impl LanguageSemantics for JavaLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
     }
     fn syntax_kinds(&self) -> &'static SyntaxKinds {
         &SYNTAX
+    }
+    super::impl_typed_class_hooks!(TYPED);
+    fn overloads_by_arity(&self) -> bool {
+        true
     }
     fn tag(&self) -> &'static str {
         "java"

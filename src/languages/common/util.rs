@@ -143,6 +143,11 @@ pub(crate) fn is_screaming_snake(name: &str) -> bool {
 }
 
 #[must_use]
+pub(crate) fn is_plain_type_name(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+#[must_use]
 pub fn normalize_lexical_path(base_dir: &str, rel: &str) -> String {
     let combined = if base_dir.is_empty() {
         rel.to_string()
@@ -182,7 +187,6 @@ pub(crate) fn probe_with_suffixes(
     None
 }
 
-/// True when `path` has an empty, `.` or `..` segment, so lexical normalization would change it.
 pub(crate) fn needs_lexical_normalization(path: &str) -> bool {
     path.split('/').any(|seg| matches!(seg, "" | "." | ".."))
 }

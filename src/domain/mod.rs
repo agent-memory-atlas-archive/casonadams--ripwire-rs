@@ -265,6 +265,7 @@ pub struct Symbol {
     /// A bodyless interface member typed as a function (`f: () => T`): reached by typed dispatch and
     /// conformance, never by a by-name call (its name is not evidence of the callee).
     pub contract_member: bool,
+    pub takes_self: bool,
 }
 
 impl Symbol {
@@ -300,6 +301,7 @@ impl Symbol {
             ev: 1,
             binding: Binding::Mutable,
             contract_member: false,
+            takes_self: false,
         }
     }
 
@@ -557,8 +559,6 @@ pub struct Implementation {
     pub end_byte: u32,
 }
 
-/// What a SCIP index says a call site at `file_id:line` naming `callee` reaches. `Def` orders first,
-/// so a site SCIP binds both in and out of the tree keeps its in-tree definition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ScipTarget {
     Def(NodeId),

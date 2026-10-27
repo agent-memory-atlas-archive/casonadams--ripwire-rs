@@ -26,6 +26,7 @@ pub struct TraitIndex {
     impls: Vec<TraitImpl>,
     by_trait: HashMap<NodeId, Vec<usize>>,
     by_subject: HashMap<NodeId, Vec<usize>>,
+    by_external_subject: HashMap<String, Vec<usize>>,
     blankets: Vec<usize>,
     trait_defaults: HashMap<NodeId, Vec<NodeId>>,
     trait_members: HashMap<NodeId, Vec<NodeId>>,
@@ -33,6 +34,7 @@ pub struct TraitIndex {
     scopes: RustScopes,
     crate_roots: Vec<Option<u32>>,
     non_inherent: HashSet<NodeId>,
+    supertypes: HashMap<NodeId, Vec<NodeId>>,
 }
 
 type MethodsByFile = HashMap<u32, Vec<NodeId>>;
@@ -71,7 +73,10 @@ impl TraitIndex {
         let methods = methods_by_file(env.symbols);
         index.index_trait_bodies(env, &methods);
         for imp in implementations {
-            index.add_implementation(imp, env, &methods);
+            let inherits = files
+                .get(imp.file_id as usize)
+                .is_some_and(|file| file.lang.semantics().has_class_inheritance());
+            index.add_implementation(imp, env, &methods, inherits);
         }
         index.add_structural_implementors(env);
         index
@@ -149,10 +154,20 @@ impl TraitIndex {
         sort_dedup(out)
     }
 
-    /// Methods named `name` available on a concrete subject: its impls, plus blanket impls
-    /// whose bound the subject implements.
     #[must_use]
     pub fn subject_targets(&self, subject: NodeId, name: Spur, symbols: &[Symbol]) -> Vec<NodeId> {
+        let own = self.own_subject_targets(subject, name, symbols);
+        if !own.is_empty() {
+            return own;
+        }
+        self.ancestors(subject)
+            .into_iter()
+            .map(|ancestor| self.own_subject_targets(ancestor, name, symbols))
+            .find(|found| !found.is_empty())
+            .unwrap_or_default()
+    }
+
+    fn own_subject_targets(&self, subject: NodeId, name: Spur, symbols: &[Symbol]) -> Vec<NodeId> {
         let mut out = Vec::new();
         for &i in self
             .by_subject
@@ -292,6 +307,7 @@ impl TraitIndex {
         imp: &Implementation,
         env: &TraitEnv<'_>,
         methods: &MethodsByFile,
+        inherits: bool,
     ) {
         let members = span_methods(
             env.symbols,
@@ -303,26 +319,12 @@ impl TraitIndex {
             self.non_inherent.extend(members.iter().copied());
         }
         let trait_id = self.resolve_trait_of(imp, env);
-        let (subject, bound) = if imp.generic_subject {
-            (
-                None,
-                imp.subject_bound.and_then(|b| {
-                    self.resolve_text(b, imp.file_id, imp.start_byte, env, Want::Trait)
-                }),
-            )
-        } else {
-            (
-                self.resolve_text(
-                    imp.subject,
-                    imp.file_id,
-                    imp.start_byte,
-                    env,
-                    Want::Concrete,
-                ),
-                None,
-            )
-        };
-        if trait_id.is_none() && subject.is_none() && bound.is_none() {
+        let (subject, bound) = self.resolve_subject_and_bound(imp, env);
+        if trait_id.is_none() && inherits {
+            self.record_supertype(imp, subject, env);
+        }
+        let external = !imp.generic_subject && subject.is_none() && !members.is_empty();
+        if trait_id.is_none() && subject.is_none() && bound.is_none() && !external {
             return;
         }
         let idx = self.impls.len();
@@ -341,7 +343,84 @@ impl TraitIndex {
             }
         } else if let Some(subject) = subject {
             self.by_subject.entry(subject).or_default().push(idx);
+        } else if let Some(text) = env.interner.try_resolve(&imp.subject) {
+            self.by_external_subject
+                .entry(type_leaf(text).to_string())
+                .or_default()
+                .push(idx);
         }
+    }
+
+    fn record_supertype(
+        &mut self,
+        imp: &Implementation,
+        subject: Option<NodeId>,
+        env: &TraitEnv<'_>,
+    ) {
+        let (Some(subject), Some(name)) = (subject, imp.trait_name) else {
+            return;
+        };
+        let base = self.resolve_text(name, imp.file_id, imp.start_byte, env, Want::Concrete);
+        if let Some(base) = base.filter(|&base| base != subject) {
+            let bases = self.supertypes.entry(subject).or_default();
+            if !bases.contains(&base) {
+                bases.push(base);
+            }
+        }
+    }
+
+    #[must_use]
+    pub fn ancestors(&self, class: NodeId) -> Vec<NodeId> {
+        const MAX_ANCESTORS: usize = 32;
+        let mut out: Vec<NodeId> = Vec::new();
+        let mut next = 0;
+        let mut frontier = vec![class];
+        while next < frontier.len() && out.len() < MAX_ANCESTORS {
+            let current = frontier[next];
+            next += 1;
+            for &base in self.supertypes.get(&current).map_or(&[][..], Vec::as_slice) {
+                if base != class && !out.contains(&base) {
+                    out.push(base);
+                    frontier.push(base);
+                }
+            }
+        }
+        out
+    }
+
+    fn resolve_subject_and_bound(
+        &self,
+        imp: &Implementation,
+        env: &TraitEnv<'_>,
+    ) -> (Option<NodeId>, Option<NodeId>) {
+        let resolve = |text, want| self.resolve_text(text, imp.file_id, imp.start_byte, env, want);
+        if imp.generic_subject {
+            (
+                None,
+                imp.subject_bound.and_then(|b| resolve(b, Want::Trait)),
+            )
+        } else {
+            (resolve(imp.subject, Want::Concrete), None)
+        }
+    }
+
+    #[must_use]
+    pub fn external_subject_targets(
+        &self,
+        receiver: &str,
+        name: Spur,
+        symbols: &[Symbol],
+    ) -> Vec<NodeId> {
+        let idxs = self
+            .by_external_subject
+            .get(type_leaf(receiver))
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        let mut out = Vec::new();
+        for &i in idxs {
+            out.extend(self.impl_targets(&self.impls[i], name, symbols));
+        }
+        sort_dedup(out)
     }
 
     fn resolve_trait_of(&self, imp: &Implementation, env: &TraitEnv<'_>) -> Option<NodeId> {
@@ -438,6 +517,16 @@ impl TraitIndex {
             Match::Ambiguous => return None,
             Match::None => {}
         }
+        let name = symbols[*admitted.first()? as usize].name;
+        if let Some(imported) = (env.qualifier_file)(file_id, name) {
+            let from_import = admitted
+                .iter()
+                .copied()
+                .filter(|&id| symbols[id as usize].file_id == imported);
+            if let Match::One(id) = only_or_ambiguous(from_import) {
+                return Some(id);
+            }
+        }
         let dir = env.file_dirs.get(file_id as usize).copied()?;
         let in_dir = admitted.iter().copied().filter(|&id| {
             env.file_dirs
@@ -502,6 +591,14 @@ fn sort_dedup(mut ids: Vec<NodeId>) -> Vec<NodeId> {
     ids.sort_unstable();
     ids.dedup();
     ids
+}
+
+fn type_leaf(text: &str) -> &str {
+    let path = text
+        .trim_start_matches(['&', ' '])
+        .trim_start_matches("mut ");
+    let path = path.split('<').next().unwrap_or(path).trim();
+    path.rsplit("::").next().unwrap_or(path)
 }
 
 enum Match {

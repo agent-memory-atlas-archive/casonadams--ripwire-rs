@@ -124,7 +124,10 @@ fn entry() { invoke(&Worker); }
     );
     assert_eq!(
         fixture.callees("src/main.rs::Processor::run"),
-        ["src/main.rs::Worker::perform"]
+        [
+            "src/main.rs::Processor::perform",
+            "src/main.rs::Worker::perform"
+        ]
     );
     assert!(fixture.reaches("src/main.rs::entry", "finish"));
 }
@@ -144,6 +147,7 @@ fn dynamic_dispatch_does_not_discard_implementations_in_other_files() {
     assert_eq!(
         fixture.callees("src/lib.rs::invoke"),
         [
+            "src/lib.rs::Processor::perform",
             "src/lib.rs::Worker::perform",
             "src/other.rs::OtherWorker::perform"
         ]
@@ -170,7 +174,7 @@ fn duplicate_trait_names_in_separate_modules_remain_isolated() {
     ]);
     assert_eq!(
         fixture.callees("src/a.rs::invoke"),
-        ["src/a.rs::Worker::perform"]
+        ["src/a.rs::Processor::perform", "src/a.rs::Worker::perform"]
     );
 }
 
@@ -398,4 +402,136 @@ fn inherent_method_wins_over_an_external_trait_method_of_the_same_name() {
     )]);
     assert!(fixture.reaches("src/main.rs::invoke", "inherent_end"));
     assert!(!fixture.reaches("src/main.rs::invoke", "io_end"));
+}
+
+#[test]
+fn an_untyped_receiver_of_an_interface_method_reaches_every_implementor() {
+    let fixture = Fixture::new(&[
+        (
+            "src/contract/mod.rs",
+            "pub trait Command { fn options(&self); }",
+        ),
+        (
+            "src/alpha/mod.rs",
+            "struct Alpha; impl Command for Alpha { fn options(&self) { alpha_end(); } } fn alpha_end() {}",
+        ),
+        (
+            "src/beta/mod.rs",
+            "struct Beta; impl Command for Beta { fn options(&self) { beta_end(); } } fn beta_end() {}",
+        ),
+        (
+            "src/app/mod.rs",
+            "fn run(commands: Vec<Box<dyn Command>>) { for command in commands { command.options(); } }",
+        ),
+    ]);
+    assert!(fixture.reaches("src/app/mod.rs::run", "alpha_end"));
+    assert!(fixture.reaches("src/app/mod.rs::run", "beta_end"));
+}
+
+#[test]
+fn an_untyped_receiver_does_not_reach_a_same_named_method_outside_the_interface() {
+    let fixture = Fixture::new(&[
+        (
+            "src/contract/mod.rs",
+            "pub trait Command { fn options(&self); }",
+        ),
+        (
+            "src/alpha/mod.rs",
+            "struct Alpha; impl Command for Alpha { fn options(&self) { alpha_end(); } } fn alpha_end() {}",
+        ),
+        (
+            "src/other/mod.rs",
+            "struct Config; impl Config { fn options(&self) { config_end(); } } fn config_end() {}",
+        ),
+        (
+            "src/app/mod.rs",
+            "fn run(commands: Vec<Box<dyn Command>>) { for command in commands { command.options(); } }",
+        ),
+    ]);
+    assert!(!fixture.reaches("src/app/mod.rs::run", "config_end"));
+}
+
+#[test]
+fn an_extension_trait_on_an_external_type_is_reached_through_a_typed_receiver() {
+    let fixture = Fixture::new(&[
+        (
+            "src/serialize/mod.rs",
+            "pub trait JsonExt { fn u64_or(&self, d: u64) -> u64; }\nimpl JsonExt for serde_json::Value { fn u64_or(&self, d: u64) -> u64 { json_end(); d } }\nfn json_end() {}",
+        ),
+        (
+            "src/other/mod.rs",
+            "struct Config;\nimpl Config { fn u64_or(&self, d: u64) -> u64 { config_end(); d } }\nfn config_end() {}",
+        ),
+        (
+            "src/app/mod.rs",
+            "use serde_json::Value;\nfn probe(args: &Value) { args.u64_or(1); }",
+        ),
+    ]);
+    assert!(fixture.reaches("src/app/mod.rs::probe", "json_end"));
+    assert!(!fixture.reaches("src/app/mod.rs::probe", "config_end"));
+}
+
+#[test]
+fn an_inherent_impl_on_a_macro_declared_type_is_reached_through_a_typed_receiver() {
+    let fixture = Fixture::new(&[
+        (
+            "src/languages/mod.rs",
+            "macro_rules! langs { () => { pub enum Lang { A } } }\nlangs!();\nimpl Lang { pub fn semantics(self) -> u8 { lang_end(); 0 } }\nfn lang_end() {}",
+        ),
+        (
+            "src/other/mod.rs",
+            "struct Other;\nimpl Other { fn semantics(&self) -> u8 { other_end(); 1 } }\nfn other_end() {}",
+        ),
+        (
+            "src/app/mod.rs",
+            "fn probe(lang: Lang) { lang.semantics(); }",
+        ),
+    ]);
+    assert!(fixture.reaches("src/app/mod.rs::probe", "lang_end"));
+    assert!(!fixture.reaches("src/app/mod.rs::probe", "other_end"));
+}
+
+#[test]
+fn an_imported_type_name_wins_over_a_same_named_type_elsewhere() {
+    let fixture = Fixture::new(&[
+        (
+            "src/graph/mod.rs",
+            "pub struct Graph;\nimpl Graph { pub fn callees(&self) { graph_end(); } }\nfn graph_end() {}",
+        ),
+        ("tests/git/history.rs", "type Graph = Vec<u8>;"),
+        (
+            "src/walk/mod.rs",
+            "struct Walker;\nimpl Walker { fn callees(&self) { walker_end(); } }\nfn walker_end() {}",
+        ),
+        (
+            "src/commands/around.rs",
+            "use crate::graph::Graph;\nfn probe(graph: &Graph) { graph.callees(); }",
+        ),
+    ]);
+    assert!(fixture.reaches("src/commands/around.rs::probe", "graph_end"));
+    assert!(!fixture.reaches("src/commands/around.rs::probe", "walker_end"));
+}
+
+#[test]
+fn method_syntax_never_reaches_a_function_without_a_self_receiver() {
+    let fixture = Fixture::new(&[
+        (
+            "tests/metrics/lint.rs",
+            "fn count(scan: &u8) -> usize { count_end(); 0 }\nfn count_end() {}",
+        ),
+        (
+            "src/gate/arch.rs",
+            "pub struct Rules;\nimpl Rules { pub fn parse(content: &str) -> Self { parse_end(); Rules } }\nfn parse_end() {}",
+        ),
+        (
+            "src/app/mod.rs",
+            "fn by_method(v: Vec<u8>, s: &str) { v.iter().count(); s.parse(); }\nfn by_path(s: &str) { Rules::parse(s); }",
+        ),
+    ]);
+    assert!(!fixture.reaches("src/app/mod.rs::by_method", "count_end"));
+    assert!(!fixture.reaches("src/app/mod.rs::by_method", "parse_end"));
+    assert!(
+        fixture.reaches("src/app/mod.rs::by_path", "parse_end"),
+        "a path call reaches an associated function"
+    );
 }

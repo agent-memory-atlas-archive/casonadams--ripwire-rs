@@ -184,6 +184,10 @@ impl LanguageSemantics for TypeScriptLanguage {
         true
     }
 
+    fn has_class_inheritance(&self) -> bool {
+        true
+    }
+
     fn unindexed_receiver_type_uses_names(&self, receiver_type: &str) -> bool {
         // Object-literal and plain-name types the index does not know: name resolution, as before.
         receiver_type.starts_with('{')

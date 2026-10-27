@@ -124,6 +124,25 @@ pub(super) const SYNTAX: SyntaxKinds = SyntaxKinds {
     ..SyntaxKinds::NONE
 };
 
+const TYPED: super::typed::TypedSyntax = super::typed::TypedSyntax {
+    classes: &["class_specifier", "struct_specifier"],
+    supertype_clauses: &["base_class_clause"],
+    params: &["parameter_declaration", "optional_parameter_declaration"],
+    functions: &["function_definition", "lambda_expression"],
+    locals: &["declaration"],
+    fields: &["field_declaration"],
+    declarators: &[],
+    blocks: &["compound_statement"],
+    constructions: &["new_expression"],
+    inferred: &["auto"],
+    assignments: &[],
+    calls: &[("call_expression", "function")],
+    return_type_field: "type",
+    superclass: None,
+    declaration_name: Some("declarator"),
+    class_params: &[],
+};
+
 /// Scope of a member inside an explicit specialization keeps its template arguments
 /// (`template <> struct Box<int>` scopes `Box<int>`), so it stays distinct from the primary.
 pub(super) fn specialization_scope(parent: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
@@ -181,6 +200,14 @@ impl LanguageSemantics for CppLanguage {
             python_module_exports(root, source)
         } else {
             Vec::new()
+        }
+    }
+    super::impl_typed_class_hooks!(TYPED);
+    fn receiver_text<'a>(&self, text: &'a str) -> std::borrow::Cow<'a, str> {
+        if text.contains("->") {
+            std::borrow::Cow::Owned(text.replace("->", "."))
+        } else {
+            std::borrow::Cow::Borrowed(text)
         }
     }
     fn tag(&self) -> &'static str {

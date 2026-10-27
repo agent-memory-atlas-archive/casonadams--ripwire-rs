@@ -6,7 +6,9 @@
 (protocol_function_declaration name: (simple_identifier) @name) @definition.method   ; a protocol's contract methods
 (class_declaration name: (type_identifier) @name) @definition.class                  ; class / struct / enum / actor / extension
 (protocol_declaration name: (type_identifier) @name) @definition.interface           ; the Lego socket
-(property_declaration name: (pattern) @name) @definition.var
+(class_body (property_declaration name: (pattern) @name) @definition.var)
+(enum_class_body (property_declaration name: (pattern) @name) @definition.var)
+(source_file (property_declaration name: (pattern) @name) @definition.var)
 
 ; init / subscript / deinit — the members whose "name" is a keyword, not an identifier (mirrors C++
 ; ctors / operator[] / dtor, which ARE captured). tree-sitter-swift models each as a *_declaration node

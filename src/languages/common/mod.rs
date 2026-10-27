@@ -13,6 +13,7 @@ pub(crate) mod lint;
 pub(crate) mod lint_hooks;
 pub mod reads;
 pub mod source;
+pub mod typed;
 
 /// Families of lint rules a language opts into; a rule fires on every language declaring its group.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

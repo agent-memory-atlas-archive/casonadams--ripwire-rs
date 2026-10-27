@@ -7,8 +7,16 @@ use ripwire_rs::{Graph, Interner, Lang, LanguageRegistry, PageRankConfig, ingest
 use scip::types::{Document, Index, Occurrence, SymbolRole};
 
 const SOURCES: &[(&str, Lang, &[u8])] = &[
-    ("a/x.py", Lang::Python, b"def run():\n    return 1\n"),
-    ("b/y.py", Lang::Python, b"def run():\n    return 2\n"),
+    (
+        "a/x.py",
+        Lang::Python,
+        b"class X:\n    def run(self):\n        return 1\n",
+    ),
+    (
+        "b/y.py",
+        Lang::Python,
+        b"class Y:\n    def run(self):\n        return 2\n",
+    ),
     (
         "c/use.py",
         Lang::Python,
@@ -44,8 +52,8 @@ const LIB_RUN: &str = "scip-python python lib 2.0 lib/run().";
 fn index_bytes() -> Vec<u8> {
     Index {
         documents: vec![
-            document("a/x.py", vec![occurrence(X_RUN, 0, true)]),
-            document("b/y.py", vec![occurrence(Y_RUN, 0, true)]),
+            document("a/x.py", vec![occurrence(X_RUN, 1, true)]),
+            document("b/y.py", vec![occurrence(Y_RUN, 1, true)]),
             document(
                 "c/use.py",
                 vec![occurrence(Y_RUN, 1, false), occurrence(LIB_RUN, 4, false)],
@@ -87,7 +95,7 @@ fn scip_index_pins_call_sites_the_name_ladder_declines() {
     let bytes = index_bytes();
     let with = callees("go", Some(&bytes));
     assert!(
-        with.contains("<s t=\"fn\" n=\"run\" p=\"b/y.py:1\" prov=\"scip\"/>"),
+        with.contains("<s t=\"fn\" n=\"run\" p=\"b/y.py:2\" prov=\"scip\"/>"),
         "{with}"
     );
     assert!(!with.contains("a/x.py"), "{with}");
@@ -126,7 +134,7 @@ fn multiline_member_calls_use_identifier_lines_without_moving_reported_sites() {
     let mut ingest = ingest_in_memory_files(sources, &registry, &interner);
     let bytes = Index {
         documents: vec![
-            document("b/y.py", vec![occurrence(Y_RUN, 0, true)]),
+            document("b/y.py", vec![occurrence(Y_RUN, 1, true)]),
             document("c/use.py", vec![occurrence(Y_RUN, 2, false)]),
         ],
         ..Index::default()
@@ -176,8 +184,8 @@ fn shared_navigation_reports_keep_scip_groups_and_unbound_sites_with_paging() {
     let mut ingest = ingest_in_memory_files(sources, &registry, &interner);
     let bytes = Index {
         documents: vec![
-            document("a/x.py", vec![occurrence(X_RUN, 0, true)]),
-            document("b/y.py", vec![occurrence(Y_RUN, 0, true)]),
+            document("a/x.py", vec![occurrence(X_RUN, 1, true)]),
+            document("b/y.py", vec![occurrence(Y_RUN, 1, true)]),
             document("c/use.py", vec![occurrence(Y_RUN, 1, false)]),
         ],
         ..Index::default()
@@ -223,7 +231,7 @@ fn shared_navigation_reports_keep_scip_groups_and_unbound_sites_with_paging() {
     );
     let callees = render("go", NavMode::Callees, &ctx);
     assert!(
-        callees.contains("<s t=\"fn\" n=\"run\" p=\"b/y.py:1\" prov=\"scip\"/>"),
+        callees.contains("<s t=\"fn\" n=\"run\" p=\"b/y.py:2\" prov=\"scip\"/>"),
         "{callees}"
     );
     let unpinned = render("unpinned", NavMode::Callees, &ctx);
@@ -234,11 +242,11 @@ fn shared_navigation_reports_keep_scip_groups_and_unbound_sites_with_paging() {
     assert!(found.contains("root=\"repo&amp;root\""), "{found}");
     assert!(found.contains("defs=\"2\" groups=\"2\""), "{found}");
     assert!(
-        found.contains("<def ix=\"1\" t=\"fn\" p=\"a/x.py:1\"/>"),
+        found.contains("<def ix=\"1\" t=\"fn\" sc=\"X\" p=\"a/x.py:2\"/>"),
         "{found}"
     );
     assert!(
-        found.contains("<def ix=\"2\" t=\"fn\" p=\"b/y.py:1\"/>"),
+        found.contains("<def ix=\"2\" t=\"fn\" sc=\"Y\" p=\"b/y.py:2\"/>"),
         "{found}"
     );
     assert!(
@@ -258,7 +266,7 @@ fn shared_navigation_reports_keep_scip_groups_and_unbound_sites_with_paging() {
         "{found_go}"
     );
     assert!(
-        found_go.contains("<s t=\"fn\" n=\"run\" p=\"b/y.py:1\" prov=\"scip\"/>"),
+        found_go.contains("<s t=\"fn\" n=\"run\" p=\"b/y.py:2\" prov=\"scip\"/>"),
         "{found_go}"
     );
 

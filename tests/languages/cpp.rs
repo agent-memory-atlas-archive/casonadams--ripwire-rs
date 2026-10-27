@@ -1,4 +1,4 @@
-use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
+use super::harness::{GraphProtocolCase, owner_qualified_callees, sym, verify_protocol_case};
 use ripwire_rs::query::retrieval::call_lego;
 use ripwire_rs::{Interner, Lang, LanguageRegistry, SymKind, ingest_in_memory_files};
 
@@ -68,4 +68,19 @@ void real_helper(int x) {}
     let methods = lego["methods"].as_array().unwrap();
     let method_names: Vec<&str> = methods.iter().filter_map(|m| m["name"].as_str()).collect();
     assert!(method_names.contains(&"handlePanic"));
+}
+
+#[test]
+fn cpp_inherited_and_typed_receivers_pick_the_right_class_method() {
+    let source = "class Base {\n public:\n  void refill() {}\n};\n\
+class Other {\n public:\n  void refill() {}\n};\n\
+class Store {\n public:\n  void stash(int v) {}\n};\n\
+class Cache {\n public:\n  void stash(int v) {}\n};\n\
+class Sub : public Base {\n public:\n  void viaThis() { this->refill(); }\n  void bare() { refill(); }\n  void viaRef(Store& store) { store.stash(1); }\n  void viaPtr(Store* store) { store->stash(2); }\n};\n";
+    let callees =
+        |caller| owner_qualified_callees(&[("src/sub.cpp", Lang::Cpp, source.as_bytes())], caller);
+    assert_eq!(callees("viaThis"), ["Base.refill"]);
+    assert_eq!(callees("bare"), ["Base.refill"]);
+    assert_eq!(callees("viaRef"), ["Store.stash"]);
+    assert_eq!(callees("viaPtr"), ["Store.stash"]);
 }

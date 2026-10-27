@@ -133,6 +133,35 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
     ..SyntaxKinds::NONE
 };
 
+const TYPED: super::typed::TypedSyntax = super::typed::TypedSyntax {
+    classes: &[
+        "class_declaration",
+        "interface_declaration",
+        "struct_declaration",
+        "record_declaration",
+    ],
+    supertype_clauses: &["base_list"],
+    params: &["parameter"],
+    functions: &[
+        "method_declaration",
+        "constructor_declaration",
+        "lambda_expression",
+        "local_function_statement",
+    ],
+    locals: &["local_declaration_statement"],
+    fields: &["field_declaration"],
+    declarators: &["variable_declarator"],
+    blocks: &["block"],
+    constructions: &["object_creation_expression"],
+    inferred: &["var"],
+    assignments: &[],
+    calls: &[("invocation_expression", "function")],
+    return_type_field: "returns",
+    superclass: Some(("base_list", "base")),
+    declaration_name: None,
+    class_params: &[],
+};
+
 impl LanguageSemantics for CSharpLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
@@ -140,7 +169,10 @@ impl LanguageSemantics for CSharpLanguage {
     fn syntax_kinds(&self) -> &'static SyntaxKinds {
         &SYNTAX
     }
-
+    super::impl_typed_class_hooks!(TYPED);
+    fn overloads_by_arity(&self) -> bool {
+        true
+    }
     fn tag(&self) -> &'static str {
         "cs"
     }

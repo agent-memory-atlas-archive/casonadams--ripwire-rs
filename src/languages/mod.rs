@@ -31,9 +31,57 @@ macro_rules! impl_grammar_method {
 }
 pub(crate) use impl_grammar_method;
 
+macro_rules! impl_class_dispatch_flags {
+    () => {
+        fn indexes_implementations(&self) -> bool {
+            true
+        }
+        fn typed_receiver_miss_uses_names(&self) -> bool {
+            true
+        }
+        fn has_class_inheritance(&self) -> bool {
+            true
+        }
+        fn interface_calls_keep_declaration(&self) -> bool {
+            true
+        }
+    };
+}
+pub(crate) use impl_class_dispatch_flags;
+
+macro_rules! impl_typed_class_hooks {
+    ($typed:expr) => {
+        fn read_bindings<'a>(
+            &self,
+            root: tree_sitter::Node<'_>,
+            source: &'a [u8],
+        ) -> super::reads::ReadBindings<'a> {
+            super::typed::typed_read_bindings(root, source, &$typed)
+        }
+        fn implementations(
+            &self,
+            root: tree_sitter::Node<'_>,
+            source: &[u8],
+        ) -> Vec<super::Implementation> {
+            super::typed::class_implementations(root, source, &$typed)
+        }
+        super::impl_class_dispatch_flags!();
+        fn call_receiver_name<'a>(
+            &self,
+            receiver: tree_sitter::Node<'_>,
+            source: &'a [u8],
+        ) -> Option<&'a str> {
+            super::typed::call_receiver_name(receiver, source, &$typed)
+        }
+    };
+}
+pub(crate) use impl_typed_class_hooks;
+
 pub mod common;
 pub use common::util::*;
-pub use common::{ComplexityKinds, ForeignExport, LintGroup, SyntaxKinds, flags, reads, source};
+pub use common::{
+    ComplexityKinds, ForeignExport, LintGroup, SyntaxKinds, flags, reads, source, typed,
+};
 pub(crate) use common::{lint, lint_hooks};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +156,39 @@ pub trait LanguageSemantics: Sync {
     /// Receiver spellings that name the enclosing type's own instance.
     fn self_receivers(&self) -> &'static [&'static str] {
         &["self", "this", "Self"]
+    }
+    fn receiver_text<'a>(&self, text: &'a str) -> std::borrow::Cow<'a, str> {
+        std::borrow::Cow::Borrowed(text)
+    }
+    fn call_receiver_name<'a>(
+        &self,
+        receiver: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> Option<&'a str> {
+        if receiver.kind() != "call_expression" {
+            return None;
+        }
+        let callee = receiver
+            .child_by_field_name("function")
+            .filter(|callee| callee.kind() == "identifier")?;
+        callee.utf8_text(source).ok()
+    }
+    fn constructed_receiver<'a>(
+        &self,
+        _receiver: tree_sitter::Node<'_>,
+        _source: &'a [u8],
+    ) -> Option<&'a str> {
+        None
+    }
+    fn has_class_inheritance(&self) -> bool {
+        false
+    }
+    fn overloads_by_arity(&self) -> bool {
+        false
+    }
+    /// Rust: impl members are not in lexical scope; a bare `f()` needs `self.` or `Self::`.
+    fn bare_calls_skip_type_members(&self) -> bool {
+        false
     }
     /// True where a scoped call keeps its whole module path as the qualifier (`a::b::f()` -> `a::b`), not just the last segment.
     fn keeps_path_qualifier(&self) -> bool {
@@ -514,6 +595,14 @@ pub trait LanguageSemantics: Sync {
         false
     }
 
+    fn def_takes_self(&self, _ctx: &DefCaptureGateContext<'_>) -> bool {
+        false
+    }
+
+    fn member_call_needs_self(&self) -> bool {
+        false
+    }
+
     /// True if a symbol name is public by language naming convention.
     fn is_symbol_name_public(&self, sym_name: &str) -> bool {
         !sym_name.starts_with('_')
@@ -605,6 +694,10 @@ pub trait LanguageSemantics: Sync {
     }
     /// True where a receiver whose declared type text is not an indexed type may use name resolution.
     fn unindexed_receiver_type_uses_names(&self, _receiver_type: &str) -> bool {
+        false
+    }
+    /// Dart: `extends` and mixins are not indexed, so a miss on a typed receiver proves nothing.
+    fn typed_receiver_miss_uses_names(&self) -> bool {
         false
     }
     /// True where a call receiver whose result type is not declared (`make().m()`) declines instead of name resolution.

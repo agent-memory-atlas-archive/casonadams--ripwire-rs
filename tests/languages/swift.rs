@@ -1,4 +1,4 @@
-use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
+use super::harness::{GraphProtocolCase, owner_qualified_callees, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 
 #[test]
@@ -22,4 +22,17 @@ fn test_swift_graph_protocol() {
         ..Default::default()
     });
     assert!(Lang::Swift.semantics().is_std_or_builtin_member("append"));
+}
+
+#[test]
+fn swift_member_calls_never_bind_to_a_same_named_local() {
+    let source = "struct Info {\n    func summary() -> String { \"\" }\n}\n\
+struct Runner {\n    let name: String = \"\"\n    func run(info: Info) {\n        let summary = info.summary()\n        print(summary)\n    }\n}\n";
+    let callees = |caller| {
+        owner_qualified_callees(
+            &[("src/Runner.swift", Lang::Swift, source.as_bytes())],
+            caller,
+        )
+    };
+    assert_eq!(callees("run"), ["Info.summary"]);
 }

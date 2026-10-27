@@ -71,3 +71,66 @@ fn test_unbound_qualifier_does_not_link_a_same_name_function() {
         "`ast_match` is not bound by the import, so `execute` must not link to any module"
     );
 }
+
+#[test]
+fn test_module_path_call_binds_the_module_function_not_a_trait_method_of_that_name() {
+    let files: [(&str, Lang, &[u8]); 3] = [
+        (
+            "src/commands/mod.rs",
+            Lang::Rust,
+            b"pub trait Command { fn run(&self, root: &str) -> Option<u8>; }\npub fn run(root: &str) -> Option<u8> { None }\n",
+        ),
+        (
+            "src/commands/alpha.rs",
+            Lang::Rust,
+            b"struct Alpha;\nimpl crate::commands::Command for Alpha { fn run(&self, root: &str) -> Option<u8> { None } }\n",
+        ),
+        (
+            "src/cli/dispatch.rs",
+            Lang::Rust,
+            b"pub fn probe(root: &str) { crate::commands::run(root); }\n",
+        ),
+    ];
+    let reg = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(&files, &reg, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let probe = ingest
+        .symbols
+        .iter()
+        .find(|s| interner.resolve(&s.name) == "probe")
+        .unwrap()
+        .id;
+    let callees: Vec<(u32, bool)> = graph
+        .callees(probe)
+        .map(|(id, _)| {
+            let sym = &ingest.symbols[id as usize];
+            (sym.line, sym.scope.is_some())
+        })
+        .collect();
+    assert_eq!(
+        callees,
+        [(2, false)],
+        "only the free `run` in src/commands/mod.rs"
+    );
+}
+
+#[test]
+fn test_a_method_call_never_binds_a_module_declaration_of_that_name() {
+    let files: [(&str, Lang, &[u8]); 2] = [
+        (
+            "src/query/mod.rs",
+            Lang::Rust,
+            b"pub mod map;\npub mod json;\n",
+        ),
+        (
+            "src/app.rs",
+            Lang::Rust,
+            b"fn probe(v: Vec<u8>) { let _ = v.iter().map(|x| x + 1).count(); }\n",
+        ),
+    ];
+    assert!(
+        callee_files(&files, "probe").is_empty(),
+        "`.map()` on an iterator is not the `mod map;` declaration"
+    );
+}

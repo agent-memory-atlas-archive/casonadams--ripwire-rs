@@ -4,6 +4,8 @@ use super::{
 };
 use crate::domain::Lang;
 
+mod types;
+
 pub struct RubyLanguage;
 pub static RUBY_LANG: RubyLanguage = RubyLanguage;
 
@@ -121,6 +123,44 @@ impl LanguageSemantics for RubyLanguage {
 
     fn tag(&self) -> &'static str {
         "rb"
+    }
+
+    fn read_bindings<'a>(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> super::reads::ReadBindings<'a> {
+        types::typed_read_bindings(root, source)
+    }
+
+    fn implementations(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &[u8],
+    ) -> Vec<super::Implementation> {
+        types::class_implementations(root, source)
+    }
+
+    super::impl_class_dispatch_flags!();
+
+    fn constructed_receiver<'a>(
+        &self,
+        receiver: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> Option<&'a str> {
+        types::constructed_type(receiver, source)
+    }
+
+    fn receiver_text<'a>(&self, text: &'a str) -> std::borrow::Cow<'a, str> {
+        if let Some(ivar) = text.strip_prefix('@').filter(|v| !v.starts_with('@')) {
+            return std::borrow::Cow::Owned(format!("self.{ivar}"));
+        }
+        let leaf = text.rsplit("::").next().unwrap_or(text);
+        let constant_path = text.contains("::")
+            && text
+                .split("::")
+                .all(|seg| seg.starts_with(|c: char| c.is_ascii_uppercase()));
+        std::borrow::Cow::Borrowed(if constant_path { leaf } else { text })
     }
 
     fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {

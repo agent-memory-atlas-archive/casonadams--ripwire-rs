@@ -351,6 +351,7 @@ pub fn build_file_symbols(
         sym.ev = def.metrics.ev;
         sym.binding = def.binding;
         sym.contract_member = def.contract_member;
+        sym.takes_self = def.takes_self;
         file_symbols.push(sym);
     }
     file_symbols

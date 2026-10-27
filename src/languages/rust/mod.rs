@@ -225,6 +225,14 @@ impl LanguageSemantics for RustLanguage {
         (!name.is_empty()).then(|| name.to_string())
     }
 
+    fn bare_calls_skip_type_members(&self) -> bool {
+        true
+    }
+
+    fn interface_calls_keep_declaration(&self) -> bool {
+        true
+    }
+
     fn tag(&self) -> &'static str {
         "rs"
     }
@@ -307,6 +315,17 @@ impl LanguageSemantics for RustLanguage {
     }
 
     fn keeps_path_qualifier(&self) -> bool {
+        true
+    }
+
+    fn def_takes_self(&self, ctx: &DefCaptureGateContext<'_>) -> bool {
+        ctx.def_node
+            .and_then(|def| def.child_by_field_name("parameters"))
+            .and_then(|params| params.named_child(0))
+            .is_some_and(|first| first.kind() == "self_parameter")
+    }
+
+    fn member_call_needs_self(&self) -> bool {
         true
     }
 

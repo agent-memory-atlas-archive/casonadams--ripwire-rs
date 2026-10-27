@@ -331,3 +331,25 @@ fn typed_call_reaches_the_function_property_contract() {
     let contract = fx.caller_names(fx.method("StepHandle", "isVisible"));
     assert!(contract.contains(&"showStep".to_string()), "{contract:?}");
 }
+
+#[test]
+fn calls_with_more_arguments_than_named_parameters_reach_a_rest_parameter_function() {
+    let fx = fixture(&[
+        (
+            "src/lib/utils.ts",
+            "export function cn(...inputs: string[]): string {\n  return inputs.join(\" \");\n}\n",
+        ),
+        (
+            "src/components/field.tsx",
+            "import { cn } from \"@/lib/utils\";\nexport function field(): string {\n  return cn(\"a\", \"b\", \"c\");\n}\n",
+        ),
+    ]);
+    let cn = fx
+        .ingest
+        .symbols
+        .iter()
+        .find(|sym| fx.interner.resolve(&sym.name) == "cn")
+        .expect("cn indexed")
+        .id;
+    assert_eq!(fx.caller_names(cn), ["field"]);
+}

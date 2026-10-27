@@ -3,9 +3,10 @@
 //! types for member-chain receivers such as `input.queue` where `input: { queue: TaskEnqueuer }`,
 //! class field types for `this.client.m()` chains, and same-file function result types.
 
-use crate::languages::Implementation;
+use crate::languages::{Implementation, is_plain_type_name};
 use crate::languages::javascript::javascript_binding_scope;
 use crate::languages::reads::{ReadBindings, nodes};
+use crate::languages::typed::implementation;
 use std::collections::{HashMap, HashSet};
 use tree_sitter::Node;
 
@@ -20,7 +21,7 @@ pub(super) fn class_implementations(root: Node<'_>, source: &[u8]) -> Vec<Implem
             let subject = class.child_by_field_name("name")?.utf8_text(source).ok()?;
             let span = (class.start_byte(), class.end_byte());
             let own = implementation(subject, None, span);
-            let implemented = implemented_names(class, source)
+            let implemented = heritage_names(class, source, &["implements_clause", "extends_clause"])
                 .into_iter()
                 .map(|name| implementation(subject, Some(name), span));
             Some(std::iter::once(own).chain(implemented).collect::<Vec<_>>())
@@ -29,19 +30,7 @@ pub(super) fn class_implementations(root: Node<'_>, source: &[u8]) -> Vec<Implem
         .collect()
 }
 
-fn implementation(subject: &str, trait_path: Option<&str>, span: (usize, usize)) -> Implementation {
-    Implementation {
-        subject: subject.to_string(),
-        trait_path: trait_path.map(str::to_string),
-        subject_bound: None,
-        generic_subject: false,
-        start_byte: span.0,
-        end_byte: span.1,
-    }
-}
-
-/// Names in a class's `implements` clause: plain and generic interface references.
-fn implemented_names<'s>(class: Node<'_>, source: &'s [u8]) -> Vec<&'s str> {
+fn heritage_names<'s>(class: Node<'_>, source: &'s [u8], clauses: &[&str]) -> Vec<&'s str> {
     let mut cursor = class.walk();
     class
         .children(&mut cursor)
@@ -50,13 +39,13 @@ fn implemented_names<'s>(class: Node<'_>, source: &'s [u8]) -> Vec<&'s str> {
             let mut inner = heritage.walk();
             heritage
                 .children(&mut inner)
-                .filter(|clause| clause.kind() == "implements_clause")
+                .filter(|clause| clauses.contains(&clause.kind()))
                 .flat_map(|clause| {
                     let mut types = clause.walk();
                     clause
                         .named_children(&mut types)
                         .filter_map(|ty| match ty.kind() {
-                            "type_identifier" => ty.utf8_text(source).ok(),
+                            "type_identifier" | "identifier" => ty.utf8_text(source).ok(),
                             "generic_type" => ty
                                 .child_by_field_name("name")
                                 .and_then(|name| name.utf8_text(source).ok()),
@@ -117,13 +106,15 @@ pub(super) fn typed_read_bindings<'a>(root: Node<'_>, source: &'a [u8]) -> ReadB
     bindings
 }
 
-/// The class body is the scope of `this` for a class named `C`: `this` has type `C` there.
 fn insert_this_scope<'a>(bindings: &mut ReadBindings<'a>, class: Node<'_>, source: &'a [u8]) {
     if let Some(name) = class
         .child_by_field_name("name")
         .and_then(|name| name.utf8_text(source).ok())
     {
         bindings.insert("this", class.byte_range(), Some(name.to_string()));
+    }
+    if let Some(base) = heritage_names(class, source, &["extends_clause"]).first() {
+        bindings.insert("super", class.byte_range(), Some((*base).to_string()));
     }
 }
 
@@ -538,10 +529,6 @@ fn constructed_type(value: Node<'_>, source: &[u8]) -> Option<String> {
         .filter(|ctor| ctor.kind() == "identifier")
         .and_then(|ctor| ctor.utf8_text(source).ok())
         .map(str::to_string)
-}
-
-fn is_plain_type_name(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 /// Declared type of member `member` of an object-literal type `{ member: T; … }`, as written.

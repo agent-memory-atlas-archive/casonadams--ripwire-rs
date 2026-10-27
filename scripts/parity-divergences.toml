@@ -11,7 +11,7 @@
 # defect_budget must equal the number of defect entries: a new defect fails, a fixed one must lower it.
 # An entry with a [divergence.files] table runs against that fixture (written to a temp dir) instead of the tree.
 
-defect_budget = 7
+defect_budget = 6
 
 [[divergence]]
 id = "partner-unindexed-languages"
@@ -208,14 +208,6 @@ why = "The default ensemble is budget-derived like every paged default window: i
 evidence = "measured: bytes rw=64407 rip=14009; facts rw=3897 rip=714; density rw=0.06051 rip=0.05097; upstream default shown_syms=40 of total=1421; root extras enabled, enabled_n allowed by test_validate_parity.py RootAttributeRule."
 
 [[divergence]]
-id = "affected-root-attrs-set-2"
-command = "--affected"
-case = "src/commands/test_gate.rs,src/commands/gate.rs"
-kind = "defect"
-why = "Root gauges match upstream. Per test file: tests/cli/gate_select.rs equal (hops 1); tests/commands/registry.rs equal (hops 2); tests/commands/paging.rs real, ours hops 1 is the direct call command.name() on &dyn Command, upstream reports 2. tests/cli/dispatch.rs, tests/mcp/server.rs and tests/query/commands.rs are real: each calls commands::tools(), whose lazy static initializer calls Gate::options. The static-read edge now exists (tests/gate/affected.rs static-initializer test), but the initializer's command.options() call, on a closure parameter, binds to the Command trait declaration rather than the impls, so Gate::options is not reached. Residual: dyn-trait calls with an untyped receiver bind to the declaration."
-evidence = "measured at 575bd1e: rw tests=5 reached=24 seeds=18; rip tests=8 reached=46 seeds=20; ours --callers=options binds the OWNED initializer call to the trait declaration (of_def=8, no split)"
-
-[[divergence]]
 id = "test-gate-untested-default-window"
 command = "--test-gate"
 case = "src/gate/affected.rs,src/serialize/arch_xml.rs"
@@ -224,12 +216,12 @@ why = "Default window (149 rows, 12.9 KB) against upstream's 25 rows (7.0 KB); d
 evidence = "measured at 575bd1e on src/gate/affected.rs,src/serialize/arch_xml.rs: rw 12923 B, 803 facts, 149 u rows; rip 7041 B, 190 facts; untested paths absent from upstream full set (15648 B full)"
 
 [[divergence]]
-id = "test-gate-smaller-set-2"
+id = "test-gate-set-2-registry-dispatch"
 command = "--test-gate"
 case = "src/commands/test_gate.rs,src/commands/gate.rs"
-kind = "smaller"
-why = "Test gate for a two-file change is about a quarter of upstream's bytes and names the same tests with run-first evidence."
-evidence = "measured: ours 895 B, 3 <t>, 1 <u>; upstream 3696 B, 5 <t>, 17 <u>, <file-scope> 1, 2 <g>. Ours total untested is smaller, so the difference is recorded as a footprint trade, pending the reach gap noted in the report."
+kind = "fixes-upstream-defect"
+why = "Every untyped command.run() and command.options() call on &dyn Command now reaches the gate plugins, so the impacted set (86 vs 51) and its untested rows grow with the real dynamic-dispatch callers upstream binds to the trait declaration."
+evidence = "tests/resolve/trait_dispatch.rs::an_untyped_receiver_of_an_interface_method_reaches_every_implementor"
 
 [[divergence]]
 id = "test-gate-smaller-set-3"
@@ -337,3 +329,11 @@ case = ""
 kind = "fixes-upstream-defect"
 why = "A static of an Atomic type (src/query/edit.rs TEMP_COUNTER, an AtomicU64 advanced with fetch_add) is mutable global state read and written by temp_path; upstream reports no cell for it because it does not see statics of interior-mutability types. Ours reports it, and still excludes const items, plain statics and init-once LazyLock statics."
 evidence = "tests/metrics/nonlocal.rs::rust_nonlocal_state_counts_only_mutable_statics"
+
+[[divergence]]
+id = "exemplar-fn-interface-dispatch-callees"
+command = "--exemplar=fn"
+case = ""
+kind = "fixes-upstream-defect"
+why = "An untyped receiver calling an interface method now reaches its implementors, so the exemplar's callee list names the refine_dialect implementations the call can run instead of the declaration alone."
+evidence = "tests/resolve/trait_dispatch.rs::an_untyped_receiver_of_an_interface_method_reaches_every_implementor"

@@ -465,9 +465,12 @@ fn test_interface_contract_fallback_resolves_polymorphic_calls() {
         4,
         1,
     ));
-    ingest
-        .references
-        .push(Reference::new(5, m_name, 4, 3, Lang::Rust, RefRole::Call));
+    let mut call = Reference::new(5, m_name, 4, 3, Lang::Rust, RefRole::Call);
+    call.member_call = true;
+    ingest.references.push(call);
+    for sym in ingest.symbols.iter_mut().filter(|s| s.name == m_name) {
+        sym.takes_self = true;
+    }
     let res = resolve_all_references(&ingest, &interner);
     assert!(res.edge_accumulators.contains_key(&(5, 1)));
 }

@@ -3,9 +3,8 @@
 //! The file defines one table symbol (the config `name`, else the file stem). Each `ref(...)` call and each
 //! `dependencies` entry is a read of the model it names. The SQL grammar is not involved: the config block is
 //! JavaScript and the substitutions are not SQL, so extraction is a scan over the text.
-use crate::domain::{Binding, RefRole, SymKind};
+use crate::domain::{RefRole, SymKind};
 use crate::ingest::{FileParseResult, RawDef, RawRef};
-use crate::metrics::ComplexityMetrics;
 use std::ops::Range;
 
 #[must_use]
@@ -25,19 +24,8 @@ pub fn parse_sqlx(source: &[u8], rel_path: &str) -> FileParseResult {
         .and_then(|block| string_for_key(&text[block], "name"))
         .unwrap_or_else(|| file_stem(rel_path));
     res.defs.push(RawDef {
-        name: name.to_string(),
-        scope: None,
-        kind: SymKind::Class,
-        line: 1,
-        start_byte: 0,
-        doc_len: 0,
-        body_byte: 0,
-        end_byte: source.len(),
         loc: line_count,
-        params: 0,
-        metrics: ComplexityMetrics::default(),
-        binding: Binding::Mutable,
-        contract_member: false,
+        ..RawDef::span(name.to_string(), SymKind::Class, 1, 0..source.len())
     });
     let mut targets = ref_call_targets(text);
     if let Some(block) = config {

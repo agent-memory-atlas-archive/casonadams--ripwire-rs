@@ -1,4 +1,4 @@
-use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
+use super::harness::{GraphProtocolCase, owner_qualified_callees, sym, verify_protocol_case};
 use ripwire_rs::{Lang, LanguageRegistry, SymKind};
 use std::collections::HashMap;
 
@@ -572,4 +572,26 @@ fn test_rust_macro_argument_call_resolves_across_files() {
     let graph = Graph::build(&ingest, &interner);
     let ids = find_symbols_by_name("alpha", &ingest, &interner);
     assert_eq!(graph.callers(ids[0]).count(), 1);
+}
+
+#[test]
+fn rust_trait_default_method_self_call_reaches_the_trait_declaration() {
+    let source = "trait View {\n    fn data(&self) -> u32;\n    fn twice(&self) -> u32 { self.data() * 2 }\n}\n\
+struct A;\nimpl View for A { fn data(&self) -> u32 { 1 } }\n\
+struct B;\nimpl View for B { fn data(&self) -> u32 { 2 } }\n";
+    let callees =
+        owner_qualified_callees(&[("src/view.rs", Lang::Rust, source.as_bytes())], "twice");
+    assert!(callees.contains(&"View.data".to_string()), "{callees:?}");
+}
+
+#[test]
+fn rust_bare_calls_never_reach_a_type_member() {
+    let source = "struct Op;\nimpl std::str::FromStr for Op {\n    type Err = String;\n    fn from_str(s: &str) -> Result<Self, Self::Err> { Err(s.to_string()) }\n}\n\
+fn parse(s: &str) -> Result<Op, String> { Err(s.to_string()) }\n\
+impl Op {\n    fn helper(&self) {}\n    fn run(&self) { helper(); }\n}\nfn helper() {}\n";
+    let callees =
+        |caller| owner_qualified_callees(&[("src/op.rs", Lang::Rust, source.as_bytes())], caller);
+    assert!(callees("from_str").is_empty(), "{:?}", callees("from_str"));
+    assert!(callees("parse").is_empty(), "{:?}", callees("parse"));
+    assert_eq!(callees("run"), [".helper"]);
 }

@@ -323,6 +323,24 @@ impl LanguageSemantics for PythonLanguage {
         "py"
     }
 
+    /// Python: a `def` in a class body is reached through an instance or the class, not the module.
+    fn def_takes_self(&self, ctx: &super::DefCaptureGateContext<'_>) -> bool {
+        let mut node = ctx.def_node;
+        while let Some(current) = node.filter(|n| n.kind() != "block") {
+            node = current.parent();
+        }
+        node.and_then(|block| block.parent())
+            .is_some_and(|owner| owner.kind() == "class_definition")
+    }
+
+    fn member_call_needs_self(&self) -> bool {
+        true
+    }
+
+    fn qualifier_must_be_indexed(&self) -> bool {
+        true
+    }
+
     fn lint_groups(&self) -> &'static [crate::languages::LintGroup] {
         use crate::languages::LintGroup as G;
         &[G::Parens, G::Unreachable, G::Naming]

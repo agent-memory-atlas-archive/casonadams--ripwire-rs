@@ -38,6 +38,25 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
     ..SyntaxKinds::NONE
 };
 
+const TYPED: super::typed::TypedSyntax = super::typed::TypedSyntax {
+    classes: &["class_definition", "trait_definition", "object_definition"],
+    supertype_clauses: &["extends_clause"],
+    params: &["parameter"],
+    functions: &["function_definition", "function_declaration", "lambda_expression"],
+    locals: &["val_definition", "var_definition"],
+    fields: &["val_definition", "var_definition"],
+    declarators: &[],
+    blocks: &["block", "indented_block", "template_body"],
+    constructions: &["instance_expression"],
+    inferred: &[],
+    assignments: &[],
+    calls: &[("call_expression", "function")],
+    return_type_field: "return_type",
+    superclass: Some(("extends_clause", "super")),
+    declaration_name: Some("pattern"),
+    class_params: &["class_parameter"],
+};
+
 impl LanguageSemantics for ScalaLanguage {
     fn complexity_kinds(&self) -> &'static ComplexityKinds {
         &KINDS
@@ -45,6 +64,11 @@ impl LanguageSemantics for ScalaLanguage {
 
     fn syntax_kinds(&self) -> &'static SyntaxKinds {
         &SYNTAX
+    }
+
+    super::impl_typed_class_hooks!(TYPED);
+    fn overloads_by_arity(&self) -> bool {
+        true
     }
 
     fn tag(&self) -> &'static str {

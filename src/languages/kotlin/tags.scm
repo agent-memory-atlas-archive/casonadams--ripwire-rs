@@ -7,13 +7,10 @@
 ;
 ; Kotlin structure the call graph cares about:
 ;   - class / object / companion object declarations → def nodes (the containers). interface and
-;     enum class share class_declaration's node type (a modifier keyword, not a separate node) —
-;     both land here as @definition.class, same disclosed floor upstream's own query has.
+;     enum class share class_declaration's node type; the `interface` or `class` keyword token
+;     picks @definition.interface or @definition.class.
 ;   - function declarations → the def nodes calls resolve TO. ONE node type
 ;     (function_declaration) covers top-level functions, class members AND extension functions
-;     (`fun Foo.bar()`) alike — like Python's function_definition, tagged uniformly rather than
-;     split into function/method, since the grammar gives no structural way to tell them apart
-;     without a scope walk (that walk is ingest_sidecap.h's job, not the tags pass's).
 ;   - call expressions (bare and via navigation) → the call references (edges).
 ;   - imports → IMPORT reference edges (role="import", @reference.import) to the imported name's
 ;     final segment — a dependency edge, not a call. T13/fix3 (2026-09-20): this used to spell
@@ -40,7 +37,12 @@
 ; ---- definitions ----
 
 (class_declaration
+  "class"
   (type_identifier) @name) @definition.class
+
+(class_declaration
+  "interface"
+  (type_identifier) @name) @definition.interface
 
 (object_declaration
   (type_identifier) @name) @definition.class
@@ -53,8 +55,21 @@
 (companion_object
   (type_identifier) @name) @definition.class
 
-(function_declaration
-  (simple_identifier) @name) @definition.function
+(class_body
+  (function_declaration
+    (simple_identifier) @name) @definition.method)
+
+(enum_class_body
+  (function_declaration
+    (simple_identifier) @name) @definition.method)
+
+(source_file
+  (function_declaration
+    (simple_identifier) @name) @definition.function)
+
+(statements
+  (function_declaration
+    (simple_identifier) @name) @definition.function)
 
 ; ---- references (calls + imports) ----
 

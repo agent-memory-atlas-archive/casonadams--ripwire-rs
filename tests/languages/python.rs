@@ -1,4 +1,4 @@
-use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
+use super::harness::{GraphProtocolCase, owner_qualified_callees, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 use std::collections::HashMap;
 
@@ -33,4 +33,21 @@ fn test_python_graph_protocol_and_gates() {
         Some(6)
     );
     assert!(!sem.is_entrypoint_symbol("main", None, SymKind::Function, "docs/build_docs.py"));
+}
+
+#[test]
+fn python_member_calls_reach_class_members_not_other_modules_functions() {
+    let helpers =
+        b"def parse_args():\n    return 1\n\ndef parse(text):\n    return text\n".as_slice();
+    let app = b"import argparse\nimport ast\nfrom store import Store\n\ndef main(store: Store):\n    parser = argparse.ArgumentParser()\n    parser.parse_args()\n    ast.parse('x')\n    store.save()\n".as_slice();
+    let store = b"class Store:\n    def save(self):\n        return 1\n".as_slice();
+    let callees = owner_qualified_callees(
+        &[
+            ("scripts/helpers.py", Lang::Python, helpers),
+            ("scripts/app.py", Lang::Python, app),
+            ("scripts/store.py", Lang::Python, store),
+        ],
+        "main",
+    );
+    assert_eq!(callees, ["Store.save"]);
 }

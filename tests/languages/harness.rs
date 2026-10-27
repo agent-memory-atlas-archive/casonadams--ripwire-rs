@@ -4,6 +4,29 @@ use ripwire_rs::{
     resolve_all_references,
 };
 
+pub fn owner_qualified_callees(files: &[(&str, Lang, &[u8])], caller: &str) -> Vec<String> {
+    let registry = LanguageRegistry::new().unwrap();
+    let interner = Interner::new();
+    let ingest = ingest_in_memory_files(files, &registry, &interner);
+    let graph = Graph::build(&ingest, &interner);
+    let caller = ingest
+        .symbols
+        .iter()
+        .find(|s| interner.resolve(&s.name) == caller)
+        .unwrap_or_else(|| panic!("{caller} not indexed"))
+        .id;
+    let mut out: Vec<String> = graph
+        .callees(caller)
+        .map(|(id, _)| {
+            let sym = &ingest.symbols[id as usize];
+            let owner = sym.scope.map_or("", |s| interner.resolve(&s));
+            format!("{owner}.{}", interner.resolve(&sym.name))
+        })
+        .collect();
+    out.sort();
+    out
+}
+
 pub struct ExpectedSym {
     pub name: &'static str,
     pub kind: SymKind,

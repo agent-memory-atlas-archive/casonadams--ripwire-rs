@@ -1,3 +1,5 @@
+mod types;
+
 use super::{
     ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
     VisibilityMode,
@@ -197,14 +199,21 @@ const SYNTAX: SyntaxKinds = SyntaxKinds {
     ..SyntaxKinds::NONE
 };
 
-/// The type or receiver name preceding the called member in `a.B.c(...)`: Dart parses the chain as
-/// sibling `selector` nodes, so the receiver is the previous sibling of the member's selector.
+/// Dart parses `a.b!.c()` as sibling selectors; a `!` is its own childless selector.
+fn selector_receiver(selector: tree_sitter::Node<'_>) -> Option<tree_sitter::Node<'_>> {
+    let mut receiver = selector.prev_named_sibling()?;
+    while receiver.kind() == "selector" && receiver.named_child_count() == 0 {
+        receiver = receiver.prev_named_sibling()?;
+    }
+    Some(receiver)
+}
+
 fn dart_call_qualifier(name_node: tree_sitter::Node<'_>, source: &[u8]) -> Option<String> {
     let selector = name_node.parent()?.parent()?;
     if selector.kind() != "selector" {
         return None;
     }
-    let receiver = selector.prev_sibling()?;
+    let receiver = selector_receiver(selector)?;
     let ident = match receiver.kind() {
         "identifier" => receiver,
         "selector" => receiver.named_child(0)?.named_child(0)?,
@@ -238,12 +247,45 @@ impl LanguageSemantics for DartLanguage {
 
     fn member_receiver<'a>(&self, access: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
         match access.kind() {
-            "unconditional_assignable_selector" | "conditional_assignable_selector" => access
-                .parent()
-                .and_then(|selector| selector.prev_named_sibling()),
+            "unconditional_assignable_selector" | "conditional_assignable_selector" => {
+                selector_receiver(access.parent()?)
+            }
             _ => None,
         }
     }
+
+    fn call_receiver_name<'a>(
+        &self,
+        receiver: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> Option<&'a str> {
+        let is_argument_selector = receiver.kind() == "selector"
+            && receiver
+                .named_child(0)
+                .is_some_and(|part| part.kind() == "argument_part");
+        let callee = receiver
+            .prev_named_sibling()
+            .filter(|callee| is_argument_selector && callee.kind() == "identifier")?;
+        callee.utf8_text(source).ok()
+    }
+
+    fn read_bindings<'a>(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &'a [u8],
+    ) -> super::reads::ReadBindings<'a> {
+        types::typed_read_bindings(root, source)
+    }
+
+    fn implementations(
+        &self,
+        root: tree_sitter::Node<'_>,
+        source: &[u8],
+    ) -> Vec<super::Implementation> {
+        types::class_implementations(root, source)
+    }
+
+    super::impl_class_dispatch_flags!();
 
     fn tag(&self) -> &'static str {
         "dart"

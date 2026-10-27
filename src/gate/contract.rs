@@ -186,9 +186,17 @@ fn is_variadic_param_kind(kind: &str) -> bool {
         .any(|marker| kind.contains(marker))
 }
 
+/// Variadic: Python's `list_splat_pattern`, or TypeScript's `required_parameter` wrapping `...xs`.
+fn is_variadic_param(param: tree_sitter::Node<'_>) -> bool {
+    is_variadic_param_kind(param.kind())
+        || param
+            .named_child(0)
+            .is_some_and(|child| is_variadic_param_kind(child.kind()))
+}
+
 fn count_single_param(param: tree_sitter::Node<'_>, strict: bool, kinds: &SyntaxKinds) -> u16 {
     let kind = param.kind();
-    if is_variadic_param_kind(kind) {
+    if is_variadic_param(param) {
         return 64;
     }
     if kinds.optional_param_groups.contains(&kind) {
@@ -197,6 +205,12 @@ fn count_single_param(param: tree_sitter::Node<'_>, strict: bool, kinds: &Syntax
             .named_children(&mut cursor)
             .filter(|p| p.kind().contains("param"))
             .count() as u16;
+    }
+    let mut cursor = param.walk();
+    let names = param.children_by_field_name("name", &mut cursor).count();
+    if names > 1 {
+        // Go's `a, b string` is one declaration node naming several parameters.
+        return names as u16;
     }
     u16::from(if strict {
         kind == "parameter"

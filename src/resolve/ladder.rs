@@ -108,6 +108,7 @@ pub enum EdgeProv {
     FinalSegment,
     /// The qualifier is a module alias bound by an import of the definition's file.
     Import,
+    Typed,
     Binding,
     /// A compiler-backed SCIP index pinned the call site to this definition.
     Scip,
@@ -119,7 +120,6 @@ impl EdgeProv {
         self == Self::Split
     }
 
-    /// Name of how the edge bound, for every provenance.
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
@@ -129,16 +129,16 @@ impl EdgeProv {
             Self::Local => "local",
             Self::FinalSegment => "final-segment",
             Self::Import => "import",
+            Self::Typed => "typed",
             Self::Binding => "binding",
             Self::Scip => "scip",
         }
     }
 
-    /// `prov=` value on a callee row; absent when the name or lexical scope bound it.
     #[must_use]
     pub fn callee_label(self) -> Option<&'static str> {
         match self {
-            Self::Template | Self::Name | Self::Local => None,
+            Self::Template | Self::Name | Self::Local | Self::Typed => None,
             other => Some(other.label()),
         }
     }
@@ -156,7 +156,12 @@ impl EdgeProv {
             Self::Split => "~s",
             Self::Template => "~t",
             Self::Name => "~n",
-            Self::Local | Self::FinalSegment | Self::Import | Self::Binding | Self::Scip => "",
+            Self::Local
+            | Self::FinalSegment
+            | Self::Import
+            | Self::Typed
+            | Self::Binding
+            | Self::Scip => "",
         }
     }
 }
@@ -188,7 +193,7 @@ impl ResolvedRef {
         self.prov.is_split()
     }
 
-    fn binding(from: NodeId, targets: Vec<NodeId>) -> Option<Self> {
+    fn bound(from: NodeId, targets: Vec<NodeId>, prov: EdgeProv) -> Option<Self> {
         if targets.is_empty() {
             return None;
         }
@@ -198,7 +203,7 @@ impl ResolvedRef {
             prov: if targets.len() > 1 {
                 EdgeProv::Split
             } else {
-                EdgeProv::Binding
+                prov
             },
             targets,
             type_use: false,
@@ -378,6 +383,16 @@ fn filter_in_file(cands: &CandBuffer, symbols: &[Symbol], file_id: u32) -> CandB
     in_file
 }
 
+fn filter_unscoped(cands: &CandBuffer, symbols: &[Symbol]) -> CandBuffer {
+    let mut free = CandBuffer::default();
+    for &id in cands {
+        if symbols[id as usize].scope.is_none() {
+            free.push(id);
+        }
+    }
+    free
+}
+
 /// Index per-file referenced identifiers and qualifiers for cross-file receiver evidence.
 #[must_use]
 pub fn index_file_scope_mentions(
@@ -454,7 +469,39 @@ pub fn index_module_qualifiers(
             maps[symbol.file_id as usize].insert(symbol.name, target);
         }
     }
+    bind_path_qualifiers(ingest, interner, &file_index, &mut maps);
     maps
+}
+
+fn bind_path_qualifiers(
+    ingest: &crate::domain::IngestResult,
+    interner: &Interner,
+    file_index: &HashMap<&str, u32>,
+    maps: &mut [HashMap<Spur, u32>],
+) {
+    for r in ingest
+        .references
+        .iter()
+        .filter(|r| r.lang.semantics().keeps_path_qualifier())
+    {
+        let (Some(q), Some(importer)) = (r.qualifier, ingest.files.get(r.file_id as usize)) else {
+            continue;
+        };
+        let map = &mut maps[r.file_id as usize];
+        let text = interner.resolve(&q);
+        if map.contains_key(&q) || !text.contains("::") {
+            continue;
+        }
+        if let Some(file) = crate::languages::resolve_import(
+            r.lang,
+            interner.resolve(&importer.path),
+            text,
+            file_index,
+            &ingest.import_aliases,
+        ) {
+            map.insert(q, file);
+        }
+    }
 }
 
 /// Per file, the indexed files its imports resolve to; resolution is the importing language's own.
@@ -646,13 +693,25 @@ pub trait ResolutionLookup {
             && self.receiver_owner(r, recv).is_none()
     }
 
+    #[must_use]
+    fn external_owner_candidates(&self, r: &Reference, recv: Spur) -> Option<CandBuffer> {
+        let trait_idx = self.trait_index()?;
+        let text = self.interner()?.try_resolve(&recv)?;
+        self.owner_compatible(
+            r,
+            trait_idx.external_subject_targets(text, r.callee_name, self.symbols()),
+        )
+    }
+
     /// Methods a receiver of a named owner type may reach. An interface owner dispatches to its
     /// implementors and keeps its own declaration; a concrete owner prefers its inherent methods
     /// and otherwise uses trait impls. Same-named methods of unrelated types are never reached.
     #[must_use]
     fn owner_candidates(&self, r: &Reference, recv: Spur) -> Option<CandBuffer> {
         let trait_idx = self.trait_index()?;
-        let owner = self.receiver_owner(r, recv)?;
+        let Some(owner) = self.receiver_owner(r, recv) else {
+            return self.external_owner_candidates(r, recv);
+        };
         let symbols = self.symbols();
         let found: Vec<NodeId> = if symbols[owner as usize].kind == SymKind::Interface {
             let mut found = trait_idx.dispatch(owner, r.callee_name, symbols);
@@ -679,8 +738,18 @@ pub trait ResolutionLookup {
                 inherent
             }
         };
+        self.owner_compatible(r, found)
+    }
+
+    #[must_use]
+    fn owner_compatible(
+        &self,
+        r: &Reference,
+        ids: impl IntoIterator<Item = NodeId>,
+    ) -> Option<CandBuffer> {
+        let symbols = self.symbols();
         let mut out = CandBuffer::default();
-        for id in found {
+        for id in ids {
             if self.is_owner_compatible(r, &symbols[id as usize]) {
                 out.push(id);
             }
@@ -695,12 +764,23 @@ pub trait ResolutionLookup {
         {
             return true;
         }
+        if sym.kind == crate::domain::SymKind::Section
+            && matches!(r.role, RefRole::Call | RefRole::Macro)
+        {
+            return false;
+        }
         if r.member_call
             && r.role == RefRole::Call
             && sym.kind == crate::domain::SymKind::Var
             && r.lang.semantics().member_call_targets_callables_only()
         {
             // `res.json()` calls a property of an unknown receiver; a same-named variable is no callee.
+            return false;
+        }
+        if r.role == RefRole::Call
+            && r.lang.semantics().bare_calls_skip_type_members()
+            && !self.bare_call_reachable(r, sym)
+        {
             return false;
         }
         if let Some(interner) = self.interner() {
@@ -716,6 +796,20 @@ pub trait ResolutionLookup {
         self.is_owner_compatible(r, sym)
     }
 
+    #[must_use]
+    fn bare_call_reachable(&self, r: &Reference, sym: &Symbol) -> bool {
+        if r.qualifier.is_some() || r.member_call {
+            return true;
+        }
+        let symbols = self.symbols();
+        !sym.scope.is_some_and(|scope| {
+            self.by_name().get(&scope).is_some_and(|ids| {
+                ids.iter()
+                    .any(|&id| symbols[id as usize].kind.is_type_container())
+            })
+        })
+    }
+
     /// Language and arity compatibility, without the std-member name filter.
     #[must_use]
     fn is_owner_compatible(&self, r: &Reference, sym: &Symbol) -> bool {
@@ -723,7 +817,29 @@ pub trait ResolutionLookup {
             || !r.arg_count_known
             || r.arg_count <= sym.params
             || (sym.params == 0 && !sym.is_callable());
-        sym.lang.is_compatible(r.lang) && arity_ok
+        sym.lang.is_compatible(r.lang) && arity_ok && !self.needs_missing_self(r, sym)
+    }
+
+    #[must_use]
+    fn needs_missing_self(&self, r: &Reference, sym: &Symbol) -> bool {
+        r.member_call
+            && r.qualifier.is_none()
+            && sym.is_callable()
+            && !sym.takes_self
+            && r.lang.semantics().member_call_needs_self()
+    }
+
+    #[must_use]
+    fn inherited_candidates(&self, r: &Reference, scope: Spur) -> Option<CandBuffer> {
+        if !r.lang.semantics().has_class_inheritance() {
+            return None;
+        }
+        let trait_idx = self.trait_index()?;
+        let class = self.receiver_owner(r, scope)?;
+        self.owner_compatible(
+            r,
+            trait_idx.subject_targets(class, r.callee_name, self.symbols()),
+        )
     }
 
     /// Candidates a qualified reference can mean: those scoped by the qualifier, else those in the module
@@ -746,8 +862,15 @@ pub trait ResolutionLookup {
             };
             return Some((qualified, narrowing));
         }
+        if let Some(inherited) = self.inherited_candidates(r, q) {
+            return Some((inherited, Narrowing::Owner));
+        }
         if let Some(module_file) = self.qualifier_module_file(r.file_id, q) {
             let in_module = filter_in_file(&cands, symbols, module_file);
+            let free = filter_unscoped(&in_module, symbols);
+            if !free.is_empty() {
+                return Some((free, Narrowing::Import));
+            }
             if !in_module.is_empty() {
                 return Some((in_module, Narrowing::Import));
             }
@@ -775,6 +898,9 @@ pub trait ResolutionLookup {
             if !qualified.is_empty() {
                 return Some((qualified, Narrowing::CallerScope));
             }
+            if let Some(inherited) = self.inherited_candidates(r, caller_sc) {
+                return Some((inherited, Narrowing::Owner));
+            }
         }
         Some((cands, Narrowing::None))
     }
@@ -785,11 +911,43 @@ pub trait ResolutionLookup {
         all_cands: &[NodeId],
         r: &Reference,
     ) -> Option<(CandBuffer, Narrowing)> {
+        let (cands, narrowing) = self.compatible_candidates(all_cands, r)?;
+        Some((self.prefer_exact_arity(r, cands), narrowing))
+    }
+
+    #[must_use]
+    fn prefer_exact_arity(&self, r: &Reference, cands: CandBuffer) -> CandBuffer {
+        if !r.arg_count_known || cands.len() < 2 || !r.lang.semantics().overloads_by_arity() {
+            return cands;
+        }
+        let symbols = self.symbols();
+        let exact = |id: NodeId| {
+            let sym = &symbols[id as usize];
+            sym.is_callable() && sym.params == r.arg_count
+        };
+        if !cands.iter().any(|&id| exact(id)) {
+            return cands;
+        }
+        let mut out = CandBuffer::default();
+        for &id in cands.iter().filter(|&&id| exact(id)) {
+            out.push(id);
+        }
+        out
+    }
+
+    #[must_use]
+    fn compatible_candidates(
+        &self,
+        all_cands: &[NodeId],
+        r: &Reference,
+    ) -> Option<(CandBuffer, Narrowing)> {
         if let Some(recv) = r.receiver_type {
             if let Some(cands) = self.owner_candidates(r, recv) {
                 return Some((cands, Narrowing::Owner));
             }
-            if !self.untyped_receiver_uses_names(r, recv) {
+            if !self.untyped_receiver_uses_names(r, recv)
+                && !r.lang.semantics().typed_receiver_miss_uses_names()
+            {
                 return None;
             }
         }
@@ -827,6 +985,32 @@ pub trait ResolutionLookup {
             .filter(|&id| self.is_interface_scoped_method(&symbols[id as usize]))
             .collect();
         is_unique_global_group(&iface_cands, symbols).then_some((iface_cands, Tier::Global))
+    }
+
+    #[must_use]
+    fn with_interface_implementors(&self, r: &Reference, mut targets: Vec<NodeId>) -> Vec<NodeId> {
+        let (Some(trait_idx), true) = (self.trait_index(), r.member_call) else {
+            return targets;
+        };
+        let symbols = self.symbols();
+        let owners: Vec<NodeId> = targets
+            .iter()
+            .filter_map(|&id| symbols[id as usize].scope)
+            .filter_map(|scope| self.by_name().get(&scope))
+            .flatten()
+            .copied()
+            .filter(|&id| symbols[id as usize].kind == crate::domain::SymKind::Interface)
+            .collect();
+        for owner in owners {
+            if let Some(found) =
+                self.owner_compatible(r, trait_idx.dispatch(owner, r.callee_name, symbols))
+            {
+                targets.extend_from_slice(found.as_slice());
+            }
+        }
+        targets.sort_unstable();
+        targets.dedup();
+        targets
     }
 
     #[must_use]
@@ -917,7 +1101,7 @@ pub trait ResolutionLookup {
                     && (!r.arg_count_known || r.arg_count <= symbol.params)
             })
             .collect();
-        ResolvedRef::binding(r.from_symbol, targets)
+        ResolvedRef::bound(r.from_symbol, targets, EdgeProv::Binding)
             .map_or(RefOutcome::Declined, RefOutcome::Resolved)
     }
 
@@ -928,7 +1112,7 @@ pub trait ResolutionLookup {
             .copied()
             .filter(|&target| target != r.from_symbol)
             .collect();
-        ResolvedRef::binding(r.from_symbol, targets).map(RefOutcome::Resolved)
+        ResolvedRef::bound(r.from_symbol, targets, EdgeProv::Binding).map(RefOutcome::Resolved)
     }
 
     /// Candidates with tied declarations folded into their definition, and a primary template
@@ -975,7 +1159,7 @@ pub trait ResolutionLookup {
                 .copied()
                 .filter(|&id| id != r.from_symbol)
                 .collect();
-            return ResolvedRef::binding(r.from_symbol, targets)
+            return ResolvedRef::bound(r.from_symbol, targets, EdgeProv::Typed)
                 .map_or(RefOutcome::Ignored, RefOutcome::Resolved);
         }
         let (cands, template) = self.collapse_definition_groups(&cands);
@@ -992,7 +1176,10 @@ pub trait ResolutionLookup {
             self.symbols(),
             self.file_dirs(),
         )
-        .or_else(|| self.select_interface_contract_tier(&cands)) else {
+        .or_else(|| {
+            self.select_interface_contract_tier(&cands)
+                .map(|(targets, tier)| (self.with_interface_implementors(r, targets), tier))
+        }) else {
             return if is_non_table_read_write(r) {
                 RefOutcome::Ignored
             } else {

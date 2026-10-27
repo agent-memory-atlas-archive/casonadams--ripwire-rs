@@ -1,6 +1,6 @@
 use super::registry::PARSER_STATE;
 use crate::domain::{Lang, RefRole, SymKind};
-use crate::languages::SyntaxKinds;
+use crate::languages::{SyntaxKinds, is_plain_type_name};
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Language, Query};
 
@@ -23,6 +23,29 @@ pub struct RawDef {
     pub binding: crate::domain::Binding,
     /// Set by the language plugin for bodyless members reached only by typed dispatch (see `is_contract_member`).
     pub contract_member: bool,
+    pub takes_self: bool,
+}
+
+impl RawDef {
+    #[must_use]
+    pub fn span(name: String, kind: SymKind, line: u32, bytes: std::ops::Range<usize>) -> Self {
+        Self {
+            name,
+            scope: None,
+            kind,
+            line,
+            start_byte: bytes.start,
+            doc_len: 0,
+            body_byte: bytes.start,
+            end_byte: bytes.end,
+            loc: 1,
+            params: 0,
+            metrics: crate::metrics::ComplexityMetrics::default(),
+            binding: crate::domain::Binding::Mutable,
+            contract_member: false,
+            takes_self: false,
+        }
+    }
 }
 
 /// Raw reference extracted before enclosing symbol attribution.
@@ -245,7 +268,8 @@ fn extract_member_receiver_qualifier(
     lang: Lang,
 ) -> Option<String> {
     let recv = member_access_receiver(parent, name_node, lang)?;
-    let text = recv.utf8_text(source_bytes).ok()?.trim();
+    let raw = recv.utf8_text(source_bytes).ok()?.trim();
+    let text = &*lang.semantics().receiver_text(raw);
     if lang.semantics().self_receivers().contains(&text) {
         return find_enclosing_scope(name_node, source_bytes, lang);
     }
@@ -259,12 +283,11 @@ fn bare_member_receiver(
     lang: Lang,
 ) -> Option<String> {
     let recv = member_access_receiver(name_node.parent()?, name_node, lang)?;
-    if recv.kind() == "call_expression" {
-        let callee = recv.child_by_field_name("function")?;
-        let name = callee.utf8_text(source_bytes).ok()?;
-        return (callee.kind() == "identifier").then(|| format!("{name}()"));
+    if let Some(name) = lang.semantics().call_receiver_name(recv, source_bytes) {
+        return Some(format!("{name}()"));
     }
-    let text = recv.utf8_text(source_bytes).ok()?.trim();
+    let raw = recv.utf8_text(source_bytes).ok()?.trim();
+    let text = lang.semantics().receiver_text(raw);
     text.split('.')
         .all(|segment| {
             !segment.is_empty()
@@ -272,7 +295,7 @@ fn bare_member_receiver(
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'_')
         })
-        .then(|| text.to_string())
+        .then(|| text.into_owned())
 }
 
 /// Declared type of a receiver: a bound identifier's type, or for a dotted chain the member type
@@ -309,10 +332,6 @@ fn receiver_type_at(
             .or_else(|| lang.semantics().member_receiver_type(&ty, segment))?;
     }
     is_plain_type_name(&ty).then_some(ty)
-}
-
-fn is_plain_type_name(text: &str) -> bool {
-    !text.is_empty() && text.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 fn find_call_qualifier(
@@ -387,14 +406,20 @@ fn split_top_level_qualified(raw: &str) -> (&str, Option<String>) {
     (bare, qual)
 }
 
+/// Ruby passes trailing `key => value` pairs as one hash argument.
 fn count_arguments_in_list(child: tree_sitter::Node<'_>) -> u16 {
     let mut count = 0u16;
-    for j in 0..child.named_child_count() {
-        if let Some(arg) = child.named_child(j)
-            && !arg.kind().contains("comment")
-        {
+    let mut in_pairs = false;
+    let mut cursor = child.walk();
+    for arg in child
+        .named_children(&mut cursor)
+        .filter(|arg| !arg.kind().contains("comment"))
+    {
+        let is_pair = arg.kind() == "pair";
+        if !(is_pair && in_pairs) {
             count = count.saturating_add(1);
         }
+        in_pairs = is_pair;
     }
     count
 }
@@ -575,6 +600,7 @@ fn record_def_item(
         metrics,
         binding,
         contract_member,
+        takes_self: lang.semantics().def_takes_self(&gate_ctx),
     });
 }
 
@@ -677,6 +703,13 @@ fn record_ref_item(
                 .and_then(|n| bare_member_receiver(n, source_bytes, lang))
         })
         .flatten();
+    let receiver_type = receiver_type.or_else(|| {
+        let name_node = ext.name_node.filter(|_| qualifier.is_none())?;
+        let recv = member_access_receiver(name_node.parent()?, name_node, lang)?;
+        lang.semantics()
+            .constructed_receiver(recv, source_bytes)
+            .map(str::to_string)
+    });
     let (arg_count, arg_count_known) = ext
         .name_node
         .map(count_call_arguments)

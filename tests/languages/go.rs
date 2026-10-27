@@ -24,3 +24,21 @@ fn test_go_graph_protocol() {
     assert!(Lang::Go.semantics().is_symbol_name_public("Serve"));
     assert!(!Lang::Go.semantics().is_symbol_name_public("handleConn"));
 }
+
+#[test]
+fn test_go_grouped_parameters_count_each_name_for_arity() {
+    verify_protocol_case(&GraphProtocolCase {
+        label: "go-grouped-params",
+        files: &[(
+            "check.go",
+            Lang::Go,
+            b"package main\nfunc checkContains(t *T, got, expected string) {}\nfunc probe() {\n\tcheckContains(nil, \"a\", \"b\")\n}\n",
+        )],
+        expected_syms: &[
+            sym("checkContains", SymKind::Function, None, false),
+            sym("probe", SymKind::Function, None, false),
+        ],
+        expected_edges: &[("probe", "checkContains")],
+        ..Default::default()
+    });
+}

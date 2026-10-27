@@ -1,4 +1,4 @@
-use super::harness::{GraphProtocolCase, sym, verify_protocol_case};
+use super::harness::{GraphProtocolCase, owner_qualified_callees, sym, verify_protocol_case};
 use ripwire_rs::{Lang, SymKind};
 use std::collections::HashMap;
 
@@ -52,5 +52,62 @@ fn test_dart_graph_protocol_and_imports() {
             &dart_idx
         ),
         None
+    );
+}
+
+const STORES: &str = "class DiskStore {\n  Future<int> openSession() async => 1;\n}\n\
+class MemoryStore {\n  Future<int> openSession() async => 2;\n}\n\
+class Base {\n  void close() {}\n}\n\
+class Pooled extends Base {}\n";
+
+const SERVICE: &str = "class Service {\n  DiskStore? _store;\n\
+  void viaField() {\n    _store!.openSession();\n  }\n\
+  void viaParam(MemoryStore memory) {\n    memory.openSession();\n  }\n\
+  void viaLocal() {\n    final local = DiskStore();\n    local.openSession();\n  }\n\
+  void viaInherited(Pooled pooled) {\n    pooled.close();\n  }\n}\n";
+
+fn dart_callees(caller: &str) -> Vec<String> {
+    owner_qualified_callees(
+        &[
+            ("lib/src/stores.dart", Lang::Dart, STORES.as_bytes()),
+            ("lib/src/service.dart", Lang::Dart, SERVICE.as_bytes()),
+        ],
+        caller,
+    )
+}
+
+#[test]
+fn dart_typed_receivers_pick_the_declared_class_method() {
+    assert_eq!(dart_callees("viaField"), ["DiskStore.openSession"]);
+    assert_eq!(dart_callees("viaParam"), ["MemoryStore.openSession"]);
+    assert_eq!(
+        dart_callees("viaLocal"),
+        [".DiskStore", "DiskStore.openSession"],
+        "the constructor call and the method on the constructed type"
+    );
+}
+
+#[test]
+fn dart_typed_receiver_without_the_method_keeps_name_resolution() {
+    assert_eq!(dart_callees("viaInherited"), ["Base.close"]);
+}
+
+#[test]
+fn dart_call_result_receiver_uses_the_factory_return_type() {
+    let source = "class DiskStore {\n  int open() => 1;\n}\n\
+class MemoryStore {\n  int open() => 2;\n}\n\
+DiskStore makeStore() => DiskStore();\n\
+void run() {\n  makeStore().open();\n}\n";
+    let callees = owner_qualified_callees(
+        &[("lib/service.dart", Lang::Dart, source.as_bytes())],
+        "run",
+    );
+    assert!(
+        callees.contains(&"DiskStore.open".to_string()),
+        "{callees:?}"
+    );
+    assert!(
+        !callees.contains(&"MemoryStore.open".to_string()),
+        "{callees:?}"
     );
 }
