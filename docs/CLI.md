@@ -384,9 +384,12 @@ ripwire-rs . --help-task="find callers of function and test blast radius"
 # Crawler filtering: exclude patterns, ignore gitignore, ignore test files, file size limits
 ripwire-rs . --exclude="vendor/*" --no-ignore --ignore-tests --max-file-size=500000
 
-# Compress output with compact token dialect, or write the binary index cache
+# Compress output with compact token dialect
 ripwire-rs . --compress
-ripwire-rs . --index-out="index.bin"
+
+# Cold-parse once into an index file, then reuse it (valid while HEAD, working tree and binary match)
+ripwire-rs . --index-out="index.json"
+ripwire-rs . --cache="index.json" --callers="parse"
 
 # Annotate symbols with runtime profile weights or trace execution
 ripwire-rs . --with-profile="flamegraph.perf"

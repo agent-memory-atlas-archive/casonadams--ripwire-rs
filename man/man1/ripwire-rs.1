@@ -428,7 +428,7 @@ Disable secret redaction on emitted code snippets.
 Compress output using compact token dialect.
 .TP
 .BI \-\-index\-out= FILE
-Write binary index cache directly to file \fIFILE\fR.
+Cold-parse the tree, write the analysis cache to \fIFILE\fR and exit without a map; reload it with \fB\-\-cache=\fR\fIFILE\fR while HEAD, the working tree and the binary match. Refuses \fB\-\-exclude\fR, \fB\-\-no\-ignore\fR, \fB\-\-ignore\-tests\fR, \fB\-\-max\-file\-size\fR and \fB\-\-scip\fR, which bypass the cache.
 .TP
 .B \-\-lsp
 Launch stdio JSON-RPC Language Server Protocol (LSP) server bridge supporting \fBinitialize\fR, \fBtextDocument/definition\fR, \fBtextDocument/references\fR, \fBtextDocument/documentSymbol\fR, and \fBtextDocument/hover\fR.

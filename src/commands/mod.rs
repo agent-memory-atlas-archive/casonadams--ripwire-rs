@@ -173,6 +173,7 @@ register_commands! {
     clones::CLONES,
     html::HTML,
     export::EXPORT,
+    index_out::INDEX_OUT,
     slice::SLICE,
 }
 

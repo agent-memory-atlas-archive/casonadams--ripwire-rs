@@ -89,9 +89,6 @@ pub struct TopModifierArgs {
     /// Explicit RSS memory guard ceiling (e.g. 512M, 2G)
     #[arg(long = "max-memory", value_name = "N[K|M|G]")]
     pub max_memory: Option<String>,
-    /// Write binary index cache to file
-    #[arg(long = "index-out", value_name = "FILE")]
-    pub index_out: Option<String>,
     /// Target agent profile for output shaping
     #[arg(long = "agent", value_name = "AGENT")]
     pub agent: Option<String>,
