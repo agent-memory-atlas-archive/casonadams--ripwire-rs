@@ -49,26 +49,48 @@ pub struct DeadCodeContext<'a> {
 
 /// Counts identifier tokens of `lang` across the corpus for each name in `uses`. A function's own
 /// definition contributes one, so a count above one is evidence of a reference somewhere else.
-fn count_identifier_uses(
+fn count_identifier_uses<'a>(
     ctx: &DeadCodeContext<'_>,
     lang: crate::domain::Lang,
-    uses: &mut std::collections::HashMap<&str, u32>,
+    uses: &mut std::collections::HashMap<&'a str, u32>,
 ) {
-    for file in ctx.ingest.files.iter().filter(|file| file.lang == lang) {
-        let path = ctx.ingest.file_path(file.id, ctx.interner);
-        let source = ctx
-            .sources
-            .read(path)
-            .unwrap_or(std::borrow::Cow::Borrowed(&[]));
-        let Some(tree) = parse_file_tree(lang, path, source.as_ref()) else {
-            continue;
-        };
-        lang.semantics()
-            .for_each_identifier(tree.root_node(), source.as_ref(), &mut |text| {
-                if let Some(count) = uses.get_mut(text) {
-                    *count += 1;
-                }
-            });
+    use rayon::prelude::*;
+    use std::collections::HashMap;
+    let files: Vec<_> = ctx
+        .ingest
+        .files
+        .iter()
+        .filter(|file| file.lang == lang)
+        .collect();
+    let known = &*uses;
+    let counted: HashMap<&'a str, u32> = files
+        .par_iter()
+        .fold(HashMap::new, |mut local, file| {
+            let path = ctx.ingest.file_path(file.id, ctx.interner);
+            let source = ctx
+                .sources
+                .read(path)
+                .unwrap_or(std::borrow::Cow::Borrowed(&[]));
+            if let Some(tree) = parse_file_tree(lang, path, source.as_ref()) {
+                lang.semantics()
+                    .for_each_identifier(tree.root_node(), source.as_ref(), &mut |text| {
+                        if let Some((&name, _)) = known.get_key_value(text) {
+                            *local.entry(name).or_insert(0) += 1;
+                        }
+                    });
+            }
+            local
+        })
+        .reduce(HashMap::new, |mut left, right| {
+            for (name, count) in right {
+                *left.entry(name).or_insert(0) += count;
+            }
+            left
+        });
+    for (name, count) in counted {
+        if let Some(total) = uses.get_mut(name) {
+            *total += count;
+        }
     }
 }
 

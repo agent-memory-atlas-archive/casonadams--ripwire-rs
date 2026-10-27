@@ -4,7 +4,7 @@ mod linkage;
 use super::{
     ComplexityKinds, DefCaptureGateContext, DialectGroup, LanguageSemantics, SyntaxKinds,
     VisibilityMode,
-    normalize_lexical_path, probe_with_suffixes, strip_import_quotes,
+    needs_lexical_normalization, normalize_lexical_path, probe_with_suffixes, strip_import_quotes,
 };
 use crate::domain::{Lang, SymKind};
 use std::collections::HashMap;
@@ -510,8 +510,15 @@ fn probe_rust_segs_in_base(
         if take_len == 0 {
             continue;
         }
-        let rel = format!("./{}", segs[..take_len].join("/"));
-        let cand = normalize_lexical_path(base_dir, &rel);
+        let mut cand = String::new();
+        if !base_dir.is_empty() {
+            cand.push_str(base_dir);
+            cand.push('/');
+        }
+        cand.push_str(&segs[..take_len].join("/"));
+        if needs_lexical_normalization(&cand) {
+            cand = normalize_lexical_path("", &cand);
+        }
         if let Some(id) = probe_with_suffixes(&cand, file_index, &[".rs", "/mod.rs"]) {
             return Some(id);
         }
@@ -574,10 +581,9 @@ fn resolve_rust_unique_suffix(segs: &[&str], file_index: &HashMap<&str, u32>) ->
             continue;
         }
         let module = tail[..take].join("/");
-        let suffixes = [format!("{module}.rs"), format!("{module}/mod.rs")];
         let mut hits = file_index
             .iter()
-            .filter(|(path, _)| suffixes.iter().any(|s| path_ends_with_segment(path, s)))
+            .filter(|(path, _)| path_is_module_file(path, &module))
             .map(|(_, id)| *id);
         if let Some(first) = hits.next() {
             return hits.next().is_none().then_some(first);
@@ -586,8 +592,14 @@ fn resolve_rust_unique_suffix(segs: &[&str], file_index: &HashMap<&str, u32>) ->
     None
 }
 
-fn path_ends_with_segment(path: &str, suffix: &str) -> bool {
-    path == suffix || path.ends_with(&format!("/{suffix}"))
+fn path_is_module_file(path: &str, module: &str) -> bool {
+    [path.strip_suffix(".rs"), path.strip_suffix("/mod.rs")]
+        .into_iter()
+        .flatten()
+        .any(|stem| {
+            stem.strip_suffix(module)
+                .is_some_and(|rest| rest.is_empty() || rest.ends_with('/'))
+        })
 }
 
 /// The `(module path, bound name)` pairs a `use` argument binds: `a::{b, c::d as e, self}` binds `a::b` as

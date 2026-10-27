@@ -170,13 +170,21 @@ pub(crate) fn probe_with_suffixes(
     if let Some(&id) = file_index.get(candidate_base) {
         return Some(id);
     }
+    let mut key = String::with_capacity(candidate_base.len() + 8);
     for sfx in suffixes {
-        let key = format!("{candidate_base}{sfx}");
+        key.clear();
+        key.push_str(candidate_base);
+        key.push_str(sfx);
         if let Some(&id) = file_index.get(key.as_str()) {
             return Some(id);
         }
     }
     None
+}
+
+/// True when `path` has an empty, `.` or `..` segment, so lexical normalization would change it.
+pub(crate) fn needs_lexical_normalization(path: &str) -> bool {
+    path.split('/').any(|seg| matches!(seg, "" | "." | ".."))
 }
 
 pub(crate) fn resolve_relative_or_exact(

@@ -2,6 +2,7 @@ use crate::domain::{IngestResult, Interner, NodeId, RefRole, Reference, SymKind,
 use crate::graph::Graph;
 use crate::languages::source::{SourceRegion, source_regions};
 use crate::serialize::{PageRequest, Paged, text_bytes};
+use rayon::prelude::*;
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
@@ -149,35 +150,32 @@ fn scan_indexed<'a>(
     {
         syms_by_file.entry(s.file_id).or_default().push(s);
     }
-    let mut files = Vec::new();
-    for file in &ingest.files {
-        let path = interner.resolve(&file.path);
-        if !req.path_passes(path) {
-            continue;
-        }
-        let Ok(bytes) = req.sources.read(path) else {
-            continue;
-        };
-        let Ok(text) = String::from_utf8(bytes.into_owned()) else {
-            continue;
-        };
-        if !text.contains(req.pattern) || !req.file_passes(&text) {
-            continue;
-        }
-        let prose = file.lang.semantics().is_prose_document();
-        let regions = (!prose).then(|| source_regions(&text, file.lang, path));
-        let (lines, hits) = scan_text(&text, regions.as_deref(), req);
-        if !hits.is_empty() {
-            files.push(HitFile {
+    let mut files: Vec<HitFile<'a>> = ingest
+        .files
+        .par_iter()
+        .filter_map(|file| {
+            let path = interner.resolve(&file.path);
+            if !req.path_passes(path) {
+                return None;
+            }
+            let bytes = req.sources.read(path).ok()?;
+            let text = String::from_utf8(bytes.into_owned()).ok()?;
+            if !text.contains(req.pattern) || !req.file_passes(&text) {
+                return None;
+            }
+            let prose = file.lang.semantics().is_prose_document();
+            let regions = (!prose).then(|| source_regions(&text, file.lang, path));
+            let (lines, hits) = scan_text(&text, regions.as_deref(), req);
+            (!hits.is_empty()).then(|| HitFile {
                 path: path.to_string(),
                 prose,
                 text,
                 lines,
                 hits,
-                syms: syms_by_file.remove(&file.id).unwrap_or_default(),
-            });
-        }
-    }
+                syms: syms_by_file.get(&file.id).cloned().unwrap_or_default(),
+            })
+        })
+        .collect();
     files.sort_by(|a, b| a.path.cmp(&b.path));
     files
 }
