@@ -24,8 +24,7 @@ pub static IMPACT: Plugin<ImpactArgs> = Plugin {
     check: None,
     tools: &[nav_tool!(
         "impact",
-        "Transitive blast radius of a symbol via calls, ranked by PageRank",
-        "Symbol name to analyze blast radius for",
+        "What breaks if this symbol changes: its transitive callers, ranked by PageRank",
         NavMode::Impact
     )],
 };

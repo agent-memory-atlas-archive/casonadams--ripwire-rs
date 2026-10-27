@@ -15,8 +15,7 @@ report_command! {
     tools: [
         nav_tool!(
             "callees",
-            "Direct (1-hop) callees of a symbol",
-            "Symbol name to look up",
+            "What this function or method calls: each call resolved to its definition, with calls that could not be bound listed as declined",
             NavMode::Callees
         ),
     ],

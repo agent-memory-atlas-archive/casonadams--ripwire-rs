@@ -535,6 +535,9 @@ Disambiguates by file path prefix/suffix and symbol name (e.g. \fBsrc/domain.rs:
 .TP
 .B file_path::Scope::name
 Fully qualified canonical identifier (e.g. \fBsrc/domain.rs::Interner::len\fR).
+.TP
+.B file_path:LINE
+Picks the definition starting nearest at or above \fILINE\fR in that file (e.g. \fBsrc/domain.rs:42\fR).
 
 .SH EXAMPLES
 Analyze a remote repository (\fIPATH\fR may be an \fBhttps://\fR, \fBssh://\fR, or \fBgit@\fR URL; it is shallow-cloned once into \fI$TMPDIR/ripwire-rs/\fR and reused until \fB\-\-refetch\fR):

@@ -19,6 +19,13 @@
 }
 ```
 
+On `initialize` the server returns `instructions`, which MCP clients place in the agent's system
+prompt. They say when the navigation tools answer better than grep (callers, callees, impact) and
+that every call needs `symbol`, pinned to one definition among same-named ones by an
+owner-qualified name (`Owner::method` or `Owner.method`), the `file` argument, or a
+`file:LINE` location. Navigation tools (`callers`, `find_referencing_symbols`, `callees`,
+`impact`, `find_symbol`, `uses`) take `file`; an unknown argument's error lists the accepted ones.
+
 ---
 
 ## Tools Inventory
@@ -34,9 +41,9 @@
 | `grep` | Search | Trigram literal search annotated with enclosing symbols and definitions. |
 | `find_symbol` | Navigation | 1-hop symbol neighborhood: callers, callees, definitions, and ambiguity metrics. |
 | `find_referencing_symbols` | Navigation | Direct (1-hop) callers of a symbol or database table. |
-| `callers` | Navigation | Canonical direct caller report. |
-| `callees` | Navigation | Canonical direct callee report with edge provenance and declined evidence. |
-| `impact` | Navigation | Transitive blast radius of a symbol or database table via call hierarchy. |
+| `callers` | Navigation | Who calls a function or method: each call site's enclosing function, same-named definitions kept apart. |
+| `callees` | Navigation | What a function or method calls, with edge provenance and declined evidence. |
+| `impact` | Navigation | What breaks if a symbol or database table changes: transitive callers via the call hierarchy. |
 | `uses` | Navigation | Statically resolvable use-sites (call, read, write, import, extends), including embedded SQL table lineage from application strings. |
 | `path_between` | Architecture | Shortest directed call path between two symbols. |
 | `connect` | Architecture | Directed connecting subgraph relating 2..16 symbols, with radius 2 by default. |
@@ -82,7 +89,9 @@ Batch accepts at most 16 read queries; larger requests fail as a whole rather
 than truncating. Individual failures remain per-item errors (`{tool,error}` in
 MCP, `<error>` in CLI). Recursive batches and writes, including
 `quality_baseline` and quality-delta acknowledgment options, are rejected per item.
-CLI batch files ignore blank/comment lines and accept `name:argument` or
+Each MCP batch item is `{"name": TOOL, "arguments": {...}}`, or the tool's arguments may sit
+beside it (`{"tool": "callers", "symbol": "run"}`); an item mixing both is rejected with the
+expected shape. CLI batch files ignore blank/comment lines and accept `name:argument` or
 `name:{JSON arguments}` for the shared read options.
 
 Impact `max_depth` matches the optional global CLI `--impact-depth=N`, including

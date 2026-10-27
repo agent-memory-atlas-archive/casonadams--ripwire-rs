@@ -15,14 +15,12 @@ report_command! {
     tools: [
         nav_tool!(
             "callers",
-            "Direct (1-hop) callers of a symbol (alias for find_referencing_symbols)",
-            "Symbol name to look up",
+            "Who calls this function or method: each call site's enclosing function, with same-named definitions elsewhere kept apart. Use before grep for call sites",
             NavMode::Callers
         ),
         nav_tool!(
             "find_referencing_symbols",
             "Direct (1-hop) callers of a symbol",
-            "Symbol name to look up",
             NavMode::Callers
         ),
     ],

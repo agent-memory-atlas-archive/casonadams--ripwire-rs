@@ -16,7 +16,6 @@ report_command! {
         nav_tool!(
             "find_symbol",
             "A symbol's 1-hop neighborhood: the symbol plus direct callers and callees",
-            "Symbol name to look up",
             NavMode::FindSymbol
         ),
     ],

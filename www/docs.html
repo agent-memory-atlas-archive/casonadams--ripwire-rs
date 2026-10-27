@@ -247,7 +247,7 @@ cargo install ripwire-rs</code></pre>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">How It Works</span>
-            <p class="cmd-desc">Extracts exact byte spans from the underlying source files, resolving qualified selectors (`Type::method`, `file:name`), and streams the function bodies to stdout.</p>
+            <p class="cmd-desc">Extracts exact byte spans from the underlying source files, resolving qualified selectors (`Type::method`, `file:name`, `file:LINE`), and streams the function bodies to stdout.</p>
           </div>
           <div class="cmd-field">
             <span class="cmd-label">When To Use It</span>
@@ -881,9 +881,9 @@ cargo install ripwire-rs</code></pre>
             <tr><td><code>grep</code></td><td>Search</td><td>Trigram literal search annotated with enclosing symbols and definitions.</td></tr>
             <tr><td><code>find_symbol</code></td><td>Navigation</td><td>1-hop symbol neighborhood: callers, callees, definitions, and ambiguity metrics.</td></tr>
             <tr><td><code>find_referencing_symbols</code></td><td>Navigation</td><td>Direct (1-hop) callers of a symbol or database table.</td></tr>
-            <tr><td><code>callers</code></td><td>Navigation</td><td>Canonical direct caller report with definition grouping.</td></tr>
-            <tr><td><code>callees</code></td><td>Navigation</td><td>Canonical direct callee report with provenance and declined evidence.</td></tr>
-            <tr><td><code>impact</code></td><td>Navigation</td><td>Transitive blast radius of a symbol or database table via call and reference hierarchy.</td></tr>
+            <tr><td><code>callers</code></td><td>Navigation</td><td>Who calls a function or method: each call site's enclosing function, same-named definitions kept apart, with definition grouping.</td></tr>
+            <tr><td><code>callees</code></td><td>Navigation</td><td>What a function or method calls, with provenance and declined evidence.</td></tr>
+            <tr><td><code>impact</code></td><td>Navigation</td><td>What breaks if a symbol or database table changes: transitive callers via the call and reference hierarchy.</td></tr>
             <tr><td><code>uses</code></td><td>Navigation</td><td>Statically resolvable use-sites (call, read, write, import, extends), including embedded SQL table lineage from application strings.</td></tr>
             <tr><td><code>path_between</code></td><td>Architecture</td><td>Shortest directed call path between two symbols.</td></tr>
             <tr><td><code>connect</code></td><td>Architecture</td><td>Minimal directed connecting subgraph relating 2..16 symbols.</td></tr>

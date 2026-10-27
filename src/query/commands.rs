@@ -87,7 +87,14 @@ pub fn validate_arguments(command: &CommandDescriptor, args: &Value) -> Result<(
             .params
             .iter()
             .find(|(parameter, _, _)| *parameter == name)
-            .ok_or_else(|| format!("unknown argument '{name}'"))?;
+            .ok_or_else(|| {
+                let accepted: Vec<&str> = command.params.iter().map(|(p, _, _)| *p).collect();
+                format!(
+                    "unknown argument '{name}' for {}; accepted: {}",
+                    command.name,
+                    accepted.join(", ")
+                )
+            })?;
         validate_argument_type(name, kind, value)?;
     }
     Ok(())

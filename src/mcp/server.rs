@@ -5,6 +5,19 @@ use crate::workspace::Workspace;
 use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 
+/// Shown by MCP clients in the agent's system prompt.
+pub const SERVER_INSTRUCTIONS: &str = "\
+ripwire-rs answers structural questions about this repository from its parsed call graph.
+- Who calls X, what X calls, what breaks if X changes: use `callers`, `callees` and `impact` before grep. \
+Each row is the function or method containing the call site; same-named definitions in other classes or \
+modules stay apart, and calls that could not be bound are listed as declined rather than guessed.
+- Every call needs `symbol`. When several definitions share the name, pin one: owner-qualified \
+(`Owner::method` or `Owner.method`), with `file` (`{\"symbol\": \"run\", \"file\": \"src/app.rs\"}`), or by \
+the definition's location (`\"symbol\": \"src/app.rs:42\"`).
+- Several questions at once: `batch` with `{\"queries\": [{\"tool\": \"callers\", \"symbol\": \"run\"}, ...]}`. \
+Orientation in unfamiliar code: `explore`.
+- grep stays the right tool for string literals, comments, configuration keys and other non-code text.";
+
 #[must_use]
 pub fn handle_initialize(id: &Value) -> Value {
     json!({
@@ -19,7 +32,8 @@ pub fn handle_initialize(id: &Value) -> Value {
             "capabilities": {
                 "tools": {},
                 "resources": {}
-            }
+            },
+            "instructions": SERVER_INSTRUCTIONS
         }
     })
 }

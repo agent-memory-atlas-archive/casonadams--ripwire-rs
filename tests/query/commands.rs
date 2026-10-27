@@ -147,6 +147,29 @@ fn batch_malformed_items_preserve_order_and_structured_errors() {
 }
 
 #[test]
+fn batch_accepts_arguments_alongside_the_tool_name() {
+    with_context(|context| {
+        let result = dispatch(
+            context,
+            "batch",
+            &json!({"queries": [
+                {"tool": "find_symbol", "symbol": "target"},
+                {"name": "find_symbol", "symbol": "caller"},
+                {"name": "find_symbol", "arguments": {"symbol": "target"}, "limit": 1},
+                {"symbol": "target"}
+            ]}),
+        )
+        .unwrap();
+        let items = result.as_array().unwrap();
+        assert!(items[0]["result"].as_str().unwrap().contains("target"));
+        assert!(items[1]["result"].as_str().unwrap().contains("caller"));
+        for item in &items[2..] {
+            assert!(item["error"].as_str().unwrap().contains(r#"{"name": TOOL"#));
+        }
+    });
+}
+
+#[test]
 fn batch_xml_escapes_text_and_json_without_escaping_xml_reports() {
     let results = [
         json!({"tool": "memory_recall", "kind": "text", "result": "A & B <example/>"}),

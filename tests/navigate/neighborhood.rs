@@ -191,3 +191,37 @@ fn test_callers_page_advances_and_points_at_uses() {
         "{tiny}"
     );
 }
+
+#[test]
+fn selectors_pick_one_definition_by_file_owner_and_line() {
+    let interner = Interner::new();
+    let registry = ripwire_rs::LanguageRegistry::new().unwrap();
+    let ingest = ripwire_rs::ingest_in_memory_files(
+        &[
+            (
+                "src/a.rs",
+                Lang::Rust,
+                b"struct A;\nimpl A {\n    fn run(&self) {}\n}\nstruct B;\nimpl B {\n    fn run(&self) {}\n}\n"
+                    .as_slice(),
+            ),
+            ("src/b.rs", Lang::Rust, b"fn run() {}\n".as_slice()),
+        ],
+        &registry,
+        &interner,
+    );
+    let picked = |selector: &str| -> Vec<String> {
+        find_symbols_by_name(selector, &ingest, &interner)
+            .into_iter()
+            .map(|id| {
+                let sym = &ingest.symbols[id as usize];
+                let path = interner.resolve(&ingest.files[sym.file_id as usize].path);
+                let scope = sym.scope.map_or("", |s| interner.resolve(&s));
+                format!("{path}:{}:{scope}", sym.line)
+            })
+            .collect()
+    };
+    assert_eq!(picked("src/a.rs::B::run"), ["src/a.rs:7:B"]);
+    assert_eq!(picked("./src/a.rs::run"), ["src/a.rs:3:A", "src/a.rs:7:B"]);
+    assert_eq!(picked("src/a.rs:7"), ["src/a.rs:7:B"]);
+    assert_eq!(picked("src/b.rs:1"), ["src/b.rs:1:"]);
+}

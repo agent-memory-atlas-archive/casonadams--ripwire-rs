@@ -43,6 +43,13 @@ answers this?".
 ```
 
 Run `ripwire-rs <repo> --doctor` to verify binary PATH agreement, grammar compilation, cache health, and git reachability.
+
+On `initialize` the server returns `instructions` that MCP clients add to the agent's system prompt:
+use `callers`, `callees` and `impact` before grep for call relationships, and pin one definition among
+same-named ones with an owner-qualified `symbol` (`Owner::method` or `Owner.method`), the `file`
+argument (`{"symbol": "run", "file": "src/app.rs"}`), or a location (`"symbol": "src/app.rs:42"`).
+Batch items may carry their arguments beside the tool name: `{"tool": "callers", "symbol": "run"}`.
+
 ### Workspace Root & Caching
 
 Start the server with `ripwire-rs <repo> --mcp` or `ripwire-rs mcp` (defaulting to `.`). The server maintains an in-memory `Workspace` with shared SCIP-aware analysis and caches unchanged workspaces.

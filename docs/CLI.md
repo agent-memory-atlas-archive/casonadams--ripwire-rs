@@ -25,9 +25,10 @@ ripwire-rs . --legend=compact --pretty
 ripwire-rs . --top-k=20 --json
 
 # Maps default to 200 symbols and 65536 bytes; unknown rank signals are errors.
-# Query symbol relationships by bare name, scoped name, or file:name
+# Query symbol relationships by bare name, scoped name, file:name, file::Scope::name or file:LINE
 ripwire-rs . --callers="Interner::len"
 ripwire-rs . --callees="src/domain.rs:new"
+ripwire-rs . --callers="src/domain.rs:42"
 ripwire-rs . --impact="Type.method"
 # Optional traversal cap (also global with navigate --impact)
 ripwire-rs . --impact="Type.method" --impact-depth=3

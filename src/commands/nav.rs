@@ -89,6 +89,10 @@ pub fn call_navigation(
     mode: NavMode,
 ) -> Result<Value, String> {
     let symbol = args.req_str("symbol")?;
+    let selector = args
+        .opt_str("file")
+        .map(|file| format!("{file}::{symbol}"));
+    let symbol = selector.as_deref().unwrap_or(symbol);
     let context = NavContext {
         ingest: state.ingest,
         graph: state.graph,
@@ -107,12 +111,21 @@ pub fn call_navigation(
 
 /// An MCP navigation tool descriptor.
 macro_rules! nav_tool {
-    ($name:expr, $desc:expr, $symbol_desc:expr, $mode:expr) => {
+    ($name:expr, $desc:expr, $mode:expr) => {
         &$crate::query::commands::CommandDescriptor {
             name: $name,
             description: $desc,
             params: std::borrow::Cow::Borrowed(&[
-                ("symbol", "string", $symbol_desc),
+                (
+                    "symbol",
+                    "string",
+                    "Name to look up: bare (run), owner-qualified (Owner::run or Owner.run), or a definition's location (src/app.rs:42)",
+                ),
+                (
+                    "file",
+                    "string",
+                    "Path of the file defining the symbol, to pick one definition when several share the name",
+                ),
                 ("max_depth", "integer", "Maximum traversal depth"),
             ]),
             required: &["symbol"],

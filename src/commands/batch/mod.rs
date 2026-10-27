@@ -54,7 +54,11 @@ impl Command for Batch {
 static TOOLS: &[&CommandDescriptor] = &[mcp_tool!(
     "batch",
     "ONE-TURN CONTEXT SWEEP: answer up to 16 heterogeneous READ sub-queries in a single call",
-    &[("queries", "array", "Array of tool call objects")],
+    &[(
+        "queries",
+        "array",
+        r#"Up to 16 tool calls, each {"name": "callers", "arguments": {"symbol": "run"}} or {"tool": "callers", "symbol": "run"}"#,
+    )],
     &["queries"],
     call_batch
 )];
@@ -72,25 +76,33 @@ fn call_batch(state: &QueryContext<'_>, args: &Value) -> Result<Value, String> {
     Ok(Value::Array(
         queries
             .iter()
-            .map(|query| {
-                let name = query.get("name").and_then(Value::as_str);
-                let Some(name) = name else {
-                    return json!({"tool": null, "error": "batch item name must be a string"});
-                };
-                if let Some(object) = query.as_object()
-                    && object.keys().any(|key| key != "name" && key != "arguments")
-                {
-                    return json!({"tool": name, "error": "batch item contains unknown fields"});
+            .map(|query| match batch_item(query) {
+                Ok((name, arguments)) => {
+                    execute_batch_item(state, crate::commands::tools(), name, &arguments)
                 }
-                execute_batch_item(
-                    state,
-                    crate::commands::tools(),
-                    name,
-                    query.get("arguments").unwrap_or(&json!({})),
-                )
+                Err(error) => json!({"tool": query.get("name").or_else(|| query.get("tool")), "error": error}),
             })
             .collect(),
     ))
+}
+
+/// Agents tend to send the flat `{"tool": T, ...}` shape, so both shapes are accepted.
+fn batch_item(query: &Value) -> Result<(&str, Value), String> {
+    const SHAPE: &str =
+        r#"expected {"name": TOOL, "arguments": {...}} or {"tool": TOOL, ...arguments}"#;
+    let object = query.as_object().ok_or(format!("batch item is not an object; {SHAPE}"))?;
+    let name = ["name", "tool"]
+        .iter()
+        .find_map(|key| object.get(*key).and_then(Value::as_str))
+        .ok_or(format!("batch item names no tool; {SHAPE}"))?;
+    let rest = object
+        .iter()
+        .filter(|(key, _)| !matches!(key.as_str(), "name" | "tool" | "arguments"));
+    match object.get("arguments") {
+        Some(arguments) if rest.clone().next().is_none() => Ok((name, arguments.clone())),
+        Some(_) => Err(format!("batch item mixes \"arguments\" with other fields; {SHAPE}")),
+        None => Ok((name, Value::Object(rest.map(|(k, v)| (k.clone(), v.clone())).collect()))),
+    }
 }
 
 pub fn execute_batch_content<W: Write>(

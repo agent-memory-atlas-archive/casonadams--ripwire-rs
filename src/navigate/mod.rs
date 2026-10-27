@@ -72,15 +72,15 @@ fn matches_symbol_selector(
     let sym_scope = view.sym_scope(sym).unwrap_or("");
     let file_path = view.sym_path(sym);
 
-    if let Some((scope, name)) = selector.split_once("::") {
-        if let Some((file, sc)) = scope.split_once("::") {
-            return sym_name == name && sym_scope == sc && file_path.ends_with(file);
+    if let Some((prefix, name)) = selector.rsplit_once("::") {
+        if let Some((file, sc)) = prefix.rsplit_once("::") {
+            return sym_name == name && sym_scope == sc && file_path.ends_with(trim_dot(file));
         }
-        return sym_name == name && (sym_scope == scope || file_path.ends_with(scope));
+        return sym_name == name && (sym_scope == prefix || file_path.ends_with(trim_dot(prefix)));
     }
 
     if let Some((file, name)) = selector.split_once(':') {
-        return sym_name == name && file_path.ends_with(file);
+        return sym_name == name && file_path.ends_with(trim_dot(file));
     }
 
     if let Some((scope, name)) = selector.split_once('.') {
@@ -90,7 +90,16 @@ fn matches_symbol_selector(
     sym_name == selector
 }
 
-/// Trait providing unified symbol resolution by bare name or qualified selector (`p::sc::n`, `sc::n`, `file:name`, `Type.method`).
+fn trim_dot(path: &str) -> &str {
+    path.strip_prefix("./").unwrap_or(path)
+}
+
+fn file_line_selector(selector: &str) -> Option<(&str, u32)> {
+    let (file, line) = selector.rsplit_once(':')?;
+    let line = line.parse().ok()?;
+    (!file.is_empty() && !file.ends_with(':')).then(|| (trim_dot(file), line))
+}
+
 pub trait SymbolLookup<'a>: crate::domain::CorpusView<'a> {
     #[must_use]
     fn find_symbols(&self, selector: &str) -> Vec<NodeId> {
@@ -107,6 +116,9 @@ pub trait SymbolLookup<'a>: crate::domain::CorpusView<'a> {
                 return exact;
             }
         }
+        if let Some((file, line)) = file_line_selector(selector) {
+            return self.symbol_at_line(file, line).into_iter().collect();
+        }
 
         ingest
             .symbols
@@ -114,6 +126,16 @@ pub trait SymbolLookup<'a>: crate::domain::CorpusView<'a> {
             .filter(|s| matches_symbol_selector(s, ingest, interner, selector))
             .map(|s| s.id)
             .collect()
+    }
+
+    #[must_use]
+    fn symbol_at_line(&self, file: &str, line: u32) -> Option<NodeId> {
+        self.ingest()
+            .symbols
+            .iter()
+            .filter(|s| s.line <= line && self.sym_path(s).ends_with(file))
+            .max_by_key(|s| (s.line, std::cmp::Reverse(s.id)))
+            .map(|s| s.id)
     }
 
     #[must_use]

@@ -16,7 +16,6 @@ report_command! {
         nav_tool!(
             "uses",
             "All statically resolvable use-sites of a symbol: call, read, write, import, extends",
-            "Symbol name",
             NavMode::Uses
         ),
     ],
