@@ -121,7 +121,7 @@ build failure or a linker error is the compiler's/linker's question, not ripwire
 
 **ripwire-rs-layers** (architecture-health / `--arch` CI gate), **ripwire-rs-graph-query** (custom graph queries),
 **ripwire-rs-mcp** (run ripwire as an MCP server). `--doctor` (setup-health row above) is diagnostic, not a
-moment skill. `--eval` and `--eval-retrieval` are maintainer self-eval harnesses (not an agent moment). The
+moment skill. `--eval`, `--eval-retrieval` and `--eval-scip=FILE` are maintainer self-eval harnesses (not an agent moment). The
 detail-ladder / token-squeeze (`--compress`) material
 lives inside **ripwire-rs-orient**'s companion file (`skills/ripwire-rs-orient/compress-ladder.md`) now — it's not a standalone
 moment. You don't recognize "the graph-query moment" — reach for these when a moment skill points you at

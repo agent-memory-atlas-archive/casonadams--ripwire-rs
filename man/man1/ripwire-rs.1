@@ -480,6 +480,12 @@ Run agent skill effectiveness evaluation benchmark.
 .TP
 .B \-\-eval\-stray
 Run cross-branch divergent stray content evaluation benchmark.
+.TP
+.BI \-\-eval\-scip= FILE
+Score name-based call resolution against the compiler-backed SCIP index \fIFILE\fR: every call site the index pins is resolved again without SCIP and classified exact, split-hit, wrong, missed, external-agreed, false-edge or unindexed (an edge the index calls external into a file it holds no document for, such as \fB.js\fR beside a TypeScript-only index; left out of precision), with precision, recall, per-reason counts for each disagreeing class (the edge's provenance, or declined, unresolved, external, builtin, ignored) and sampled disagreements per class and reason. Refuses \fB\-\-scip\fR.
+.TP
+.BI \-\-eval\-samples= N
+Sampled disagreements per class and reason for \fB\-\-eval\-scip\fR (default 10).
 .SH VISUALIZATION OPTIONS
 .TP
 .BI \-\-html [=FILE]

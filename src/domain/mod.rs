@@ -557,8 +557,9 @@ pub struct Implementation {
     pub end_byte: u32,
 }
 
-/// What a SCIP index says a call site at `file_id:line` naming `callee` reaches.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// What a SCIP index says a call site at `file_id:line` naming `callee` reaches. `Def` orders first,
+/// so a site SCIP binds both in and out of the tree keeps its in-tree definition.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum ScipTarget {
     Def(NodeId),
     External,

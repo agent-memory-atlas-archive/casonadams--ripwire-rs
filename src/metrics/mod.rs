@@ -12,6 +12,7 @@ pub mod lint_rules;
 pub mod nonlocal;
 pub mod quality_panel;
 pub mod readability;
+pub mod scip_eval;
 pub mod source_mask;
 
 pub use analysis_lenses::{

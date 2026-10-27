@@ -24,6 +24,12 @@ pub struct EvalFlags {
     /// Cross-branch stray content evaluation
     #[arg(long = "eval-stray")]
     pub eval_stray: bool,
+    /// Score name-based call resolution against a SCIP index FILE (precision, recall, sampled disagreements)
+    #[arg(long = "eval-scip", value_name = "FILE")]
+    pub eval_scip: Option<String>,
+    /// Sampled disagreements per verdict and reason for --eval-scip
+    #[arg(long = "eval-samples", value_name = "N", default_value_t = 10)]
+    pub eval_samples: usize,
 }
 
 pub struct Eval;
@@ -60,6 +66,36 @@ impl Command for Eval {
                 )
             })());
         }
-        None
+        flags
+            .eval_scip
+            .as_deref()
+            .map(|path| run_scip_eval(cli, root, path, flags.eval_samples))
     }
+}
+
+fn run_scip_eval(cli: &Cli, root: &str, path: &str, samples: usize) -> io::Result<()> {
+    if cli.scip.is_some() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "ripwire-rs: --eval-scip scores resolution without SCIP; drop --scip",
+        ));
+    }
+    let bytes = std::fs::read(path)
+        .map_err(|e| io::Error::new(e.kind(), format!("ripwire-rs: --eval-scip {path}: {e}")))?;
+    let (ingest, _graph, _pr, interner) = load_repo_analysis_for_cli(cli, root, false)?;
+    let (sites, documented) = crate::resolve::scip::indexed_sites(&bytes, &ingest, &interner)
+        .map_err(|e| io::Error::other(format!("ripwire-rs: --eval-scip {path}: {e}")))?;
+    let report = crate::metrics::scip_eval::evaluate_against_scip(
+        &ingest,
+        &interner,
+        &sites,
+        &documented,
+    );
+    crate::metrics::scip_eval::serialize_scip_eval_xml(
+        &report,
+        &ingest,
+        &interner,
+        samples,
+        &mut io::stdout().lock(),
+    )
 }

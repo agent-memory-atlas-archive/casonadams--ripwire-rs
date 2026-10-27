@@ -14,6 +14,15 @@ pub fn scip_sites(
     ingest: &IngestResult,
     interner: &Interner,
 ) -> Result<Vec<ScipSite>, protobuf::Error> {
+    Ok(indexed_sites(bytes, ingest, interner)?.0)
+}
+
+/// A SCIP index answers only for files it holds documents for.
+pub fn indexed_sites(
+    bytes: &[u8],
+    ingest: &IngestResult,
+    interner: &Interner,
+) -> Result<(Vec<ScipSite>, HashSet<u32>), protobuf::Error> {
     let index = Index::parse_from_bytes(bytes)?;
     let mut overlay = Overlay::new(ingest, interner);
     for doc in &index.documents {
@@ -23,9 +32,14 @@ pub fn scip_sites(
     for doc in &index.documents {
         overlay.collect_sites(doc, &mut sites);
     }
-    sites.sort_unstable_by_key(|s| (s.file_id, s.line, s.callee));
+    sites.sort_unstable_by_key(|s| (s.file_id, s.line, s.callee, s.target));
     sites.dedup_by_key(|s| (s.file_id, s.line, s.callee));
-    Ok(sites)
+    let documented = index
+        .documents
+        .iter()
+        .filter_map(|doc| overlay.file_ids.get(doc.relative_path.as_str()).copied())
+        .collect();
+    Ok((sites, documented))
 }
 
 fn is_definition(roles: i32) -> bool {
